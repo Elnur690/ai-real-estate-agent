@@ -16,6 +16,7 @@ from app.scrapers.vipemlak_az import VipEmlakAzScraper
 from app.scrapers.ofis_az import OfisAzScraper
 from app.scrapers.kub_az import KubAzScraper
 from app.scrapers.lalafo_az import LalafoAzScraper
+from app.scrapers.homdom_az import HomDomAzScraper
 from app.scrapers.telegram_scraper import TelegramChannelScraper
 from app.ai.factory import ProviderFactory
 from app.ai.base import StructuredCriteria
@@ -31,10 +32,10 @@ class IngestionService:
         stmt = select(ListingSource)
         res = await db.execute(stmt)
         sources = res.scalars().all()
-        if not sources or len(sources) < 9:
+        if not sources or len(sources) < 10:
             existing_handles = {s.url_or_handle for s in sources}
             default_sources = [
-                ListingSource(type="website", name="Bina.az", url_or_handle="https://bina.az/baki/alqi-satki/menziller", status="active"),
+                ListingSource(type="website", name="Bina.az", url_or_handle="https://bina.az/", status="active"),
                 ListingSource(type="website", name="Tap.az", url_or_handle="https://tap.az/elanlar/dasinmaz-emlak/menziller", status="active"),
                 ListingSource(type="website", name="YeniEmlak.az", url_or_handle="https://yeniemlak.az/", status="active"),
                 ListingSource(type="website", name="EvOnline.az", url_or_handle="https://evonline.az/index.php", status="active"),
@@ -43,13 +44,14 @@ class IngestionService:
                 ListingSource(type="website", name="Ofis.az", url_or_handle="https://ofis.az/", status="active"),
                 ListingSource(type="website", name="Kub.az", url_or_handle="https://kub.az/", status="active"),
                 ListingSource(type="website", name="Lalafo.az", url_or_handle="https://lalafo.az/baku/nedvizhimost", status="active"),
+                ListingSource(type="website", name="HomDom.az", url_or_handle="https://homdom.az/offers/kiraye", status="active"),
                 ListingSource(type="telegram_channel", name="Bakı Əmlak Elanları", url_or_handle="@baki_emlak_elanlari", status="active")
             ]
             for s in default_sources:
                 if s.url_or_handle not in existing_handles:
                     db.add(s)
             await db.commit()
-            logger.info("[IngestionService] Seeded comprehensive listing sources.")
+            logger.info("[IngestionService] Seeded comprehensive listing sources (10 websites + Telegram).")
 
     @staticmethod
     async def run_ingestion_cycle(db: AsyncSession) -> dict:
@@ -86,6 +88,8 @@ class IngestionService:
                 scraper = KubAzScraper()
             elif "lalafo.az" in url or "lalafo.az" in name:
                 scraper = LalafoAzScraper()
+            elif "homdom.az" in url or "homdom.az" in name:
+                scraper = HomDomAzScraper()
             elif source.type == "telegram_channel":
                 scraper = TelegramChannelScraper()
             else:

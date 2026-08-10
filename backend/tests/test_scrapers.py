@@ -8,6 +8,7 @@ from app.scrapers.vipemlak_az import VipEmlakAzScraper
 from app.scrapers.ofis_az import OfisAzScraper
 from app.scrapers.kub_az import KubAzScraper
 from app.scrapers.lalafo_az import LalafoAzScraper
+from app.scrapers.homdom_az import HomDomAzScraper
 
 @pytest.mark.asyncio
 async def test_all_scrapers_return_valid_items():
@@ -20,7 +21,8 @@ async def test_all_scrapers_return_valid_items():
         VipEmlakAzScraper(),
         OfisAzScraper(),
         KubAzScraper(),
-        LalafoAzScraper()
+        LalafoAzScraper(),
+        HomDomAzScraper()
     ]
 
     for scraper in scrapers:
