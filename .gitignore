@@ -1,0 +1,65 @@
+# Environment Variables & Secrets (CRITICAL FOR SECURITY)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Python & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+backend/venv/
+venv/
+ENV/
+env/
+.venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+*.session
+*.session-journal
+
+# Database & Storage
+*.db
+*.sqlite
+*.sqlite3
+realestate.db
+celerybeat-schedule*
+
+# Node & Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+.npm
+*.log
+
+# Operating System & IDEs
+.DS_Store
+.DS_Store?
+._*
+.Trashes
+ehthumbs.db
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo

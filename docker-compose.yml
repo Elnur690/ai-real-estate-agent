@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: realestate_db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: realestate
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: realestate_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: realestate_backend
+    restart: always
+    command: >
+      sh -c "alembic -c alembic.ini upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgrespassword@db:5432/realestate
+      - SYNC_DATABASE_URL=postgresql+psycopg2://postgres:postgrespassword@db:5432/realestate
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:-default_secret_key_change_me_in_prod}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-uO7k8dK9l6mP3qR1sT0vW2xY4zA5bC6dE7fG8hI9jK0=}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - EVOLUTION_API_URL=${EVOLUTION_API_URL:-http://localhost:8080}
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-global_key}
+      - EVOLUTION_INSTANCE_NAME=${EVOLUTION_INSTANCE_NAME:-realestate_agent}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: realestate_celery_worker
+    restart: always
+    command: celery -A app.tasks.celery_app worker --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgrespassword@db:5432/realestate
+      - SYNC_DATABASE_URL=postgresql+psycopg2://postgres:postgrespassword@db:5432/realestate
+      - REDIS_URL=redis://redis:6379/0
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    depends_on:
+      - backend
+      - redis
+
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: realestate_celery_beat
+    restart: always
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgrespassword@db:5432/realestate
+      - SYNC_DATABASE_URL=postgresql+psycopg2://postgres:postgrespassword@db:5432/realestate
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - backend
+      - redis
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: realestate_frontend
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

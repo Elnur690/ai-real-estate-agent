@@ -1,0 +1,58 @@
+from datetime import datetime, timezone
+from typing import Any
+from sqlalchemy import String, Float, Integer, Boolean, Text, DateTime, ForeignKey, JSON
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from app.db.base import Base
+
+class ListingSource(Base):
+    __tablename__ = "listing_sources"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    type: Mapped[str] = mapped_column(String(50), nullable=False)  # website | telegram_channel
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    url_or_handle: Mapped[str] = mapped_column(String(500), nullable=False)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True)
+
+    status: Mapped[str] = mapped_column(String(50), default="active")  # active | error | blocked
+    last_scraped_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    listings = relationship("Listing", back_populates="source", cascade="all, delete-orphan")
+
+
+class Listing(Base):
+    __tablename__ = "listings"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("listing_sources.id", ondelete="CASCADE"), nullable=False)
+    external_id: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    price: Mapped[float] = mapped_column(Float, nullable=False)
+    currency: Mapped[str] = mapped_column(String(10), default="AZN")
+
+    district: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    address_raw: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    rooms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    area_sqm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    floor: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_floors: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    building_type: Mapped[str | None] = mapped_column(String(50), nullable=True)  # new | old
+    seller_type: Mapped[str | None] = mapped_column(String(50), nullable=True)    # owner | agency
+    photos: Mapped[list[Any] | None] = mapped_column(JSON, default=list)
+
+    listing_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    price_history: Mapped[list[Any] | None] = mapped_column(JSON, default=list)
+
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    source = relationship("ListingSource", back_populates="listings")
+    matches = relationship("Match", back_populates="listing", cascade="all, delete-orphan")
