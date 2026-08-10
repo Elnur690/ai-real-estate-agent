@@ -177,6 +177,7 @@ class IngestionService:
 
             except Exception as e:
                 logger.error(f"[IngestionService] Error processing source {source.name}: {e}")
+                await db.rollback()
                 source.status = "error"
                 await db.commit()
 

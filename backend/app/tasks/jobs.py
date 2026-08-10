@@ -10,8 +10,8 @@ from app.services.ingestion import IngestionService
 
 logger = logging.getLogger(__name__)
 
-@celery_app.task
-def run_scheduled_ingestion():
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
+def run_scheduled_ingestion(self):
     """Celery periodic job to run scraping, normalization, AI match scoring, and notification dispatch."""
     logger.info("[CeleryJob] Starting scheduled ingestion cycle...")
     
@@ -23,12 +23,10 @@ def run_scheduled_ingestion():
             return result
 
     try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-    return loop.run_until_complete(_runner())
+        return asyncio.run(_runner())
+    except Exception as exc:
+        logger.error(f"[CeleryJob] Ingestion cycle error: {exc}. Retrying...")
+        raise self.retry(exc=exc)
 
 
 @celery_app.task
