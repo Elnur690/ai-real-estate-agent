@@ -9,6 +9,13 @@ from app.scrapers.ofis_az import OfisAzScraper
 from app.scrapers.kub_az import KubAzScraper
 from app.scrapers.lalafo_az import LalafoAzScraper
 from app.scrapers.homdom_az import HomDomAzScraper
+from app.scrapers.rahatemlak_az import RahatEmlakAzScraper
+from app.scrapers.unvan_az import UnvanAzScraper
+from app.scrapers.ipoteka_az import IpotekaAzScraper
+from app.scrapers.binam_az import BinamAzScraper
+from app.scrapers.binalar_az import BinalarAzScraper
+from app.scrapers.mulk_az import MulkAzScraper
+from app.scrapers.villa_az import VillaAzScraper
 
 @pytest.mark.asyncio
 async def test_all_scrapers_return_valid_items():
@@ -22,7 +29,14 @@ async def test_all_scrapers_return_valid_items():
         OfisAzScraper(),
         KubAzScraper(),
         LalafoAzScraper(),
-        HomDomAzScraper()
+        HomDomAzScraper(),
+        RahatEmlakAzScraper(),
+        UnvanAzScraper(),
+        IpotekaAzScraper(),
+        BinamAzScraper(),
+        BinalarAzScraper(),
+        MulkAzScraper(),
+        VillaAzScraper()
     ]
 
     for scraper in scrapers:

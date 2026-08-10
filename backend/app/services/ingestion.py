@@ -17,7 +17,15 @@ from app.scrapers.ofis_az import OfisAzScraper
 from app.scrapers.kub_az import KubAzScraper
 from app.scrapers.lalafo_az import LalafoAzScraper
 from app.scrapers.homdom_az import HomDomAzScraper
+from app.scrapers.rahatemlak_az import RahatEmlakAzScraper
+from app.scrapers.unvan_az import UnvanAzScraper
+from app.scrapers.ipoteka_az import IpotekaAzScraper
+from app.scrapers.binam_az import BinamAzScraper
+from app.scrapers.binalar_az import BinalarAzScraper
+from app.scrapers.mulk_az import MulkAzScraper
+from app.scrapers.villa_az import VillaAzScraper
 from app.scrapers.telegram_scraper import TelegramChannelScraper
+
 from app.ai.factory import ProviderFactory
 from app.ai.base import StructuredCriteria
 from app.bot.telegram_adapter import send_telegram_notification
@@ -32,7 +40,7 @@ class IngestionService:
         stmt = select(ListingSource)
         res = await db.execute(stmt)
         sources = res.scalars().all()
-        if not sources or len(sources) < 10:
+        if not sources or len(sources) < 17:
             existing_handles = {s.url_or_handle for s in sources}
             default_sources = [
                 ListingSource(type="website", name="Bina.az", url_or_handle="https://bina.az/", status="active"),
@@ -45,13 +53,20 @@ class IngestionService:
                 ListingSource(type="website", name="Kub.az", url_or_handle="https://kub.az/", status="active"),
                 ListingSource(type="website", name="Lalafo.az", url_or_handle="https://lalafo.az/baku/nedvizhimost", status="active"),
                 ListingSource(type="website", name="HomDom.az", url_or_handle="https://homdom.az/offers/kiraye", status="active"),
+                ListingSource(type="website", name="RahatEmlak.az", url_or_handle="https://rahatemlak.az/alqi-satqi", status="active"),
+                ListingSource(type="website", name="Unvan.az", url_or_handle="https://unvan.az/", status="active"),
+                ListingSource(type="website", name="Ipoteka.az", url_or_handle="https://ipoteka.az/", status="active"),
+                ListingSource(type="website", name="Binam.az", url_or_handle="https://binam.az/", status="active"),
+                ListingSource(type="website", name="Binalar.az", url_or_handle="https://binalar.az/", status="active"),
+                ListingSource(type="website", name="Mulk.az", url_or_handle="https://mulk.az/", status="active"),
+                ListingSource(type="website", name="Villa.az", url_or_handle="https://villa.az/", status="active"),
                 ListingSource(type="telegram_channel", name="Bakı Əmlak Elanları", url_or_handle="@baki_emlak_elanlari", status="active")
             ]
             for s in default_sources:
                 if s.url_or_handle not in existing_handles:
                     db.add(s)
             await db.commit()
-            logger.info("[IngestionService] Seeded comprehensive listing sources (10 websites + Telegram).")
+            logger.info("[IngestionService] Seeded 17 comprehensive real estate sources.")
 
     @staticmethod
     async def run_ingestion_cycle(db: AsyncSession) -> dict:
@@ -90,6 +105,20 @@ class IngestionService:
                 scraper = LalafoAzScraper()
             elif "homdom.az" in url or "homdom.az" in name:
                 scraper = HomDomAzScraper()
+            elif "rahatemlak.az" in url or "rahatemlak.az" in name:
+                scraper = RahatEmlakAzScraper()
+            elif "unvan.az" in url or "unvan.az" in name:
+                scraper = UnvanAzScraper()
+            elif "ipoteka.az" in url or "ipoteka.az" in name:
+                scraper = IpotekaAzScraper()
+            elif "binam.az" in url or "binam.az" in name:
+                scraper = BinamAzScraper()
+            elif "binalar.az" in url or "binalar.az" in name:
+                scraper = BinalarAzScraper()
+            elif "mulk.az" in url or "mulk.az" in name:
+                scraper = MulkAzScraper()
+            elif "villa.az" in url or "villa.az" in name:
+                scraper = VillaAzScraper()
             elif source.type == "telegram_channel":
                 scraper = TelegramChannelScraper()
             else:
