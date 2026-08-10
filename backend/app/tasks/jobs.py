@@ -50,7 +50,25 @@ def check_plan_expirations():
 
 @celery_app.task
 def perform_database_backup():
-    """Celery periodic job to execute automated database backup & rotation."""
-    logger.info("[CeleryJob] Executing automated database backup...")
+    """Celery periodic job to execute automated database backup & tenant BaaS plan backups."""
+    logger.info("[CeleryJob] Executing automated database & tenant backups...")
     from app.services.backup import BackupService
-    return BackupService.create_backup()
+    
+    # 1. Full System Backup
+    sys_result = BackupService.create_backup()
+
+    # 2. Tenant Automated Plan Backups
+    async def _run_tenant_backups():
+        from app.db.session import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            count = await BackupService.run_scheduled_tenant_backups(db)
+            return count
+
+    try:
+        tenant_count = asyncio.run(_run_tenant_backups())
+        logger.info(f"[CeleryJob] Generated tenant backups for {tenant_count} tenants.")
+    except Exception as e:
+        logger.error(f"[CeleryJob] Error running tenant backups: {e}")
+        tenant_count = 0
+
+    return {"system_backup": sys_result, "tenant_backups_created": tenant_count}

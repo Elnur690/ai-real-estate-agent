@@ -23,6 +23,11 @@ class Tenant(Base):
     telegram_chat_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     digest_mode: Mapped[str] = mapped_column(String(20), default="instant")  # instant | hourly | daily
 
+    # Backup-as-a-Service Plan Options
+    backup_enabled: Mapped[bool] = mapped_column(default=False)
+    backup_frequency_days: Mapped[int] = mapped_column(default=7)  # 1 (daily) | 7 (weekly) | 30 (monthly)
+    last_backup_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Relationships

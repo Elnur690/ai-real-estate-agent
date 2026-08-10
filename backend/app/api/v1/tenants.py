@@ -21,6 +21,8 @@ class CreateTenantRequest(BaseModel):
     telegram_chat_id: Optional[str] = None
     plan: str = "starter" # free | starter | pro | agency | enterprise
     plan_period: str = "monthly"
+    backup_enabled: bool = False
+    backup_frequency_days: int = 7 # 1 (daily) | 7 (weekly) | 30 (monthly)
 
 class UpdateTenantRequest(BaseModel):
     name: Optional[str] = None
@@ -31,6 +33,8 @@ class UpdateTenantRequest(BaseModel):
     preferred_channel: Optional[str] = None
     whatsapp_number: Optional[str] = None
     telegram_chat_id: Optional[str] = None
+    backup_enabled: Optional[bool] = None
+    backup_frequency_days: Optional[int] = None
 
 @router.get("")
 async def list_tenants(db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
@@ -93,3 +97,13 @@ async def update_tenant(tenant_id: int, body: UpdateTenantRequest, db: AsyncSess
     await db.commit()
     await db.refresh(tenant)
     return tenant
+
+
+@router.post("/{tenant_id}/backup")
+async def trigger_tenant_backup(tenant_id: int, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
+    """Trigger manual instant data backup export for a specific tenant."""
+    from app.services.backup import BackupService
+    res = await BackupService.create_tenant_backup(db, tenant_id)
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("error", "Tenant backup failed"))
+    return res

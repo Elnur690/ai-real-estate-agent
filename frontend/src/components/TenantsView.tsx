@@ -18,7 +18,9 @@ export const TenantsView: React.FC = () => {
     preferred_channel: 'telegram',
     plan: 'starter',
     telegram_handle: '',
-    whatsapp_number: ''
+    whatsapp_number: '',
+    backup_enabled: false,
+    backup_frequency_days: 7
   });
 
   const loadTenants = async () => {
@@ -228,10 +230,36 @@ export const TenantsView: React.FC = () => {
                   >
                     <option value="free">Free</option>
                     <option value="starter">Starter</option>
-                    <option value="pro">Pro</option>
-                    <option value="agency">Agency</option>
+                    <option value="pro">Pro (BaaS Backup Enabled)</option>
+                    <option value="agency">Agency (BaaS Backup Enabled)</option>
                   </select>
                 </div>
+              </div>
+
+              <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-300 font-medium">Backup-as-a-Service (BaaS) Plan</span>
+                  <input
+                    type="checkbox"
+                    checked={newTenant.backup_enabled}
+                    onChange={(e) => setNewTenant({ ...newTenant, backup_enabled: e.target.checked })}
+                    className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500"
+                  />
+                </div>
+                {newTenant.backup_enabled && (
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-1">Backup Frequency</label>
+                    <select
+                      value={newTenant.backup_frequency_days}
+                      onChange={(e) => setNewTenant({ ...newTenant, backup_frequency_days: Number(e.target.value) })}
+                      className="w-full glass-input px-2.5 py-1.5 rounded-lg text-xs text-white bg-dark-800"
+                    >
+                      <option value={1}>Daily Automated Backup (24h)</option>
+                      <option value={7}>Weekly Automated Backup (7 days)</option>
+                      <option value={30}>Monthly Automated Backup (30 days)</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end gap-3 pt-3">

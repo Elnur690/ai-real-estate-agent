@@ -13,6 +13,9 @@ export interface Tenant {
   whatsapp_number?: string;
   telegram_chat_id?: string;
   digest_mode: 'instant' | 'hourly' | 'daily';
+  backup_enabled?: boolean;
+  backup_frequency_days?: number;
+  last_backup_at?: string;
   created_at: string;
 }
 
