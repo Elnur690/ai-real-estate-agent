@@ -21,6 +21,10 @@ celery_app.conf.update(
         "check-plan-expirations-daily": {
             "task": "app.tasks.jobs.check_plan_expirations",
             "schedule": 86400.0,  # 24 hours
+        },
+        "perform-database-backup-daily": {
+            "task": "app.tasks.jobs.perform_database_backup",
+            "schedule": 86400.0,  # 24 hours
         }
     }
 )

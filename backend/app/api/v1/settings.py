@@ -50,3 +50,20 @@ async def update_settings(body: UpdateSettingsRequest, db: AsyncSession = Depend
 
     await db.commit()
     return {"status": "success", "updated_keys": list(body.settings.keys())}
+
+
+@router.get("/backups")
+async def list_database_backups(current_admin = Depends(get_current_admin)):
+    """List all available database backup snapshots."""
+    from app.services.backup import BackupService
+    return BackupService.list_backups()
+
+
+@router.post("/backups")
+async def create_database_backup(current_admin = Depends(get_current_admin)):
+    """Trigger an instant database backup snapshot."""
+    from app.services.backup import BackupService
+    result = BackupService.create_backup()
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "Backup failed"))
+    return result

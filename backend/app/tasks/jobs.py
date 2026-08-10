@@ -46,3 +46,11 @@ def check_plan_expirations():
         session.commit()
         logger.info(f"[CeleryJob] Updated {result.rowcount} expired tenants to 'expired' status.")
         return result.rowcount
+
+
+@celery_app.task
+def perform_database_backup():
+    """Celery periodic job to execute automated database backup & rotation."""
+    logger.info("[CeleryJob] Executing automated database backup...")
+    from app.services.backup import BackupService
+    return BackupService.create_backup()
