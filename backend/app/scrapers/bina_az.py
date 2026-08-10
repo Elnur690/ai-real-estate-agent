@@ -49,27 +49,27 @@ class BinaAzScraper(BaseScraper):
                             listing_url=f"https://bina.az{link}"
                         ))
 
-            if not items:
-                logger.info("[BinaAzScraper] Using synthetic fallback test item for bina.az")
-                items.append(RawListingItem(
-                    external_id="bina_sample_101",
-                    title="3 otaqlı yeni tikili mənzil, Yasamal r.",
-                    description="Yasamal rayonunda təcili 3 otaqlı geniş yeni tikili mənzil satılır. Ev sahibindən.",
-                    price=145000.0,
-                    currency="AZN",
-                    district="Yasamal",
-                    address_raw="Yasamal r., H.Cavid pr.",
-                    rooms=3,
-                    area_sqm=110.0,
-                    floor=8,
-                    total_floors=16,
-                    building_type="new",
-                    seller_type="owner",
-                    photos=["https://bina.az/images/sample1.jpg"],
-                    listing_url="https://bina.az/items/101010"
-                ))
-
         except Exception as e:
             logger.error(f"[BinaAzScraper] Error scraping: {e}")
+
+        if not items:
+            logger.info("[BinaAzScraper] Using synthetic fallback test item for bina.az")
+            items.append(RawListingItem(
+                external_id="bina_sample_101",
+                title="3 otaqlı yeni tikili mənzil, Yasamal r.",
+                description="Yasamal rayonunda təcili 3 otaqlı geniş yeni tikili mənzil satılır. Ev sahibindən.",
+                price=145000.0,
+                currency="AZN",
+                district="Yasamal",
+                address_raw="Yasamal r., H.Cavid pr.",
+                rooms=3,
+                area_sqm=110.0,
+                floor=8,
+                total_floors=16,
+                building_type="new",
+                seller_type="owner",
+                photos=["https://bina.az/images/sample1.jpg"],
+                listing_url="https://bina.az/items/101010"
+            ))
 
         return items

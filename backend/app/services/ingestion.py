@@ -9,6 +9,13 @@ from app.models.saved_search import SavedSearch
 from app.models.match import Match
 from app.scrapers.bina_az import BinaAzScraper
 from app.scrapers.tap_az import TapAzScraper
+from app.scrapers.yeniemlak_az import YeniEmlakAzScraper
+from app.scrapers.evonline_az import EvOnlineAzScraper
+from app.scrapers.ev10_az import Ev10AzScraper
+from app.scrapers.vipemlak_az import VipEmlakAzScraper
+from app.scrapers.ofis_az import OfisAzScraper
+from app.scrapers.kub_az import KubAzScraper
+from app.scrapers.lalafo_az import LalafoAzScraper
 from app.scrapers.telegram_scraper import TelegramChannelScraper
 from app.ai.factory import ProviderFactory
 from app.ai.base import StructuredCriteria
@@ -24,16 +31,25 @@ class IngestionService:
         stmt = select(ListingSource)
         res = await db.execute(stmt)
         sources = res.scalars().all()
-        if not sources:
+        if not sources or len(sources) < 9:
+            existing_handles = {s.url_or_handle for s in sources}
             default_sources = [
                 ListingSource(type="website", name="Bina.az", url_or_handle="https://bina.az/baki/alqi-satki/menziller", status="active"),
                 ListingSource(type="website", name="Tap.az", url_or_handle="https://tap.az/elanlar/dasinmaz-emlak/menziller", status="active"),
+                ListingSource(type="website", name="YeniEmlak.az", url_or_handle="https://yeniemlak.az/", status="active"),
+                ListingSource(type="website", name="EvOnline.az", url_or_handle="https://evonline.az/index.php", status="active"),
+                ListingSource(type="website", name="Ev10.az", url_or_handle="https://ev10.az/", status="active"),
+                ListingSource(type="website", name="VipEmlak.az", url_or_handle="https://vipemlak.az/", status="active"),
+                ListingSource(type="website", name="Ofis.az", url_or_handle="https://ofis.az/", status="active"),
+                ListingSource(type="website", name="Kub.az", url_or_handle="https://kub.az/", status="active"),
+                ListingSource(type="website", name="Lalafo.az", url_or_handle="https://lalafo.az/baku/nedvizhimost", status="active"),
                 ListingSource(type="telegram_channel", name="Bakı Əmlak Elanları", url_or_handle="@baki_emlak_elanlari", status="active")
             ]
             for s in default_sources:
-                db.add(s)
+                if s.url_or_handle not in existing_handles:
+                    db.add(s)
             await db.commit()
-            logger.info("[IngestionService] Seeded default listing sources.")
+            logger.info("[IngestionService] Seeded comprehensive listing sources.")
 
     @staticmethod
     async def run_ingestion_cycle(db: AsyncSession) -> dict:
@@ -48,11 +64,28 @@ class IngestionService:
 
         for source in sources:
             logger.info(f"[IngestionService] Scraping source: {source.name} ({source.type})")
+            url = source.url_or_handle.lower()
+            name = source.name.lower()
             scraper = None
-            if "bina.az" in source.url_or_handle or source.name.lower() == "bina.az":
+
+            if "bina.az" in url or "bina.az" in name:
                 scraper = BinaAzScraper()
-            elif "tap.az" in source.url_or_handle or source.name.lower() == "tap.az":
+            elif "tap.az" in url or "tap.az" in name:
                 scraper = TapAzScraper()
+            elif "yeniemlak.az" in url or "yeniemlak.az" in name:
+                scraper = YeniEmlakAzScraper()
+            elif "evonline.az" in url or "evonline.az" in name:
+                scraper = EvOnlineAzScraper()
+            elif "ev10.az" in url or "ev10.az" in name:
+                scraper = Ev10AzScraper()
+            elif "vipemlak.az" in url or "vipemlak.az" in name:
+                scraper = VipEmlakAzScraper()
+            elif "ofis.az" in url or "ofis.az" in name:
+                scraper = OfisAzScraper()
+            elif "kub.az" in url or "kub.az" in name:
+                scraper = KubAzScraper()
+            elif "lalafo.az" in url or "lalafo.az" in name:
+                scraper = LalafoAzScraper()
             elif source.type == "telegram_channel":
                 scraper = TelegramChannelScraper()
             else:
@@ -64,13 +97,11 @@ class IngestionService:
                 await db.commit()
 
                 for item in items:
-                    # Check if listing already exists
                     stmt_exist = select(Listing).where(Listing.external_id == item.external_id)
                     res_exist = await db.execute(stmt_exist)
                     existing_listing = res_exist.scalars().first()
 
                     if existing_listing:
-                        # Price drop check
                         if item.price < existing_listing.price:
                             history = existing_listing.price_history or []
                             history.append({
@@ -108,7 +139,6 @@ class IngestionService:
                         await db.refresh(db_listing)
                         total_scraped += 1
 
-                    # Evaluate matches against active searches
                     matches_created = await IngestionService._evaluate_and_deliver_matches(db, db_listing)
                     total_matched += matches_created
 
@@ -129,7 +159,6 @@ class IngestionService:
         app_name = await get_app_name(db)
 
         for search in saved_searches:
-            # Fetch Tenant
             stmt_t = select(Tenant).where(Tenant.id == search.tenant_id)
             res_t = await db.execute(stmt_t)
             tenant = res_t.scalars().first()
@@ -137,7 +166,6 @@ class IngestionService:
             if not tenant:
                 continue
 
-            # Re-construct structured criteria
             criteria = StructuredCriteria(
                 district=search.district,
                 min_price=search.min_price,
@@ -148,7 +176,6 @@ class IngestionService:
                 building_type=search.building_type or "any"
             )
 
-            # Score match via AI Provider Factory
             ai_provider = await ProviderFactory.get_provider(db, task_type="match_scoring", tenant_id=tenant.id)
             listing_dict = {
                 "title": listing.title,
@@ -160,7 +187,6 @@ class IngestionService:
             score = await ai_provider.score_match(listing_dict, criteria)
 
             if score >= 0.65:
-                # Check duplicate match
                 stmt_m = select(Match).where(Match.listing_id == listing.id, Match.saved_search_id == search.id)
                 res_m = await db.execute(stmt_m)
                 if res_m.scalars().first():
@@ -180,10 +206,9 @@ class IngestionService:
                 await db.refresh(new_match)
                 matches_count += 1
 
-                # Construct Azerbaijani Notification Message
                 seller_str = "Ev Sahibindən" if listing.seller_type == "owner" else "Vasitəçidən/Agentlikdən"
                 bld_str = "Yeni tikili" if listing.building_type == "new" else ("Köhnə tikili" if listing.building_type == "old" else "")
-                
+
                 msg_text = (
                     f"🔥 *YENİ UYĞUN ELAN! ({app_name})*\n"
                     f"🎯 *Uyğunluq:* %{int(score * 100)}\n\n"
@@ -198,7 +223,6 @@ class IngestionService:
                     f"`Maraqlanıram {new_match.id}` | `Keç {new_match.id}` | `Satılıb {new_match.id}`"
                 )
 
-                # Dispatch notification
                 if tenant.preferred_channel == "telegram" and tenant.telegram_chat_id:
                     await send_telegram_notification(tenant.telegram_chat_id, msg_text)
                 elif tenant.preferred_channel == "whatsapp" and tenant.whatsapp_number:
