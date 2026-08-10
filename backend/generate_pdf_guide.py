@@ -137,7 +137,8 @@ def build_pdf():
         ("3. AI AVM & Bargain Deal Finder", "Computes district average price/sqm and flags deals tagged 🔥 TƏCİLİ FÜRSƏT ELAN! (-15% Below Market Rate)."),
         ("4. Private B2B Agent Co-Brokering Network", "Safely matches Agent A's buyer criteria with Agent B's listing for 50/50 commission co-brokering (B2B Qəbul et)."),
         ("5. 1-Click Instagram & PDF Brochure Generator", "Generates branded PDF brochures and Azerbaijani social media captions (Broşur <id>)."),
-        ("6. AI Client Qualification Intake Bot", "Public API intake endpoint for agents' Instagram bios and WhatsApp links (POST /api/v1/client-intake/{tenant_id}).")
+        ("6. AI Client Qualification Intake Bot", "Public API intake endpoint for agents' Instagram bios and WhatsApp links (POST /api/v1/client-intake/{tenant_id})."),
+        ("7. Referral Program & Promo Code Discounts", "Unique referral codes (REF-XXXX-NAME) with 10 AZN bonus credits + discount promo coupons (/referral, Promokod <code>).")
     ]
 
     for title, desc in killer_features:

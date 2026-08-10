@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, ForeignKey, Text
+from sqlalchemy import String, Float, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
@@ -34,6 +34,11 @@ class Tenant(Base):
     feature_b2b_cobrokering: Mapped[bool] = mapped_column(default=False)
     feature_social_brochure: Mapped[bool] = mapped_column(default=False)
     feature_client_intake_bot: Mapped[bool] = mapped_column(default=False)
+
+    # 🎁 Referral System & Promo Code Reward Options
+    referral_code: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True)
+    referred_by_tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True)
+    referral_balance: Mapped[float] = mapped_column(Float, default=0.0) # Bonus credit in AZN
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 

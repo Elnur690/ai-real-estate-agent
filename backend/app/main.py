@@ -62,6 +62,7 @@ app.include_router(settings_api.router, prefix=settings.API_V1_STR)
 app.include_router(scrapers.router, prefix=settings.API_V1_STR)
 app.include_router(webhooks.router, prefix=settings.API_V1_STR)
 app.include_router(client_intake.router, prefix=settings.API_V1_STR)
+app.include_router(promo_codes.router, prefix=settings.API_V1_STR)
 
 @app.get("/health")
 async def health_check():

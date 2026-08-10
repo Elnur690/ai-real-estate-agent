@@ -111,6 +111,10 @@ The platform features an abstract multi-model LLM provider layer (`app/ai/factor
   - `criteria_parsing`: Parses unstructured Azerbaijani text (*"Yasamalda 3 otaqlı 100-150 min AZN ev sahibindən"*) into structured `StructuredCriteria` objects.
   - `match_scoring`: Evaluates listing compatibility (0.0 to 1.0 score).
 
+7. **Referral System & Promo Code Discounts** (`app/services/referral_service.py`):
+   - **Referral Rewards**: Unique agent referral links/codes (`REF-XXXX-NAME`). Earns 10 AZN bonus credits when referred agents join and upgrade (`/referral`).
+   - **Promo Code Discounts**: System for creating discount codes (e.g. `WELCOME20`, `SUMMER2026`) with percentage or flat AZN discount rates (`Promokod <code>`).
+
 ---
 
 ## 💬 4. WhatsApp & Telegram Bot Command Reference

@@ -8,6 +8,7 @@ from app.models.payment import Payment
 from app.models.ai_config import AIProviderConfig, AICallLog
 from app.models.setting import AppSettings
 from app.models.b2b_match import B2BMatch
+from app.models.promo_code import PromoCode
 
 __all__ = [
     "Base",
@@ -22,4 +23,5 @@ __all__ = [
     "AICallLog",
     "AppSettings",
     "B2BMatch",
+    "PromoCode",
 ]

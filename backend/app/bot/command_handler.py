@@ -141,6 +141,28 @@ class BotCommandHandler:
             await db.commit()
             return f"B2B Partnyorluq statusu yeniləndi: *{new_st.capitalize()}* 🤝"
 
+        # Referral Code & Program Info
+        if text_lower in ["dostunu dəvət et", "dostunu devet et", "referral", "/referral", "dəvət", "devet"]:
+            from app.services.referral_service import ReferralService
+            ref_code = await ReferralService.get_or_create_referral_code(db, tenant)
+            return (
+                f"🎁 *DOSTUNU DƏVƏT ET VƏ QAZAN! ({app_name})*\n\n"
+                f"Sizin Xüsusi Dəvət Kodunuz: `{ref_code}`\n"
+                f"Balansınız: *{tenant.referral_balance} AZN*\n\n"
+                f"Dostunuz bu kodla abunə olduqda siz *10 AZN* bonus qazanırsınız! 🚀"
+            )
+
+        # Promo Code Redemption
+        promo_match = re.search(r'^(promokod|promo|/promo)\s*([a-zA-Z0-9_-]+)', text_lower)
+        if promo_match:
+            code = promo_match.group(2)
+            from app.services.referral_service import ReferralService
+            val_res = await ReferralService.validate_promo_code(db, code)
+            if val_res.get("valid"):
+                disc = f"%{val_res['discount_percent']}" if val_res.get("discount_percent") else f"{val_res.get('discount_amount')} AZN"
+                return f"✅ *Promokod təsdiqləndi!* `{val_res['code']}` — {disc} güzəşt tətbiq edildi!"
+            return f"❌ {val_res.get('error', 'Promokod xətası')}"
+
         # Fallback AI Criteria Parsing for arbitrary search text
         if len(raw_text_trimmed) > 10:
             return await BotCommandHandler._create_saved_search(db, tenant, raw_text_trimmed)
