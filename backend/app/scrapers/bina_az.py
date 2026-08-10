@@ -50,7 +50,8 @@ class BinaAzScraper(BaseScraper):
                                         district = d
                                         break
                                 
-                                seller_type = "owner" if ("sahibindən" in item_html.lower() or "sahibi" in item_html.lower()) else "agency"
+                                text_lower = item_html.lower()
+                                seller_type = "owner" if ("sahibindən" in text_lower or "sahibindan" in text_lower or "mülkiyyətçi" in text_lower or "mülkiyyətçidən" in text_lower or "ev sahibindən" in text_lower) else "agency"
                                 building_type = "new" if "yeni tikili" in title.lower() else ("old" if "köhnə tikili" in title.lower() else None)
 
                                 items.append(RawListingItem(

@@ -24,12 +24,15 @@ class TapAzScraper(BaseScraper):
                     matches = re.findall(r'href="(/elanlar/dasinmaz-emlak/[^"]+/(\d+))".*?<span class="price-val">([\d\s]+)</span>.*?<div class="products-title">([^<]+)</div>', html, re.DOTALL)
                     for link, ext_id, price_str, title in matches[:10]:
                         clean_price = float(price_str.replace(" ", ""))
+                        title_lower = title.lower()
+                        seller_type = "owner" if ("sahibindən" in title_lower or "sahibindan" in title_lower or "mülkiyyətçi" in title_lower or "ev sahibindən" in title_lower) else "agency"
                         items.append(RawListingItem(
                             external_id=f"tap_{ext_id}",
                             title=title.strip(),
                             description=f"Tap.az elanı: {title.strip()}",
                             price=clean_price,
                             currency="AZN",
+                            seller_type=seller_type,
                             listing_url=f"https://tap.az{link}"
                         ))
 
