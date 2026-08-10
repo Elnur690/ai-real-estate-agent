@@ -78,12 +78,23 @@ The ingestion engine features **17 dedicated website crawlers** + **1 Telethon T
 17. **`VillaAzScraper`** (`villa.az`): Specialized in villas, country houses & land.
 18. **`TelegramChannelScraper`**: Telethon crawler for monitoring public channels (e.g. `@baki_emlak_elanlari`).
 
-### Direct Owner ("Sahibindən") Classification Algorithm
+### Direct Owner ("Sahibindən") & AI Makler Classification Algorithm
 Listing items are categorized into **`owner`** (Ev Sahibindən) vs **`agency`** (Vasitəçi) using 4 combined layers:
 1. **GraphQL Metadata**: Checks if `company` object is `null` on portals like Bina.az.
 2. **Search Parameters**: Direct queries to owner URLs (e.g. `seller_type=owner`).
-3. **Natural Language Keyword Detection**: Scans titles and descriptions for Azerbaijani owner keywords (`"sahibindən"`, `"mülkiyyətçidən"`, `"öz evimdir"`, `"vasitəçisiz"`).
-4. **Multi-listing Frequency Analysis**: Ingestion pipeline tracks phone numbers; numbers posting 5+ listings across districts are flagged as agencies.
+3. **First-Posting History Analysis (`is_first_posting`)**: Checks if the exact same property (matching district, room count, area +/- 3sqm, and price +/- 5%) was posted earlier by another user or agency. If an earlier posting exists, links `earlier_posting_url` and elevates `makler_score`.
+4. **Natural Language Keyword & Phone Graph**: Scans titles/descriptions for Azerbaijani owner keywords (`"sahibindən"`, `"mülkiyyətçidən"`, `"öz evimdir"`, `"vasitəçisiz"`) and flags numbers posting 3+ listings.
+
+---
+
+## 🚀 3. Top 6 Market-Dominating Killer Features
+
+1. **AI Makler Detector & First-Posting Analyzer** (`app/services/makler_detector.py`): Detects disguised realtors and flags whether a listing is the 1st original posting or a duplicate post.
+2. **30-Second Speed-Dial & Urgent Alerts**: Embeds 1-tap `📞 Zəng et` speed-dial links inside WhatsApp and Telegram notifications.
+3. **AI Automated Valuation Engine (AVM) & Bargain Finder** (`app/services/avm_engine.py`): Computes live district average price/$m^2$ and flags deals tagged 🔥 `TƏCİLİ FÜRSƏT ELAN! (-15% Below District Market Rate)`.
+4. **Private Agent B2B Co-Brokering Network** (`app/services/b2b_service.py`): Safely matches Agent A's buyer criteria with Agent B's exclusive listing for 50/50 commission co-brokering (`B2B Qəbul et`).
+5. **1-Click AI Instagram Carousel & PDF Brochure Generator** (`app/services/brochure_generator.py`): Generates branded PDF property brochures and Azerbaijani social media captions (`Broşur <id>`).
+6. **AI Client Qualification Intake Bot** (`app/api/v1/client_intake.py`): Public intake endpoint (`POST /api/v1/client-intake/{tenant_id}`) for agents' Instagram bios and WhatsApp links.
 
 ---
 
