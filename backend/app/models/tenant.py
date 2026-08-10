@@ -28,6 +28,13 @@ class Tenant(Base):
     backup_frequency_days: Mapped[int] = mapped_column(default=7)  # 1 (daily) | 7 (weekly) | 30 (monthly)
     last_backup_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # 🚀 Killer Feature Plan Options
+    feature_makler_detector: Mapped[bool] = mapped_column(default=False)
+    feature_avm_bargain_finder: Mapped[bool] = mapped_column(default=False)
+    feature_b2b_cobrokering: Mapped[bool] = mapped_column(default=False)
+    feature_social_brochure: Mapped[bool] = mapped_column(default=False)
+    feature_client_intake_bot: Mapped[bool] = mapped_column(default=False)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Relationships

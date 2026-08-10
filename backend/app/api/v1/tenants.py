@@ -23,6 +23,11 @@ class CreateTenantRequest(BaseModel):
     plan_period: str = "monthly"
     backup_enabled: bool = False
     backup_frequency_days: int = 7 # 1 (daily) | 7 (weekly) | 30 (monthly)
+    feature_makler_detector: bool = False
+    feature_avm_bargain_finder: bool = False
+    feature_b2b_cobrokering: bool = False
+    feature_social_brochure: bool = False
+    feature_client_intake_bot: bool = False
 
 class UpdateTenantRequest(BaseModel):
     name: Optional[str] = None
@@ -35,6 +40,11 @@ class UpdateTenantRequest(BaseModel):
     telegram_chat_id: Optional[str] = None
     backup_enabled: Optional[bool] = None
     backup_frequency_days: Optional[int] = None
+    feature_makler_detector: Optional[bool] = None
+    feature_avm_bargain_finder: Optional[bool] = None
+    feature_b2b_cobrokering: Optional[bool] = None
+    feature_social_brochure: Optional[bool] = None
+    feature_client_intake_bot: Optional[bool] = None
 
 @router.get("")
 async def list_tenants(db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
@@ -46,6 +56,11 @@ async def list_tenants(db: AsyncSession = Depends(get_db), current_admin = Depen
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
     expires_at = datetime.now(timezone.utc) + (timedelta(days=30) if body.plan_period == "monthly" else timedelta(days=90))
+    
+    # Auto-enable Killer Features based on subscription tier
+    is_pro = body.plan in ["pro", "agency", "enterprise"]
+    is_agency = body.plan in ["agency", "enterprise"]
+
     tenant = Tenant(
         name=body.name,
         type=body.type,
@@ -56,6 +71,13 @@ async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(ge
         telegram_chat_id=body.telegram_chat_id,
         plan=body.plan,
         plan_period=body.plan_period,
+        backup_enabled=body.backup_enabled or is_pro,
+        backup_frequency_days=body.backup_frequency_days,
+        feature_makler_detector=body.feature_makler_detector or is_pro,
+        feature_avm_bargain_finder=body.feature_avm_bargain_finder or is_pro,
+        feature_social_brochure=body.feature_social_brochure or is_pro,
+        feature_b2b_cobrokering=body.feature_b2b_cobrokering or is_agency,
+        feature_client_intake_bot=body.feature_client_intake_bot or is_agency,
         plan_started_at=datetime.now(timezone.utc),
         plan_expires_at=expires_at,
         status="active"

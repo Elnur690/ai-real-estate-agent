@@ -16,6 +16,11 @@ export interface Tenant {
   backup_enabled?: boolean;
   backup_frequency_days?: number;
   last_backup_at?: string;
+  feature_makler_detector?: boolean;
+  feature_avm_bargain_finder?: boolean;
+  feature_b2b_cobrokering?: boolean;
+  feature_social_brochure?: boolean;
+  feature_client_intake_bot?: boolean;
   created_at: string;
 }
 

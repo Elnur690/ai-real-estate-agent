@@ -46,6 +46,15 @@ class Listing(Base):
     seller_type: Mapped[str | None] = mapped_column(String(50), nullable=True)    # owner | agency
     photos: Mapped[list[Any] | None] = mapped_column(JSON, default=list)
 
+    # 🚀 Killer Feature Analytics Fields
+    is_first_posting: Mapped[bool] = mapped_column(Boolean, default=True)
+    earlier_posting_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    makler_score: Mapped[float] = mapped_column(Float, default=0.0) # 0.0 (genuine owner) to 1.0 (masked agency)
+    
+    price_per_sqm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    district_avg_sqm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    bargain_percentage: Mapped[float | None] = mapped_column(Float, nullable=True) # e.g. -15.0 for 15% below market
+
     listing_url: Mapped[str] = mapped_column(String(1000), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     price_history: Mapped[list[Any] | None] = mapped_column(JSON, default=list)

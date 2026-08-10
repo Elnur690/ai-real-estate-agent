@@ -170,6 +170,19 @@ class IngestionService:
                         db.add(db_listing)
                         await db.commit()
                         await db.refresh(db_listing)
+
+                        # Run Makler Detector (First-posting & makler scoring)
+                        from app.services.makler_detector import MaklerDetectorService
+                        from app.services.avm_engine import AVMEngineService
+                        from app.services.b2b_service import B2BService
+
+                        db_listing = await MaklerDetectorService.analyze_listing(db, db_listing)
+                        db_listing = await AVMEngineService.evaluate_listing_valuation(db, db_listing)
+                        await db.commit()
+
+                        # Run B2B Agent Co-Brokering Matcher
+                        await B2BService.evaluate_b2b_cobrokering(db, db_listing)
+
                         total_scraped += 1
 
                     matches_created = await IngestionService._evaluate_and_deliver_matches(db, db_listing)
@@ -243,15 +256,25 @@ class IngestionService:
                 seller_str = "Ev Sahibindən" if listing.seller_type == "owner" else "Vasitəçidən/Agentlikdən"
                 bld_str = "Yeni tikili" if listing.building_type == "new" else ("Köhnə tikili" if listing.building_type == "old" else "")
 
+                # Killer Feature Notification Tags
+                bargain_tag = f"\n🔥 *TƏCİLİ FÜRSƏT ELAN! ({abs(listing.bargain_percentage)}% Bazar Qiymətindən Aşağı)*" if (listing.bargain_percentage and listing.bargain_percentage <= -10.0) else ""
+                
+                first_post_tag = ""
+                if not listing.is_first_posting and listing.earlier_posting_url:
+                    first_post_tag = f"\n⚠️ *XƏBƏRDARLIQ: Bu elan daha əvvəl burada paylaşılıb:* [Əvvəlki Elana Keçid]({listing.earlier_posting_url})"
+
+                makler_tag = "\n⚠️ *Makler Şübhəsi:* Böyük ehtimalla agentlik elanıdır." if (listing.makler_score and listing.makler_score >= 0.5) else ""
+
                 msg_text = (
                     f"🔥 *YENİ UYĞUN ELAN! ({app_name})*\n"
-                    f"🎯 *Uyğunluq:* %{int(score * 100)}\n\n"
+                    f"🎯 *Uyğunluq:* %{int(score * 100)}{bargain_tag}{first_post_tag}{makler_tag}\n\n"
                     f"🏠 *{listing.title}*\n"
-                    f"💰 *Qiymət:* {int(listing.price)} {listing.currency}\n"
+                    f"💰 *Qiymət:* {int(listing.price)} {listing.currency}" + (f" ({int(listing.price_per_sqm)} AZN/m²)" if listing.price_per_sqm else "") + "\n"
                     f"📍 *Məkan:* {listing.district or listing.address_raw or 'Bakı'}\n"
                     f"📐 *Otaq / Sahə:* {listing.rooms or '-'} otaqlı | {listing.area_sqm or '-'} m²\n"
                     f"👤 *Satıcı:* {seller_str}\n"
                     f"🏢 *Bina:* {bld_str}\n\n"
+                    f"📞 [ZƏNG ET / ƏLAQƏ SAXLAYIN]({listing.listing_url})\n"
                     f"🔗 [Elana keçid et]({listing.listing_url})\n\n"
                     f"💬 *Reaksiya bildirin:*\n"
                     f"`Maraqlanıram {new_match.id}` | `Keç {new_match.id}` | `Satılıb {new_match.id}`"

@@ -115,6 +115,32 @@ class BotCommandHandler:
             await db.commit()
             return f"Axtarış #{search_id} silindi. 🗑️"
 
+        # Brochure & Social Kit Generation
+        brochure_match = re.search(r'^(broşur|broshur|/brochure)\s*(\d+)', text_lower)
+        if brochure_match:
+            listing_id = int(brochure_match.group(2))
+            from app.services.brochure_generator import BrochureGeneratorService
+            res_b = await BrochureGeneratorService.generate_property_brochure(db, listing_id, tenant.id)
+            if res_b.get("success"):
+                return (
+                    f"📸 *INSTAGRAM CAPTION / SOSİAL ŞƏBƏKƏ MƏTNİ:*\n\n"
+                    f"{res_b['instagram_caption']}\n\n"
+                    f"📄 *PDF Broşurunuz hazırlandı!*"
+                )
+            return f"Xəta: Elan #{listing_id} tapılmadı."
+
+        # B2B Co-brokering Acceptance
+        b2b_match_cmd = re.search(r'^(b2b qəbul et|b2b qabul et|b2b imtina)\s*(\d+)', text_lower)
+        if b2b_match_cmd:
+            action = b2b_match_cmd.group(1)
+            b2b_id = int(b2b_match_cmd.group(2))
+            from app.models.b2b_match import B2BMatch
+            new_st = "accepted" if "qəbul" in action or "qabul" in action else "declined"
+            stmt_b = update(B2BMatch).where(B2BMatch.id == b2b_id, B2BMatch.buyer_tenant_id == tenant.id).values(status=new_st)
+            await db.execute(stmt_b)
+            await db.commit()
+            return f"B2B Partnyorluq statusu yeniləndi: *{new_st.capitalize()}* 🤝"
+
         # Fallback AI Criteria Parsing for arbitrary search text
         if len(raw_text_trimmed) > 10:
             return await BotCommandHandler._create_saved_search(db, tenant, raw_text_trimmed)

@@ -7,6 +7,7 @@ from app.models.match import Match
 from app.models.payment import Payment
 from app.models.ai_config import AIProviderConfig, AICallLog
 from app.models.setting import AppSettings
+from app.models.b2b_match import B2BMatch
 
 __all__ = [
     "Base",
@@ -20,4 +21,5 @@ __all__ = [
     "AIProviderConfig",
     "AICallLog",
     "AppSettings",
+    "B2BMatch",
 ]
