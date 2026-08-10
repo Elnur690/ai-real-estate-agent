@@ -23,12 +23,6 @@ async def get_current_user(
     token: Optional[str] = Depends(oauth2_scheme)
 ) -> User:
     if not token:
-        # For initial development/testing convenience, if no token, check if any admin user exists
-        stmt = select(User).where(User.role == "admin")
-        res = await db.execute(stmt)
-        admin = res.scalars().first()
-        if admin:
-            return admin
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication credentials required"

@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     EVOLUTION_API_URL: Optional[str] = os.getenv("EVOLUTION_API_URL", "http://localhost:8080")
     EVOLUTION_API_KEY: Optional[str] = os.getenv("EVOLUTION_API_KEY", "global_key")
     EVOLUTION_INSTANCE_NAME: str = os.getenv("EVOLUTION_INSTANCE_NAME", "realestate_agent")
+    WEBHOOK_SECRET: Optional[str] = os.getenv("WEBHOOK_SECRET", None)
 
     # Telegram Scraping (Telethon)
     TELEGRAM_API_ID: Optional[int] = os.getenv("TELEGRAM_API_ID", None)
