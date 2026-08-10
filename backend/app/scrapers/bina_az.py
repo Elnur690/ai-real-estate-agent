@@ -1,116 +1,78 @@
-import json
+import re
 import logging
 import httpx
-from typing import List, Dict, Any, Optional
-from urllib.parse import urlencode
+from typing import List
 from app.scrapers.base import BaseScraper, RawListingItem
 
 logger = logging.getLogger(__name__)
 
 class BinaAzScraper(BaseScraper):
-    GRAPHQL_URL = "https://bina.az/graphql"
-    OPERATION_NAME = "SearchItems"
-    SHA256_HASH = "872e9c694c34b6674514d48e9dcf1b46241d3d79f365ddf20d138f18e74554c5"
-
-    async def scrape_source(self, url_or_handle: str = "https://bina.az/baki/alqi-satki/menziller") -> List[RawListingItem]:
-        logger.info(f"[BinaAzScraper] Fetching listings via bina.az GraphQL API")
+    async def scrape_source(self, url_or_handle: str = "https://bina.az/") -> List[RawListingItem]:
+        logger.info(f"[BinaAzScraper] Fetching listings from {url_or_handle}")
         items: List[RawListingItem] = []
 
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': '*/*',
-            'Content-Type': 'application/json',
-            'Referer': 'https://bina.az/alqi-satqi',
-            'Origin': 'https://bina.az',
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "az,en;q=0.9"
         }
-
-        # Build GraphQL API query params
-        variables = {
-            "first": 20,
-            "filter": {"leased": False},
-            "sort": "BUMPED_AT_DESC"
-        }
-        params = {
-            "operationName": self.OPERATION_NAME,
-            "variables": json.dumps(variables, separators=(',', ':')),
-            "extensions": json.dumps({
-                "persistedQuery": {
-                    "version": 1,
-                    "sha256Hash": self.SHA256_HASH
-                }
-            }, separators=(',', ':'))
-        }
-
-        request_url = f"{self.GRAPHQL_URL}?{urlencode(params)}"
 
         try:
+            target_url = url_or_handle if "bina.az" in url_or_handle else "https://bina.az/"
             async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-                res = await client.get(request_url, headers=headers)
+                res = await client.get(target_url, headers=headers)
                 if res.status_code == 200:
-                    data = res.json()
-                    edges = data.get('data', {}).get('itemsConnection', {}).get('edges', [])
-                    for edge in edges:
-                        node = edge.get('node', {})
-                        if not node or not node.get('id'):
-                            continue
+                    html = res.text
+                    # Extract unique item links, e.g., /items/6359443
+                    item_matches = list(set(re.findall(r'href="(/items/(\d+))"', html)))
+                    
+                    for link, ext_id in item_matches[:5]:
+                        item_url = f"https://bina.az{link}"
+                        try:
+                            item_res = await client.get(item_url, headers=headers)
+                            if item_res.status_code == 200:
+                                item_html = item_res.text
+                                
+                                title_match = re.search(r'<h1[^>]*>(.*?)</h1>', item_html, re.DOTALL)
+                                price_match = re.search(r'([\d\s]+)\s*AZN', item_html)
+                                
+                                title = title_match.group(1).strip() if title_match else f"Mənzil #{ext_id}"
+                                price = float(price_match.group(1).replace(" ", "")) if price_match else 0.0
+                                
+                                rooms_match = re.search(r'(\d+)\s*otaqlı', title, re.IGNORECASE)
+                                area_match = re.search(r'([\d.]+)\s*m²', title, re.IGNORECASE)
+                                
+                                rooms = int(rooms_match.group(1)) if rooms_match else None
+                                area = float(area_match.group(1)) if area_match else None
+                                
+                                district = "Bakı"
+                                for d in ["Yasamal", "Nəsimi", "Xətai", "Nərimanov", "Binəqədi", "Sabunçu", "Suraxanı", "Səbail", "Nizami", "Xəzər", "Sumqayıt"]:
+                                    if d.lower() in title.lower() or d.lower() in item_html.lower():
+                                        district = d
+                                        break
+                                
+                                seller_type = "owner" if ("sahibindən" in item_html.lower() or "sahibi" in item_html.lower()) else "agency"
+                                building_type = "new" if "yeni tikili" in title.lower() else ("old" if "köhnə tikili" in title.lower() else None)
 
-                        # Extract rich property fields
-                        ext_id = str(node.get('id'))
-                        price = float(node.get('price', {}).get('value', 0.0)) if node.get('price') else 0.0
-                        currency = node.get('price', {}).get('currency', 'AZN')
-                        
-                        location_name = node.get('location', {}).get('fullName') or node.get('location', {}).get('name') or "Bakı"
-                        city_name = node.get('city', {}).get('name') or ""
-                        district = location_name.split(".")[0].strip() if "." in location_name else location_name
+                                items.append(RawListingItem(
+                                    external_id=f"bina_{ext_id}",
+                                    title=title,
+                                    description=f"Bina.az mənzil elanı #{ext_id}: {title}",
+                                    price=price,
+                                    currency="AZN",
+                                    district=district,
+                                    address_raw=district,
+                                    rooms=rooms,
+                                    area_sqm=area,
+                                    building_type=building_type,
+                                    seller_type=seller_type,
+                                    photos=[],
+                                    listing_url=item_url
+                                ))
+                        except Exception as e_item:
+                            logger.error(f"[BinaAzScraper] Error fetching item {ext_id}: {e_item}")
 
-                        rooms = node.get('rooms')
-                        area = float(node.get('area', {}).get('value', 0.0)) if node.get('area') else None
-                        floor = node.get('floor')
-                        floors = node.get('floors')
-
-                        company = node.get('company')
-                        seller_type = "agency" if company else "owner"
-
-                        # Extract photos
-                        photos = [
-                            p.get('large') or p.get('f460x345')
-                            for p in node.get('photos', [])
-                            if p.get('large') or p.get('f460x345')
-                        ]
-
-                        path = node.get('path', '')
-                        listing_url = f"https://bina.az{path}" if path else f"https://bina.az/items/{ext_id}"
-
-                        # Extra rich text info (Kupça / İpoteka / Təmir)
-                        extra_tags = []
-                        if node.get('hasBillOfSale'):
-                            extra_tags.append("Kupçalı")
-                        if node.get('hasMortgage'):
-                            extra_tags.append("İpotekaya yararlı")
-                        if node.get('hasRepair'):
-                            extra_tags.append("Təmirli")
-
-                        tag_str = f" ({', '.join(extra_tags)})" if extra_tags else ""
-                        title = f"{rooms or ''} otaqlı mənzil {location_name}{tag_str}".strip()
-
-                        items.append(RawListingItem(
-                            external_id=f"bina_{ext_id}",
-                            title=title,
-                            description=f"Bina.az GraphQL elanı #{ext_id}: {location_name}. {', '.join(extra_tags)}",
-                            price=price,
-                            currency=currency,
-                            district=district,
-                            address_raw=f"{city_name}, {location_name}".strip(", "),
-                            rooms=rooms,
-                            area_sqm=area,
-                            floor=floor,
-                            total_floors=floors,
-                            seller_type=seller_type,
-                            photos=photos,
-                            listing_url=listing_url
-                        ))
         except Exception as e:
-            logger.error(f"[BinaAzScraper] GraphQL query error: {e}")
+            logger.error(f"[BinaAzScraper] Error scraping: {e}")
 
         if not items:
             logger.info("[BinaAzScraper] Using synthetic fallback test item for bina.az")
