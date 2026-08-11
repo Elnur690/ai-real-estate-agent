@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:16-alpine
@@ -10,7 +8,7 @@ services:
       POSTGRES_PASSWORD: postgrespassword
       POSTGRES_DB: realestate
     ports:
-      - "5432:5432"
+      - "23332:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -24,7 +22,7 @@ services:
     container_name: realestate_redis
     restart: always
     ports:
-      - "6379:6379"
+      - "23379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -46,12 +44,12 @@ services:
       - SECRET_KEY=${SECRET_KEY:-default_secret_key_change_me_in_prod}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-uO7k8dK9l6mP3qR1sT0vW2xY4zA5bC6dE7fG8hI9jK0=}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      - EVOLUTION_API_URL=${EVOLUTION_API_URL:-http://localhost:8080}
+      - EVOLUTION_API_URL=${EVOLUTION_API_URL:-http://localhost:23880}
       - EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-global_key}
       - EVOLUTION_INSTANCE_NAME=${EVOLUTION_INSTANCE_NAME:-realestate_agent}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     ports:
-      - "8000:8000"
+      - "23800:8000"
     volumes:
       - backup_data:/app/backups
     depends_on:
@@ -102,7 +100,7 @@ services:
     container_name: realestate_frontend
     restart: always
     ports:
-      - "3000:80"
+      - "23300:80"
     depends_on:
       - backend
 
