@@ -1,6 +1,7 @@
 import pytest
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from app.models import Base
+from app.models.tenant import Tenant
 from app.bot.command_handler import BotCommandHandler
 
 @pytest.mark.asyncio
@@ -12,7 +13,19 @@ async def test_bot_onboarding_and_commands():
     async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with async_session() as db:
-        # Initial onboarding message with criteria (returns draft wizard)
+        # Admin creates tenant in Dashboard
+        t = Tenant(
+            name="Orxan Agent",
+            phone="+994509998877",
+            telegram_chat_id="999888777",
+            preferred_channel="telegram",
+            status="active",
+            plan="pro"
+        )
+        db.add(t)
+        await db.commit()
+
+        # Agent sends criteria (returns draft wizard preview)
         res1 = await BotCommandHandler.handle_incoming_message(
             db=db,
             channel="telegram",

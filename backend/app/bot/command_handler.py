@@ -213,31 +213,16 @@ class BotCommandHandler:
         sender_name: str,
         raw_text: str,
         app_name: str
-    ) -> str:
-        # Create new Pending Tenant
-        new_tenant = Tenant(
-            name=sender_name or "Yeni Agent",
-            type="individual_agent",
-            phone=sender_id if channel == "whatsapp" else "N/A",
-            telegram_handle=sender_name if channel == "telegram" else None,
-            preferred_channel=channel,
-            whatsapp_number=sender_id if channel == "whatsapp" else None,
-            telegram_chat_id=sender_id if channel == "telegram" else None,
-            status="pending",
-            plan="free"
-        )
-        db.add(new_tenant)
-        await db.commit()
-        await db.refresh(new_tenant)
+    ) -> Optional[str]:
+        # Ignore unknown group messages completely to prevent dashboard pollution
+        if "@g.us" in sender_id:
+            return None
 
-        # Process search wizard for initial text if provided
-        if len(raw_text) > 5 and not raw_text.lower().startswith(("/start", "/help", "salam", "hi")):
-            return await BotCommandHandler._process_search_wizard(db, new_tenant, raw_text)
-
+        # Inform unknown 1-on-1 callers without creating a database tenant record
         return (
-            f"Salam! *{app_name}* platformasına xoş gəlmisiniz. 👋\n\n"
-            f"Axtardığınız əmlak parametrlərini yaza bilərsiniz.\n\n"
-            f"📌 *Nümunə:* `Yasamalda 100-150 min AZN 3 otaqlı yeni tikili ev sahibindən`"
+            f"⚠️ *{app_name}*\n\n"
+            f"Sizin nömrəniz ({sender_id}) sistemdə abunəçi kimi qeydiyyatdan keçməyib.\n"
+            f"Platformadan istifadə etmək üçün lütfən sistem admini ilə əlaqə saxlayın."
         )
 
     @staticmethod

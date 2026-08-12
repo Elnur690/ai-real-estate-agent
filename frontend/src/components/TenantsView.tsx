@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { UserPlus, Search, ShieldCheck, Clock, AlertCircle, Phone, MessageSquare, Plus, CheckCircle, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff, DollarSign } from 'lucide-react';
+import { UserPlus, Search, ShieldCheck, Clock, AlertCircle, Phone, MessageSquare, Plus, CheckCircle, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff, DollarSign, Edit3, Trash2, X, AlertTriangle } from 'lucide-react';
 import api from '../api';
 import { Tenant, SavedSearch } from '../types';
 
@@ -25,6 +25,24 @@ export const TenantsView: React.FC = () => {
 
   const [availablePlans, setAvailablePlans] = useState<any[]>([]);
 
+  // Edit Modal State
+  const [editTenant, setEditTenant] = useState<Tenant | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    phone: '',
+    type: 'individual_agent',
+    preferred_channel: 'telegram',
+    plan: 'starter',
+    whatsapp_number: '',
+    telegram_chat_id: '',
+    backup_enabled: false,
+    backup_frequency_days: 7
+  });
+
+  // Delete Confirmation Modal State
+  const [deleteTenantTarget, setDeleteTenantTarget] = useState<Tenant | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   // WhatsApp Evolution API Pairing State
   const [waStatus, setWaStatus] = useState<{ connected: boolean; state: string; instance_name: string } | null>(null);
   const [waQrCode, setWaQrCode] = useState<string | null>(null);
@@ -48,7 +66,6 @@ export const TenantsView: React.FC = () => {
       const fetchedPlans = pRes.data || [];
       setAvailablePlans(fetchedPlans);
 
-      // Pre-select first plan code if available
       if (fetchedPlans.length > 0 && !newTenant.plan) {
         setNewTenant(prev => ({ ...prev, plan: fetchedPlans[0].code }));
       }
@@ -75,6 +92,49 @@ export const TenantsView: React.FC = () => {
       console.error(e);
     }
     setShowAddModal(true);
+  };
+
+  const openEditModal = (t: Tenant) => {
+    setEditTenant(t);
+    setEditFormData({
+      name: t.name,
+      phone: t.phone,
+      type: t.type || 'individual_agent',
+      preferred_channel: t.preferred_channel || 'telegram',
+      plan: t.plan || 'starter',
+      whatsapp_number: t.whatsapp_number || t.phone || '',
+      telegram_chat_id: t.telegram_chat_id || '',
+      backup_enabled: t.backup_enabled || false,
+      backup_frequency_days: t.backup_frequency_days || 7
+    });
+  };
+
+  const handleUpdateTenant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTenant) return;
+    try {
+      await api.patch(`/tenants/${editTenant.id}`, editFormData);
+      setEditTenant(null);
+      loadTenants();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to update tenant details.');
+    }
+  };
+
+  const handleDeleteTenant = async () => {
+    if (!deleteTenantTarget) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/tenants/${deleteTenantTarget.id}`);
+      setDeleteTenantTarget(null);
+      loadTenants();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to delete tenant.');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const openCashPaymentModal = (t: Tenant) => {
@@ -147,19 +207,9 @@ export const TenantsView: React.FC = () => {
       setShowAddModal(false);
       loadTenants();
 
-      // If WhatsApp preferred, auto-check status
       if (newTenant.preferred_channel === 'whatsapp') {
         checkWhatsAppStatus(`tenant_${res.data.id}`);
       }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleStatusChange = async (tenantId: number, status: string) => {
-    try {
-      await api.patch(`/tenants/${tenantId}`, { status });
-      loadTenants();
     } catch (e) {
       console.error(e);
     }
@@ -188,7 +238,7 @@ export const TenantsView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-white">Tenant & Agent Management</h2>
-          <p className="text-slate-400 text-xs mt-0.5">Manage agents, subscription plans, cash payments, and chat channel routing.</p>
+          <p className="text-slate-400 text-xs mt-0.5">Manage agents, subscription plans, cash payments, edit details, and delete accounts.</p>
         </div>
         <button
           onClick={openAddModal}
@@ -252,28 +302,43 @@ export const TenantsView: React.FC = () => {
                 <td className="p-4 text-xs text-slate-400">
                   {t.plan_expires_at ? new Date(t.plan_expires_at).toLocaleDateString() : 'Pending Cash Payment'}
                 </td>
-                <td className="p-4 text-right space-x-2">
+                <td className="p-4 text-right space-x-1.5">
                   <button
                     onClick={() => handleSelectTenant(t.id)}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
+                    className="text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium"
+                    title="Pairing & Details"
                   >
-                    Details & Pairing
+                    Details
                   </button>
                   {t.status !== 'active' ? (
                     <button
                       onClick={() => openCashPaymentModal(t)}
-                      className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30 font-semibold"
+                      className="text-xs px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30 font-semibold"
                     >
-                      Confirm Cash & Activate
+                      Activate
                     </button>
                   ) : (
                     <button
                       onClick={() => openCashPaymentModal(t)}
-                      className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 font-medium"
+                      className="text-xs px-2.5 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 font-medium"
                     >
-                      Renew / Extend
+                      Renew
                     </button>
                   )}
+                  <button
+                    onClick={() => openEditModal(t)}
+                    className="text-xs p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20"
+                    title="Edit Agent"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setDeleteTenantTarget(t)}
+                    className="text-xs p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20"
+                    title="Delete Tenant"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </td>
               </tr>
             ))}
@@ -287,6 +352,189 @@ export const TenantsView: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {/* Edit Tenant Modal */}
+      {editTenant && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-card w-full max-w-lg p-6 rounded-2xl border border-slate-800 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-blue-400" /> Edit Agent / Tenant #{editTenant.id}
+              </h3>
+              <button onClick={() => setEditTenant(null)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateTenant} className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Agent / Agency Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                  className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">Phone Number</label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.phone}
+                    onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
+                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">Delivery Channel</label>
+                  <select
+                    value={editFormData.preferred_channel}
+                    onChange={(e) => setEditFormData({ ...editFormData, preferred_channel: e.target.value })}
+                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
+                  >
+                    <option value="telegram">Telegram Bot</option>
+                    <option value="whatsapp">WhatsApp (Evolution API)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">WhatsApp Number / JID</label>
+                  <input
+                    type="text"
+                    placeholder="+994501234567"
+                    value={editFormData.whatsapp_number}
+                    onChange={(e) => setEditFormData({ ...editFormData, whatsapp_number: e.target.value })}
+                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">Telegram Chat ID</label>
+                  <input
+                    type="text"
+                    placeholder="999888777"
+                    value={editFormData.telegram_chat_id}
+                    onChange={(e) => setEditFormData({ ...editFormData, telegram_chat_id: e.target.value })}
+                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Subscription Plan</label>
+                <select
+                  value={editFormData.plan}
+                  onChange={(e) => setEditFormData({ ...editFormData, plan: e.target.value })}
+                  className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
+                >
+                  {availablePlans.map((p) => (
+                    <option key={p.id} value={p.code}>
+                      {p.name} ({p.price} {p.currency}/{p.billing_period})
+                    </option>
+                  ))}
+                  {availablePlans.length === 0 && (
+                    <>
+                      <option value="free">Free Trial Tier</option>
+                      <option value="starter">Starter Agent Plan</option>
+                      <option value="pro">Pro Agent Plan</option>
+                      <option value="agency">Agency Team Plan</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
+              <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-300 font-medium">Backup-as-a-Service (BaaS) Plan</span>
+                  <input
+                    type="checkbox"
+                    checked={editFormData.backup_enabled}
+                    onChange={(e) => setEditFormData({ ...editFormData, backup_enabled: e.target.checked })}
+                    className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500"
+                  />
+                </div>
+                {editFormData.backup_enabled && (
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-1">Backup Frequency</label>
+                    <select
+                      value={editFormData.backup_frequency_days}
+                      onChange={(e) => setEditFormData({ ...editFormData, backup_frequency_days: Number(e.target.value) })}
+                      className="w-full glass-input px-2.5 py-1.5 rounded-lg text-xs text-white bg-dark-800"
+                    >
+                      <option value={1}>Daily Automated Backup (24h)</option>
+                      <option value={7}>Weekly Automated Backup (7 days)</option>
+                      <option value={30}>Monthly Automated Backup (30 days)</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setEditTenant(null)}
+                  className="px-4 py-2 text-sm text-slate-400 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white rounded-xl"
+                >
+                  Save Agent Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Tenant Confirmation Modal */}
+      {deleteTenantTarget && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-card w-full max-w-md p-6 rounded-2xl border border-red-500/30 space-y-4">
+            <div className="flex items-center gap-3 text-red-400">
+              <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Delete Tenant Account?</h3>
+                <p className="text-xs text-slate-400">This action will remove all saved searches and matches.</p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-slate-300">
+              Are you sure you want to permanently delete <strong>{deleteTenantTarget.name}</strong> ({deleteTenantTarget.phone})?
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteTenantTarget(null)}
+                className="px-4 py-2 text-sm text-slate-400 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={handleDeleteTenant}
+                className="px-5 py-2 text-sm font-medium bg-red-500 hover:bg-red-600 text-white rounded-xl flex items-center gap-1.5 shadow-lg shadow-red-500/20"
+              >
+                <Trash2 className="w-4 h-4" />
+                {deleting ? 'Deleting...' : 'Confirm Delete Tenant'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Tenant Modal with WhatsApp Pairing */}
       {showAddModal && (

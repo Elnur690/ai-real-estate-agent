@@ -151,13 +151,41 @@ async def update_tenant(tenant_id: int, body: UpdateTenantRequest, db: AsyncSess
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    for field, val in body.model_dump(exclude_unset=True).items():
+    update_data = body.model_dump(exclude_unset=True)
+
+    # If plan is updated, fetch new plan features if available
+    if "plan" in update_data and update_data["plan"]:
+        plan_code = update_data["plan"].lower().strip()
+        from app.models.plan import Plan
+        stmt_p = select(Plan).where(Plan.code == plan_code)
+        res_p = await db.execute(stmt_p)
+        db_plan = res_p.scalars().first()
+        if db_plan:
+            tenant.feature_makler_detector = db_plan.feature_makler_detector
+            tenant.feature_avm_bargain_finder = db_plan.feature_avm_bargain_finder
+            tenant.feature_social_brochure = db_plan.feature_social_brochure
+            tenant.feature_b2b_cobrokering = db_plan.feature_b2b_cobrokering
+            tenant.feature_client_intake_bot = db_plan.feature_client_intake_bot
+            tenant.backup_enabled = db_plan.backup_enabled
+
+    for field, val in update_data.items():
         setattr(tenant, field, val)
 
     await db.commit()
     await db.refresh(tenant)
     return tenant
 
+@router.delete("/{tenant_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_tenant(tenant_id: int, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
+    stmt = select(Tenant).where(Tenant.id == tenant_id)
+    res = await db.execute(stmt)
+    tenant = res.scalars().first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    await db.delete(tenant)
+    await db.commit()
+    return None
 
 @router.post("/{tenant_id}/backup")
 async def trigger_tenant_backup(tenant_id: int, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
