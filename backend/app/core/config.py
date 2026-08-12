@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "AI Real Estate Agent SaaS"
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str = os.getenv("SECRET_KEY", secrets.token_urlsafe(32))
-    ENCRYPTION_KEY: str = os.getenv("ENCRYPTION_KEY", "uO7k8dK9l6mP3qR1sT0vW2xY4zA5bC6dE7fG8hI9jK0=")
+    ENCRYPTION_KEY: str = os.getenv("ENCRYPTION_KEY", secrets.token_urlsafe(32))
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
     # Allowed Domains & CORS
@@ -45,7 +45,7 @@ class Settings(BaseSettings):
 
     # Evolution API (WhatsApp)
     EVOLUTION_API_URL: Optional[str] = os.getenv("EVOLUTION_API_URL", "http://localhost:8080")
-    EVOLUTION_API_KEY: Optional[str] = os.getenv("EVOLUTION_API_KEY", "global_key")
+    EVOLUTION_API_KEY: Optional[str] = os.getenv("EVOLUTION_API_KEY", None)
     EVOLUTION_INSTANCE_NAME: str = os.getenv("EVOLUTION_INSTANCE_NAME", "realestate_agent")
     WEBHOOK_SECRET: Optional[str] = os.getenv("WEBHOOK_SECRET", None)
 

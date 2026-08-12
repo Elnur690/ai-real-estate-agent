@@ -4,15 +4,15 @@ services:
     container_name: realestate_db
     restart: always
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
-      POSTGRES_DB: ${POSTGRES_DB:-realestate}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "23332:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -38,17 +38,17 @@ services:
     command: >
       sh -c "alembic -c alembic.ini upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://postgres:postgrespassword@db:5432/realestate}
-      - SYNC_DATABASE_URL=${SYNC_DATABASE_URL:-postgresql+psycopg2://postgres:postgrespassword@db:5432/realestate}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - SECRET_KEY=${SECRET_KEY:-default_secret_key_change_me_in_prod}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-uO7k8dK9l6mP3qR1sT0vW2xY4zA5bC6dE7fG8hI9jK0=}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      - EVOLUTION_API_URL=${EVOLUTION_API_URL:-http://localhost:23880}
-      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-global_key}
-      - EVOLUTION_INSTANCE_NAME=${EVOLUTION_INSTANCE_NAME:-realestate_agent}
-      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - DATABASE_URL
+      - SYNC_DATABASE_URL
+      - REDIS_URL
+      - SECRET_KEY
+      - ENCRYPTION_KEY
+      - TELEGRAM_BOT_TOKEN
+      - EVOLUTION_API_URL
+      - EVOLUTION_API_KEY
+      - EVOLUTION_INSTANCE_NAME
+      - WEBHOOK_SECRET
+      - GEMINI_API_KEY
     ports:
       - "23800:8000"
     volumes:
@@ -67,10 +67,12 @@ services:
     restart: always
     command: celery -A app.tasks.celery_app worker --loglevel=info
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://postgres:postgrespassword@db:5432/realestate}
-      - SYNC_DATABASE_URL=${SYNC_DATABASE_URL:-postgresql+psycopg2://postgres:postgrespassword@db:5432/realestate}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - DATABASE_URL
+      - SYNC_DATABASE_URL
+      - REDIS_URL
+      - SECRET_KEY
+      - ENCRYPTION_KEY
+      - GEMINI_API_KEY
     volumes:
       - backup_data:/app/backups
     depends_on:
@@ -85,9 +87,11 @@ services:
     restart: always
     command: celery -A app.tasks.celery_app beat --loglevel=info
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://postgres:postgrespassword@db:5432/realestate}
-      - SYNC_DATABASE_URL=${SYNC_DATABASE_URL:-postgresql+psycopg2://postgres:postgrespassword@db:5432/realestate}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - DATABASE_URL
+      - SYNC_DATABASE_URL
+      - REDIS_URL
+      - SECRET_KEY
+      - ENCRYPTION_KEY
     volumes:
       - backup_data:/app/backups
     depends_on:
