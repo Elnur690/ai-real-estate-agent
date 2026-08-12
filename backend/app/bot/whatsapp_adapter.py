@@ -15,64 +15,96 @@ class WhatsAppAdapter:
         Calls shared BotCommandHandler.
         """
         try:
+            event = payload.get("event")
+            instance_name = payload.get("instance") or settings.EVOLUTION_INSTANCE_NAME
+            logger.info(f"[WhatsAppAdapter] Received webhook event: '{event}', instance: '{instance_name}'")
+
             data = payload.get("data", {})
+            if isinstance(data, list):
+                if not data:
+                    return None
+                data = data[0]
+
+            if not isinstance(data, dict):
+                return None
+
             key = data.get("key", {})
 
             # Ignore messages sent by bot itself
             if key.get("fromMe"):
+                logger.info("[WhatsAppAdapter] Skipping message fromMe=True (sent by connected bot device)")
                 return None
 
             remote_jid = key.get("remoteJid", "")
-            sender_id = remote_jid.split("@")[0] if "@" in remote_jid else remote_jid
-            push_name = data.get("pushName") or "WhatsApp Agent"
+            if not remote_jid:
+                return None
+
+            # Determine recipient ID: for groups (@g.us), use full JID; for direct chat, extract phone number
+            if "@g.us" in remote_jid:
+                sender_id = remote_jid
+                sender_name = data.get("pushName") or "WhatsApp Group Member"
+            else:
+                sender_id = remote_jid.split("@")[0] if "@" in remote_jid else remote_jid
+                sender_name = data.get("pushName") or "WhatsApp User"
 
             message = data.get("message", {})
+            if not isinstance(message, dict):
+                message = {}
+
             raw_text = (
                 message.get("conversation") or
                 message.get("extendedTextMessage", {}).get("text") or
+                message.get("imageMessage", {}).get("caption") or
+                message.get("videoMessage", {}).get("caption") or
                 ""
             )
 
             if not raw_text or not sender_id:
+                logger.info(f"[WhatsAppAdapter] Message missing text or sender_id. Text: '{raw_text}', Sender: '{sender_id}'")
                 return None
+
+            logger.info(f"[WhatsAppAdapter] Processing incoming message from {sender_name} ({sender_id}): '{raw_text}'")
 
             async with AsyncSessionLocal() as db:
                 response_text = await BotCommandHandler.handle_incoming_message(
                     db=db,
                     channel="whatsapp",
                     sender_id=sender_id,
-                    sender_name=push_name,
+                    sender_name=sender_name,
                     raw_text=raw_text
                 )
 
             if response_text:
-                await WhatsAppAdapter.send_message(sender_id, response_text)
+                logger.info(f"[WhatsAppAdapter] Sending AI response to {sender_id} via instance '{instance_name}'...")
+                await WhatsAppAdapter.send_message(
+                    phone_number=sender_id,
+                    text=response_text,
+                    instance_name=instance_name
+                )
 
             return response_text
         except Exception as e:
-            logger.error(f"[WhatsAppAdapter] Webhook error: {e}")
+            logger.error(f"[WhatsAppAdapter] Webhook error: {e}", exc_info=True)
             return None
 
     @staticmethod
-    async def send_message(phone_number: str, text: str) -> bool:
+    async def send_message(phone_number: str, text: str, instance_name: Optional[str] = None) -> bool:
         """Send a WhatsApp message via Evolution API REST endpoint."""
-        if not settings.EVOLUTION_API_URL:
-            logger.warning("[WhatsAppAdapter] EVOLUTION_API_URL not set.")
-            return False
-
-        clean_number = phone_number.replace("+", "").replace(" ", "")
+        inst = instance_name or settings.EVOLUTION_INSTANCE_NAME
         base_url = settings.EVOLUTION_API_URL or "http://evolution:8080"
         if "localhost" in base_url or "127.0.0.1" in base_url:
             base_url = "http://evolution:8080"
         base_url = base_url.rstrip("/")
 
-        url = f"{base_url}/message/sendText/{settings.EVOLUTION_INSTANCE_NAME}"
+        clean_recipient = phone_number if "@g.us" in phone_number else phone_number.replace("+", "").replace(" ", "")
+
+        url = f"{base_url}/message/sendText/{inst}"
         headers = {"Content-Type": "application/json"}
         if settings.EVOLUTION_API_KEY:
             headers["apikey"] = str(settings.EVOLUTION_API_KEY)
 
         body = {
-            "number": clean_number,
+            "number": clean_recipient,
             "options": {"delay": 1200, "presence": "composing"},
             "textMessage": {"text": text}
         }
@@ -81,11 +113,11 @@ class WhatsAppAdapter:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 res = await client.post(url, json=body, headers=headers)
                 if res.status_code in [200, 201]:
-                    logger.info(f"[WhatsAppAdapter] Message sent successfully to {clean_number}")
+                    logger.info(f"[WhatsAppAdapter] Message sent successfully to {clean_recipient} via instance '{inst}'")
                     return True
                 else:
-                    logger.error(f"[WhatsAppAdapter] Failed to send message: {res.status_code} {res.text}")
+                    logger.error(f"[WhatsAppAdapter] Failed to send message via instance '{inst}': status {res.status_code}, response: {res.text}")
                     return False
         except Exception as e:
-            logger.error(f"[WhatsAppAdapter] HTTP exception sending message: {e}")
+            logger.error(f"[WhatsAppAdapter] HTTP exception sending message via instance '{inst}': {e}")
             return False
