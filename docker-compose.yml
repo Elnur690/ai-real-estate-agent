@@ -112,7 +112,7 @@ services:
       - backend
 
   evolution:
-    image: evolutionapi/evolution-api:v2.1.1
+    image: evoapicloud/evolution-api:latest
     container_name: realestate_evolution
     restart: always
     environment:
