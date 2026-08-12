@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.session import async_engine
 from app.models import Base
-from app.api.v1 import auth, tenants, payments, ai_config, settings as settings_api, scrapers, webhooks, client_intake, promo_codes
+from app.api.v1 import auth, tenants, payments, ai_config, settings as settings_api, scrapers, webhooks, client_intake, promo_codes, plans
 from app.bot.telegram_adapter import build_telegram_app
 
 logging.basicConfig(level=logging.INFO)
@@ -23,6 +23,7 @@ async def lifespan(app: FastAPI):
     # Auto-seed default admin user if none exists
     from app.db.session import AsyncSessionLocal
     from app.models.user import User
+    from app.models.plan import Plan
     from app.api.v1.auth import get_password_hash
     from sqlalchemy import select
 
@@ -39,6 +40,21 @@ async def lifespan(app: FastAPI):
             db.add(admin_user)
             await db.commit()
             logger.info(f"[Startup] Auto-created initial Admin user ({settings.ADMIN_EMAIL})")
+
+        # Auto-seed default subscription plans if empty
+        stmt_p = select(Plan)
+        res_p = await db.execute(stmt_p)
+        if not res_p.scalars().first():
+            default_plans = [
+                Plan(code="free", name="Free Trial Tier", description="Basic listing scraper & trial alerts", price=0.0, billing_period="monthly", max_agents=1, feature_makler_detector=True, feature_avm_bargain_finder=False, feature_b2b_cobrokering=False, feature_social_brochure=False, feature_client_intake_bot=False, backup_enabled=False),
+                Plan(code="starter", name="Starter Agent Plan", description="Individual agent listing alerts & Telegram bot", price=29.0, billing_period="monthly", max_agents=1, feature_makler_detector=True, feature_avm_bargain_finder=True, feature_b2b_cobrokering=False, feature_social_brochure=True, feature_client_intake_bot=True, backup_enabled=False),
+                Plan(code="pro", name="Pro Agent Plan", description="Full AI Makler Detector, AVM Bargain Finder & WhatsApp alerts", price=59.0, billing_period="monthly", max_agents=3, feature_makler_detector=True, feature_avm_bargain_finder=True, feature_b2b_cobrokering=True, feature_social_brochure=True, feature_client_intake_bot=True, backup_enabled=True),
+                Plan(code="agency", name="Agency Team Plan", description="Multi-agent team co-brokering network & automated backups", price=129.0, billing_period="monthly", max_agents=10, feature_makler_detector=True, feature_avm_bargain_finder=True, feature_b2b_cobrokering=True, feature_social_brochure=True, feature_client_intake_bot=True, backup_enabled=True),
+                Plan(code="enterprise", name="Enterprise Custom Plan", description="Unlimited agent seats, custom intake branding & dedicated AI model", price=299.0, billing_period="monthly", max_agents=50, feature_makler_detector=True, feature_avm_bargain_finder=True, feature_b2b_cobrokering=True, feature_social_brochure=True, feature_client_intake_bot=True, backup_enabled=True),
+            ]
+            db.add_all(default_plans)
+            await db.commit()
+            logger.info("[Startup] Auto-seeded 5 default Subscription Plans")
 
     # Start Telegram Bot polling in background if token is set
     tg_app = build_telegram_app()
@@ -83,6 +99,7 @@ app.include_router(scrapers.router, prefix=settings.API_V1_STR)
 app.include_router(webhooks.router, prefix=settings.API_V1_STR)
 app.include_router(client_intake.router, prefix=settings.API_V1_STR)
 app.include_router(promo_codes.router, prefix=settings.API_V1_STR)
+app.include_router(plans.router, prefix=settings.API_V1_STR)
 
 @app.get("/health")
 async def health_check():

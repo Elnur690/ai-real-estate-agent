@@ -9,6 +9,7 @@ from app.models.ai_config import AIProviderConfig, AICallLog
 from app.models.setting import AppSettings
 from app.models.b2b_match import B2BMatch
 from app.models.promo_code import PromoCode
+from app.models.plan import Plan
 
 __all__ = [
     "Base",
@@ -24,4 +25,5 @@ __all__ = [
     "AppSettings",
     "B2BMatch",
     "PromoCode",
+    "Plan",
 ]
