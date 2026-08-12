@@ -102,7 +102,7 @@ async def list_plans(db: AsyncSession = Depends(get_db)):
     return response_list
 
 
-@router.post("", response_model=PlanResponse, status_code=status.HTTP_21_CREATED)
+@router.post("", response_model=PlanResponse, status_code=status.HTTP_201_CREATED)
 async def create_plan(
     body: CreatePlanRequest,
     db: AsyncSession = Depends(get_db),
