@@ -256,7 +256,7 @@ export function PlansView() {
                       <X className="w-4 h-4 text-slate-600 shrink-0" />
                     )}
                     <span className={plan.feature_b2b_cobrokering ? 'text-slate-200' : 'text-slate-500 line-through'}>
-                      B2B Agent Co-Brokering Network
+                      B2B Co-Brokering & Property Listing Sharing
                     </span>
                   </div>
 

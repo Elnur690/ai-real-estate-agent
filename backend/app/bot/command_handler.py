@@ -200,6 +200,12 @@ class BotCommandHandler:
 
         # 5. Property Listing Submission Command (/elan <text>, /post <text>, /share <text>, /satıram <text>, /paylaş <text>)
         if text_lower.startswith(("/elan", "/post", "/share", "/satıram", "/satiram", "/paylaş", "/paylas")):
+            if not tenant.feature_b2b_cobrokering:
+                return (
+                    f"🔒 *Elan Paylaşımı və B2B Partnyorluq sizin tarifinizdə aktiv deyil.*\n\n"
+                    f"Bu imkan **Pro** və **Agency** planlarında mövcuddur. "
+                    f"Planınızı yüksəldərək öz elanlarınızı platformadakı digər agentlərə (%50/50 komissiya) çatdıra bilərsiniz!"
+                )
             listing_text = raw_text_trimmed
             for prefix in ["/elan", "/post", "/share", "/satıram", "/satiram", "/paylaş", "/paylas"]:
                 if listing_text.lower().startswith(prefix):
