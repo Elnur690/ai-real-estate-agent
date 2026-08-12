@@ -10,6 +10,25 @@ class Settings(BaseSettings):
     ENCRYPTION_KEY: str = os.getenv("ENCRYPTION_KEY", "uO7k8dK9l6mP3qR1sT0vW2xY4zA5bC6dE7fG8hI9jK0=")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
+    # Allowed Domains & CORS
+    ALLOWED_HOSTS: list[str] = [
+        "realtor.erma.shop",
+        "realtor-api.erma.shop",
+        "localhost",
+        "127.0.0.1",
+        "*"
+    ]
+    BACKEND_CORS_ORIGINS: list[str] = [
+        "https://realtor.erma.shop",
+        "http://realtor.erma.shop",
+        "https://realtor-api.erma.shop",
+        "http://realtor-api.erma.shop",
+        "http://localhost:23300",
+        "http://localhost:23800",
+        "http://localhost:3000",
+        "*"
+    ]
+
     # Database
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL", "sqlite+aiosqlite:///./realestate.db"
