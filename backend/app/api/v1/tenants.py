@@ -187,6 +187,45 @@ async def delete_tenant(tenant_id: int, db: AsyncSession = Depends(get_db), curr
     await db.commit()
     return None
 
+class CreateSubAgentRequest(BaseModel):
+    name: str
+    phone: str
+    preferred_channel: str = "telegram"
+    whatsapp_number: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    assigned_districts: List[str] = []
+
+@router.post("/{tenant_id}/sub-agents", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
+async def create_sub_agent(tenant_id: int, body: CreateSubAgentRequest, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
+    stmt = select(Tenant).where(Tenant.id == tenant_id)
+    res = await db.execute(stmt)
+    parent = res.scalars().first()
+    if not parent:
+        raise HTTPException(status_code=404, detail="Parent Agency tenant not found")
+
+    sub_agent = Tenant(
+        name=body.name,
+        type="individual_agent",
+        phone=body.phone,
+        preferred_channel=body.preferred_channel,
+        whatsapp_number=body.whatsapp_number,
+        telegram_chat_id=body.telegram_chat_id,
+        parent_tenant_id=parent.id,
+        assigned_districts=body.assigned_districts,
+        plan=parent.plan,
+        status="active"
+    )
+    db.add(sub_agent)
+    await db.commit()
+    await db.refresh(sub_agent)
+    return sub_agent
+
+@router.get("/{tenant_id}/sub-agents", response_model=List[TenantResponse])
+async def list_sub_agents(tenant_id: int, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
+    stmt = select(Tenant).where(Tenant.parent_tenant_id == tenant_id)
+    res = await db.execute(stmt)
+    return res.scalars().all()
+
 @router.post("/{tenant_id}/backup")
 async def trigger_tenant_backup(tenant_id: int, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
     """Trigger manual instant data backup export for a specific tenant."""

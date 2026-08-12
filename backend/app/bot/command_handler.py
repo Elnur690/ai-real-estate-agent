@@ -459,9 +459,9 @@ class BotCommandHandler:
     @staticmethod
     def _get_start_message(app_name: str) -> str:
         return (
-            f"👋 *SƏLAMLAR! {app_name.upper()} PLATFORMASINA XOŞ GƏLMİSİNİZ!* 🚀\n\n"
+            f"👋 *Hər vaxtınız xeyir! {app_name.upper()} PLATFORMASINA XOŞ GƏLMİŞSİNİZ!* 🚀\n\n"
             f"Bu bot real estate (əmlak) agentləri üçün 24/7 rejimdə işləyən süni intellekt köməkçisidir. "
-            f"Bina.az, Tap.az və Telegram kanallarından axtarış parametrlərinizə uyğun gələn yeni elanları anında sizinlə bölüşür.\n\n"
+            f"Axtarış parametrlərinizə uyğun gələn yeni elanları anında sizinlə bölüşür.\n\n"
             f"💡 *SİSTEMDƏN İSTİFADƏ QAYDASI (2 ASAN ADDIM):*\n"
             f"1️⃣ *Axtarış parametri daxil edin:* Axtardığınız mənzil parametrlərini mətn və ya *Səsli Mesaj (Voice Note)* ilə bura yazın.\n"
             f"   📌 *Nümunələr:*\n"

@@ -290,9 +290,21 @@ class IngestionService:
                     f"`Maraqlanıram {new_match.id}` | `Keç {new_match.id}` | `Satılıb {new_match.id}`"
                 )
 
-                if tenant.preferred_channel == "telegram" and tenant.telegram_chat_id:
-                    await send_telegram_notification(tenant.telegram_chat_id, msg_text)
-                elif tenant.preferred_channel == "whatsapp" and tenant.whatsapp_number:
-                    await WhatsAppAdapter.send_message(tenant.whatsapp_number, msg_text)
+                # Check Multi-Agent Team Routing
+                target_tenant = tenant
+                stmt_sub = select(Tenant).where(Tenant.parent_tenant_id == tenant.id, Tenant.status == "active")
+                res_sub = await db.execute(stmt_sub)
+                sub_agents = res_sub.scalars().all()
+
+                if sub_agents and listing.district:
+                    for sa in sub_agents:
+                        if sa.assigned_districts and any(d.lower() in listing.district.lower() for d in sa.assigned_districts):
+                            target_tenant = sa
+                            break
+
+                if target_tenant.preferred_channel == "telegram" and target_tenant.telegram_chat_id:
+                    await send_telegram_notification(target_tenant.telegram_chat_id, msg_text)
+                elif target_tenant.preferred_channel == "whatsapp" and target_tenant.whatsapp_number:
+                    await WhatsAppAdapter.send_message(target_tenant.whatsapp_number, msg_text)
 
         return matches_count

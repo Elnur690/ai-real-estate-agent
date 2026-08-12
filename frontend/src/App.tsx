@@ -9,10 +9,13 @@ import { PlansView } from './components/PlansView';
 import { AppSettingsView } from './components/AppSettingsView';
 import { ScrapersView } from './components/ScrapersView';
 
+import { BakuPropertyMap } from './components/BakuPropertyMap';
+import { MapPin } from 'lucide-react';
+
 export function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => !!localStorage.getItem('token'));
   const [userName, setUserName] = useState<string>(() => localStorage.getItem('user_name') || 'Admin');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tenants' | 'payments' | 'plans' | 'scrapers' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tenants' | 'payments' | 'plans' | 'scrapers' | 'map' | 'settings'>('dashboard');
   const [appName, setAppName] = useState('RealEstate AI Agent');
 
   useEffect(() => {
@@ -56,6 +59,7 @@ export function App() {
     { key: 'payments', label: 'Cash Payments', icon: DollarSign },
     { key: 'plans', label: 'Subscription Plans', icon: Package },
     { key: 'scrapers', label: 'Scrapers & Pipeline', icon: Database },
+    { key: 'map', label: 'Baku Map & Heatmap', icon: MapPin },
     { key: 'settings', label: 'App Settings & AI Config', icon: Sliders },
   ];
 
@@ -125,6 +129,7 @@ export function App() {
         {activeTab === 'payments' && <PaymentsView />}
         {activeTab === 'plans' && <PlansView />}
         {activeTab === 'scrapers' && <ScrapersView />}
+        {activeTab === 'map' && <BakuPropertyMap />}
         {activeTab === 'settings' && <AppSettingsView />}
       </main>
     </div>
