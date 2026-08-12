@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, Users, DollarSign, Cpu, Database, Sliders, Building } from 'lucide-react';
+import { LayoutDashboard, Users, DollarSign, Cpu, Database, Sliders, Building, LogOut, ShieldCheck } from 'lucide-react';
 import api from './api';
+import { LoginView } from './components/LoginView';
 import { DashboardView } from './components/DashboardView';
 import { TenantsView } from './components/TenantsView';
 import { PaymentsView } from './components/PaymentsView';
@@ -9,16 +10,45 @@ import { AppSettingsView } from './components/AppSettingsView';
 import { ScrapersView } from './components/ScrapersView';
 
 export function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => !!localStorage.getItem('token'));
+  const [userName, setUserName] = useState<string>(() => localStorage.getItem('user_name') || 'Admin');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'tenants' | 'payments' | 'ai-config' | 'scrapers' | 'settings'>('dashboard');
   const [appName, setAppName] = useState('RealEstate AI Agent');
 
   useEffect(() => {
-    api.get('/settings').then(res => {
-      if (res.data && res.data.app_name) {
-        setAppName(res.data.app_name);
-      }
-    }).catch(console.error);
+    const handleLogout = () => {
+      setIsAuthenticated(false);
+    };
+    window.addEventListener('auth:logout', handleLogout);
+    return () => window.removeEventListener('auth:logout', handleLogout);
   }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      api.get('/settings').then(res => {
+        if (res.data && res.data.app_name) {
+          setAppName(res.data.app_name);
+        }
+      }).catch(console.error);
+    }
+  }, [isAuthenticated]);
+
+  const handleLoginSuccess = (token: string, name: string) => {
+    localStorage.setItem('token', token);
+    localStorage.setItem('user_name', name);
+    setUserName(name);
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user_name');
+    setIsAuthenticated(false);
+  };
+
+  if (!isAuthenticated) {
+    return <LoginView onLoginSuccess={handleLoginSuccess} appName={appName} />;
+  }
 
   const navItems = [
     { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -66,9 +96,25 @@ export function App() {
           </nav>
         </div>
 
-        <div className="pt-6 border-t border-slate-800 text-xs text-slate-500 space-y-1">
-          <div>Platform Version 1.0</div>
-          <div>All Phases 1–4 Built</div>
+        <div className="pt-6 border-t border-slate-800 space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              <span className="text-xs font-medium text-slate-300 truncate max-w-[120px]">{userName}</span>
+            </div>
+            <button
+              onClick={handleLogout}
+              title="Sign Out"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="text-[11px] text-slate-500 space-y-0.5 px-1">
+            <div>Platform Version 1.0</div>
+            <div>All Phases 1–4 Built</div>
+          </div>
         </div>
       </aside>
 
