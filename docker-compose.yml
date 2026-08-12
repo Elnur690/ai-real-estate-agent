@@ -112,7 +112,7 @@ services:
       - backend
 
   evolution:
-    image: atendai/evolution-api:v2.1.1
+    image: evolutionapi/evolution-api:v2.1.1
     container_name: realestate_evolution
     restart: always
     environment:
