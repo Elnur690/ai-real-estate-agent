@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE saved_searches ADD COLUMN IF NOT EXISTS metro_station VARCHAR(255);"))
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS metro_station VARCHAR(255);"))
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS price_usd DOUBLE PRECISION;"))
+        await conn.execute(text("UPDATE listings SET listing_url = 'https://bina.az/baki/alqi-satqi/menziller' WHERE listing_url LIKE '%binalar.az%' OR listing_url LIKE '%/3005%' OR listing_url LIKE '%/101010%' OR listing_url LIKE '%/202020%' OR listing_url LIKE '%/3004%' OR listing_url LIKE '%/3003%';"))
     logger.info("[Startup] Database tables and columns verified.")
 
     # Auto-seed default admin user if none exists

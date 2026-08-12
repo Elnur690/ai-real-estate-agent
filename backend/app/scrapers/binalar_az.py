@@ -46,7 +46,7 @@ class BinalarAzScraper(BaseScraper):
                 area_sqm=112.0,
                 building_type="new",
                 seller_type="agency",
-                listing_url="https://binalar.az/elan/3005"
+                listing_url="https://bina.az/baki/alqi-satqi/menziller"
             ))
 
         return items

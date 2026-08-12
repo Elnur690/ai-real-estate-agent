@@ -50,7 +50,7 @@ class TapAzScraper(BaseScraper):
                 building_type="old",
                 seller_type="agency",
                 photos=["https://tap.az/images/sample2.jpg"],
-                listing_url="https://tap.az/elanlar/202020"
+                listing_url="https://tap.az/elanlar/dasinmaz-emlak"
             ))
 
         return items
