@@ -46,14 +46,44 @@ class UpdateTenantRequest(BaseModel):
     feature_social_brochure: Optional[bool] = None
     feature_client_intake_bot: Optional[bool] = None
 
-@router.get("")
+class TenantResponse(BaseModel):
+    id: int
+    name: str
+    type: str
+    phone: str
+    telegram_handle: Optional[str] = None
+    plan: str
+    plan_period: str
+    plan_started_at: Optional[datetime] = None
+    plan_expires_at: Optional[datetime] = None
+    status: str
+    preferred_channel: str
+    whatsapp_number: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    digest_mode: str
+    backup_enabled: bool
+    backup_frequency_days: int
+    last_backup_at: Optional[datetime] = None
+    feature_makler_detector: bool
+    feature_avm_bargain_finder: bool
+    feature_b2b_cobrokering: bool
+    feature_social_brochure: bool
+    feature_client_intake_bot: bool
+    referral_code: Optional[str] = None
+    referral_balance: float
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+@router.get("", response_model=List[TenantResponse])
 async def list_tenants(db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
     stmt = select(Tenant).order_by(Tenant.id.desc())
     res = await db.execute(stmt)
     tenants = res.scalars().all()
     return tenants
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
 async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
     expires_at = datetime.now(timezone.utc) + (timedelta(days=30) if body.plan_period == "monthly" else timedelta(days=90))
     
@@ -101,11 +131,11 @@ async def get_tenant_detail(tenant_id: int, db: AsyncSession = Depends(get_db), 
     searches = res_s.scalars().all()
 
     return {
-        "tenant": tenant,
+        "tenant": TenantResponse.model_validate(tenant),
         "saved_searches": searches
     }
 
-@router.patch("/{tenant_id}")
+@router.patch("/{tenant_id}", response_model=TenantResponse)
 async def update_tenant(tenant_id: int, body: UpdateTenantRequest, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
     stmt = select(Tenant).where(Tenant.id == tenant_id)
     res = await db.execute(stmt)

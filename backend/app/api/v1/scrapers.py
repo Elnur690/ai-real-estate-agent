@@ -9,7 +9,24 @@ from app.services.ingestion import IngestionService
 
 router = APIRouter(prefix="/scrapers", tags=["Scrapers"])
 
-@router.get("/sources")
+from datetime import datetime
+from typing import Optional, List
+from pydantic import BaseModel
+
+class ListingSourceResponse(BaseModel):
+    id: int
+    type: str
+    name: str
+    url_or_handle: str
+    tenant_id: Optional[int] = None
+    status: str
+    last_scraped_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+@router.get("/sources", response_model=List[ListingSourceResponse])
 async def list_sources(db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
     stmt = select(ListingSource).order_by(ListingSource.id)
     res = await db.execute(stmt)

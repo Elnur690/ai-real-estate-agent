@@ -18,14 +18,28 @@ class CreatePaymentRequest(BaseModel):
     days_covered: int = 30
     notes: Optional[str] = None
 
-@router.get("")
+class PaymentResponse(BaseModel):
+    id: int
+    tenant_id: int
+    amount: float
+    currency: str
+    period_covered_start: Optional[datetime] = None
+    period_covered_end: Optional[datetime] = None
+    received_by: Optional[int] = None
+    received_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+@router.get("", response_model=List[PaymentResponse])
 async def list_payments(db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
     stmt = select(Payment).order_by(Payment.id.desc())
     res = await db.execute(stmt)
     payments = res.scalars().all()
     return payments
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=PaymentResponse, status_code=status.HTTP_201_CREATED)
 async def record_cash_payment(body: CreatePaymentRequest, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
     stmt = select(Tenant).where(Tenant.id == body.tenant_id)
     res = await db.execute(stmt)
