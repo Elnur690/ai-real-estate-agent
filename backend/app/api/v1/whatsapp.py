@@ -135,7 +135,10 @@ async def get_whatsapp_qrcode(
                 }
         except Exception as e:
             logger.error(f"[WhatsApp API] Connection error: {e}")
-            raise HTTPException(status_code=500, detail=f"Evolution API service connection failed: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Evolution API service is initializing or unreachable. Please verify container 'realestate_evolution' is running. Error: {str(e)}"
+            )
 
 
 @router.post("/disconnect")

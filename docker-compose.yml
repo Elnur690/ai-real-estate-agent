@@ -60,6 +60,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      evolution:
+        condition: service_started
 
   celery_worker:
     build:
@@ -116,10 +118,12 @@ services:
     container_name: realestate_evolution
     restart: always
     environment:
+      - SERVER_TYPE=http
       - SERVER_PORT=8080
       - SERVER_URL=http://localhost:23880
-      - API_KEY=${EVOLUTION_API_KEY}
+      - AUTHENTICATION_TYPE=apikey
       - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}
+      - DATABASE_ENABLED=false
     ports:
       - "23880:8080"
 
