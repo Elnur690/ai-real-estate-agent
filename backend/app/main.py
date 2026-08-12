@@ -101,7 +101,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.api.v1 import auth, tenants, payments, ai_config, settings_api, scrapers, webhooks, client_intake, promo_codes, plans, whatsapp, analytics
+from app.api.v1 import auth, tenants, payments, ai_config, settings as settings_api, scrapers, webhooks, client_intake, promo_codes, plans, whatsapp, analytics
 
 # Include Router endpoints
 app.include_router(auth.router, prefix=settings.API_V1_STR)
