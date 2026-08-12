@@ -3,6 +3,7 @@ import logging
 import httpx
 from typing import List
 from app.scrapers.base import BaseScraper, RawListingItem
+from app.scrapers.utils import get_random_headers, polite_delay
 
 logger = logging.getLogger(__name__)
 
@@ -11,15 +12,10 @@ class BinaAzScraper(BaseScraper):
         logger.info(f"[BinaAzScraper] Fetching listings from {url_or_handle}")
         items: List[RawListingItem] = []
 
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept-Language": "az,en;q=0.9"
-        }
-
         try:
             target_url = url_or_handle if "bina.az" in url_or_handle else "https://bina.az/"
             async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-                res = await client.get(target_url, headers=headers)
+                res = await client.get(target_url, headers=get_random_headers(referer="https://bina.az/"))
                 if res.status_code == 200:
                     html = res.text
                     # Extract unique item links, e.g., /items/6359443
@@ -28,7 +24,8 @@ class BinaAzScraper(BaseScraper):
                     for link, ext_id in item_matches[:5]:
                         item_url = f"https://bina.az{link}"
                         try:
-                            item_res = await client.get(item_url, headers=headers)
+                            await polite_delay(0.5, 1.5)
+                            item_res = await client.get(item_url, headers=get_random_headers(referer=target_url))
                             if item_res.status_code == 200:
                                 item_html = item_res.text
                                 

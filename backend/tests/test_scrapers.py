@@ -46,3 +46,23 @@ async def test_all_scrapers_return_valid_items():
         assert item.external_id is not None
         assert item.title is not None
         assert item.price >= 0
+
+@pytest.mark.asyncio
+async def test_scraper_utils_rotation_and_delays():
+    from app.scrapers.utils import get_random_user_agent, get_random_headers, polite_delay
+    import time
+
+    ua1 = get_random_user_agent()
+    ua2 = get_random_user_agent()
+    assert isinstance(ua1, str) and len(ua1) > 20
+
+    headers = get_random_headers(referer="https://bina.az/")
+    assert "User-Agent" in headers
+    assert headers["Referer"] == "https://bina.az/"
+    assert "Accept-Language" in headers
+
+    start = time.time()
+    await polite_delay(0.1, 0.2)
+    elapsed = time.time() - start
+    assert elapsed >= 0.09
+

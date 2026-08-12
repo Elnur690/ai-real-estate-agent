@@ -25,6 +25,7 @@ from app.scrapers.binalar_az import BinalarAzScraper
 from app.scrapers.mulk_az import MulkAzScraper
 from app.scrapers.villa_az import VillaAzScraper
 from app.scrapers.telegram_scraper import TelegramChannelScraper
+from app.scrapers.utils import polite_delay
 
 from app.ai.factory import ProviderFactory
 from app.ai.base import StructuredCriteria
@@ -125,6 +126,7 @@ class IngestionService:
                 scraper = BinaAzScraper()
 
             try:
+                await polite_delay(1.0, 2.5)
                 items = await scraper.scrape_source(source.url_or_handle)
                 source.last_scraped_at = datetime.now(timezone.utc)
                 await db.commit()

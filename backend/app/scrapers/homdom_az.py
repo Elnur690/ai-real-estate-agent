@@ -4,6 +4,7 @@ import httpx
 from typing import List
 from bs4 import BeautifulSoup
 from app.scrapers.base import BaseScraper, RawListingItem
+from app.scrapers.utils import get_random_headers
 
 logger = logging.getLogger(__name__)
 
@@ -16,12 +17,10 @@ class HomDomAzScraper(BaseScraper):
         logger.info(f"[HomDomAzScraper] Fetching listings from {url_or_handle}")
         items: List[RawListingItem] = []
 
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "*/*",
-            "X-Requested-With": "XMLHttpRequest",
-            "Referer": self.LISTING_URL,
-        }
+        headers = get_random_headers(
+            extra_headers={"X-Requested-With": "XMLHttpRequest"},
+            referer=self.LISTING_URL
+        )
 
         params = {
             "core[ajax]": "true",

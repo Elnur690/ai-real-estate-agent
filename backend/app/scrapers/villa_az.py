@@ -3,6 +3,7 @@ import logging
 import httpx
 from typing import List
 from app.scrapers.base import BaseScraper, RawListingItem
+from app.scrapers.utils import get_random_headers
 
 logger = logging.getLogger(__name__)
 
@@ -13,13 +14,9 @@ class VillaAzScraper(BaseScraper):
         logger.info(f"[VillaAzScraper] Fetching listings from {url_or_handle}")
         items: List[RawListingItem] = []
 
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-
         try:
             async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-                res = await client.get(self.BASE_URL, headers=headers)
+                res = await client.get(self.BASE_URL, headers=get_random_headers(referer="https://villa.az/"))
                 if res.status_code == 200:
                     html = res.text
                     matches = re.findall(r'href="(/elan/(\d+)[^"]*)".*?([\d\s]+)\s*AZN', html, re.DOTALL)
