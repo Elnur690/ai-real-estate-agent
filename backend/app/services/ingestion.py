@@ -193,8 +193,12 @@ class IngestionService:
             except Exception as e:
                 logger.error(f"[IngestionService] Error processing source {source.name}: {e}")
                 await db.rollback()
-                source.status = "error"
-                await db.commit()
+                try:
+                    from sqlalchemy import update
+                    await db.execute(update(ListingSource).where(ListingSource.id == source.id).values(status="error"))
+                    await db.commit()
+                except Exception:
+                    pass
 
         return {"scraped_count": total_scraped, "matched_count": total_matched}
 
@@ -217,6 +221,7 @@ class IngestionService:
 
             criteria = StructuredCriteria(
                 district=search.district,
+                metro_station=search.metro_station,
                 min_price=search.min_price,
                 max_price=search.max_price,
                 min_rooms=search.min_rooms,
@@ -230,6 +235,9 @@ class IngestionService:
                 "title": listing.title,
                 "price": listing.price,
                 "district": listing.district,
+                "metro_station": listing.metro_station,
+                "address_raw": listing.address_raw,
+                "description": listing.description,
                 "rooms": listing.rooms,
                 "seller_type": listing.seller_type
             }
