@@ -705,7 +705,17 @@ export const TenantsView: React.FC = () => {
             <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 text-xs text-slate-300 space-y-1">
               <div><span className="text-slate-400">Agent:</span> <strong className="text-white">{paymentModalTenant.name}</strong> ({paymentModalTenant.phone})</div>
               <div><span className="text-slate-400">Selected Plan:</span> <strong className="text-emerald-400 capitalize">{paymentModalTenant.plan} Plan</strong></div>
+              {paymentModalTenant.referral_code && (
+                <div><span className="text-slate-400">Referral Code:</span> <code className="text-amber-400">{paymentModalTenant.referral_code}</code></div>
+              )}
             </div>
+
+            {!!paymentModalTenant.referral_balance && paymentModalTenant.referral_balance > 0 && (
+              <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-300 flex items-center justify-between">
+                <span>🎁 Referral Bonus Credit Available: <strong>{paymentModalTenant.referral_balance} AZN</strong></span>
+                <span className="text-[10px] bg-emerald-500/20 px-2 py-0.5 rounded font-bold">Auto-Deducted on Save</span>
+              </div>
+            )}
 
             <form onSubmit={handleRecordCashPayment} className="space-y-3">
               <div className="grid grid-cols-2 gap-3">

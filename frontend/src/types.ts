@@ -21,6 +21,8 @@ export interface Tenant {
   feature_b2b_cobrokering?: boolean;
   feature_social_brochure?: boolean;
   feature_client_intake_bot?: boolean;
+  referral_code?: string;
+  referral_balance?: number;
   created_at: string;
 }
 

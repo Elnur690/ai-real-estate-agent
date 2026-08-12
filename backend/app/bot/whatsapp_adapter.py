@@ -7,6 +7,8 @@ from app.bot.command_handler import BotCommandHandler
 
 logger = logging.getLogger(__name__)
 
+SENT_BOT_MESSAGE_IDS = set()
+
 class WhatsAppAdapter:
     @staticmethod
     async def process_webhook_payload(payload: Dict[str, Any]) -> Optional[str]:
@@ -29,11 +31,18 @@ class WhatsAppAdapter:
                 return None
 
             key = data.get("key", {})
+            msg_id = key.get("id")
 
-            # Ignore messages sent by bot itself
+            # Allow self-messages for solo agents who pair their single WhatsApp number
             if key.get("fromMe"):
-                logger.info("[WhatsAppAdapter] Skipping message fromMe=True (sent by connected bot device)")
-                return None
+                if msg_id in SENT_BOT_MESSAGE_IDS:
+                    try:
+                        SENT_BOT_MESSAGE_IDS.remove(msg_id)
+                    except KeyError:
+                        pass
+                    logger.info(f"[WhatsAppAdapter] Skipping outbound bot response (msg_id={msg_id})")
+                    return None
+                logger.info(f"[WhatsAppAdapter] Processing solo agent self-message (fromMe=True, msg_id={msg_id})")
 
             remote_jid = key.get("remoteJid", "")
             if not remote_jid:
@@ -152,6 +161,15 @@ class WhatsAppAdapter:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 res = await client.post(url, json=body, headers=headers)
                 if res.status_code in [200, 201]:
+                    try:
+                        res_data = res.json()
+                        sent_id = res_data.get("key", {}).get("id")
+                        if sent_id:
+                            SENT_BOT_MESSAGE_IDS.add(sent_id)
+                            if len(SENT_BOT_MESSAGE_IDS) > 2000:
+                                SENT_BOT_MESSAGE_IDS.clear()
+                    except Exception:
+                        pass
                     logger.info(f"[WhatsAppAdapter] Message sent successfully to {clean_recipient} via instance '{inst}'")
                     return True
                 else:

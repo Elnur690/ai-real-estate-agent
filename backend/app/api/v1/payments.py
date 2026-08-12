@@ -16,6 +16,7 @@ class CreatePaymentRequest(BaseModel):
     amount: float
     currency: str = "AZN"
     days_covered: int = 30
+    use_referral_balance: bool = True
     notes: Optional[str] = None
 
 class PaymentResponse(BaseModel):
@@ -60,6 +61,12 @@ async def record_cash_payment(body: CreatePaymentRequest, db: AsyncSession = Dep
         amount = body.amount if body.amount > 0 else (db_plan.price if db_plan else 0.0)
         currency = body.currency or (db_plan.currency if db_plan else "AZN")
 
+        referral_discount = 0.0
+        if body.use_referral_balance and tenant.referral_balance and tenant.referral_balance > 0:
+            referral_discount = min(amount, tenant.referral_balance)
+            amount = round(amount - referral_discount, 2)
+            tenant.referral_balance = round(tenant.referral_balance - referral_discount, 2)
+
         start_date = datetime.now(timezone.utc)
 
         # Ensure timezone awareness for expiration comparison
@@ -74,6 +81,10 @@ async def record_cash_payment(body: CreatePaymentRequest, db: AsyncSession = Dep
         else:
             end_date = start_date + timedelta(days=body.days_covered)
 
+        notes_str = body.notes or f"Cash payment received for {plan_code.upper()} plan ({body.days_covered} days coverage)"
+        if referral_discount > 0:
+            notes_str += f" [Applied {referral_discount} AZN referral bonus discount]"
+
         payment = Payment(
             tenant_id=body.tenant_id,
             amount=amount,
@@ -82,7 +93,7 @@ async def record_cash_payment(body: CreatePaymentRequest, db: AsyncSession = Dep
             period_covered_end=end_date,
             received_by=current_admin.id,
             received_at=start_date,
-            notes=body.notes or f"Cash payment received for {plan_code.upper()} plan ({body.days_covered} days coverage)"
+            notes=notes_str
         )
         db.add(payment)
 
