@@ -36,6 +36,18 @@ export const BakuPropertyMap: React.FC = () => {
   const [filterBargainOnly, setFilterBargainOnly] = useState(false);
   const [selectedPin, setSelectedPin] = useState<PropertyPin | null>(null);
 
+  const getValidExternalUrl = (url?: string) => {
+    if (!url) return '#';
+    const trimmed = url.trim();
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+      if (trimmed.startsWith('/')) {
+        return `https://bina.az${trimmed}`;
+      }
+      return `https://${trimmed}`;
+    }
+    return trimmed;
+  };
+
   const fetchMapData = async () => {
     setLoading(true);
     try {
@@ -256,9 +268,9 @@ export const BakuPropertyMap: React.FC = () => {
                 Close
               </button>
               <a
-                href={selectedPin.listing_url}
+                href={getValidExternalUrl(selectedPin.listing_url)}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="px-4 py-2 text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl flex items-center gap-1.5"
               >
                 <span>View Original Listing</span>

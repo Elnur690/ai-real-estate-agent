@@ -54,6 +54,15 @@ async def get_property_heatmap(db: AsyncSession = Depends(get_db), current_admin
         price_per_m2 = l.price_per_sqm or (round(l.price / l.area_sqm, 2) if l.area_sqm and l.area_sqm > 0 else 0.0)
         is_bargain = (l.bargain_percentage and l.bargain_percentage <= -10.0) or False
 
+        raw_url = l.listing_url or ""
+        if raw_url and not raw_url.startswith("http://") and not raw_url.startswith("https://"):
+            if raw_url.startswith("/"):
+                formatted_url = f"https://bina.az{raw_url}"
+            else:
+                formatted_url = f"https://{raw_url}"
+        else:
+            formatted_url = raw_url
+
         pins.append({
             "id": l.id,
             "title": l.title,
@@ -68,7 +77,7 @@ async def get_property_heatmap(db: AsyncSession = Depends(get_db), current_admin
             "is_bargain": is_bargain,
             "lat": round(lat, 5),
             "lng": round(lng, 5),
-            "listing_url": l.listing_url
+            "listing_url": formatted_url
         })
 
         if matched_key not in district_stats:
