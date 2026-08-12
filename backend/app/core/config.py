@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     ENCRYPTION_KEY: str = os.getenv("ENCRYPTION_KEY", secrets.token_urlsafe(32))
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
+    # Admin Credentials
+    ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "admin@erma.shop")
+    ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "AdminPass2026!Secure")
+
     # Allowed Domains & CORS
     ALLOWED_HOSTS: list[str] = [
         "realtor.erma.shop",

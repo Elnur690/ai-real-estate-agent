@@ -43,6 +43,8 @@ services:
       - REDIS_URL
       - SECRET_KEY
       - ENCRYPTION_KEY
+      - ADMIN_EMAIL
+      - ADMIN_PASSWORD
       - TELEGRAM_BOT_TOKEN
       - EVOLUTION_API_URL
       - EVOLUTION_API_KEY

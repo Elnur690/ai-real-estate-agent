@@ -20,6 +20,26 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     logger.info("[Startup] Database tables verified.")
 
+    # Auto-seed default admin user if none exists
+    from app.db.session import AsyncSessionLocal
+    from app.models.user import User
+    from app.api.v1.auth import get_password_hash
+    from sqlalchemy import select
+
+    async with AsyncSessionLocal() as db:
+        stmt = select(User).where(User.role == "admin")
+        res = await db.execute(stmt)
+        if not res.scalars().first():
+            admin_user = User(
+                name="Super Admin",
+                email=settings.ADMIN_EMAIL,
+                role="admin",
+                password_hash=get_password_hash(settings.ADMIN_PASSWORD)
+            )
+            db.add(admin_user)
+            await db.commit()
+            logger.info(f"[Startup] Auto-created initial Admin user ({settings.ADMIN_EMAIL})")
+
     # Start Telegram Bot polling in background if token is set
     tg_app = build_telegram_app()
     if tg_app:
