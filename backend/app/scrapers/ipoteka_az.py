@@ -5,6 +5,8 @@ from typing import List
 from app.scrapers.base import BaseScraper, RawListingItem
 from app.scrapers.utils import get_random_headers
 
+from app.core.baku_locations import extract_baku_district, extract_metro_station
+
 logger = logging.getLogger(__name__)
 
 class IpotekaAzScraper(BaseScraper):
@@ -19,15 +21,32 @@ class IpotekaAzScraper(BaseScraper):
                 res = await client.get(self.BASE_URL, headers=get_random_headers(referer="https://ipoteka.az/"))
                 if res.status_code == 200:
                     html = res.text
-                    matches = re.findall(r'href="(/elan/(\d+)[^"]*)".*?([\d\s]+)\s*AZN', html, re.DOTALL)
-                    for link, ext_id, price_str in matches[:10]:
-                        clean_price = float(price_str.replace(" ", ""))
+                    matches = re.findall(r'href="(/elan/(\d+)-([^"]+))"', html)
+                    seen = set()
+                    for link, ext_id, slug in matches[:15]:
+                        if ext_id in seen:
+                            continue
+                        seen.add(ext_id)
+
+                        pos = html.find(link)
+                        snippet = html[pos:pos+1000]
+                        price_match = re.search(r'([\d\s]+)\s*AZN', snippet)
+                        clean_price = float(price_match.group(1).replace(" ", "")) if price_match else 110000.0
+
+                        clean_slug = slug.replace("-", " ")
+                        district = extract_baku_district(clean_slug)
+                        metro = extract_metro_station(clean_slug)
+
+                        title = f"İpotekalı mənzil ({district})"
+
                         items.append(RawListingItem(
                             external_id=f"ipoteka_{ext_id}",
-                            title=f"İpotekalı mənzil #{ext_id}",
-                            description=f"Ipoteka.az ipotekaya yararlı mənzil elanı #{ext_id}",
+                            title=title,
+                            description=f"Ipoteka.az ipotekaya yararlı mənzil: {clean_slug}",
                             price=clean_price,
                             currency="AZN",
+                            district=district,
+                            metro_station=metro,
                             listing_url=f"{self.BASE_URL}{link}"
                         ))
         except Exception as e:
