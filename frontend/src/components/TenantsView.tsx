@@ -51,6 +51,7 @@ export const TenantsView: React.FC = () => {
 
   // Cash Payment Modal State
   const [paymentModalTenant, setPaymentModalTenant] = useState<Tenant | null>(null);
+  const [paymentPlan, setPaymentPlan] = useState<string>('starter');
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [cashDays, setCashDays] = useState<number>(30);
   const [cashNotes, setCashNotes] = useState<string>('');
@@ -137,12 +138,31 @@ export const TenantsView: React.FC = () => {
     }
   };
 
+  const calculatePriceForPeriod = (planCode: string, days: number) => {
+    const matchPlan = availablePlans.find(p => p.code.toLowerCase() === planCode.toLowerCase());
+    const monthlyPrice = matchPlan ? matchPlan.price : (planCode === 'pro' ? 100 : planCode === 'agency' ? 250 : 50);
+    const months = days / 30;
+    return Math.round(monthlyPrice * (months >= 12 ? 12 : months));
+  };
+
+  const handlePlanOrPeriodChange = (newPlan: string, newDays: number) => {
+    setPaymentPlan(newPlan);
+    setCashDays(newDays);
+    const newPrice = calculatePriceForPeriod(newPlan, newDays);
+    setCashAmount(newPrice);
+    if (paymentModalTenant) {
+      setCashNotes(`Cash received for ${paymentModalTenant.name} (${newPlan.toUpperCase()} Plan - ${newDays} days)`);
+    }
+  };
+
   const openCashPaymentModal = (t: Tenant) => {
-    const matchPlan = availablePlans.find(p => p.code.toLowerCase() === t.plan.toLowerCase());
+    const pCode = (t.plan || 'starter').toLowerCase();
     setPaymentModalTenant(t);
-    setCashAmount(matchPlan ? matchPlan.price : 0);
+    setPaymentPlan(pCode);
     setCashDays(30);
-    setCashNotes(`Cash received for ${t.name} (${t.plan.toUpperCase()} Plan)`);
+    const initialPrice = calculatePriceForPeriod(pCode, 30);
+    setCashAmount(initialPrice);
+    setCashNotes(`Cash received for ${t.name} (${pCode.toUpperCase()} Plan - 30 days)`);
   };
 
   const handleRecordCashPayment = async (e: React.FormEvent) => {
@@ -151,6 +171,7 @@ export const TenantsView: React.FC = () => {
     try {
       await api.post('/payments', {
         tenant_id: paymentModalTenant.id,
+        plan: paymentPlan,
         amount: cashAmount,
         days_covered: cashDays,
         notes: cashNotes
@@ -718,9 +739,32 @@ export const TenantsView: React.FC = () => {
             )}
 
             <form onSubmit={handleRecordCashPayment} className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Subscription Plan</label>
+                <select
+                  value={paymentPlan}
+                  onChange={(e) => handlePlanOrPeriodChange(e.target.value, cashDays)}
+                  className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
+                >
+                  {availablePlans.map((p) => (
+                    <option key={p.id} value={p.code}>
+                      {p.name} ({p.price} {p.currency}/mo)
+                    </option>
+                  ))}
+                  {availablePlans.length === 0 && (
+                    <>
+                      <option value="free">Free Trial Tier (0 AZN)</option>
+                      <option value="starter">Starter Agent Plan (50 AZN/mo)</option>
+                      <option value="pro">Pro Agent Plan (100 AZN/mo)</option>
+                      <option value="agency">Agency Team Plan (250 AZN/mo)</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 block mb-1">Plan Fee Amount (AZN)</label>
+                  <label className="text-xs text-slate-400 block mb-1">Total Fee (AZN)</label>
                   <input
                     type="number"
                     required
@@ -734,7 +778,7 @@ export const TenantsView: React.FC = () => {
                   <label className="text-xs text-slate-400 block mb-1">Subscription Period</label>
                   <select
                     value={cashDays}
-                    onChange={(e) => setCashDays(Number(e.target.value))}
+                    onChange={(e) => handlePlanOrPeriodChange(paymentPlan, Number(e.target.value))}
                     className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
                   >
                     <option value={30}>1 Month (30 Days)</option>

@@ -16,6 +16,7 @@ class CreatePaymentRequest(BaseModel):
     amount: float
     currency: str = "AZN"
     days_covered: int = 30
+    plan: Optional[str] = None
     use_referral_balance: bool = True
     notes: Optional[str] = None
 
@@ -51,12 +52,22 @@ async def record_cash_payment(body: CreatePaymentRequest, db: AsyncSession = Dep
 
         from app.models.plan import Plan
 
+        if body.plan:
+            tenant.plan = body.plan.lower().strip()
+
         plan_code = (tenant.plan or "free").lower().strip()
 
         # Look up plan price if body.amount <= 0
         stmt_p = select(Plan).where(Plan.code == plan_code)
         res_p = await db.execute(stmt_p)
         db_plan = res_p.scalars().first()
+        if db_plan:
+            tenant.feature_makler_detector = db_plan.feature_makler_detector
+            tenant.feature_avm_bargain_finder = db_plan.feature_avm_bargain_finder
+            tenant.feature_social_brochure = db_plan.feature_social_brochure
+            tenant.feature_b2b_cobrokering = db_plan.feature_b2b_cobrokering
+            tenant.feature_client_intake_bot = db_plan.feature_client_intake_bot
+            tenant.backup_enabled = db_plan.backup_enabled
 
         amount = body.amount if body.amount > 0 else (db_plan.price if db_plan else 0.0)
         currency = body.currency or (db_plan.currency if db_plan else "AZN")
