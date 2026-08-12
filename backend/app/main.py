@@ -77,6 +77,11 @@ async def lifespan(app: FastAPI):
         await tg_app.start()
         await tg_app.updater.start_polling()
 
+    # Start background trial tracking loop
+    import asyncio
+    from app.services.trial_tracker import TrialTrackerService
+    asyncio.create_task(TrialTrackerService.start_background_tracker())
+
     yield
 
     # Shutdown

@@ -21,6 +21,7 @@ class CreateTenantRequest(BaseModel):
     telegram_chat_id: Optional[str] = None
     plan: str = "starter" # free | starter | pro | agency | enterprise
     plan_period: str = "monthly"
+    trial_days: int = 7 # Daily free trial length (e.g. 7 days or 14 days)
     backup_enabled: bool = False
     backup_frequency_days: int = 7 # 1 (daily) | 7 (weekly) | 30 (monthly)
     feature_makler_detector: bool = False
@@ -97,7 +98,8 @@ async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(ge
 
     # Paid plans start as 'pending' until cash/subscription payment is recorded
     initial_status = "active" if is_free else "pending"
-    expires_at = (datetime.now(timezone.utc) + timedelta(days=14)) if is_free else None
+    trial_days_count = body.trial_days if body.trial_days and body.trial_days > 0 else 7
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=trial_days_count)) if is_free else None
     
     tenant = Tenant(
         name=body.name,
@@ -234,3 +236,10 @@ async def trigger_tenant_backup(tenant_id: int, db: AsyncSession = Depends(get_d
     if not res.get("success"):
         raise HTTPException(status_code=400, detail=res.get("error", "Tenant backup failed"))
     return res
+
+@router.post("/check-trials")
+async def trigger_trial_check(db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
+    """Check for expired free trials, mark status expired, and send automated plan offer notifications."""
+    from app.services.trial_tracker import TrialTrackerService
+    await TrialTrackerService.check_and_notify_expired_trials(db)
+    return {"status": "completed", "message": "Trial expiration check complete."}

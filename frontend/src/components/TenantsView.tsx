@@ -17,6 +17,7 @@ export const TenantsView: React.FC = () => {
     type: 'individual_agent',
     preferred_channel: 'telegram',
     plan: 'starter',
+    trial_days: 7,
     telegram_handle: '',
     whatsapp_number: '',
     backup_enabled: false,
@@ -613,7 +614,7 @@ export const TenantsView: React.FC = () => {
                     ))}
                     {availablePlans.length === 0 && (
                       <>
-                        <option value="free">Free Trial Tier</option>
+                        <option value="free">Free Trial Tier (Daily)</option>
                         <option value="starter">Starter Agent Plan</option>
                         <option value="pro">Pro Agent Plan</option>
                         <option value="agency">Agency Team Plan</option>
@@ -622,6 +623,28 @@ export const TenantsView: React.FC = () => {
                   </select>
                 </div>
               </div>
+
+              {newTenant.plan === 'free' && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl space-y-1">
+                  <label className="text-xs text-amber-300 font-semibold block mb-1">
+                    Free Trial Duration (Days)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={90}
+                      value={newTenant.trial_days}
+                      onChange={(e) => setNewTenant({ ...newTenant, trial_days: Number(e.target.value) })}
+                      className="w-full glass-input px-3 py-1.5 rounded-lg text-sm text-white font-bold bg-dark-900 border-amber-500/40"
+                    />
+                    <span className="text-xs text-amber-300 font-medium whitespace-nowrap">Days Trial</span>
+                  </div>
+                  <p className="text-[10px] text-amber-400/80">
+                    Agent will get active access for {newTenant.trial_days} days. When finished, system will auto-stop access and offer paid plans over Telegram/WhatsApp.
+                  </p>
+                </div>
+              )}
 
               {/* WhatsApp Evolution Setup Box */}
               {newTenant.preferred_channel === 'whatsapp' && (
