@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.session import async_engine
 from app.models import Base
-from app.api.v1 import auth, tenants, payments, ai_config, settings as settings_api, scrapers, webhooks
+from app.api.v1 import auth, tenants, payments, ai_config, settings as settings_api, scrapers, webhooks, client_intake, promo_codes
 from app.bot.telegram_adapter import build_telegram_app
 
 logging.basicConfig(level=logging.INFO)
