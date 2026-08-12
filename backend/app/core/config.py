@@ -48,8 +48,8 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: Optional[str] = os.getenv("TELEGRAM_BOT_TOKEN", None)
 
     # Evolution API (WhatsApp)
-    EVOLUTION_API_URL: Optional[str] = os.getenv("EVOLUTION_API_URL", "http://localhost:8080")
-    EVOLUTION_API_KEY: Optional[str] = os.getenv("EVOLUTION_API_KEY", None)
+    EVOLUTION_API_URL: Optional[str] = os.getenv("EVOLUTION_API_URL", "http://evolution:8080")
+    EVOLUTION_API_KEY: Optional[str] = os.getenv("EVOLUTION_API_KEY", "42960a4e6597e231787c5e0124a06248")
     EVOLUTION_INSTANCE_NAME: str = os.getenv("EVOLUTION_INSTANCE_NAME", "realestate_agent")
     WEBHOOK_SECRET: Optional[str] = os.getenv("WEBHOOK_SECRET", None)
 
