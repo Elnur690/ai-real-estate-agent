@@ -7,7 +7,7 @@ class ClaudeProvider(AIProvider):
     def __init__(self, api_key: str | None = None, model_name: str = "claude-3-5-sonnet-20241022"):
         self.api_key = api_key
         self.model_name = model_name
-        self.fallback = GeminiProvider(model_name="gemini-2.0-flash")
+        self.fallback = GeminiProvider(model_name="gemini-1.5-flash")
 
     async def parse_search_criteria(self, raw_text: str) -> StructuredCriteria:
         if self.api_key:

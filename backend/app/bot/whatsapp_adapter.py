@@ -129,6 +129,7 @@ class WhatsAppAdapter:
         url = f"{base_url}/message/sendText/{inst}"
         body = {
             "number": clean_recipient,
+            "text": text,
             "options": {"delay": 1200, "presence": "composing"},
             "textMessage": {"text": text}
         }
