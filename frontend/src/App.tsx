@@ -1,19 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, Users, DollarSign, Package, Cpu, Database, Sliders, Building, LogOut, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, Users, DollarSign, Package, Database, Sliders, Building, LogOut, ShieldCheck } from 'lucide-react';
 import api from './api';
 import { LoginView } from './components/LoginView';
 import { DashboardView } from './components/DashboardView';
 import { TenantsView } from './components/TenantsView';
 import { PaymentsView } from './components/PaymentsView';
 import { PlansView } from './components/PlansView';
-import { AIConfigView } from './components/AIConfigView';
 import { AppSettingsView } from './components/AppSettingsView';
 import { ScrapersView } from './components/ScrapersView';
 
 export function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => !!localStorage.getItem('token'));
   const [userName, setUserName] = useState<string>(() => localStorage.getItem('user_name') || 'Admin');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tenants' | 'payments' | 'plans' | 'ai-config' | 'scrapers' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tenants' | 'payments' | 'plans' | 'scrapers' | 'settings'>('dashboard');
   const [appName, setAppName] = useState('RealEstate AI Agent');
 
   useEffect(() => {
@@ -56,9 +55,8 @@ export function App() {
     { key: 'tenants', label: 'Tenants & Agents', icon: Users },
     { key: 'payments', label: 'Cash Payments', icon: DollarSign },
     { key: 'plans', label: 'Subscription Plans', icon: Package },
-    { key: 'ai-config', label: 'AI Provider Config', icon: Cpu },
     { key: 'scrapers', label: 'Scrapers & Pipeline', icon: Database },
-    { key: 'settings', label: 'App Settings', icon: Sliders },
+    { key: 'settings', label: 'App Settings & AI Config', icon: Sliders },
   ];
 
   return (
@@ -126,7 +124,6 @@ export function App() {
         {activeTab === 'tenants' && <TenantsView />}
         {activeTab === 'payments' && <PaymentsView />}
         {activeTab === 'plans' && <PlansView />}
-        {activeTab === 'ai-config' && <AIConfigView />}
         {activeTab === 'scrapers' && <ScrapersView />}
         {activeTab === 'settings' && <AppSettingsView />}
       </main>
