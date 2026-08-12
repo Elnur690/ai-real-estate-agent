@@ -198,7 +198,21 @@ class BotCommandHandler:
                 await db.commit()
                 return f"Elan statusu yeniləndi: *{new_status.capitalize()}* ✅"
 
-        # 5. Fast-path Explicit Add Search Command (/yeni, /add, /new)
+        # 5. Property Listing Submission Command (/elan <text>, /post <text>, /share <text>, /satıram <text>, /paylaş <text>)
+        if text_lower.startswith(("/elan", "/post", "/share", "/satıram", "/satiram", "/paylaş", "/paylas")):
+            listing_text = raw_text_trimmed
+            for prefix in ["/elan", "/post", "/share", "/satıram", "/satiram", "/paylaş", "/paylas"]:
+                if listing_text.lower().startswith(prefix):
+                    listing_text = listing_text[len(prefix):].strip()
+                    break
+            if not listing_text:
+                return (
+                    "🏠 *Lütfən paylaşmaq istədiyiniz mənzil elanını yazın.*\n\n"
+                    "*Nümunə:* `/elan Yasamalda 3 otaqlı 145000 AZN 110 kv/m mənzil satılır. Tel: 0501234567`"
+                )
+            return await BotCommandHandler._process_listing_submission(db, tenant, listing_text)
+
+        # 6. Fast-path Explicit Add Search Command (/yeni, /add, /new)
         if text_lower.startswith(("/yeni", "/add", "/new", "/axtar", "yeni axtarış", "yeni axtaris")):
             criteria_text = raw_text_trimmed
             for prefix in ["/yeni", "/add", "/new", "/axtar", "yeni axtarış", "yeni axtaris"]:
@@ -212,7 +226,7 @@ class BotCommandHandler:
                 )
             return await BotCommandHandler._process_search_wizard(db, tenant, criteria_text)
 
-        # 6. Fallback Search Wizard for Arbitrary Natural Language Text
+        # 7. Fallback Search Wizard for Arbitrary Natural Language Text
         if len(raw_text_trimmed) >= 3:
             return await BotCommandHandler._process_search_wizard(db, tenant, raw_text_trimmed)
 
@@ -481,5 +495,58 @@ class BotCommandHandler:
             f"▪️ `/help` — Bu kömək təlimatını yenidən göstərmək\n\n"
             f"🎙️ *SƏSLİ MESAJ:* WhatsApp və ya Telegram-da səsli mesaj göndərərək də axtarış yarada bilərsiniz!\n\n"
             f"💬 *ELAN REAKSİYALARI:*\n"
-            f"• `Maraqlanıram <id>` | `Keç <id>` | `Satılıb <id>`"
+            f"• `Maraqlanıram <id>` | `Keç <id>` | `Satılıb <id>`\n"
+            f"• `/elan <mətn>` — Öz mənzil elanınızı B2B partnyor agentlərə təqdim etmək"
+        )
+
+    @staticmethod
+    async def _process_listing_submission(db: AsyncSession, tenant: Tenant, raw_text: str) -> str:
+        """
+        Processes an agent submitting their own listing via /elan or /post or /share.
+        Parses text, creates Listing in DB, and evaluates B2B co-brokering matches instantly.
+        """
+        from datetime import datetime, timezone
+        from app.ai.factory import ProviderFactory
+        from app.models.listing import Listing
+        from app.services.b2b_service import B2BService
+        from app.core.baku_locations import extract_baku_district, extract_metro_station
+
+        ai_provider = await ProviderFactory.get_provider_for_task(db, "listing_parsing")
+        struct_l = await ai_provider.parse_telegram_listing(raw_text)
+
+        district = struct_l.district or extract_baku_district(raw_text)
+        metro = struct_l.metro_station or extract_metro_station(raw_text)
+        title = struct_l.title or f"{district or 'Bakı'} mənzil elanı"
+
+        listing = Listing(
+            external_id=f"agent_{tenant.id}_{int(datetime.now(timezone.utc).timestamp())}",
+            title=title,
+            description=raw_text,
+            price=struct_l.price if struct_l.price and struct_l.price > 0 else 100000.0,
+            currency=struct_l.currency or "AZN",
+            district=district,
+            metro_station=metro,
+            rooms=struct_l.rooms,
+            area_sqm=struct_l.area_sqm,
+            building_type=struct_l.building_type or "new",
+            seller_type="owner",
+            source_id=tenant.id,
+            is_active=True,
+            listing_url="#"
+        )
+        db.add(listing)
+        await db.commit()
+        await db.refresh(listing)
+
+        # Trigger B2B Co-Brokering Notification to other matching agents
+        b2b_matches = await B2BService.evaluate_b2b_cobrokering(db, listing)
+
+        app_name = await get_app_name(db)
+        return (
+            f"🚀 *ELANINIZ UĞURLA DƏRC EDİLDİ VƏ PARTNYORLARA ÇATDIRILDI! ({app_name})*\n\n"
+            f"🏠 *{listing.title}*\n"
+            f"💰 *Qiymət:* {int(listing.price)} {listing.currency}\n"
+            f"📍 *Məkan:* {district or 'Bakı'} ({metro or 'Metro göstərilməyib'})\n"
+            f"🚪 *Otaq:* {listing.rooms or '-'} | 📐 *Sahə:* {listing.area_sqm or '-'} m²\n\n"
+            f"🤝 *B2B Şəbəkə:* Elanınız digər agentlərin (%50/50 Komissiya) alıcı istəkləri ilə avtomatik müqayisə edildi ({b2b_matches} agentə bildiriş göndərildi)."
         )
