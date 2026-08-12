@@ -23,11 +23,17 @@ export const TenantsView: React.FC = () => {
     backup_frequency_days: 7
   });
 
+  const [availablePlans, setAvailablePlans] = useState<any[]>([]);
+
   const loadTenants = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/tenants');
-      setTenants(res.data);
+      const [tRes, pRes] = await Promise.all([
+        api.get('/tenants'),
+        api.get('/plans').catch(() => ({ data: [] }))
+      ]);
+      setTenants(tRes.data || []);
+      setAvailablePlans(pRes.data || []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -228,10 +234,19 @@ export const TenantsView: React.FC = () => {
                     onChange={(e) => setNewTenant({ ...newTenant, plan: e.target.value })}
                     className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
                   >
-                    <option value="free">Free</option>
-                    <option value="starter">Starter</option>
-                    <option value="pro">Pro (BaaS Backup Enabled)</option>
-                    <option value="agency">Agency (BaaS Backup Enabled)</option>
+                    {availablePlans.map((p) => (
+                      <option key={p.id} value={p.code}>
+                        {p.name} ({p.price} {p.currency}/{p.billing_period})
+                      </option>
+                    ))}
+                    {availablePlans.length === 0 && (
+                      <>
+                        <option value="free">Free Trial</option>
+                        <option value="starter">Starter Agent</option>
+                        <option value="pro">Pro Agent</option>
+                        <option value="agency">Agency Team</option>
+                      </>
+                    )}
                   </select>
                 </div>
               </div>
