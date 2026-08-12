@@ -21,6 +21,7 @@ class PlanResponse(BaseModel):
     price: float
     currency: str
     billing_period: str
+    trial_days: Optional[int] = 7
     is_active: bool
     max_agents: int
     feature_makler_detector: bool
@@ -38,7 +39,8 @@ class CreatePlanRequest(BaseModel):
     description: Optional[str] = None
     price: float = 0.0
     currency: str = "AZN"
-    billing_period: str = "monthly"  # monthly | quarterly | annual | lifetime
+    billing_period: str = "monthly"  # daily | monthly | quarterly | annual | lifetime
+    trial_days: Optional[int] = 7
     is_active: bool = True
     max_agents: int = 1
     feature_makler_detector: bool = True
@@ -55,6 +57,7 @@ class UpdatePlanRequest(BaseModel):
     price: Optional[float] = None
     currency: Optional[str] = None
     billing_period: Optional[str] = None
+    trial_days: Optional[int] = None
     is_active: Optional[bool] = None
     max_agents: Optional[int] = None
     feature_makler_detector: Optional[bool] = None

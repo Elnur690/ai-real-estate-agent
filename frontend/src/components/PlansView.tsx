@@ -10,6 +10,7 @@ export interface PlanItem {
   price: number;
   currency: string;
   billing_period: string;
+  trial_days?: number;
   is_active: boolean;
   max_agents: number;
   feature_makler_detector: boolean;
@@ -34,6 +35,7 @@ export function PlansView() {
   const [formPrice, setFormPrice] = useState<number>(29);
   const [formCurrency, setFormCurrency] = useState('AZN');
   const [formBillingPeriod, setFormBillingPeriod] = useState('monthly');
+  const [formTrialDays, setFormTrialDays] = useState<number>(7);
   const [formMaxAgents, setFormMaxAgents] = useState<number>(1);
   const [formMakler, setFormMakler] = useState(true);
   const [formAvm, setFormAvm] = useState(true);
@@ -64,6 +66,7 @@ export function PlansView() {
     setFormPrice(49);
     setFormCurrency('AZN');
     setFormBillingPeriod('monthly');
+    setFormTrialDays(7);
     setFormMaxAgents(1);
     setFormMakler(true);
     setFormAvm(true);
@@ -83,6 +86,7 @@ export function PlansView() {
     setFormPrice(plan.price);
     setFormCurrency(plan.currency);
     setFormBillingPeriod(plan.billing_period);
+    setFormTrialDays(plan.trial_days || 7);
     setFormMaxAgents(plan.max_agents);
     setFormMakler(plan.feature_makler_detector);
     setFormAvm(plan.feature_avm_bargain_finder);
@@ -106,6 +110,7 @@ export function PlansView() {
           price: formPrice,
           currency: formCurrency,
           billing_period: formBillingPeriod,
+          trial_days: formTrialDays,
           max_agents: formMaxAgents,
           feature_makler_detector: formMakler,
           feature_avm_bargain_finder: formAvm,
@@ -123,6 +128,7 @@ export function PlansView() {
           price: formPrice,
           currency: formCurrency,
           billing_period: formBillingPeriod,
+          trial_days: formTrialDays,
           max_agents: formMaxAgents,
           feature_makler_detector: formMakler,
           feature_avm_bargain_finder: formAvm,
@@ -211,7 +217,9 @@ export function PlansView() {
                 <div className="flex items-baseline gap-1 bg-dark-900/60 p-3 rounded-xl border border-slate-800/80 mb-5">
                   <span className="text-2xl font-extrabold text-white">{plan.price}</span>
                   <span className="text-sm font-semibold text-emerald-400">{plan.currency}</span>
-                  <span className="text-xs text-slate-400">/ {plan.billing_period}</span>
+                  <span className="text-xs text-slate-400">
+                    / {plan.billing_period === 'daily' || plan.code === 'free' ? `${plan.trial_days || 7} Days Trial` : plan.billing_period}
+                  </span>
                   <span className="ml-auto text-[11px] text-slate-400 font-medium">Max {plan.max_agents} Agents</span>
                 </div>
 
@@ -398,6 +406,7 @@ export function PlansView() {
                     onChange={(e) => setFormBillingPeriod(e.target.value)}
                     className="w-full bg-dark-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-100"
                   >
+                    <option value="daily">Daily (Free Trial in Days)</option>
                     <option value="monthly">Monthly</option>
                     <option value="quarterly">Quarterly</option>
                     <option value="annual">Annual</option>
@@ -405,6 +414,23 @@ export function PlansView() {
                   </select>
                 </div>
               </div>
+
+              {(formBillingPeriod === 'daily' || formBillingPeriod === 'trial' || formCode === 'free') && (
+                <div className="space-y-1 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+                  <label className="font-semibold text-amber-300 text-xs block">Free Trial Duration (Days)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="90"
+                    value={formTrialDays}
+                    onChange={(e) => setFormTrialDays(parseInt(e.target.value) || 7)}
+                    className="w-full bg-dark-900 border border-amber-500/40 rounded-lg px-3 py-1.5 text-sm text-white font-bold"
+                  />
+                  <p className="text-[10px] text-amber-300/80">
+                    Agent will get active access for {formTrialDays} days. System will auto-expire and broadcast upgrade offers on day {formTrialDays}.
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-1">
                 <label className="font-semibold text-slate-300">Max Agents Seats</label>

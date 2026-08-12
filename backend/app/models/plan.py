@@ -13,7 +13,8 @@ class Plan(Base):
     
     price: Mapped[float] = mapped_column(Float, default=0.0)
     currency: Mapped[str] = mapped_column(String(10), default="AZN")
-    billing_period: Mapped[str] = mapped_column(String(50), default="monthly") # monthly | quarterly | annual | lifetime
+    billing_period: Mapped[str] = mapped_column(String(50), default="monthly") # daily | monthly | quarterly | annual | lifetime
+    trial_days: Mapped[int] = mapped_column(Integer, default=7)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     max_agents: Mapped[int] = mapped_column(Integer, default=1)

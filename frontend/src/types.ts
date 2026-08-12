@@ -5,7 +5,8 @@ export interface Tenant {
   phone: string;
   telegram_handle?: string;
   plan: 'free' | 'starter' | 'pro' | 'agency' | 'enterprise';
-  plan_period: 'monthly' | 'quarterly';
+  plan_period: 'daily' | 'monthly' | 'quarterly' | 'annual' | 'lifetime';
+  trial_days?: number;
   plan_started_at: string;
   plan_expires_at?: string;
   status: 'active' | 'expired' | 'suspended' | 'pending';
