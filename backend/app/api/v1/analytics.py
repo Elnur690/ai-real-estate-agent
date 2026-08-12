@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, get_current_admin
+from app.api.deps import get_db, get_current_user
 from app.models.listing import Listing
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
@@ -25,18 +25,20 @@ BAKU_DISTRICT_COORDINATES: Dict[str, Dict[str, float]] = {
 }
 
 @router.get("/map")
-async def get_property_heatmap(db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
+async def get_property_heatmap(db: AsyncSession = Depends(get_db), current_user = Depends(get_current_user)):
     """Returns price/m² heatmap and property pins for Baku interactive map view."""
-    stmt = select(Listing).where(Listing.is_active == True).order_by(Listing.id.desc()).limit(150)
+    stmt = select(Listing).order_by(Listing.id.desc()).limit(150)
     res = await db.execute(stmt)
     listings = res.scalars().all()
 
-    district_stats: Dict[str, Dict[str, Any]] = {}
+    district_stats: Dict[str, Dict[str, Any]] = {
+        k: {"count": 0, "total_price_sqm": 0.0, "bargain_count": 0}
+        for k in BAKU_DISTRICT_COORDINATES
+    }
     pins = []
 
     for l in listings:
         district_name = l.district or "Yasamal"
-        # Match district name case-insensitively
         matched_key = "Yasamal"
         for k in BAKU_DISTRICT_COORDINATES:
             if k.lower() in district_name.lower():
@@ -45,7 +47,6 @@ async def get_property_heatmap(db: AsyncSession = Depends(get_db), current_admin
 
         coords = BAKU_DISTRICT_COORDINATES.get(matched_key, {"lat": 40.3800, "lng": 49.8500})
         
-        # Add slight random offset to prevent overlapping markers on map
         lat_offset = (hash(l.external_id or str(l.id)) % 100 - 50) * 0.0001
         lng_offset = (hash(str(l.id) + "lng") % 100 - 50) * 0.0001
         lat = coords["lat"] + lat_offset
@@ -80,14 +81,12 @@ async def get_property_heatmap(db: AsyncSession = Depends(get_db), current_admin
             "listing_url": formatted_url
         })
 
-        if matched_key not in district_stats:
-            district_stats[matched_key] = {"count": 0, "total_price_sqm": 0.0, "bargain_count": 0}
-        
-        district_stats[matched_key]["count"] += 1
-        if price_per_m2 > 0:
-            district_stats[matched_key]["total_price_sqm"] += price_per_m2
-        if is_bargain:
-            district_stats[matched_key]["bargain_count"] += 1
+        if matched_key in district_stats:
+            district_stats[matched_key]["count"] += 1
+            if price_per_m2 > 0:
+                district_stats[matched_key]["total_price_sqm"] += price_per_m2
+            if is_bargain:
+                district_stats[matched_key]["bargain_count"] += 1
 
     district_heatmap = []
     for dist_name, stats in district_stats.items():
