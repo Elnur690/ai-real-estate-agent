@@ -115,7 +115,7 @@ export const BakuPropertyMap: React.FC = () => {
               )}
             </div>
             <div className="mt-2 text-lg font-extrabold text-emerald-400">
-              {d.avg_price_per_sqm ? `${Math.round(d.avg_price_per_sqm)} AZN/m²` : 'N/A'}
+              {d.avg_price_per_sqm > 0 ? `${Math.round(d.avg_price_per_sqm).toLocaleString()} AZN/m²` : '—'}
             </div>
             <div className="text-[11px] text-slate-400 mt-0.5">{d.active_count} Active Listings</div>
           </div>
@@ -190,11 +190,11 @@ export const BakuPropertyMap: React.FC = () => {
                 <span className="text-base font-extrabold text-emerald-400">
                   {Math.round(p.price).toLocaleString()} {p.currency}
                 </span>
-                {p.price_per_sqm && (
+                {p.price_per_sqm && p.price_per_sqm > 0 ? (
                   <span className="text-xs text-slate-400 font-medium">
-                    ({Math.round(p.price_per_sqm)} AZN/m²)
+                    ({Math.round(p.price_per_sqm).toLocaleString()} AZN/m²)
                   </span>
-                )}
+                ) : null}
               </div>
 
               <div className="flex items-center gap-2 text-[11px] text-slate-400">
