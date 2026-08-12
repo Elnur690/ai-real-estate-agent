@@ -65,8 +65,8 @@ class BotCommandHandler:
             )
 
         # 3. Handle Slash Commands & Fast-Path Menu Shortcuts
-        if text_lower in ["/start", "/help", "/kömək", "/komak", "kömək", "komak", "help", "menu", "menyu"]:
-            return BotCommandHandler._get_help_message(app_name)
+        if text_lower in ["/start", "/help", "/kömək", "/komak", "kömək", "komak", "help", "menu", "menyu", "salam", "hi", "start"]:
+            return BotCommandHandler._get_start_message(app_name)
 
         if text_lower in ["/searches", "/axtarışlar", "/axtarislar", "/axtarışlarım", "/axtarislarim", "/list", "axtarışlarım", "axtarislarim", "1"]:
             return await BotCommandHandler._list_saved_searches(db, tenant)
@@ -437,20 +437,32 @@ class BotCommandHandler:
 
     @staticmethod
     def _get_help_message(app_name: str) -> str:
+        return BotCommandHandler._get_start_message(app_name)
+
+    @staticmethod
+    def _get_start_message(app_name: str) -> str:
         return (
-            f"🤖 *{app_name} - Əmr Siyahısı*\n\n"
-            f"1️⃣ `/searches` - Aktiv axtarışların siyahısı\n"
-            f"2️⃣ `/yeni <mətn>` - Yeni axtarış daxil etmək\n"
-            f"3️⃣ `/sil <id>` - Axtarışı silmək\n"
-            f"4️⃣ `/pause <id>` - Axtarışı müvəqqəti dayandırmaq\n"
-            f"5️⃣ `/resume <id>` - Axtarışı yenidən aktiv etmək\n"
-            f"6️⃣ `/channel` - WhatsApp ↔ Telegram bildiriş kanalı seçimi\n"
-            f"7️⃣ `/status` - Tarif və abunə müddəti\n"
-            f"8️⃣ `/cancel` - Qaralamanı ləğv etmək\n\n"
-            f"💬 *Təsdiq Sözləri (Axtarışı Saxlamaq Üçün):*\n"
-            f"• AZ: `Təsdiq` / `Hə` / `Bəli` / `Ok`\n"
-            f"• RU: `Подтверждаю` / `Да`\n"
-            f"• EN: `Confirm` / `Yes`\n\n"
-            f"💬 *Elan reaksiyaları:*\n"
+            f"👋 *SƏLAMLAR! {app_name.upper()} PLATFORMASINA XOŞ GƏLMİSİNİZ!* 🚀\n\n"
+            f"Bu bot real estate (əmlak) agentləri üçün 24/7 rejimdə işləyən süni intellekt köməkçisidir. "
+            f"Bina.az, Tap.az və Telegram kanallarından axtarış parametrlərinizə uyğun gələn yeni elanları anında sizinlə bölüşür.\n\n"
+            f"💡 *SİSTEMDƏN İSTİFADƏ QAYDASI (2 ASAN ADDIM):*\n"
+            f"1️⃣ *Axtarış parametri daxil edin:* Axtardığınız mənzil parametrlərini mətn və ya *Səsli Mesaj (Voice Note)* ilə bura yazın.\n"
+            f"   📌 *Nümunələr:*\n"
+            f"   • `Yasamalda 3 otaqlı 100-150 min AZN yeni tikili ev sahibindən`\n"
+            f"   • `$100k USD Elmlər metrosu`\n"
+            f"2️⃣ *Təsdiqləyin:* Süni intellekt parametrləri ön baxışa çıxaracaq. `Təsdiq` (və ya `Hə` / `Confirm` / `Да`) yazaraq axtarışı yadda saxlayın.\n\n"
+            f"📜 *BÜTÜN MÖVCUD ƏMR VƏ QISAYOLLAR:*\n"
+            f"▪️ `/searches` və ya `/axtarışlar` — Aktiv axtarış kriteriyalarınızın siyahısı\n"
+            f"▪️ `/yeni <mətn>` — Yeni axtarış yaratmaq\n"
+            f"▪️ `/sil <id>` — Axtarış kriteriyasını silmək (nümunə: `/sil 1`)\n"
+            f"▪️ `/pause <id>` — Axtarışı müvəqqəti dayandırmaq (nümunə: `/pause 1`)\n"
+            f"▪️ `/resume <id>` — Dayandırılmış axtarışı yenidən aktiv etmək\n"
+            f"▪️ `/channel` — Bildiriş kanalını dəyişmək (WhatsApp ↔ Telegram)\n"
+            f"▪️ `/status` — Abunə tarifiniz və istifadə müddətiniz\n"
+            f"▪️ `/referral` — Dəvət kodunuz və qazandığınız bonus balansınız\n"
+            f"▪️ `/cancel` — Hazırkı axtarış qaralamasını ləğv etmək\n"
+            f"▪️ `/help` — Bu kömək təlimatını yenidən göstərmək\n\n"
+            f"🎙️ *SƏSLİ MESAJ:* WhatsApp və ya Telegram-da səsli mesaj göndərərək də axtarış yarada bilərsiniz!\n\n"
+            f"💬 *ELAN REAKSİYALARI:*\n"
             f"• `Maraqlanıram <id>` | `Keç <id>` | `Satılıb <id>`"
         )

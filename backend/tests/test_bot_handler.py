@@ -94,6 +94,6 @@ async def test_bot_onboarding_and_commands():
             sender_name="Orxan Agent",
             raw_text="/help"
         )
-        assert "Əmr Siyahısı" in res3
+        assert "xoş gəlmisiniz" in res3.lower() or "bütün mövcud əmr" in res3.lower()
 
     await engine.dispose()
