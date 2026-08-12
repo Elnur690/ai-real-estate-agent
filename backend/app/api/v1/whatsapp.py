@@ -3,9 +3,8 @@ import httpx
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, get_current_admin
+from app.api.deps import get_current_admin
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -20,9 +19,24 @@ class ConnectWhatsAppRequest(BaseModel):
 
 class WhatsAppStatusResponse(BaseModel):
     instance_name: str
-    state: str  # open | connecting | close
+    state: str  # open | connecting | close | error
     connected: bool
     phone_number: Optional[str] = None
+
+
+def get_evolution_headers() -> dict:
+    headers = {"Content-Type": "application/json"}
+    if settings.EVOLUTION_API_KEY:
+        headers["apikey"] = str(settings.EVOLUTION_API_KEY)
+    return headers
+
+
+def get_evolution_url() -> str:
+    url = settings.EVOLUTION_API_URL or "http://evolution:8080"
+    # If running inside backend container and url points to localhost/127.0.0.1, convert to container hostname
+    if "localhost" in url or "127.0.0.1" in url:
+        return "http://evolution:8080"
+    return url.rstrip("/")
 
 
 @router.get("/status", response_model=WhatsAppStatusResponse)
@@ -32,15 +46,10 @@ async def get_whatsapp_status(
 ):
     """Check connection status of Evolution API WhatsApp instance."""
     inst = instance_name or settings.EVOLUTION_INSTANCE_NAME
-    if not settings.EVOLUTION_API_URL:
-        return WhatsAppStatusResponse(
-            instance_name=inst,
-            state="disabled",
-            connected=False
-        )
+    base_url = get_evolution_url()
+    headers = get_evolution_headers()
 
-    url = f"{settings.EVOLUTION_API_URL}/instance/connectionState/{inst}"
-    headers = {"apikey": settings.EVOLUTION_API_KEY}
+    url = f"{base_url}/instance/connectionState/{inst}"
 
     try:
         async with httpx.AsyncClient(timeout=6.0) as client:
@@ -69,19 +78,11 @@ async def get_whatsapp_qrcode(
 ):
     """Create Evolution API instance and return base64 QR code or pairing code for WhatsApp scanning."""
     inst = body.instance_name or settings.EVOLUTION_INSTANCE_NAME
-    if not settings.EVOLUTION_API_URL:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="EVOLUTION_API_URL is not configured in backend environment."
-        )
-
-    headers = {
-        "apikey": settings.EVOLUTION_API_KEY,
-        "Content-Type": "application/json"
-    }
+    base_url = get_evolution_url()
+    headers = get_evolution_headers()
 
     # Step 1: Ensure Instance Exists
-    create_url = f"{settings.EVOLUTION_API_URL}/instance/create"
+    create_url = f"{base_url}/instance/create"
     create_body = {
         "instanceName": inst,
         "qrcode": True,
@@ -90,13 +91,14 @@ async def get_whatsapp_qrcode(
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            await client.post(create_url, json=create_body, headers=headers)
-        except Exception:
-            pass  # Instance may already exist
+            res_c = await client.post(create_url, json=create_body, headers=headers)
+            logger.info(f"[WhatsApp API] Instance create status: {res_c.status_code}")
+        except Exception as e:
+            logger.warning(f"[WhatsApp API] Instance creation check notice: {e}")
 
         # Step 2: Set Webhook automatically
         webhook_target = body.webhook_url or "https://realtor-api.erma.shop/api/v1/webhooks/whatsapp"
-        webhook_url = f"{settings.EVOLUTION_API_URL}/webhook/set/{inst}"
+        webhook_url = f"{base_url}/webhook/set/{inst}"
         webhook_body = {
             "webhook": {
                 "enabled": True,
@@ -110,8 +112,8 @@ async def get_whatsapp_qrcode(
         except Exception as e:
             logger.warning(f"[WhatsApp API] Could not set webhook: {e}")
 
-        # Step 3: Fetch QR Code or Pairing Code
-        connect_url = f"{settings.EVOLUTION_API_URL}/instance/connect/{inst}"
+        # Step 3: Fetch QR Code or Connection Details
+        connect_url = f"{base_url}/instance/connect/{inst}"
         try:
             res = await client.get(connect_url, headers=headers)
             if res.status_code in [200, 201]:
@@ -128,11 +130,12 @@ async def get_whatsapp_qrcode(
             else:
                 return {
                     "instance_name": inst,
-                    "status": "already_connected_or_error",
+                    "status": "already_connected_or_initializing",
                     "detail": res.text
                 }
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to connect to Evolution API: {str(e)}")
+            logger.error(f"[WhatsApp API] Connection error: {e}")
+            raise HTTPException(status_code=500, detail=f"Evolution API service connection failed: {str(e)}")
 
 
 @router.post("/disconnect")
@@ -142,12 +145,17 @@ async def disconnect_whatsapp(
 ):
     """Disconnect/Logout a WhatsApp instance."""
     inst = body.instance_name or settings.EVOLUTION_INSTANCE_NAME
-    url = f"{settings.EVOLUTION_API_URL}/instance/logout/{inst}"
-    headers = {"apikey": settings.EVOLUTION_API_KEY}
+    base_url = get_evolution_url()
+    headers = get_evolution_headers()
+
+    url = f"{base_url}/instance/logout/{inst}"
 
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
             res = await client.delete(url, headers=headers)
-            return {"message": f"WhatsApp instance '{inst}' logged out successfully.", "response": res.json() if res.status_code == 200 else res.text}
+            return {
+                "message": f"WhatsApp instance '{inst}' logged out successfully.",
+                "response": res.json() if res.status_code == 200 else res.text
+            }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Disconnect error: {str(e)}")

@@ -61,11 +61,16 @@ class WhatsAppAdapter:
             return False
 
         clean_number = phone_number.replace("+", "").replace(" ", "")
-        url = f"{settings.EVOLUTION_API_URL}/message/sendText/{settings.EVOLUTION_INSTANCE_NAME}"
-        headers = {
-            "apikey": settings.EVOLUTION_API_KEY,
-            "Content-Type": "application/json"
-        }
+        base_url = settings.EVOLUTION_API_URL or "http://evolution:8080"
+        if "localhost" in base_url or "127.0.0.1" in base_url:
+            base_url = "http://evolution:8080"
+        base_url = base_url.rstrip("/")
+
+        url = f"{base_url}/message/sendText/{settings.EVOLUTION_INSTANCE_NAME}"
+        headers = {"Content-Type": "application/json"}
+        if settings.EVOLUTION_API_KEY:
+            headers["apikey"] = str(settings.EVOLUTION_API_KEY)
+
         body = {
             "number": clean_number,
             "options": {"delay": 1200, "presence": "composing"},
