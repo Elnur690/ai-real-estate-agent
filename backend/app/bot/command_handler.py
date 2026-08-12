@@ -42,7 +42,8 @@ class BotCommandHandler:
         Shared command handler for WhatsApp and Telegram bots.
         Returns the Azerbaijani response message text to be delivered back to the agent.
         """
-        raw_text_trimmed = raw_text.strip()
+        # Clean Telegram bot username handle suffix (e.g. /sil@RealEstateBot 12 -> /sil 12)
+        raw_text_trimmed = re.sub(r'(/[\w_]+)@[\w_]+', r'\1', raw_text.strip())
         text_lower = raw_text_trimmed.lower()
         app_name = await get_app_name(db)
 
@@ -63,11 +64,11 @@ class BotCommandHandler:
                 db, channel, sender_id, sender_name, raw_text_trimmed, app_name
             )
 
-        # 3. Handle Slash Commands & Fast-Path Menu
+        # 3. Handle Slash Commands & Fast-Path Menu Shortcuts
         if text_lower in ["/start", "/help", "/kömək", "/komak", "kömək", "komak", "help", "menu", "menyu"]:
             return BotCommandHandler._get_help_message(app_name)
 
-        if text_lower in ["/searches", "/axtarışlar", "/axtarislar", "/list", "axtarışlarım", "axtarislarim", "1"]:
+        if text_lower in ["/searches", "/axtarışlar", "/axtarislar", "/axtarışlarım", "/axtarislarim", "/list", "axtarışlarım", "axtarislarim", "1"]:
             return await BotCommandHandler._list_saved_searches(db, tenant)
 
         if text_lower in ["/status", "/plan", "status", "planım nə vaxt bitir?", "planim ne vaxt bitir?", "4"]:
@@ -86,6 +87,81 @@ class BotCommandHandler:
                 await db.commit()
                 return "❌ Axtarış qaralaması ləğv edildi."
             return "Aktiv qaralama yoxdur."
+
+        # Delete Search Command (/sil <id>, /delete <id>, sil <id>, delete <id>)
+        delete_match = re.search(r'^(?:/delete|delete|/sil|sil)\s*#?\s*(\d+)', text_lower)
+        if delete_match:
+            search_id = int(delete_match.group(1))
+            stmt = update(SavedSearch).where(SavedSearch.id == search_id, SavedSearch.tenant_id == tenant.id).values(is_active=False)
+            await db.execute(stmt)
+            await db.commit()
+            return f"Axtarış #{search_id} silindi. 🗑️"
+
+        # Pause Search Command (/pause <id>, /dayandır <id>, dayandır <id>)
+        pause_match = re.search(r'^(?:/pause|pause|/dayandır|/dayandir|dayandır|dayandir)\s*#?\s*(\d+)', text_lower)
+        if pause_match:
+            search_id = int(pause_match.group(1))
+            stmt = update(SavedSearch).where(SavedSearch.id == search_id, SavedSearch.tenant_id == tenant.id).values(is_active=False)
+            await db.execute(stmt)
+            await db.commit()
+            return f"Axtarış #{search_id} dayandırıldı. ⏸️"
+
+        # Resume Search Command (/resume <id>, /aktiv <id>, aktiv et <id>)
+        resume_match = re.search(r'^(?:/resume|resume|/aktiv|aktiv|aktiv et)\s*#?\s*(\d+)', text_lower)
+        if resume_match:
+            search_id = int(resume_match.group(1))
+            stmt = update(SavedSearch).where(SavedSearch.id == search_id, SavedSearch.tenant_id == tenant.id).values(is_active=True)
+            await db.execute(stmt)
+            await db.commit()
+            return f"Axtarış #{search_id} aktiv edildi. ▶️"
+
+        # Brochure & Social Kit Generation Command (/brochure <id>, /broşur <id>)
+        brochure_match = re.search(r'^(?:/brochure|brochure|/broşur|broşur|/broshur|broshur)\s*#?\s*(\d+)', text_lower)
+        if brochure_match:
+            listing_id = int(brochure_match.group(1))
+            from app.services.brochure_generator import BrochureGeneratorService
+            res_b = await BrochureGeneratorService.generate_property_brochure(db, listing_id, tenant.id)
+            if res_b.get("success"):
+                return (
+                    f"📸 *INSTAGRAM CAPTION / SOSİAL ŞƏBƏKƏ MƏTNİ:*\n\n"
+                    f"{res_b['instagram_caption']}\n\n"
+                    f"📄 *PDF Broşurınız hazırlandı!*"
+                )
+            return f"Xəta: Elan #{listing_id} tapılmadı."
+
+        # B2B Co-brokering Acceptance Command (/b2b <id>)
+        b2b_match_cmd = re.search(r'^(?:/b2b|b2b)\s*(qəbul et|qabul et|imtina|accept|decline)?\s*#?\s*(\d+)', text_lower)
+        if b2b_match_cmd:
+            action = b2b_match_cmd.group(1) or "qəbul"
+            b2b_id = int(b2b_match_cmd.group(2))
+            from app.models.b2b_match import B2BMatch
+            new_st = "accepted" if "qəbul" in action or "qabul" in action or "accept" in action else "declined"
+            stmt_b = update(B2BMatch).where(B2BMatch.id == b2b_id, B2BMatch.buyer_tenant_id == tenant.id).values(status=new_st)
+            await db.execute(stmt_b)
+            await db.commit()
+            return f"B2B Partnyorluq statusu yeniləndi: *{new_st.capitalize()}* 🤝"
+
+        # Referral Code & Program Info Command (/referral, /dəvət)
+        if text_lower in ["dostunu dəvət et", "dostunu devet et", "referral", "/referral", "dəvət", "/dəvət", "devet", "/devet"]:
+            from app.services.referral_service import ReferralService
+            ref_code = await ReferralService.get_or_create_referral_code(db, tenant)
+            return (
+                f"🎁 *DOSTUNU DƏVƏT ET VƏ QAZAN! ({app_name})*\n\n"
+                f"Sizin Xüsusi Dəvət Kodunuz: `{ref_code}`\n"
+                f"Balansınız: *{tenant.referral_balance} AZN*\n\n"
+                f"Dostunuz bu kodla abunə olduqda siz *10 AZN* bonus qazanırsınız! 🚀"
+            )
+
+        # Promo Code Redemption Command (/promo <code>, /promokod <code>)
+        promo_match = re.search(r'^(?:/promokod|promokod|/promo|promo)\s*([a-zA-Z0-9_-]+)', text_lower)
+        if promo_match:
+            code = promo_match.group(1)
+            from app.services.referral_service import ReferralService
+            val_res = await ReferralService.validate_promo_code(db, code)
+            if val_res.get("valid"):
+                disc = f"%{val_res['discount_percent']}" if val_res.get("discount_percent") else f"{val_res.get('discount_amount')} AZN"
+                return f"✅ *Promokod təsdiqləndi!* `{val_res['code']}` — {disc} güzəşt tətbiq edildi!"
+            return f"❌ {val_res.get('error', 'Promokod xətası')}"
 
         # 4. Handle Pending Draft Confirmation
         if tenant.draft_search_json and text_lower in ALL_CONFIRM_KEYWORDS:
@@ -109,83 +185,10 @@ class BotCommandHandler:
                 await db.commit()
                 return f"Elan statusu yeniləndi: *{new_status.capitalize()}* ✅"
 
-        # Pause / Resume / Delete Commands
-        pause_match = re.search(r'^(dayandır|dayandir|/pause)\s*(\d+)', text_lower)
-        if pause_match:
-            search_id = int(pause_match.group(2))
-            stmt = update(SavedSearch).where(SavedSearch.id == search_id, SavedSearch.tenant_id == tenant.id).values(is_active=False)
-            await db.execute(stmt)
-            await db.commit()
-            return f"Axtarış #{search_id} dayandırıldı. ⏸️"
-
-        resume_match = re.search(r'^(aktiv et|/resume)\s*(\d+)', text_lower)
-        if resume_match:
-            search_id = int(resume_match.group(2))
-            stmt = update(SavedSearch).where(SavedSearch.id == search_id, SavedSearch.tenant_id == tenant.id).values(is_active=True)
-            await db.execute(stmt)
-            await db.commit()
-            return f"Axtarış #{search_id} aktiv edildi. ▶️"
-
-        delete_match = re.search(r'^(sil|/delete)\s*(\d+)', text_lower)
-        if delete_match:
-            search_id = int(delete_match.group(2))
-            stmt = update(SavedSearch).where(SavedSearch.id == search_id, SavedSearch.tenant_id == tenant.id).values(is_active=False)
-            await db.execute(stmt)
-            await db.commit()
-            return f"Axtarış #{search_id} silindi. 🗑️"
-
-        # Brochure & Social Kit Generation Command
-        brochure_match = re.search(r'^(broşur|broshur|/brochure)\s*(\d+)', text_lower)
-        if brochure_match:
-            listing_id = int(brochure_match.group(2))
-            from app.services.brochure_generator import BrochureGeneratorService
-            res_b = await BrochureGeneratorService.generate_property_brochure(db, listing_id, tenant.id)
-            if res_b.get("success"):
-                return (
-                    f"📸 *INSTAGRAM CAPTION / SOSİAL ŞƏBƏKƏ MƏTNİ:*\n\n"
-                    f"{res_b['instagram_caption']}\n\n"
-                    f"📄 *PDF Broşurınız hazırlandı!*"
-                )
-            return f"Xəta: Elan #{listing_id} tapılmadı."
-
-        # B2B Co-brokering Acceptance Command
-        b2b_match_cmd = re.search(r'^(b2b qəbul et|b2b qabul et|b2b imtina)\s*(\d+)', text_lower)
-        if b2b_match_cmd:
-            action = b2b_match_cmd.group(1)
-            b2b_id = int(b2b_match_cmd.group(2))
-            from app.models.b2b_match import B2BMatch
-            new_st = "accepted" if "qəbul" in action or "qabul" in action else "declined"
-            stmt_b = update(B2BMatch).where(B2BMatch.id == b2b_id, B2BMatch.buyer_tenant_id == tenant.id).values(status=new_st)
-            await db.execute(stmt_b)
-            await db.commit()
-            return f"B2B Partnyorluq statusu yeniləndi: *{new_st.capitalize()}* 🤝"
-
-        # Referral Code & Program Info Command
-        if text_lower in ["dostunu dəvət et", "dostunu devet et", "referral", "/referral", "dəvət", "devet"]:
-            from app.services.referral_service import ReferralService
-            ref_code = await ReferralService.get_or_create_referral_code(db, tenant)
-            return (
-                f"🎁 *DOSTUNU DƏVƏT ET VƏ QAZAN! ({app_name})*\n\n"
-                f"Sizin Xüsusi Dəvət Kodunuz: `{ref_code}`\n"
-                f"Balansınız: *{tenant.referral_balance} AZN*\n\n"
-                f"Dostunuz bu kodla abunə olduqda siz *10 AZN* bonus qazanırsınız! 🚀"
-            )
-
-        # Promo Code Redemption Command
-        promo_match = re.search(r'^(promokod|promo|/promo)\s*([a-zA-Z0-9_-]+)', text_lower)
-        if promo_match:
-            code = promo_match.group(2)
-            from app.services.referral_service import ReferralService
-            val_res = await ReferralService.validate_promo_code(db, code)
-            if val_res.get("valid"):
-                disc = f"%{val_res['discount_percent']}" if val_res.get("discount_percent") else f"{val_res.get('discount_amount')} AZN"
-                return f"✅ *Promokod təsdiqləndi!* `{val_res['code']}` — {disc} güzəşt tətbiq edildi!"
-            return f"❌ {val_res.get('error', 'Promokod xətası')}"
-
         # 5. Fast-path Explicit Add Search Command (/yeni, /add, /new)
-        if text_lower.startswith(("/yeni", "/add", "/new", "yeni axtarış", "yeni axtaris")):
+        if text_lower.startswith(("/yeni", "/add", "/new", "/axtar", "yeni axtarış", "yeni axtaris")):
             criteria_text = raw_text_trimmed
-            for prefix in ["/yeni", "/add", "/new", "yeni axtarış", "yeni axtaris"]:
+            for prefix in ["/yeni", "/add", "/new", "/axtar", "yeni axtarış", "yeni axtaris"]:
                 if criteria_text.lower().startswith(prefix):
                     criteria_text = criteria_text[len(prefix):].strip()
                     break
@@ -228,7 +231,7 @@ class BotCommandHandler:
         await db.refresh(new_tenant)
 
         # Process search wizard for initial text if provided
-        if len(raw_text) > 5 and not raw_text.lower().startswith(("/start", "salam", "hi")):
+        if len(raw_text) > 5 and not raw_text.lower().startswith(("/start", "/help", "salam", "hi")):
             return await BotCommandHandler._process_search_wizard(db, new_tenant, raw_text)
 
         return (
@@ -411,7 +414,7 @@ class BotCommandHandler:
             status_icon = "🟢" if s.is_active else "⏸️"
             msg.append(f"{status_icon} *#{s.id} {s.name}*\n   Parametr: {s.raw_criteria_text}\n")
 
-        msg.append("\n_Dayandırmaq üçün:_ `/pause <id>`\n_Aktiv etmək üçün:_ `/resume <id>`\n_Silmək üçün:_ `/delete <id>`")
+        msg.append("\n_Dayandırmaq üçün:_ `/pause <id>`\n_Aktiv etmək üçün:_ `/resume <id>`\n_Silmək üçün:_ `/sil <id>` və ya `/delete <id>`")
         return "\n".join(msg)
 
     @staticmethod
@@ -434,12 +437,12 @@ class BotCommandHandler:
         return (
             f"🤖 *{app_name} - Əmr Siyahısı*\n\n"
             f"1️⃣ `/searches` - Aktiv axtarışların siyahısı\n"
-            f"2️⃣ `/yeni <mətn>` - Yeni axtarış parametrlərini daxil etmək\n"
-            f"3️⃣ `/channel` - WhatsApp ↔ Telegram bildiriş kanalı seçimi\n"
-            f"4️⃣ `/status` - Tarif və abunə müddəti\n"
-            f"5️⃣ `/pause <id>` - Axtarışı müvəqqəti dayandırmaq\n"
-            f"6️⃣ `/resume <id>` - Axtarışı yenidən aktiv etmək\n"
-            f"7️⃣ `/delete <id>` - Axtarışı silmək\n"
+            f"2️⃣ `/yeni <mətn>` - Yeni axtarış daxil etmək\n"
+            f"3️⃣ `/sil <id>` - Axtarışı silmək\n"
+            f"4️⃣ `/pause <id>` - Axtarışı müvəqqəti dayandırmaq\n"
+            f"5️⃣ `/resume <id>` - Axtarışı yenidən aktiv etmək\n"
+            f"6️⃣ `/channel` - WhatsApp ↔ Telegram bildiriş kanalı seçimi\n"
+            f"7️⃣ `/status` - Tarif və abunə müddəti\n"
             f"8️⃣ `/cancel` - Qaralamanı ləğv etmək\n\n"
             f"💬 *Təsdiq Sözləri (Axtarışı Saxlamaq Üçün):*\n"
             f"• AZ: `Təsdiq` / `Hə` / `Bəli` / `Ok`\n"

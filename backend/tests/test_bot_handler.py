@@ -32,16 +32,46 @@ async def test_bot_onboarding_and_commands():
         )
         assert "uğurla təsdiqləndi" in res_confirm.lower() or "yadda saxlanıldı" in res_confirm.lower()
 
-        # List searches
+        # List searches via /searches
         res2 = await BotCommandHandler.handle_incoming_message(
             db=db,
             channel="telegram",
             sender_id="999888777",
             sender_name="Orxan Agent",
-            raw_text="Axtarışlarım"
+            raw_text="/searches"
         )
         assert "Sizin Axtarışlarınız" in res2
         assert "Yasamal" in res2
+
+        # Test slash command /pause 1
+        res_pause = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="telegram",
+            sender_id="999888777",
+            sender_name="Orxan Agent",
+            raw_text="/pause 1"
+        )
+        assert "dayandırıldı" in res_pause.lower()
+
+        # Test slash command /resume 1
+        res_resume = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="telegram",
+            sender_id="999888777",
+            sender_name="Orxan Agent",
+            raw_text="/resume 1"
+        )
+        assert "aktiv edildi" in res_resume.lower()
+
+        # Test slash command /sil 1 with Telegram @botname suffix
+        res_sil = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="telegram",
+            sender_id="999888777",
+            sender_name="Orxan Agent",
+            raw_text="/sil@RealEstateBot 1"
+        )
+        assert "silindi" in res_sil.lower()
 
         # Help message via slash command /help
         res3 = await BotCommandHandler.handle_incoming_message(
