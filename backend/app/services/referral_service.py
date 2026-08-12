@@ -9,12 +9,16 @@ from app.models.promo_code import PromoCode
 
 logger = logging.getLogger(__name__)
 
+import re
+
 class ReferralService:
     @staticmethod
     async def get_or_create_referral_code(db: AsyncSession, tenant: Tenant) -> str:
         """Generates and returns an agent's unique referral code."""
         if not tenant.referral_code:
-            code = f"REF-{tenant.id:04d}-{tenant.name[:3].upper()}"
+            clean_name = re.sub(r'[^a-zA-Z0-9]', '', tenant.name or "AGENT").upper()
+            suffix = clean_name[:4] if clean_name else "AGENT"
+            code = f"REF-{tenant.id:04d}-{suffix}"
             tenant.referral_code = code
             await db.commit()
             await db.refresh(tenant)

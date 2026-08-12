@@ -23,10 +23,9 @@ class AVMEngineService:
             return listing
 
         # 2. Dynamic District Average Price per SQM
-        stmt = select(func.avg(Listing.price / Listing.area_sqm)).where(
+        stmt = select(func.avg(Listing.price_per_sqm)).where(
             Listing.district == listing.district,
-            Listing.area_sqm > 0,
-            Listing.price > 0,
+            Listing.price_per_sqm > 0,
             Listing.is_active == True
         )
         res = await db.execute(stmt)

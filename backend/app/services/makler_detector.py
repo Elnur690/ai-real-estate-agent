@@ -1,5 +1,6 @@
 import re
 import logging
+from datetime import datetime, timezone
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.listing import Listing
@@ -32,6 +33,10 @@ class MaklerDetectorService:
             min_price = listing.price * 0.95
             max_price = listing.price * 1.05
 
+            created_time = listing.created_at or datetime.now(timezone.utc)
+            if created_time.tzinfo is None:
+                created_time = created_time.replace(tzinfo=timezone.utc)
+
             stmt_earlier = select(Listing).where(
                 Listing.id != listing.id,
                 Listing.district == listing.district,
@@ -40,7 +45,7 @@ class MaklerDetectorService:
                 Listing.area_sqm <= max_area,
                 Listing.price >= min_price,
                 Listing.price <= max_price,
-                Listing.created_at < listing.created_at
+                Listing.created_at < created_time
             ).order_by(Listing.created_at.asc())
 
             res_earlier = await db.execute(stmt_earlier)
