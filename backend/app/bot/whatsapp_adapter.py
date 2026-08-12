@@ -88,21 +88,45 @@ class WhatsAppAdapter:
             return None
 
     @staticmethod
+    async def resolve_active_instance(instance_name: Optional[str] = None, base_url: str = "http://evolution:8080", headers: dict = {}) -> str:
+        if instance_name and instance_name != settings.EVOLUTION_INSTANCE_NAME:
+            return instance_name
+
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                res = await client.get(f"{base_url}/instance/fetchInstances", headers=headers)
+                if res.status_code == 200:
+                    instances = res.json()
+                    if isinstance(instances, list) and len(instances) > 0:
+                        for item in instances:
+                            inst_obj = item.get("instance", {}) if isinstance(item, dict) else {}
+                            if inst_obj.get("status") == "open" or item.get("connectionStatus") == "open":
+                                name = inst_obj.get("instanceName") or item.get("name")
+                                if name:
+                                    return name
+                        first_name = instances[0].get("instance", {}).get("instanceName") or instances[0].get("name")
+                        if first_name:
+                            return first_name
+        except Exception:
+            pass
+        return instance_name or settings.EVOLUTION_INSTANCE_NAME
+
+    @staticmethod
     async def send_message(phone_number: str, text: str, instance_name: Optional[str] = None) -> bool:
         """Send a WhatsApp message via Evolution API REST endpoint."""
-        inst = instance_name or settings.EVOLUTION_INSTANCE_NAME
         base_url = settings.EVOLUTION_API_URL or "http://evolution:8080"
         if "localhost" in base_url or "127.0.0.1" in base_url:
             base_url = "http://evolution:8080"
         base_url = base_url.rstrip("/")
 
-        clean_recipient = phone_number if "@g.us" in phone_number else phone_number.replace("+", "").replace(" ", "")
-
-        url = f"{base_url}/message/sendText/{inst}"
         headers = {"Content-Type": "application/json"}
         if settings.EVOLUTION_API_KEY:
             headers["apikey"] = str(settings.EVOLUTION_API_KEY)
 
+        inst = await WhatsAppAdapter.resolve_active_instance(instance_name, base_url, headers)
+        clean_recipient = phone_number if "@g.us" in phone_number else phone_number.replace("+", "").replace(" ", "")
+
+        url = f"{base_url}/message/sendText/{inst}"
         body = {
             "number": clean_recipient,
             "options": {"delay": 1200, "presence": "composing"},

@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 from app.ai.base import AIProvider, StructuredCriteria, StructuredListing
 
 class GeminiProvider(AIProvider):
-    def __init__(self, api_key: str | None = None, model_name: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: str | None = None, model_name: str = "gemini-2.0-flash"):
         self.api_key = api_key
         self.model_name = model_name
 
