@@ -9,6 +9,7 @@ from app.models.saved_search import SavedSearch
 from app.models.match import Match
 from app.models.setting import AppSettings
 from app.ai.factory import ProviderFactory
+from app.core.baku_locations import extract_metro_station
 
 async def get_app_name(db: AsyncSession) -> str:
     """Fetch app_name from app_settings DB with fallback."""
@@ -34,10 +35,10 @@ class BotCommandHandler:
     async def handle_incoming_message(
         db: AsyncSession,
         channel: str,            # "telegram" or "whatsapp"
-        sender_id: str,          # telegram chat_id or whatsapp phone number
+        sender_id: str,          # telegram chat_id or whatsapp phone number / group JID
         sender_name: str,        # display name
         raw_text: str
-    ) -> str:
+    ) -> Optional[str]:
         """
         Shared command handler for WhatsApp and Telegram bots.
         Returns the Azerbaijani response message text to be delivered back to the agent.
@@ -47,7 +48,7 @@ class BotCommandHandler:
         text_lower = raw_text_trimmed.lower()
         app_name = await get_app_name(db)
 
-        # 1. Find or initialize Tenant
+        # 1. Find Tenant
         tenant = None
         if channel == "telegram":
             stmt = select(Tenant).where(Tenant.telegram_chat_id == sender_id)
@@ -57,16 +58,28 @@ class BotCommandHandler:
             stmt = select(Tenant).where(Tenant.whatsapp_number == sender_id)
             res = await db.execute(stmt)
             tenant = res.scalars().first()
+            
+            # Fallback for WhatsApp Groups or instances
+            if not tenant:
+                stmt_fb = select(Tenant).where(Tenant.preferred_channel == "whatsapp").order_by(Tenant.id.asc())
+                res_fb = await db.execute(stmt_fb)
+                tenant = res_fb.scalars().first()
 
-        # 2. Onboarding Flow if Tenant not found
+        # Ultimate fallback if no specific tenant matched
+        if not tenant:
+            stmt_any = select(Tenant).order_by(Tenant.id.asc())
+            res_any = await db.execute(stmt_any)
+            tenant = res_any.scalars().first()
+
+        # 2. Handle Slash Commands & Fast-Path Menu Shortcuts (Always accessible)
+        if text_lower in ["/start", "/help", "/kömək", "/komak", "kömək", "komak", "help", "menu", "menyu", "salam", "hi", "start"]:
+            return BotCommandHandler._get_start_message(app_name)
+
+        # 3. Onboarding Flow if Tenant still not found in DB
         if not tenant:
             return await BotCommandHandler._handle_onboarding(
                 db, channel, sender_id, sender_name, raw_text_trimmed, app_name
             )
-
-        # 3. Handle Slash Commands & Fast-Path Menu Shortcuts
-        if text_lower in ["/start", "/help", "/kömək", "/komak", "kömək", "komak", "help", "menu", "menyu", "salam", "hi", "start"]:
-            return BotCommandHandler._get_start_message(app_name)
 
         if text_lower in ["/searches", "/axtarışlar", "/axtarislar", "/axtarışlarım", "/axtarislarim", "/list", "axtarışlarım", "axtarislarim", "1"]:
             return await BotCommandHandler._list_saved_searches(db, tenant)
@@ -203,7 +216,7 @@ class BotCommandHandler:
         if len(raw_text_trimmed) >= 3:
             return await BotCommandHandler._process_search_wizard(db, tenant, raw_text_trimmed)
 
-        return f"Salam! *{app_name}* platformasına xoş gəlmisiniz.\nMövcud əmrləri görmək üçün `/help` və ya *Kömək* yazın. 🤖"
+        return BotCommandHandler._get_start_message(app_name)
 
     @staticmethod
     async def _handle_onboarding(
@@ -214,6 +227,10 @@ class BotCommandHandler:
         raw_text: str,
         app_name: str
     ) -> Optional[str]:
+        # Always allow /start or /help info messages even for non-tenants
+        if raw_text.lower().startswith(("/start", "/help", "salam", "hi", "start")):
+            return BotCommandHandler._get_start_message(app_name)
+
         # Ignore unknown group messages completely to prevent dashboard pollution
         if "@g.us" in sender_id:
             return None
