@@ -3,6 +3,7 @@ import asyncio
 import re
 from typing import List, Dict, Any
 from app.ai.base import AIProvider, StructuredCriteria, StructuredListing
+from app.core.baku_locations import extract_metro_station
 
 class GeminiProvider(AIProvider):
     def __init__(self, api_key: str | None = None, model_name: str = "gemini-1.5-flash"):
@@ -11,7 +12,6 @@ class GeminiProvider(AIProvider):
 
     async def parse_search_criteria(self, raw_text: str) -> StructuredCriteria:
         """Parse raw user criteria text into structured JSON."""
-        # Check if API key is provided, otherwise perform intelligent heuristic parsing as fallback
         if self.api_key:
             try:
                 from google import genai
@@ -23,8 +23,11 @@ Extract real estate search criteria from this user input (in Azerbaijani or Russ
 Return JSON ONLY with this exact schema:
 {{
   "district": "string or null",
-  "min_price": number or null,
-  "max_price": number or null,
+  "metro_station": "Baku Metro station name or null (e.g., Elmlər Akademiyası, 28 May, Gənclik, Nərimanov)",
+  "min_price": number in AZN or null,
+  "max_price": number in AZN or null,
+  "min_price_usd": number in USD or null,
+  "max_price_usd": number in USD or null,
   "min_rooms": integer or null,
   "max_rooms": integer or null,
   "min_area": number or null,
@@ -39,13 +42,24 @@ Return JSON ONLY with this exact schema:
                     contents=prompt,
                 )
                 text = response.text.strip()
-                # Remove markdown wrapping if present
                 if text.startswith("```json"):
                     text = text.split("```json", 1)[1].rsplit("```", 1)[0].strip()
                 elif text.startswith("```"):
                     text = text.split("```", 1)[1].rsplit("```", 1)[0].strip()
                 
                 data = json.loads(text)
+
+                # Ensure Baku metro station fallback if null
+                if not data.get("metro_station"):
+                    data["metro_station"] = extract_metro_station(raw_text)
+
+                # If prices are in USD, auto-convert to AZN
+                rate = 1.70
+                if data.get("max_price_usd") and not data.get("max_price"):
+                    data["max_price"] = round(data["max_price_usd"] * rate, 2)
+                if data.get("min_price_usd") and not data.get("min_price"):
+                    data["min_price"] = round(data["min_price_usd"] * rate, 2)
+
                 return StructuredCriteria(**data)
             except Exception as e:
                 print(f"[GeminiProvider] API Call failed or rate-limited: {e}. Falling back to rule parser.")
@@ -56,13 +70,15 @@ Return JSON ONLY with this exact schema:
     def _heuristic_parse_criteria(self, text: str) -> StructuredCriteria:
         text_lower = text.lower()
 
-        # District extraction
+        # District & Metro Station extraction
         districts = ["yasamal", "nəsimi", "xətai", "nərimanov", "binəqədi", "sabunçu", "suraxanı", "səbail", "nizami", "xəzər", "qaradağ", "pirallahi", "28 may", "gənclik", "elmlər"]
         found_district = None
         for d in districts:
             if d in text_lower:
                 found_district = d.capitalize()
                 break
+
+        found_metro = extract_metro_station(text)
 
         # Rooms
         rooms_match = re.search(r'(\d+)\s*(?:otaq|otaqlı|otag)', text_lower)
@@ -71,22 +87,38 @@ Return JSON ONLY with this exact schema:
             r = int(rooms_match.group(1))
             min_rooms, max_rooms = r, r
 
-        # Prices (e.g., 100-150 min, 120000, 100k)
-        prices = re.findall(r'(\d+)\s*(?:-|illə|–)?\s*(\d+)?\s*(min|k|azn)?', text_lower)
+        # Currency USD Detection
+        is_usd = any(c in text_lower for c in ["$", "usd", "dollar", "dolar"])
+        rate = 1.70
+
+        # Prices (e.g., 100-150 min, 120000, 100k, $100k)
+        text_for_price = re.sub(r'\d+\s*(?:otaq|otaqlı|otag)', '', text_lower)
         min_price, max_price = None, None
-        nums = [int(n) for n in re.findall(r'\b\d+\b', text_lower)]
-        if len(nums) >= 2:
-            p1, p2 = sorted(nums[:2])
-            if p1 < 1000 and "min" in text_lower:
-                p1 *= 1000
-            if p2 < 1000 and "min" in text_lower:
-                p2 *= 1000
-            min_price, max_price = float(p1), float(p2)
-        elif len(nums) == 1:
-            p = nums[0]
-            if p < 1000 and ("min" in text_lower or "k" in text_lower):
-                p *= 1000
-            max_price = float(p)
+        min_price_usd, max_price_usd = None, None
+        
+        matches = re.findall(r'(\d+)\s*(k|min)?', text_for_price)
+        parsed_prices = []
+        for val_str, mult in matches:
+            if not val_str: continue
+            val = int(val_str)
+            if mult in ["k", "min"] or (val < 1000 and ("min" in text_for_price or "k" in text_for_price)):
+                val *= 1000
+            parsed_prices.append(val)
+
+        if len(parsed_prices) >= 2:
+            p1, p2 = sorted(parsed_prices[:2])
+            if is_usd:
+                min_price_usd, max_price_usd = float(p1), float(p2)
+                min_price, max_price = round(p1 * rate, 2), round(p2 * rate, 2)
+            else:
+                min_price, max_price = float(p1), float(p2)
+        elif len(parsed_prices) == 1:
+            p = parsed_prices[0]
+            if is_usd:
+                max_price_usd = float(p)
+                max_price = round(p * rate, 2)
+            else:
+                max_price = float(p)
 
         # Seller type
         seller_type = "any"
@@ -105,12 +137,14 @@ Return JSON ONLY with this exact schema:
         summary_parts = []
         if found_district:
             summary_parts.append(f"{found_district} rayonunda")
+        if found_metro:
+            summary_parts.append(f"{found_metro} m/st yaxınlığında")
         if min_rooms:
             summary_parts.append(f"{min_rooms} otaqlı")
-        if min_price and max_price:
-            summary_parts.append(f"{int(min_price)}-{int(max_price)} AZN qiymət aralığında")
+        if max_price_usd:
+            summary_parts.append(f"maksimum ${int(max_price_usd):,} USD ({int(max_price):,} AZN) qiymətinə")
         elif max_price:
-            summary_parts.append(f"maksimum {int(max_price)} AZN qiymətinə")
+            summary_parts.append(f"maksimum {int(max_price):,} AZN qiymətinə")
         if seller_type == "owner":
             summary_parts.append("yalnız ev sahibindən")
         if building_type == "new":
@@ -121,8 +155,11 @@ Return JSON ONLY with this exact schema:
 
         return StructuredCriteria(
             district=found_district,
+            metro_station=found_metro,
             min_price=min_price,
             max_price=max_price,
+            min_price_usd=min_price_usd,
+            max_price_usd=max_price_usd,
             min_rooms=min_rooms,
             max_rooms=max_rooms,
             seller_type=seller_type,
@@ -131,6 +168,10 @@ Return JSON ONLY with this exact schema:
         )
 
     async def parse_telegram_listing(self, raw_text: str, photos: List[str] = []) -> StructuredListing:
+        found_metro = extract_metro_station(raw_text)
+        is_usd = any(c in raw_text.lower() for c in ["$", "usd", "dollar", "dolar"])
+        rate = 1.70
+
         if self.api_key:
             try:
                 from google import genai
@@ -143,9 +184,10 @@ Return JSON ONLY:
 {{
   "title": "Short descriptive title",
   "description": "Cleaned description",
-  "price": number,
-  "currency": "AZN",
+  "price": number in AZN,
+  "currency": "AZN" | "USD",
   "district": "string or null",
+  "metro_station": "Baku Metro station name or null",
   "rooms": integer or null,
   "area_sqm": number or null,
   "floor": integer or null,
@@ -162,13 +204,29 @@ Return JSON ONLY:
                 if text.startswith("```json"):
                     text = text.split("```json", 1)[1].rsplit("```", 1)[0].strip()
                 data = json.loads(text)
-                return StructuredListing(**data, photos=photos)
+                
+                # Convert USD to AZN if currency is USD
+                p = data.get("price", 0.0)
+                p_usd = None
+                if data.get("currency") == "USD" or is_usd:
+                    p_usd = p
+                    data["price"] = round(p * rate, 2)
+                    data["currency"] = "AZN"
+
+                if not data.get("metro_station"):
+                    data["metro_station"] = found_metro
+
+                return StructuredListing(**data, price_usd=p_usd, photos=photos)
             except Exception as e:
                 print(f"[GeminiProvider] Telegram listing parse error: {e}")
 
         # Fallback heuristic parser
-        price_match = re.search(r'(\d[\d\s,.]*)\s*(?:AZN|azn|manat|\$)', raw_text)
+        price_match = re.search(r'(\d[\d\s,.]*)\s*(?:AZN|azn|manat|\$|USD|usd)', raw_text)
         price = float(price_match.group(1).replace(" ", "").replace(",", ".")) if price_match else 0.0
+        price_usd = price if is_usd else None
+        if is_usd:
+            price = round(price * rate, 2)
+
         rooms_match = re.search(r'(\d+)\s*(?:otaq|otaqlı)', raw_text, re.IGNORECASE)
         rooms = int(rooms_match.group(1)) if rooms_match else None
 
@@ -177,6 +235,8 @@ Return JSON ONLY:
             description=raw_text,
             price=price,
             currency="AZN",
+            price_usd=price_usd,
+            metro_station=found_metro,
             rooms=rooms,
             photos=photos
         )
@@ -198,7 +258,15 @@ Return JSON ONLY:
         if criteria.district:
             listing_district = (listing.get("district") or "").lower()
             if criteria.district.lower() not in listing_district:
-                score -= 0.4
+                score -= 0.3
+
+        # Metro station check
+        if criteria.metro_station:
+            listing_metro = (listing.get("metro_station") or listing.get("address_raw") or listing.get("description") or "").lower()
+            if criteria.metro_station.lower() in listing_metro:
+                score += 0.1 # Boost score if exact metro matches!
+            else:
+                score -= 0.2
 
         # Rooms check
         rooms = listing.get("rooms")

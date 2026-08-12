@@ -59,6 +59,20 @@ class WhatsAppAdapter:
                 ""
             )
 
+            # Check for voice note / audio message
+            audio_msg = message.get("audioMessage") or message.get("pttMessage")
+            if not raw_text and audio_msg and isinstance(audio_msg, dict):
+                audio_url = audio_msg.get("url")
+                if audio_url:
+                    from app.services.audio_transcriber import AudioTranscriberService
+                    headers = {}
+                    if settings.EVOLUTION_API_KEY:
+                        headers["apikey"] = str(settings.EVOLUTION_API_KEY)
+                    logger.info(f"[WhatsAppAdapter] Voice note received from {sender_id}. Transcribing audio...")
+                    transcribed = await AudioTranscriberService.transcribe_audio_url(audio_url, headers=headers)
+                    if transcribed:
+                        raw_text = transcribed
+
             if not raw_text or not sender_id:
                 logger.info(f"[WhatsAppAdapter] Message missing text or sender_id. Text: '{raw_text}', Sender: '{sender_id}'")
                 return None

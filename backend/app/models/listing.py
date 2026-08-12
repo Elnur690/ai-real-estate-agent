@@ -31,8 +31,10 @@ class Listing(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     price: Mapped[float] = mapped_column(Float, nullable=False)
     currency: Mapped[str] = mapped_column(String(10), default="AZN")
+    price_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     district: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    metro_station: Mapped[str | None] = mapped_column(String(255), nullable=True)
     address_raw: Mapped[str | None] = mapped_column(String(500), nullable=True)
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)

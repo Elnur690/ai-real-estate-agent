@@ -14,6 +14,7 @@ class SavedSearch(Base):
     raw_criteria_text: Mapped[str] = mapped_column(Text, nullable=False)
 
     district: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    metro_station: Mapped[str | None] = mapped_column(String(255), nullable=True)
     min_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     min_rooms: Mapped[int | None] = mapped_column(Integer, nullable=True)

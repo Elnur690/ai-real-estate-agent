@@ -20,6 +20,9 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
         from sqlalchemy import text
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS draft_search_json TEXT;"))
+        await conn.execute(text("ALTER TABLE saved_searches ADD COLUMN IF NOT EXISTS metro_station VARCHAR(255);"))
+        await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS metro_station VARCHAR(255);"))
+        await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS price_usd DOUBLE PRECISION;"))
     logger.info("[Startup] Database tables and columns verified.")
 
     # Auto-seed default admin user if none exists

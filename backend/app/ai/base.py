@@ -4,8 +4,11 @@ from pydantic import BaseModel, Field
 
 class StructuredCriteria(BaseModel):
     district: Optional[str] = Field(None, description="District or location name, e.g., Yasamal, Nəsimi, Xətai")
+    metro_station: Optional[str] = Field(None, description="Baku metro station name, e.g., Elmlər Akademiyası, 28 May, Gənclik")
     min_price: Optional[float] = Field(None, description="Minimum price in AZN")
     max_price: Optional[float] = Field(None, description="Maximum price in AZN")
+    min_price_usd: Optional[float] = Field(None, description="Minimum price in USD")
+    max_price_usd: Optional[float] = Field(None, description="Maximum price in USD")
     min_rooms: Optional[int] = Field(None, description="Minimum number of rooms")
     max_rooms: Optional[int] = Field(None, description="Maximum number of rooms")
     min_area: Optional[float] = Field(None, description="Minimum area in sqm")
@@ -20,7 +23,9 @@ class StructuredListing(BaseModel):
     description: Optional[str] = None
     price: float
     currency: str = "AZN"
+    price_usd: Optional[float] = None
     district: Optional[str] = None
+    metro_station: Optional[str] = None
     rooms: Optional[int] = None
     area_sqm: Optional[float] = None
     floor: Optional[int] = None

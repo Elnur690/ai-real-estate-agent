@@ -250,10 +250,16 @@ class BotCommandHandler:
         draft["raw_text"] = combined_text
         if new_parsed.district:
             draft["district"] = new_parsed.district
+        if new_parsed.metro_station:
+            draft["metro_station"] = new_parsed.metro_station
         if new_parsed.min_price:
             draft["min_price"] = new_parsed.min_price
         if new_parsed.max_price:
             draft["max_price"] = new_parsed.max_price
+        if new_parsed.min_price_usd:
+            draft["min_price_usd"] = new_parsed.min_price_usd
+        if new_parsed.max_price_usd:
+            draft["max_price_usd"] = new_parsed.max_price_usd
         if new_parsed.min_rooms:
             draft["min_rooms"] = new_parsed.min_rooms
         if new_parsed.max_rooms:
@@ -269,8 +275,10 @@ class BotCommandHandler:
 
         # Build Structured Summary & Identify Missing Fields
         district = draft.get("district")
+        metro_station = draft.get("metro_station")
         min_p = draft.get("min_price")
         max_p = draft.get("max_price")
+        max_p_usd = draft.get("max_price_usd")
         min_r = draft.get("min_rooms")
         max_r = draft.get("max_rooms")
         seller = draft.get("seller_type", "any")
@@ -284,14 +292,21 @@ class BotCommandHandler:
         else:
             missing_fields.append("📍 *Rayon* (məsələn: Yasamal, Nəsimi)")
 
-        if min_p and max_p:
+        if metro_station:
+            set_fields.append(f"• 🚇 *Metro Stansiyası:* {metro_station} m/st")
+        else:
+            missing_fields.append("🚇 *Metro Stansiyası* (məsələn: Elmlər, 28 May, Gənclik)")
+
+        if max_p_usd:
+            set_fields.append(f"• 💰 *Qiymət:* ${int(max_p_usd):,} USD (məzənnə ilə ≈ {int(max_p):,} AZN)")
+        elif min_p and max_p:
             set_fields.append(f"• 💰 *Qiymət:* {int(min_p):,} - {int(max_p):,} AZN")
         elif max_p:
             set_fields.append(f"• 💰 *Maksimum Qiymət:* {int(max_p):,} AZN")
         elif min_p:
             set_fields.append(f"• 💰 *Minimum Qiymət:* {int(min_p):,} AZN")
         else:
-            missing_fields.append("💰 *Qiymət aralığı* (məsələn: 100-150 min AZN)")
+            missing_fields.append("💰 *Qiymət aralığı* (məsələn: 100-150 min AZN / $100k USD)")
 
         if min_r and max_r and min_r == max_r:
             set_fields.append(f"• 🚪 *Otaq sayı:* {min_r} otaqlı")
@@ -348,6 +363,7 @@ class BotCommandHandler:
 
         raw_text = draft.get("raw_text", "Axtarış parametrləri")
         district = draft.get("district")
+        metro_station = draft.get("metro_station")
         min_p = draft.get("min_price")
         max_p = draft.get("max_price")
         min_r = draft.get("min_rooms")
@@ -357,9 +373,10 @@ class BotCommandHandler:
 
         new_search = SavedSearch(
             tenant_id=tenant.id,
-            name=f"Axtarış: {district or 'Ümumi'}",
+            name=f"Axtarış: {district or metro_station or 'Ümumi'}",
             raw_criteria_text=raw_text,
             district=district,
+            metro_station=metro_station,
             min_price=min_p,
             max_price=max_p,
             min_rooms=min_r,
@@ -375,6 +392,7 @@ class BotCommandHandler:
 
         summary_parts = []
         if district: summary_parts.append(f"Rayon: {district}")
+        if metro_station: summary_parts.append(f"Metro: {metro_station}")
         if min_r: summary_parts.append(f"Otaq: {min_r} otaqlı")
         if min_p or max_p: summary_parts.append(f"Qiymət: {int(min_p or 0):,}-{int(max_p or 0):,} AZN")
         summary_str = " | ".join(summary_parts) if summary_parts else raw_text
