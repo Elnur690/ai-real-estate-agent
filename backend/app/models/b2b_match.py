@@ -14,4 +14,4 @@ class B2BMatch(Base):
     listing_id: Mapped[int] = mapped_column(ForeignKey("listings.id", ondelete="CASCADE"), nullable=False)
     
     status: Mapped[str] = mapped_column(String(50), default="pending") # pending | accepted | declined
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

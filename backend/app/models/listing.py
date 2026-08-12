@@ -14,8 +14,8 @@ class ListingSource(Base):
     tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True)
 
     status: Mapped[str] = mapped_column(String(50), default="active")  # active | error | blocked
-    last_scraped_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_scraped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     listings = relationship("Listing", back_populates="source", cascade="all, delete-orphan")
 
@@ -59,9 +59,9 @@ class Listing(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     price_history: Mapped[list[Any] | None] = mapped_column(JSON, default=list)
 
-    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
-    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     source = relationship("ListingSource", back_populates="listings")
     matches = relationship("Match", back_populates="listing", cascade="all, delete-orphan")

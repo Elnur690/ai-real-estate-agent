@@ -14,8 +14,8 @@ class Tenant(Base):
 
     plan: Mapped[str] = mapped_column(String(50), default="free")  # free | starter | pro | agency | enterprise
     plan_period: Mapped[str] = mapped_column(String(50), default="monthly")  # monthly | quarterly
-    plan_started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
-    plan_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    plan_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    plan_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="pending")  # active | expired | suspended | pending
 
     preferred_channel: Mapped[str] = mapped_column(String(20), default="telegram")  # whatsapp | telegram
@@ -26,7 +26,7 @@ class Tenant(Base):
     # Backup-as-a-Service Plan Options
     backup_enabled: Mapped[bool] = mapped_column(default=False)
     backup_frequency_days: Mapped[int] = mapped_column(default=7)  # 1 (daily) | 7 (weekly) | 30 (monthly)
-    last_backup_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_backup_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # 🚀 Killer Feature Plan Options
     feature_makler_detector: Mapped[bool] = mapped_column(default=False)
@@ -40,7 +40,7 @@ class Tenant(Base):
     referred_by_tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True)
     referral_balance: Mapped[float] = mapped_column(Float, default=0.0) # Bonus credit in AZN
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Relationships
     users = relationship("User", back_populates="tenant", cascade="all, delete-orphan")

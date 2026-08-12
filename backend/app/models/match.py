@@ -12,11 +12,11 @@ class Match(Base):
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
 
     score: Mapped[float] = mapped_column(Float, nullable=False)
-    delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     delivery_channel: Mapped[str] = mapped_column(String(20), default="telegram")  # whatsapp | telegram
-    status: Mapped[str] = mapped_column(String(50), default="sent")  # sent | interested | skipped | expired
+    status: Mapped[str] = mapped_column(String(50), default="sent")  # sent | read | acted | ignored
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     listing = relationship("Listing", back_populates="matches")
     saved_search = relationship("SavedSearch", back_populates="matches")

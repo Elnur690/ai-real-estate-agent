@@ -24,14 +24,14 @@ def upgrade() -> None:
     sa.Column('telegram_handle', sa.String(length=100), nullable=True),
     sa.Column('plan', sa.String(length=50), nullable=False),
     sa.Column('plan_period', sa.String(length=50), nullable=False),
-    sa.Column('plan_started_at', sa.DateTime(), nullable=False),
-    sa.Column('plan_expires_at', sa.DateTime(), nullable=True),
+    sa.Column('plan_started_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('plan_expires_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('status', sa.String(length=50), nullable=False),
     sa.Column('preferred_channel', sa.String(length=20), nullable=False),
     sa.Column('whatsapp_number', sa.String(length=50), nullable=True),
     sa.Column('telegram_chat_id', sa.String(length=100), nullable=True),
     sa.Column('digest_mode', sa.String(length=20), nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_tenants_id'), 'tenants', ['id'], unique=False)
@@ -44,7 +44,7 @@ def upgrade() -> None:
     sa.Column('status', sa.String(length=20), nullable=False),
     sa.Column('latency_ms', sa.Float(), nullable=False),
     sa.Column('error_message', sa.Text(), nullable=True),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -56,8 +56,8 @@ def upgrade() -> None:
     sa.Column('url_or_handle', sa.String(length=500), nullable=False),
     sa.Column('tenant_id', sa.Integer(), nullable=True),
     sa.Column('status', sa.String(length=50), nullable=False),
-    sa.Column('last_scraped_at', sa.DateTime(), nullable=True),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('last_scraped_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -70,7 +70,7 @@ def upgrade() -> None:
     sa.Column('phone', sa.String(length=50), nullable=True),
     sa.Column('role', sa.String(length=50), nullable=False),
     sa.Column('password_hash', sa.String(length=255), nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -84,7 +84,7 @@ def upgrade() -> None:
     sa.Column('model_name', sa.String(length=100), nullable=False),
     sa.Column('api_key_encrypted', sa.Text(), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('updated_by', sa.Integer(), nullable=True),
     sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['updated_by'], ['users.id'], ondelete='SET NULL'),
@@ -95,7 +95,7 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('key', sa.String(length=100), nullable=False),
     sa.Column('value', sa.Text(), nullable=False),
-    sa.Column('updated_at', sa.DateTime(), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('updated_by', sa.Integer(), nullable=True),
     sa.ForeignKeyConstraint(['updated_by'], ['users.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id')
@@ -124,9 +124,9 @@ def upgrade() -> None:
     sa.Column('listing_url', sa.String(length=1000), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column('price_history', sa.JSON(), nullable=True),
-    sa.Column('first_seen_at', sa.DateTime(), nullable=False),
-    sa.Column('last_seen_at', sa.DateTime(), nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('first_seen_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('last_seen_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['source_id'], ['listing_sources.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -137,10 +137,10 @@ def upgrade() -> None:
     sa.Column('tenant_id', sa.Integer(), nullable=False),
     sa.Column('amount', sa.Float(), nullable=False),
     sa.Column('currency', sa.String(length=10), nullable=False),
-    sa.Column('period_covered_start', sa.DateTime(), nullable=False),
-    sa.Column('period_covered_end', sa.DateTime(), nullable=False),
+    sa.Column('period_covered_start', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('period_covered_end', sa.DateTime(timezone=True), nullable=False),
     sa.Column('received_by', sa.Integer(), nullable=True),
-    sa.Column('received_at', sa.DateTime(), nullable=False),
+    sa.Column('received_at', sa.DateTime(timezone=True), nullable=False),
     sa.Column('notes', sa.Text(), nullable=True),
     sa.ForeignKeyConstraint(['received_by'], ['users.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ondelete='CASCADE'),
@@ -163,7 +163,7 @@ def upgrade() -> None:
     sa.Column('seller_type', sa.String(length=50), nullable=False),
     sa.Column('building_type', sa.String(length=50), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id')
@@ -175,10 +175,10 @@ def upgrade() -> None:
     sa.Column('saved_search_id', sa.Integer(), nullable=False),
     sa.Column('tenant_id', sa.Integer(), nullable=False),
     sa.Column('score', sa.Float(), nullable=False),
-    sa.Column('delivered_at', sa.DateTime(), nullable=True),
+    sa.Column('delivered_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('delivery_channel', sa.String(length=20), nullable=False),
     sa.Column('status', sa.String(length=50), nullable=False),
-    sa.Column('created_at', sa.DateTime(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
     sa.ForeignKeyConstraint(['listing_id'], ['listings.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['saved_search_id'], ['saved_searches.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ondelete='CASCADE'),
