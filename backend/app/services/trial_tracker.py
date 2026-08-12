@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.tenant import Tenant
-from app.bot.whatsapp_adapter import whatsapp_adapter
+from app.bot.whatsapp_adapter import WhatsAppAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class TrialTrackerService:
                 if tenant.preferred_channel == "whatsapp" and (tenant.whatsapp_number or tenant.phone):
                     target_num = tenant.whatsapp_number or tenant.phone
                     try:
-                        await whatsapp_adapter.send_message(
+                        await WhatsAppAdapter.send_message(
                             to_number=target_num,
                             message_text=msg,
                             instance_name=f"tenant_{tenant.id}"
