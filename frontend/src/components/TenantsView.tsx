@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { UserPlus, Search, ShieldCheck, Clock, AlertCircle, Phone, MessageSquare, Plus, CheckCircle } from 'lucide-react';
+import { UserPlus, Search, ShieldCheck, Clock, AlertCircle, Phone, MessageSquare, Plus, CheckCircle, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff } from 'lucide-react';
 import api from '../api';
 import { Tenant, SavedSearch } from '../types';
 
@@ -25,6 +25,12 @@ export const TenantsView: React.FC = () => {
 
   const [availablePlans, setAvailablePlans] = useState<any[]>([]);
 
+  // WhatsApp Evolution API Pairing State
+  const [waStatus, setWaStatus] = useState<{ connected: boolean; state: string; instance_name: string } | null>(null);
+  const [waQrCode, setWaQrCode] = useState<string | null>(null);
+  const [waPairingCode, setWaPairingCode] = useState<string | null>(null);
+  const [waLoading, setWaLoading] = useState(false);
+
   const loadTenants = async () => {
     setLoading(true);
     try {
@@ -45,12 +51,54 @@ export const TenantsView: React.FC = () => {
     loadTenants();
   }, []);
 
+  const checkWhatsAppStatus = async (instName?: string) => {
+    try {
+      const res = await api.get('/whatsapp/status', {
+        params: { instance_name: instName || 'realestate_agent' }
+      });
+      setWaStatus(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const generateWhatsAppQrCode = async (instName?: string) => {
+    setWaLoading(true);
+    setWaQrCode(null);
+    setWaPairingCode(null);
+    try {
+      const res = await api.post('/whatsapp/qrcode', {
+        instance_name: instName || 'realestate_agent'
+      });
+      if (res.data && res.data.qrcode) {
+        let qr = res.data.qrcode;
+        if (!qr.startsWith('data:image')) {
+          qr = `data:image/png;base64,${qr}`;
+        }
+        setWaQrCode(qr);
+        setWaPairingCode(res.data.pairing_code || null);
+      } else {
+        alert(res.data?.detail || 'WhatsApp instance already connected or initializing...');
+      }
+      checkWhatsAppStatus(instName);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Failed to generate WhatsApp QR Code.');
+    } finally {
+      setWaLoading(false);
+    }
+  };
+
   const handleCreateTenant = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post('/tenants', newTenant);
+      const res = await api.post('/tenants', newTenant);
       setShowAddModal(false);
       loadTenants();
+
+      // If WhatsApp preferred, auto-check status
+      if (newTenant.preferred_channel === 'whatsapp') {
+        checkWhatsAppStatus(`tenant_${res.data.id}`);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -69,6 +117,9 @@ export const TenantsView: React.FC = () => {
     try {
       const res = await api.get(`/tenants/${tenantId}`);
       setSelectedTenant(res.data);
+      if (res.data.tenant.preferred_channel === 'whatsapp') {
+        checkWhatsAppStatus(`tenant_${tenantId}`);
+      }
     } catch (e) {
       console.error(e);
     }
@@ -85,10 +136,13 @@ export const TenantsView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-white">Tenant & Agent Management</h2>
-          <p className="text-slate-400 text-xs mt-0.5">Manage agents, subscription plans, and chat channel routing.</p>
+          <p className="text-slate-400 text-xs mt-0.5">Manage agents, subscription plans, and direct WhatsApp / Telegram channel routing.</p>
         </div>
         <button
-          onClick={() => setShowAddModal(true)}
+          onClick={() => {
+            setWaQrCode(null);
+            setShowAddModal(true);
+          }}
           className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-500/20"
         >
           <UserPlus className="w-4 h-4" />
@@ -132,7 +186,7 @@ export const TenantsView: React.FC = () => {
                 <td className="p-4 capitalize">{t.type.replace('_', ' ')}</td>
                 <td className="p-4">
                   <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${
-                    t.preferred_channel === 'whatsapp' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-blue-500/10 text-blue-400'
+                    t.preferred_channel === 'whatsapp' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
                   }`}>
                     {t.preferred_channel === 'whatsapp' ? 'WhatsApp' : 'Telegram'}
                   </span>
@@ -154,7 +208,7 @@ export const TenantsView: React.FC = () => {
                     onClick={() => handleSelectTenant(t.id)}
                     className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200"
                   >
-                    Details
+                    Details & Pairing
                   </button>
                   {t.status !== 'active' ? (
                     <button
@@ -185,11 +239,11 @@ export const TenantsView: React.FC = () => {
         </table>
       </div>
 
-      {/* Add Tenant Modal */}
+      {/* Add Tenant Modal with WhatsApp Pairing */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-card w-full max-w-md p-6 rounded-2xl border border-slate-800 space-y-4">
-            <h3 className="text-lg font-bold text-white">Create Agent Tenant</h3>
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="glass-card w-full max-w-lg p-6 rounded-2xl border border-slate-800 space-y-4 max-h-[90vh] overflow-y-auto my-6">
+            <h3 className="text-lg font-bold text-white">Create Agent Tenant & Channel Setup</h3>
             <form onSubmit={handleCreateTenant} className="space-y-3">
               <div>
                 <label className="text-xs text-slate-400 block mb-1">Agent / Agency Name</label>
@@ -203,7 +257,7 @@ export const TenantsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-xs text-slate-400 block mb-1">Phone Number</label>
+                <label className="text-xs text-slate-400 block mb-1">Phone Number (International format)</label>
                 <input
                   type="text"
                   required
@@ -222,13 +276,13 @@ export const TenantsView: React.FC = () => {
                     onChange={(e) => setNewTenant({ ...newTenant, preferred_channel: e.target.value })}
                     className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
                   >
-                    <option value="telegram">Telegram</option>
-                    <option value="whatsapp">WhatsApp</option>
+                    <option value="telegram">Telegram Bot</option>
+                    <option value="whatsapp">WhatsApp (Evolution API)</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="text-xs text-slate-400 block mb-1">Plan</label>
+                  <label className="text-xs text-slate-400 block mb-1">Subscription Plan</label>
                   <select
                     value={newTenant.plan}
                     onChange={(e) => setNewTenant({ ...newTenant, plan: e.target.value })}
@@ -250,6 +304,55 @@ export const TenantsView: React.FC = () => {
                   </select>
                 </div>
               </div>
+
+              {/* WhatsApp Evolution Setup Box */}
+              {newTenant.preferred_channel === 'whatsapp' && (
+                <div className="p-4 bg-dark-900/80 border border-emerald-500/30 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                      <QrCode className="w-4 h-4 text-emerald-400" />
+                      WhatsApp Evolution API Pairing
+                    </span>
+                    {waStatus?.connected ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold">
+                        <Wifi className="w-3 h-3" /> Connected
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-semibold">
+                        <WifiOff className="w-3 h-3" /> Unpaired
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-[11px] text-slate-400">
+                    Pair your agent's WhatsApp phone number using QR Code to automatically broadcast matching listings, buyer requests, and group notifications.
+                  </p>
+
+                  {!waQrCode ? (
+                    <button
+                      type="button"
+                      disabled={waLoading}
+                      onClick={() => generateWhatsAppQrCode()}
+                      className="w-full flex items-center justify-center gap-2 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-semibold py-2 rounded-xl text-xs transition-colors"
+                    >
+                      {waLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <QrCode className="w-3.5 h-3.5" />}
+                      <span>Generate & Display WhatsApp QR Code</span>
+                    </button>
+                  ) : (
+                    <div className="flex flex-col items-center space-y-2 pt-2 bg-white/5 p-3 rounded-xl border border-slate-700">
+                      <img src={waQrCode} alt="WhatsApp QR Code" className="w-48 h-48 rounded-lg shadow-lg bg-white p-2" />
+                      <span className="text-[11px] text-slate-300 text-center font-medium">
+                        Open WhatsApp on your phone → Linked Devices → Link a Device → Scan QR Code
+                      </span>
+                      {waPairingCode && (
+                        <div className="text-xs font-mono text-emerald-400">
+                          Pairing Code: <span className="font-bold">{waPairingCode}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
@@ -289,7 +392,7 @@ export const TenantsView: React.FC = () => {
                   type="submit"
                   className="px-5 py-2 text-sm font-medium bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl"
                 >
-                  Save Tenant
+                  Save Tenant & Complete Setup
                 </button>
               </div>
             </form>
@@ -312,6 +415,32 @@ export const TenantsView: React.FC = () => {
               <div><span className="text-slate-400">Channel:</span> {selectedTenant.tenant.preferred_channel}</div>
               <div><span className="text-slate-400">Status:</span> {selectedTenant.tenant.status}</div>
             </div>
+
+            {/* WhatsApp Connection Card */}
+            {selectedTenant.tenant.preferred_channel === 'whatsapp' && (
+              <div className="p-4 bg-dark-900 border border-emerald-500/30 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                    <QrCode className="w-4 h-4" /> WhatsApp Pairing Status
+                  </span>
+                  <button
+                    onClick={() => generateWhatsAppQrCode(`tenant_${selectedTenant.tenant.id}`)}
+                    className="text-[11px] px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 font-semibold hover:bg-emerald-500/30"
+                  >
+                    Scan New QR Code
+                  </button>
+                </div>
+
+                {waQrCode && (
+                  <div className="flex flex-col items-center space-y-2 pt-2 bg-white/5 p-3 rounded-xl border border-slate-700">
+                    <img src={waQrCode} alt="WhatsApp QR Code" className="w-48 h-48 rounded-lg shadow-lg bg-white p-2" />
+                    <span className="text-[11px] text-slate-300 text-center font-medium">
+                      Scan with WhatsApp on phone to link this tenant to Evolution API
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div>
               <h4 className="text-sm font-semibold text-slate-200 mb-2">Saved Search Criteria ({selectedTenant.saved_searches.length})</h4>

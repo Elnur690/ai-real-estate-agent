@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.session import async_engine
 from app.models import Base
-from app.api.v1 import auth, tenants, payments, ai_config, settings as settings_api, scrapers, webhooks, client_intake, promo_codes, plans
+from app.api.v1 import auth, tenants, payments, ai_config, settings as settings_api, scrapers, webhooks, client_intake, promo_codes, plans, whatsapp
 from app.bot.telegram_adapter import build_telegram_app
 
 logging.basicConfig(level=logging.INFO)
@@ -102,6 +102,7 @@ app.include_router(webhooks.router, prefix=settings.API_V1_STR)
 app.include_router(client_intake.router, prefix=settings.API_V1_STR)
 app.include_router(promo_codes.router, prefix=settings.API_V1_STR)
 app.include_router(plans.router, prefix=settings.API_V1_STR)
+app.include_router(whatsapp.router, prefix=settings.API_V1_STR)
 
 @app.get("/health")
 async def health_check():
