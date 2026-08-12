@@ -1,33 +1,46 @@
 import React, { useEffect, useState } from 'react';
-import { DollarSign, Plus, Calendar, FileText } from 'lucide-react';
+import { DollarSign, Plus, Calendar, FileText, CheckCircle } from 'lucide-react';
 import api from '../api';
 import { Payment, Tenant } from '../types';
 
 export const PaymentsView: React.FC = () => {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [plans, setPlans] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
 
   const [newPayment, setNewPayment] = useState({
     tenant_id: 0,
-    amount: 100,
+    amount: 0,
     currency: 'AZN',
     days_covered: 30,
-    notes: 'Cash collected in office'
+    notes: ''
   });
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [pRes, tRes] = await Promise.all([
+      const [pRes, tRes, planRes] = await Promise.all([
         api.get('/payments'),
-        api.get('/tenants')
+        api.get('/tenants'),
+        api.get('/plans').catch(() => ({ data: [] }))
       ]);
-      setPayments(pRes.data);
-      setTenants(tRes.data);
-      if (tRes.data.length > 0) {
-        setNewPayment(prev => ({ ...prev, tenant_id: tRes.data[0].id }));
+      setPayments(pRes.data || []);
+      setTenants(tRes.data || []);
+      const fetchedPlans = planRes.data || [];
+      setPlans(fetchedPlans);
+
+      if (tRes.data && tRes.data.length > 0) {
+        const firstTenant = tRes.data[0];
+        const matchPlan = fetchedPlans.find((p: any) => p.code.toLowerCase() === firstTenant.plan.toLowerCase());
+        setNewPayment({
+          tenant_id: firstTenant.id,
+          amount: matchPlan ? matchPlan.price : 0,
+          currency: matchPlan ? matchPlan.currency : 'AZN',
+          days_covered: 30,
+          notes: `Cash collected for ${firstTenant.name} (${firstTenant.plan.toUpperCase()} Plan)`
+        });
       }
     } catch (e) {
       console.error(e);
@@ -39,6 +52,20 @@ export const PaymentsView: React.FC = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleTenantSelect = (tenantId: number) => {
+    const selected = tenants.find(t => t.id === tenantId);
+    if (selected) {
+      const matchPlan = plans.find(p => p.code.toLowerCase() === selected.plan.toLowerCase());
+      setNewPayment({
+        tenant_id: tenantId,
+        amount: matchPlan ? matchPlan.price : 0,
+        currency: matchPlan ? matchPlan.currency : 'AZN',
+        days_covered: 30,
+        notes: `Cash collected for ${selected.name} (${selected.plan.toUpperCase()} Plan)`
+      });
+    }
+  };
 
   const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,15 +87,15 @@ export const PaymentsView: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-white">Cash Payment Collection Tracker</h2>
-          <p className="text-slate-400 text-xs mt-0.5">Manually record cash collected from agents to extend plan access.</p>
+          <h2 className="text-xl font-bold text-white">Cash Payment Collection & Subscription Period Tracker</h2>
+          <p className="text-slate-400 text-xs mt-0.5">Record cash collected from agents to set plan status to active and track expiration periods.</p>
         </div>
         <button
           onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-amber-500/20"
+          className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-500/20"
         >
           <Plus className="w-4 h-4" />
-          Record Cash Payment
+          Record Cash Payment & Activate
         </button>
       </div>
 
@@ -77,8 +104,8 @@ export const PaymentsView: React.FC = () => {
           <thead className="bg-dark-800/80 text-slate-400 font-medium text-xs uppercase tracking-wider border-b border-slate-800">
             <tr>
               <th className="p-4">Payment ID</th>
-              <th className="p-4">Tenant</th>
-              <th className="p-4">Amount</th>
+              <th className="p-4">Tenant / Agent</th>
+              <th className="p-4">Amount Paid</th>
               <th className="p-4">Period Covered</th>
               <th className="p-4">Received Date</th>
               <th className="p-4">Notes</th>
@@ -100,7 +127,7 @@ export const PaymentsView: React.FC = () => {
             {payments.length === 0 && (
               <tr>
                 <td colSpan={6} className="p-8 text-center text-slate-500">
-                  No cash payments recorded yet. Click "Record Cash Payment" to log cash collected.
+                  No cash payments recorded yet. Click "Record Cash Payment & Activate" to log cash collected.
                 </td>
               </tr>
             )}
@@ -111,42 +138,45 @@ export const PaymentsView: React.FC = () => {
       {showModal && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="glass-card w-full max-w-md p-6 rounded-2xl border border-slate-800 space-y-4">
-            <h3 className="text-lg font-bold text-white">Record Cash Payment</h3>
+            <h3 className="text-lg font-bold text-white">Record Cash Payment & Activate Account</h3>
             <form onSubmit={handleRecordPayment} className="space-y-3">
               <div>
-                <label className="text-xs text-slate-400 block mb-1">Select Tenant</label>
+                <label className="text-xs text-slate-400 block mb-1">Select Tenant / Agent</label>
                 <select
                   value={newPayment.tenant_id}
-                  onChange={(e) => setNewPayment({ ...newPayment, tenant_id: Number(e.target.value) })}
+                  onChange={(e) => handleTenantSelect(Number(e.target.value))}
                   className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
                 >
                   {tenants.map(t => (
-                    <option key={t.id} value={t.id}>{t.name} ({t.phone})</option>
+                    <option key={t.id} value={t.id}>{t.name} ({t.plan.toUpperCase()} Plan - {t.phone})</option>
                   ))}
                 </select>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 block mb-1">Amount (AZN)</label>
+                  <label className="text-xs text-slate-400 block mb-1">Plan Fee Amount (AZN)</label>
                   <input
                     type="number"
                     required
                     value={newPayment.amount}
                     onChange={(e) => setNewPayment({ ...newPayment, amount: Number(e.target.value) })}
-                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
+                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white font-semibold"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs text-slate-400 block mb-1">Days Covered</label>
-                  <input
-                    type="number"
-                    required
+                  <label className="text-xs text-slate-400 block mb-1">Coverage Period</label>
+                  <select
                     value={newPayment.days_covered}
                     onChange={(e) => setNewPayment({ ...newPayment, days_covered: Number(e.target.value) })}
-                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
-                  />
+                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
+                  >
+                    <option value={30}>1 Month (30 Days)</option>
+                    <option value={90}>3 Months (90 Days)</option>
+                    <option value={180}>6 Months (180 Days)</option>
+                    <option value={365}>1 Year (365 Days)</option>
+                  </select>
                 </div>
               </div>
 
@@ -170,9 +200,10 @@ export const PaymentsView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-sm font-medium bg-amber-500 hover:bg-amber-600 text-white rounded-xl"
+                  className="px-5 py-2 text-sm font-medium bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl flex items-center gap-1.5"
                 >
-                  Confirm & Extend Plan
+                  <CheckCircle className="w-4 h-4" />
+                  Confirm Cash & Activate Tenant
                 </button>
               </div>
             </form>

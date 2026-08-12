@@ -47,6 +47,16 @@ async def record_cash_payment(body: CreatePaymentRequest, db: AsyncSession = Dep
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
+    from app.models.plan import Plan
+
+    # Look up plan price if body.amount <= 0
+    stmt_p = select(Plan).where(Plan.code == tenant.plan.lower())
+    res_p = await db.execute(stmt_p)
+    db_plan = res_p.scalars().first()
+
+    amount = body.amount if body.amount > 0 else (db_plan.price if db_plan else 0.0)
+    currency = body.currency or (db_plan.currency if db_plan else "AZN")
+
     start_date = datetime.now(timezone.utc)
     # If existing plan hasn't expired yet, extend from current expiration date
     if tenant.plan_expires_at and tenant.plan_expires_at > start_date:
@@ -56,13 +66,13 @@ async def record_cash_payment(body: CreatePaymentRequest, db: AsyncSession = Dep
 
     payment = Payment(
         tenant_id=body.tenant_id,
-        amount=body.amount,
-        currency=body.currency,
+        amount=amount,
+        currency=currency,
         period_covered_start=start_date,
         period_covered_end=end_date,
         received_by=current_admin.id,
         received_at=start_date,
-        notes=body.notes
+        notes=body.notes or f"Cash payment received for {tenant.plan.upper()} plan ({body.days_covered} days coverage)"
     )
     db.add(payment)
 

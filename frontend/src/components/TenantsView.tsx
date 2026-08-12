@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { UserPlus, Search, ShieldCheck, Clock, AlertCircle, Phone, MessageSquare, Plus, CheckCircle, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff } from 'lucide-react';
+import { UserPlus, Search, ShieldCheck, Clock, AlertCircle, Phone, MessageSquare, Plus, CheckCircle, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff, DollarSign } from 'lucide-react';
 import api from '../api';
 import { Tenant, SavedSearch } from '../types';
 
@@ -31,6 +31,12 @@ export const TenantsView: React.FC = () => {
   const [waPairingCode, setWaPairingCode] = useState<string | null>(null);
   const [waLoading, setWaLoading] = useState(false);
 
+  // Cash Payment Modal State
+  const [paymentModalTenant, setPaymentModalTenant] = useState<Tenant | null>(null);
+  const [cashAmount, setCashAmount] = useState<number>(0);
+  const [cashDays, setCashDays] = useState<number>(30);
+  const [cashNotes, setCashNotes] = useState<string>('');
+
   const loadTenants = async () => {
     setLoading(true);
     try {
@@ -39,7 +45,13 @@ export const TenantsView: React.FC = () => {
         api.get('/plans').catch(() => ({ data: [] }))
       ]);
       setTenants(tRes.data || []);
-      setAvailablePlans(pRes.data || []);
+      const fetchedPlans = pRes.data || [];
+      setAvailablePlans(fetchedPlans);
+
+      // Pre-select first plan code if available
+      if (fetchedPlans.length > 0 && !newTenant.plan) {
+        setNewTenant(prev => ({ ...prev, plan: fetchedPlans[0].code }));
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -50,6 +62,46 @@ export const TenantsView: React.FC = () => {
   useEffect(() => {
     loadTenants();
   }, []);
+
+  const openAddModal = async () => {
+    setWaQrCode(null);
+    try {
+      const pRes = await api.get('/plans');
+      if (pRes.data && pRes.data.length > 0) {
+        setAvailablePlans(pRes.data);
+        setNewTenant(prev => ({ ...prev, plan: pRes.data[0].code }));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setShowAddModal(true);
+  };
+
+  const openCashPaymentModal = (t: Tenant) => {
+    const matchPlan = availablePlans.find(p => p.code.toLowerCase() === t.plan.toLowerCase());
+    setPaymentModalTenant(t);
+    setCashAmount(matchPlan ? matchPlan.price : 0);
+    setCashDays(30);
+    setCashNotes(`Cash received for ${t.name} (${t.plan.toUpperCase()} Plan)`);
+  };
+
+  const handleRecordCashPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!paymentModalTenant) return;
+    try {
+      await api.post('/payments', {
+        tenant_id: paymentModalTenant.id,
+        amount: cashAmount,
+        days_covered: cashDays,
+        notes: cashNotes
+      });
+      setPaymentModalTenant(null);
+      loadTenants();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to record payment.');
+    }
+  };
 
   const checkWhatsAppStatus = async (instName?: string) => {
     try {
@@ -136,13 +188,10 @@ export const TenantsView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-white">Tenant & Agent Management</h2>
-          <p className="text-slate-400 text-xs mt-0.5">Manage agents, subscription plans, and direct WhatsApp / Telegram channel routing.</p>
+          <p className="text-slate-400 text-xs mt-0.5">Manage agents, subscription plans, cash payments, and chat channel routing.</p>
         </div>
         <button
-          onClick={() => {
-            setWaQrCode(null);
-            setShowAddModal(true);
-          }}
+          onClick={openAddModal}
           className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-500/20"
         >
           <UserPlus className="w-4 h-4" />
@@ -197,11 +246,11 @@ export const TenantsView: React.FC = () => {
                     t.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' :
                     t.status === 'pending' ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400'
                   }`}>
-                    {t.status}
+                    {t.status === 'pending' ? 'Pending Payment' : t.status}
                   </span>
                 </td>
                 <td className="p-4 text-xs text-slate-400">
-                  {t.plan_expires_at ? new Date(t.plan_expires_at).toLocaleDateString() : 'N/A'}
+                  {t.plan_expires_at ? new Date(t.plan_expires_at).toLocaleDateString() : 'Pending Cash Payment'}
                 </td>
                 <td className="p-4 text-right space-x-2">
                   <button
@@ -212,17 +261,17 @@ export const TenantsView: React.FC = () => {
                   </button>
                   {t.status !== 'active' ? (
                     <button
-                      onClick={() => handleStatusChange(t.id, 'active')}
-                      className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30"
+                      onClick={() => openCashPaymentModal(t)}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30 font-semibold"
                     >
-                      Activate
+                      Confirm Cash & Activate
                     </button>
                   ) : (
                     <button
-                      onClick={() => handleStatusChange(t.id, 'suspended')}
-                      className="text-xs px-3 py-1.5 rounded-lg bg-red-500/20 text-red-300 hover:bg-red-500/30"
+                      onClick={() => openCashPaymentModal(t)}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 font-medium"
                     >
-                      Suspend
+                      Renew / Extend
                     </button>
                   )}
                 </td>
@@ -295,10 +344,10 @@ export const TenantsView: React.FC = () => {
                     ))}
                     {availablePlans.length === 0 && (
                       <>
-                        <option value="free">Free Trial</option>
-                        <option value="starter">Starter Agent</option>
-                        <option value="pro">Pro Agent</option>
-                        <option value="agency">Agency Team</option>
+                        <option value="free">Free Trial Tier</option>
+                        <option value="starter">Starter Agent Plan</option>
+                        <option value="pro">Pro Agent Plan</option>
+                        <option value="agency">Agency Team Plan</option>
                       </>
                     )}
                   </select>
@@ -392,7 +441,76 @@ export const TenantsView: React.FC = () => {
                   type="submit"
                   className="px-5 py-2 text-sm font-medium bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl"
                 >
-                  Save Tenant & Complete Setup
+                  Save Tenant (Pending Cash Payment)
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Cash Payment Modal */}
+      {paymentModalTenant && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-card w-full max-w-md p-6 rounded-2xl border border-slate-800 space-y-4">
+            <h3 className="text-lg font-bold text-white">Record Cash Payment & Activate Account</h3>
+            <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 text-xs text-slate-300 space-y-1">
+              <div><span className="text-slate-400">Agent:</span> <strong className="text-white">{paymentModalTenant.name}</strong> ({paymentModalTenant.phone})</div>
+              <div><span className="text-slate-400">Selected Plan:</span> <strong className="text-emerald-400 capitalize">{paymentModalTenant.plan} Plan</strong></div>
+            </div>
+
+            <form onSubmit={handleRecordCashPayment} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">Plan Fee Amount (AZN)</label>
+                  <input
+                    type="number"
+                    required
+                    value={cashAmount}
+                    onChange={(e) => setCashAmount(Number(e.target.value))}
+                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white font-bold text-emerald-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">Subscription Period</label>
+                  <select
+                    value={cashDays}
+                    onChange={(e) => setCashDays(Number(e.target.value))}
+                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
+                  >
+                    <option value={30}>1 Month (30 Days)</option>
+                    <option value={90}>3 Months (90 Days)</option>
+                    <option value={180}>6 Months (180 Days)</option>
+                    <option value={365}>1 Year (365 Days)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Payment Reference / Notes</label>
+                <textarea
+                  rows={2}
+                  value={cashNotes}
+                  onChange={(e) => setCashNotes(e.target.value)}
+                  className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setPaymentModalTenant(null)}
+                  className="px-4 py-2 text-sm text-slate-400 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 text-sm font-medium bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl flex items-center gap-1.5 shadow-lg shadow-emerald-500/20"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  Confirm Cash & Activate Account
                 </button>
               </div>
             </form>

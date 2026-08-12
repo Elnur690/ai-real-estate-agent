@@ -85,12 +85,20 @@ async def list_tenants(db: AsyncSession = Depends(get_db), current_admin = Depen
 
 @router.post("", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
 async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
-    expires_at = datetime.now(timezone.utc) + (timedelta(days=30) if body.plan_period == "monthly" else timedelta(days=90))
+    from app.models.plan import Plan
     
-    # Auto-enable Killer Features based on subscription tier
-    is_pro = body.plan in ["pro", "agency", "enterprise"]
-    is_agency = body.plan in ["agency", "enterprise"]
+    plan_code = body.plan.lower().strip()
+    is_free = plan_code == "free"
 
+    # Fetch Plan details from database if available
+    stmt_p = select(Plan).where(Plan.code == plan_code)
+    res_p = await db.execute(stmt_p)
+    db_plan = res_p.scalars().first()
+
+    # Paid plans start as 'pending' until cash/subscription payment is recorded
+    initial_status = "active" if is_free else "pending"
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=14)) if is_free else None
+    
     tenant = Tenant(
         name=body.name,
         type=body.type,
@@ -99,18 +107,18 @@ async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(ge
         preferred_channel=body.preferred_channel,
         whatsapp_number=body.whatsapp_number,
         telegram_chat_id=body.telegram_chat_id,
-        plan=body.plan,
+        plan=plan_code,
         plan_period=body.plan_period,
-        backup_enabled=body.backup_enabled or is_pro,
+        backup_enabled=db_plan.backup_enabled if db_plan else body.backup_enabled,
         backup_frequency_days=body.backup_frequency_days,
-        feature_makler_detector=body.feature_makler_detector or is_pro,
-        feature_avm_bargain_finder=body.feature_avm_bargain_finder or is_pro,
-        feature_social_brochure=body.feature_social_brochure or is_pro,
-        feature_b2b_cobrokering=body.feature_b2b_cobrokering or is_agency,
-        feature_client_intake_bot=body.feature_client_intake_bot or is_agency,
+        feature_makler_detector=db_plan.feature_makler_detector if db_plan else True,
+        feature_avm_bargain_finder=db_plan.feature_avm_bargain_finder if db_plan else True,
+        feature_social_brochure=db_plan.feature_social_brochure if db_plan else True,
+        feature_b2b_cobrokering=db_plan.feature_b2b_cobrokering if db_plan else True,
+        feature_client_intake_bot=db_plan.feature_client_intake_bot if db_plan else True,
         plan_started_at=datetime.now(timezone.utc),
         plan_expires_at=expires_at,
-        status="active"
+        status=initial_status
     )
     db.add(tenant)
     await db.commit()
