@@ -27,36 +27,39 @@ async def lifespan(app: FastAPI):
     from app.api.v1.auth import get_password_hash
     from sqlalchemy import select
 
-    async with AsyncSessionLocal() as db:
-        stmt = select(User).where(User.role == "admin")
-        res = await db.execute(stmt)
-        if not res.scalars().first():
-            admin_user = User(
-                name="Super Admin",
-                email=settings.ADMIN_EMAIL,
-                role="admin",
-                password_hash=get_password_hash(settings.ADMIN_PASSWORD)
-            )
-            db.add(admin_user)
-            await db.commit()
-            logger.info(f"[Startup] Auto-created initial Admin user ({settings.ADMIN_EMAIL})")
+    try:
+        async with AsyncSessionLocal() as db:
+            stmt = select(User).where(User.role == "admin")
+            res = await db.execute(stmt)
+            if not res.scalars().first():
+                admin_user = User(
+                    name="Super Admin",
+                    email=settings.ADMIN_EMAIL,
+                    role="admin",
+                    password_hash=get_password_hash(settings.ADMIN_PASSWORD)
+                )
+                db.add(admin_user)
+                await db.commit()
+                logger.info(f"[Startup] Auto-created initial Admin user ({settings.ADMIN_EMAIL})")
 
-        # Auto-seed default subscription plans if missing per code
-        default_plans_data = [
-            {"code": "free", "name": "Free Trial Tier", "description": "Basic listing scraper & trial alerts", "price": 0.0, "billing_period": "monthly", "max_agents": 1, "feature_makler_detector": True, "feature_avm_bargain_finder": False, "feature_b2b_cobrokering": False, "feature_social_brochure": False, "feature_client_intake_bot": False, "backup_enabled": False},
-            {"code": "starter", "name": "Starter Agent Plan", "description": "Individual agent listing alerts & Telegram bot", "price": 29.0, "billing_period": "monthly", "max_agents": 1, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_b2b_cobrokering": False, "feature_social_brochure": True, "feature_client_intake_bot": True, "backup_enabled": False},
-            {"code": "pro", "name": "Pro Agent Plan", "description": "Full AI Makler Detector, AVM Bargain Finder & WhatsApp alerts", "price": 59.0, "billing_period": "monthly", "max_agents": 3, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_b2b_cobrokering": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "backup_enabled": True},
-            {"code": "agency", "name": "Agency Team Plan", "description": "Multi-agent team co-brokering network & automated backups", "price": 129.0, "billing_period": "monthly", "max_agents": 10, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_b2b_cobrokering": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "backup_enabled": True},
-            {"code": "enterprise", "name": "Enterprise Custom Plan", "description": "Unlimited agent seats, custom intake branding & dedicated AI model", "price": 299.0, "billing_period": "monthly", "max_agents": 50, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_b2b_cobrokering": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "backup_enabled": True},
-        ]
-        
-        for pdata in default_plans_data:
-            stmt_check = select(Plan).where(Plan.code == pdata["code"])
-            res_check = await db.execute(stmt_check)
-            if not res_check.scalars().first():
-                db.add(Plan(**pdata))
-                logger.info(f"[Startup] Seeded subscription plan '{pdata['name']}' ({pdata['code']})")
-        await db.commit()
+            # Auto-seed default subscription plans if missing per code
+            default_plans_data = [
+                {"code": "free", "name": "Free Trial Tier", "description": "Basic listing scraper & trial alerts", "price": 0.0, "billing_period": "monthly", "max_agents": 1, "feature_makler_detector": True, "feature_avm_bargain_finder": False, "feature_b2b_cobrokering": False, "feature_social_brochure": False, "feature_client_intake_bot": False, "backup_enabled": False},
+                {"code": "starter", "name": "Starter Agent Plan", "description": "Individual agent listing alerts & Telegram bot", "price": 29.0, "billing_period": "monthly", "max_agents": 1, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_b2b_cobrokering": False, "feature_social_brochure": True, "feature_client_intake_bot": True, "backup_enabled": False},
+                {"code": "pro", "name": "Pro Agent Plan", "description": "Full AI Makler Detector, AVM Bargain Finder & WhatsApp alerts", "price": 59.0, "billing_period": "monthly", "max_agents": 3, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_b2b_cobrokering": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "backup_enabled": True},
+                {"code": "agency", "name": "Agency Team Plan", "description": "Multi-agent team co-brokering network & automated backups", "price": 129.0, "billing_period": "monthly", "max_agents": 10, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_b2b_cobrokering": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "backup_enabled": True},
+                {"code": "enterprise", "name": "Enterprise Custom Plan", "description": "Unlimited agent seats, custom intake branding & dedicated AI model", "price": 299.0, "billing_period": "monthly", "max_agents": 50, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_b2b_cobrokering": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "backup_enabled": True},
+            ]
+            
+            for pdata in default_plans_data:
+                stmt_check = select(Plan).where(Plan.code == pdata["code"])
+                res_check = await db.execute(stmt_check)
+                if not res_check.scalars().first():
+                    db.add(Plan(**pdata))
+                    logger.info(f"[Startup] Seeded subscription plan '{pdata['name']}' ({pdata['code']})")
+            await db.commit()
+    except Exception as e:
+        logger.error(f"[Startup Error] Auto-seeding encountered notice: {e}")
 
     # Start Telegram Bot polling in background if token is set
     tg_app = build_telegram_app()
