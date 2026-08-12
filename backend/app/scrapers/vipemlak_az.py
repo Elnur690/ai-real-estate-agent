@@ -31,20 +31,4 @@ class VipEmlakAzScraper(BaseScraper):
         except Exception as e:
             logger.error(f"[VipEmlakAzScraper] Error scraping: {e}")
 
-        if not items:
-            logger.info("[VipEmlakAzScraper] Using sample item for vipemlak.az")
-            items.append(RawListingItem(
-                external_id="vipemlak_sample_704",
-                title="Səbail r. 4 otaqlı VIP mənzil 280000 AZN",
-                description="Səbail r. Nərimanov heykəli yanında 4 otaqlı lüks mənzil. VipEmlak.az.",
-                price=280000.0,
-                currency="AZN",
-                district="Səbail",
-                rooms=4,
-                area_sqm=160.0,
-                building_type="new",
-                seller_type="agency",
-                listing_url="https://vipemlak.az/elan/704"
-            ))
-
         return items

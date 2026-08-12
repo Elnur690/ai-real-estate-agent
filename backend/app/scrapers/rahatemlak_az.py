@@ -35,20 +35,4 @@ class RahatEmlakAzScraper(BaseScraper):
         except Exception as e:
             logger.error(f"[RahatEmlakAzScraper] Error scraping: {e}")
 
-        if not items:
-            logger.info("[RahatEmlakAzScraper] Using sample item for rahatemlak.az")
-            items.append(RawListingItem(
-                external_id="rahatemlak_sample_3001",
-                title="Yasamal r. 3 otaqlı 155000 AZN təmirli mənzil",
-                description="Yasamal rayonunda təcili 3 otaqlı yeni tikili. RahatEmlak.az.",
-                price=155000.0,
-                currency="AZN",
-                district="Yasamal",
-                rooms=3,
-                area_sqm=105.0,
-                building_type="new",
-                seller_type="owner",
-                listing_url="https://rahatemlak.az/elan/3001"
-            ))
-
         return items

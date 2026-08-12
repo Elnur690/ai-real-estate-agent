@@ -31,19 +31,4 @@ class OfisAzScraper(BaseScraper):
         except Exception as e:
             logger.error(f"[OfisAzScraper] Error scraping: {e}")
 
-        if not items:
-            logger.info("[OfisAzScraper] Using sample item for ofis.az")
-            items.append(RawListingItem(
-                external_id="ofis_sample_805",
-                title="Nəsimi r. 3 otaqlı ofis / mənzil 1600 AZN",
-                description="28 May metrosu yaxınlığında təmirli 3 otaqlı obyekt/ofis. Ofis.az.",
-                price=1600.0,
-                currency="AZN",
-                district="Nəsimi",
-                rooms=3,
-                area_sqm=110.0,
-                seller_type="agency",
-                listing_url="https://ofis.az/elan/805"
-            ))
-
         return items

@@ -33,20 +33,4 @@ class UnvanAzScraper(BaseScraper):
         except Exception as e:
             logger.error(f"[UnvanAzScraper] Error scraping: {e}")
 
-        if not items:
-            logger.info("[UnvanAzScraper] Using sample item for unvan.az")
-            items.append(RawListingItem(
-                external_id="unvan_sample_3002",
-                title="Nəsimi r. 2 otaqlı 110000 AZN mənzil",
-                description="Nəsimi rayonunda 2 otaqlı təmirli mənzil. Unvan.az.",
-                price=110000.0,
-                currency="AZN",
-                district="Nəsimi",
-                rooms=2,
-                area_sqm=70.0,
-                building_type="new",
-                seller_type="agency",
-                listing_url="https://unvan.az/elan/3002"
-            ))
-
         return items

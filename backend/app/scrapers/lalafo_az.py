@@ -31,20 +31,4 @@ class LalafoAzScraper(BaseScraper):
         except Exception as e:
             logger.error(f"[LalafoAzScraper] Error scraping: {e}")
 
-        if not items:
-            logger.info("[LalafoAzScraper] Using sample item for lalafo.az")
-            items.append(RawListingItem(
-                external_id="lalafo_sample_1007",
-                title="Nizami r. Neftçilər m. 2 otaqlı mənzil 102000 AZN",
-                description="Neftçilər metrosu yaxınlığında 2 otaqlı orta təmirli mənzil. Lalafo.az.",
-                price=102000.0,
-                currency="AZN",
-                district="Nizami",
-                rooms=2,
-                area_sqm=62.0,
-                building_type="old",
-                seller_type="owner",
-                listing_url="https://lalafo.az/baku/ads/1-otaqli-42-kv-m-orta-tmir-id-114410063"
-            ))
-
         return items

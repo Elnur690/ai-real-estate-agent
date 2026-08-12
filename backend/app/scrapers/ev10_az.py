@@ -31,20 +31,4 @@ class Ev10AzScraper(BaseScraper):
         except Exception as e:
             logger.error(f"[Ev10AzScraper] Error scraping: {e}")
 
-        if not items:
-            logger.info("[Ev10AzScraper] Using sample item for ev10.az")
-            items.append(RawListingItem(
-                external_id="ev10_sample_603",
-                title="Xətai r. 2 otaqlı yeni tikili 98000 AZN",
-                description="Xətai rayonunda 2 otaqlı təmirli mənzil. Ev10.az.",
-                price=98000.0,
-                currency="AZN",
-                district="Xətai",
-                rooms=2,
-                area_sqm=68.0,
-                building_type="new",
-                seller_type="owner",
-                listing_url="https://ev10.az/item/603"
-            ))
-
         return items

@@ -33,20 +33,4 @@ class VillaAzScraper(BaseScraper):
         except Exception as e:
             logger.error(f"[VillaAzScraper] Error scraping: {e}")
 
-        if not items:
-            logger.info("[VillaAzScraper] Using sample item for villa.az")
-            items.append(RawListingItem(
-                external_id="villa_sample_3007",
-                title="Mərdəkan 5 otaqlı həyət evi / villa 350000 AZN",
-                description="Mərdəkanda dənizə yaxın 5 otaqlı möhtəşəm bağ evi/villa. Villa.az.",
-                price=350000.0,
-                currency="AZN",
-                district="Mərdəkan",
-                rooms=5,
-                area_sqm=320.0,
-                building_type="new",
-                seller_type="owner",
-                listing_url="https://villa.az/elan/3007"
-            ))
-
         return items

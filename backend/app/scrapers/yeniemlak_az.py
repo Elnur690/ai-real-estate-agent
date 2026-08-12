@@ -31,20 +31,4 @@ class YeniEmlakAzScraper(BaseScraper):
         except Exception as e:
             logger.error(f"[YeniEmlakAzScraper] Error scraping: {e}")
 
-        if not items:
-            logger.info("[YeniEmlakAzScraper] Using sample item for yeniemlak.az")
-            items.append(RawListingItem(
-                external_id="yeniemlak_sample_401",
-                title="Yasamal r. 2 otaqlı təmirli mənzil 115000 AZN",
-                description="Yasamal rayonunda təcili 2 otaqlı 75 kv/m yeni tikili mənzil. YeniEmlak.az vasitəsilə.",
-                price=115000.0,
-                currency="AZN",
-                district="Yasamal",
-                rooms=2,
-                area_sqm=75.0,
-                building_type="new",
-                seller_type="owner",
-                listing_url="https://yeniemlak.az/elan/kiraye-2-otaqli-bina-evi-menzil-yasamal-rayonu-yeni-yasamal-qes-murad-mirzeyev-kucesi-167054"
-            ))
-
         return items

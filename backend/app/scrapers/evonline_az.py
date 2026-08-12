@@ -31,20 +31,4 @@ class EvOnlineAzScraper(BaseScraper):
         except Exception as e:
             logger.error(f"[EvOnlineAzScraper] Error scraping: {e}")
 
-        if not items:
-            logger.info("[EvOnlineAzScraper] Using sample item for evonline.az")
-            items.append(RawListingItem(
-                external_id="evonline_sample_502",
-                title="Nərimanov r. 3 otaqlı 135000 AZN mənzil",
-                description="Nərimanov m. yaxınlığında 3 otaqlı mənzil satılır. Evonline.az.",
-                price=135000.0,
-                currency="AZN",
-                district="Nərimanov",
-                rooms=3,
-                area_sqm=95.0,
-                building_type="new",
-                seller_type="agency",
-                listing_url="https://evonline.az/index.php?id=502"
-            ))
-
         return items

@@ -33,20 +33,4 @@ class MulkAzScraper(BaseScraper):
         except Exception as e:
             logger.error(f"[MulkAzScraper] Error scraping: {e}")
 
-        if not items:
-            logger.info("[MulkAzScraper] Using sample item for mulk.az")
-            items.append(RawListingItem(
-                external_id="mulk_sample_3006",
-                title="Səbail r. 2 otaqlı 170000 AZN mənzil",
-                description="Səbail rayonunda 2 otaqlı dəniz mənzərəli mənzil. Mulk.az.",
-                price=170000.0,
-                currency="AZN",
-                district="Səbail",
-                rooms=2,
-                area_sqm=80.0,
-                building_type="new",
-                seller_type="owner",
-                listing_url="https://mulk.az/elan/3006"
-            ))
-
         return items

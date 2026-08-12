@@ -98,22 +98,4 @@ class HomDomAzScraper(BaseScraper):
         except Exception as e:
             logger.error(f"[HomDomAzScraper] Error scraping: {e}")
 
-        if not items:
-            logger.info("[HomDomAzScraper] Using synthetic fallback test item for homdom.az")
-            items.append(RawListingItem(
-                external_id="homdom_sample_2001",
-                title="Kirayə verilir 2 otaqlı yeni tikili, 60 m², Xətai m.",
-                description="Xətai metrosu yaxınlığında 2 otaqlı 60 kv/m mənzil kirayə verilir. HomDom.az.",
-                price=1000.0,
-                currency="AZN",
-                district="Xətai m.",
-                address_raw="Xətai r., Xətai m.",
-                rooms=2,
-                area_sqm=60.0,
-                building_type="new",
-                seller_type="agency",
-                photos=[],
-                listing_url="https://homdom.az/offer/2001"
-            ))
-
         return items

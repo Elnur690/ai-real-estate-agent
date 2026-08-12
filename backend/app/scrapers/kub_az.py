@@ -31,19 +31,4 @@ class KubAzScraper(BaseScraper):
         except Exception as e:
             logger.error(f"[KubAzScraper] Error scraping: {e}")
 
-        if not items:
-            logger.info("[KubAzScraper] Using sample item for kub.az")
-            items.append(RawListingItem(
-                external_id="kub_sample_906",
-                title="Binəqədi r. 3 otaqlı həyət evi 85000 AZN",
-                description="Binəqədi mərkəzində 3 otaqlı həyət evi satılır. Kub.az.",
-                price=85000.0,
-                currency="AZN",
-                district="Binəqədi",
-                rooms=3,
-                area_sqm=90.0,
-                seller_type="owner",
-                listing_url="https://kub.az/elan/906"
-            ))
-
         return items

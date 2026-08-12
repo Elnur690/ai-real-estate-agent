@@ -33,20 +33,4 @@ class IpotekaAzScraper(BaseScraper):
         except Exception as e:
             logger.error(f"[IpotekaAzScraper] Error scraping: {e}")
 
-        if not items:
-            logger.info("[IpotekaAzScraper] Using sample item for ipoteka.az")
-            items.append(RawListingItem(
-                external_id="ipoteka_sample_3003",
-                title="İpotekaya yararlı 3 otaqlı yeni tikili 140000 AZN",
-                description="Dövlət ipotekasına tam yararlı, çıxarışlı (kupçalı) 3 otaqlı mənzil. Ipoteka.az.",
-                price=140000.0,
-                currency="AZN",
-                district="Xətai",
-                rooms=3,
-                area_sqm=98.0,
-                building_type="new",
-                seller_type="owner",
-                listing_url="https://ipoteka.az/elan/3003"
-            ))
-
         return items

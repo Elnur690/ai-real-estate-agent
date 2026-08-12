@@ -33,20 +33,4 @@ class BinamAzScraper(BaseScraper):
         except Exception as e:
             logger.error(f"[BinamAzScraper] Error scraping: {e}")
 
-        if not items:
-            logger.info("[BinamAzScraper] Using sample item for binam.az")
-            items.append(RawListingItem(
-                external_id="binam_sample_3004",
-                title="Yasamal r. 2 otaqlı 105000 AZN yeni tikili",
-                description="Yasamalda 2 otaqlı mənzil. Binam.az.",
-                price=105000.0,
-                currency="AZN",
-                district="Yasamal",
-                rooms=2,
-                area_sqm=65.0,
-                building_type="new",
-                seller_type="agency",
-                listing_url="https://binam.az/elan/3004"
-            ))
-
         return items

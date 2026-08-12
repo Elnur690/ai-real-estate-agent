@@ -49,22 +49,4 @@ class TapAzScraper(BaseScraper):
         except Exception as e:
             logger.error(f"[TapAzScraper] Error scraping: {e}")
 
-        if not items:
-            logger.info("[TapAzScraper] Using synthetic fallback test item for tap.az")
-            items.append(RawListingItem(
-                external_id="tap_sample_202",
-                title="Nəsimi r. 2 otaqlı köhnə tikili mənzil",
-                description="Nəsimi rayonunda 2 otaqlı təmirli mənzil. Təcili satılır.",
-                price=92000.0,
-                currency="AZN",
-                district="Nəsimi",
-                address_raw="Nəsimi r., 28 May m.",
-                rooms=2,
-                area_sqm=65.0,
-                building_type="old",
-                seller_type="agency",
-                photos=["https://tap.az/images/sample2.jpg"],
-                listing_url="https://tap.az/elanlar/dasinmaz-emlak/menziller/48408403"
-            ))
-
         return items

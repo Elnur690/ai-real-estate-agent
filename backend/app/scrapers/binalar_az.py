@@ -33,20 +33,4 @@ class BinalarAzScraper(BaseScraper):
         except Exception as e:
             logger.error(f"[BinalarAzScraper] Error scraping: {e}")
 
-        if not items:
-            logger.info("[BinalarAzScraper] Using sample item for binalar.az")
-            items.append(RawListingItem(
-                external_id="binalar_sample_3005",
-                title="Nərimanov r. 3 otaqlı 165000 AZN mənzil",
-                description="Nərimanov rayonunda 3 otaqlı mənzil. Binalar.az.",
-                price=165000.0,
-                currency="AZN",
-                district="Nərimanov",
-                rooms=3,
-                area_sqm=112.0,
-                building_type="new",
-                seller_type="agency",
-                listing_url="https://bina.az/baki/alqi-satqi/menziller"
-            ))
-
         return items

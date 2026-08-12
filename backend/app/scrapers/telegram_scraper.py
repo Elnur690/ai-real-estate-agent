@@ -32,21 +32,4 @@ class TelegramChannelScraper(BaseScraper):
             except Exception as e:
                 logger.error(f"[TelegramChannelScraper] Telethon error: {e}")
 
-        if not items:
-            logger.info("[TelegramChannelScraper] Using sample Telegram channel listing for testing")
-            items.append(RawListingItem(
-                external_id="tg_sample_303",
-                title="Xətai r. 3 otaqlı yeni tikili 130000 AZN",
-                description="Xətai rayonu, Həzi Aslanov metrosu yaxınlığında 3 otaqlı 105 kv/m mənzil satılır. Qiymət: 130000 AZN. Əlaqə: 0501234567.",
-                price=130000.0,
-                currency="AZN",
-                district="Xətai",
-                rooms=3,
-                area_sqm=105.0,
-                building_type="new",
-                seller_type="owner",
-                photos=[],
-                listing_url="https://t.me/baki_emlak_elanlari/303"
-            ))
-
         return items
