@@ -1,4 +1,5 @@
 import re
+import json
 from typing import Optional, Dict, Any, Tuple
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +16,18 @@ async def get_app_name(db: AsyncSession) -> str:
     res = await db.execute(stmt)
     val = res.scalar_one_or_none()
     return val if val else "RealEstate AI Agent"
+
+CONFIRMATION_KEYWORDS = {
+    "az": ["təsdiq", "təsdiqlə", "tesdiq", "tesdiqle", "hə", "he", "bəli", "beli", "ok", "təmin et", "tamam", "yadda saxla"],
+    "ru": ["подтверждаю", "подтвердить", "да", "ок", "сохранить", "принять"],
+    "en": ["confirm", "yes", "save", "accept", "ok"]
+}
+
+ALL_CONFIRM_KEYWORDS = set(
+    [k for lang in CONFIRMATION_KEYWORDS.values() for k in lang]
+)
+
+CANCEL_KEYWORDS = ["/cancel", "/ləğv", "/legv", "ləğv", "legv", "отмена", "cancel"]
 
 class BotCommandHandler:
     @staticmethod
@@ -50,27 +63,33 @@ class BotCommandHandler:
                 db, channel, sender_id, sender_name, raw_text_trimmed, app_name
             )
 
-        # 3. Fast-path & Keyword Commands
-        if text_lower in ["kömək", "/help", "komak", "help", "menu", "menyu"]:
+        # 3. Handle Slash Commands & Fast-Path Menu
+        if text_lower in ["/start", "/help", "/kömək", "/komak", "kömək", "komak", "help", "menu", "menyu"]:
             return BotCommandHandler._get_help_message(app_name)
 
-        if text_lower in ["axtarışlarım", "axtarislarim", "/list", "1"]:
+        if text_lower in ["/searches", "/axtarışlar", "/axtarislar", "/list", "axtarışlarım", "axtarislarim", "1"]:
             return await BotCommandHandler._list_saved_searches(db, tenant)
 
-        if text_lower.startswith("yeni axtarış") or text_lower.startswith("yeni axtaris") or text_lower.startswith("/add") or text_lower == "2":
-            criteria_text = raw_text_trimmed.replace("yeni axtarış", "").replace("yeni axtaris", "").replace("/add", "").strip()
-            if not criteria_text:
-                return "Lütfən axtarış parametrlərinizi qeyd edin.\nMəsələn: *Yasamalda 100-150 min AZN 3 otaqlı yeni tikili*"
-            return await BotCommandHandler._create_saved_search(db, tenant, criteria_text)
+        if text_lower in ["/status", "/plan", "status", "planım nə vaxt bitir?", "planim ne vaxt bitir?", "4"]:
+            return BotCommandHandler._get_account_status(tenant, app_name)
 
-        if text_lower in ["kanalı dəyiş", "kanali deyis", "/channel", "3"]:
+        if text_lower in ["/channel", "/kanal", "kanalı dəyiş", "kanali deyis", "3"]:
             new_channel = "whatsapp" if tenant.preferred_channel == "telegram" else "telegram"
             tenant.preferred_channel = new_channel
             await db.commit()
             return f"Bildiriş kanalı uğurla *{new_channel.capitalize()}* olaraq dəyişdirildi! 📲"
 
-        if text_lower in ["planım nə vaxt bitir?", "planim ne vaxt bitir?", "/status", "status", "4"]:
-            return BotCommandHandler._get_account_status(tenant, app_name)
+        # Cancel Draft Command
+        if text_lower in CANCEL_KEYWORDS:
+            if tenant.draft_search_json:
+                tenant.draft_search_json = None
+                await db.commit()
+                return "❌ Axtarış qaralaması ləğv edildi."
+            return "Aktiv qaralama yoxdur."
+
+        # 4. Handle Pending Draft Confirmation
+        if tenant.draft_search_json and text_lower in ALL_CONFIRM_KEYWORDS:
+            return await BotCommandHandler._confirm_and_save_draft(db, tenant)
 
         # Reaction commands (Maraqlanıram / Keç / Satılıb)
         reaction_match = re.search(r'^(maraqlanıram|maraqlaniram|keç|kec|satılıb|satilib)\s*(\d+)?', text_lower)
@@ -90,7 +109,7 @@ class BotCommandHandler:
                 await db.commit()
                 return f"Elan statusu yeniləndi: *{new_status.capitalize()}* ✅"
 
-        # Pause / Resume / Delete
+        # Pause / Resume / Delete Commands
         pause_match = re.search(r'^(dayandır|dayandir|/pause)\s*(\d+)', text_lower)
         if pause_match:
             search_id = int(pause_match.group(2))
@@ -115,7 +134,7 @@ class BotCommandHandler:
             await db.commit()
             return f"Axtarış #{search_id} silindi. 🗑️"
 
-        # Brochure & Social Kit Generation
+        # Brochure & Social Kit Generation Command
         brochure_match = re.search(r'^(broşur|broshur|/brochure)\s*(\d+)', text_lower)
         if brochure_match:
             listing_id = int(brochure_match.group(2))
@@ -125,11 +144,11 @@ class BotCommandHandler:
                 return (
                     f"📸 *INSTAGRAM CAPTION / SOSİAL ŞƏBƏKƏ MƏTNİ:*\n\n"
                     f"{res_b['instagram_caption']}\n\n"
-                    f"📄 *PDF Broşurunuz hazırlandı!*"
+                    f"📄 *PDF Broşurınız hazırlandı!*"
                 )
             return f"Xəta: Elan #{listing_id} tapılmadı."
 
-        # B2B Co-brokering Acceptance
+        # B2B Co-brokering Acceptance Command
         b2b_match_cmd = re.search(r'^(b2b qəbul et|b2b qabul et|b2b imtina)\s*(\d+)', text_lower)
         if b2b_match_cmd:
             action = b2b_match_cmd.group(1)
@@ -141,7 +160,7 @@ class BotCommandHandler:
             await db.commit()
             return f"B2B Partnyorluq statusu yeniləndi: *{new_st.capitalize()}* 🤝"
 
-        # Referral Code & Program Info
+        # Referral Code & Program Info Command
         if text_lower in ["dostunu dəvət et", "dostunu devet et", "referral", "/referral", "dəvət", "devet"]:
             from app.services.referral_service import ReferralService
             ref_code = await ReferralService.get_or_create_referral_code(db, tenant)
@@ -152,7 +171,7 @@ class BotCommandHandler:
                 f"Dostunuz bu kodla abunə olduqda siz *10 AZN* bonus qazanırsınız! 🚀"
             )
 
-        # Promo Code Redemption
+        # Promo Code Redemption Command
         promo_match = re.search(r'^(promokod|promo|/promo)\s*([a-zA-Z0-9_-]+)', text_lower)
         if promo_match:
             code = promo_match.group(2)
@@ -163,11 +182,25 @@ class BotCommandHandler:
                 return f"✅ *Promokod təsdiqləndi!* `{val_res['code']}` — {disc} güzəşt tətbiq edildi!"
             return f"❌ {val_res.get('error', 'Promokod xətası')}"
 
-        # Fallback AI Criteria Parsing for arbitrary search text
-        if len(raw_text_trimmed) > 10:
-            return await BotCommandHandler._create_saved_search(db, tenant, raw_text_trimmed)
+        # 5. Fast-path Explicit Add Search Command (/yeni, /add, /new)
+        if text_lower.startswith(("/yeni", "/add", "/new", "yeni axtarış", "yeni axtaris")):
+            criteria_text = raw_text_trimmed
+            for prefix in ["/yeni", "/add", "/new", "yeni axtarış", "yeni axtaris"]:
+                if criteria_text.lower().startswith(prefix):
+                    criteria_text = criteria_text[len(prefix):].strip()
+                    break
+            if not criteria_text:
+                return (
+                    "📌 Lütfən axtarmaq istədiyiniz mənzil parametrlərini yazın.\n\n"
+                    "*Nümunə:* `Yasamalda 3 otaqlı 100-150 min AZN yeni tikili`"
+                )
+            return await BotCommandHandler._process_search_wizard(db, tenant, criteria_text)
 
-        return f"Salam! *{app_name}* botuna xoş gəlmisiniz.\nMövcud əmrləri görmək üçün *Kömək* yazın. 🤖"
+        # 6. Fallback Search Wizard for Arbitrary Natural Language Text
+        if len(raw_text_trimmed) >= 3:
+            return await BotCommandHandler._process_search_wizard(db, tenant, raw_text_trimmed)
+
+        return f"Salam! *{app_name}* platformasına xoş gəlmisiniz.\nMövcud əmrləri görmək üçün `/help` və ya *Kömək* yazın. 🤖"
 
     @staticmethod
     async def _handle_onboarding(
@@ -194,65 +227,174 @@ class BotCommandHandler:
         await db.commit()
         await db.refresh(new_tenant)
 
-        # Try to parse search criteria from their initial message if provided
-        if len(raw_text) > 10 and not raw_text.lower().startswith(("/start", "salam", "hi")):
-            ai_provider = await ProviderFactory.get_provider(db, task_type="criteria_parsing", tenant_id=new_tenant.id)
-            parsed = await ai_provider.parse_search_criteria(raw_text)
-
-            new_search = SavedSearch(
-                tenant_id=new_tenant.id,
-                name=f"Axtarış: {parsed.district or 'Ümumi'}",
-                raw_criteria_text=raw_text,
-                district=parsed.district,
-                min_price=parsed.min_price,
-                max_price=parsed.max_price,
-                min_rooms=parsed.min_rooms,
-                max_rooms=parsed.max_rooms,
-                seller_type=parsed.seller_type,
-                building_type=parsed.building_type,
-                is_active=True
-            )
-            db.add(new_search)
-            await db.commit()
-
-            return (
-                f"Xoş gəlmisiniz! *{app_name}* platformasında hesabınız yaradıldı.\n\n"
-                f"📌 *Təyin edilən axtarış parametrləri:*\n{parsed.summary_az}\n\n"
-                f"💳 Hesabınız hazırda aktivasiya gözləyir. Aktivasiya və ödəniş üçün adminlə əlaqə saxlayın."
-            )
+        # Process search wizard for initial text if provided
+        if len(raw_text) > 5 and not raw_text.lower().startswith(("/start", "salam", "hi")):
+            return await BotCommandHandler._process_search_wizard(db, new_tenant, raw_text)
 
         return (
-            f"Salam! *{app_name}* botuna xoş gəlmisiniz. 👋\n\n"
-            f"Axtardığınız əmlak parametrlərini yazın ki, uyğun elanları dərhal göndərək.\n\n"
+            f"Salam! *{app_name}* platformasına xoş gəlmisiniz. 👋\n\n"
+            f"Axtardığınız əmlak parametrlərini yaza bilərsiniz.\n\n"
             f"📌 *Nümunə:* `Yasamalda 100-150 min AZN 3 otaqlı yeni tikili ev sahibindən`"
         )
 
     @staticmethod
-    async def _create_saved_search(db: AsyncSession, tenant: Tenant, criteria_text: str) -> str:
+    async def _process_search_wizard(db: AsyncSession, tenant: Tenant, new_input_text: str) -> str:
+        """
+        Interactive Search Wizard:
+        Parses criteria, merges with existing draft (if present), highlights missing fields,
+        and requests explicit language confirmation keyword before saving to DB.
+        """
         ai_provider = await ProviderFactory.get_provider(db, task_type="criteria_parsing", tenant_id=tenant.id)
-        parsed = await ai_provider.parse_search_criteria(criteria_text)
+        new_parsed = await ai_provider.parse_search_criteria(new_input_text)
+
+        # Merge with existing draft if present
+        draft = {}
+        if tenant.draft_search_json:
+            try:
+                draft = json.loads(tenant.draft_search_json)
+            except Exception:
+                draft = {}
+
+        # Update draft dictionary with non-null parsed values
+        raw_text_accumulated = draft.get("raw_text", "")
+        combined_text = f"{raw_text_accumulated} {new_input_text}".strip() if raw_text_accumulated else new_input_text
+
+        draft["raw_text"] = combined_text
+        if new_parsed.district:
+            draft["district"] = new_parsed.district
+        if new_parsed.min_price:
+            draft["min_price"] = new_parsed.min_price
+        if new_parsed.max_price:
+            draft["max_price"] = new_parsed.max_price
+        if new_parsed.min_rooms:
+            draft["min_rooms"] = new_parsed.min_rooms
+        if new_parsed.max_rooms:
+            draft["max_rooms"] = new_parsed.max_rooms
+        if new_parsed.seller_type and new_parsed.seller_type != "any":
+            draft["seller_type"] = new_parsed.seller_type
+        if new_parsed.building_type and new_parsed.building_type != "any":
+            draft["building_type"] = new_parsed.building_type
+
+        # Save draft back to tenant
+        tenant.draft_search_json = json.dumps(draft, ensure_ascii=False)
+        await db.commit()
+
+        # Build Structured Summary & Identify Missing Fields
+        district = draft.get("district")
+        min_p = draft.get("min_price")
+        max_p = draft.get("max_price")
+        min_r = draft.get("min_rooms")
+        max_r = draft.get("max_rooms")
+        seller = draft.get("seller_type", "any")
+        bld = draft.get("building_type", "any")
+
+        set_fields = []
+        missing_fields = []
+
+        if district:
+            set_fields.append(f"• 📍 *Rayon:* {district}")
+        else:
+            missing_fields.append("📍 *Rayon* (məsələn: Yasamal, Nəsimi)")
+
+        if min_p and max_p:
+            set_fields.append(f"• 💰 *Qiymət:* {int(min_p):,} - {int(max_p):,} AZN")
+        elif max_p:
+            set_fields.append(f"• 💰 *Maksimum Qiymət:* {int(max_p):,} AZN")
+        elif min_p:
+            set_fields.append(f"• 💰 *Minimum Qiymət:* {int(min_p):,} AZN")
+        else:
+            missing_fields.append("💰 *Qiymət aralığı* (məsələn: 100-150 min AZN)")
+
+        if min_r and max_r and min_r == max_r:
+            set_fields.append(f"• 🚪 *Otaq sayı:* {min_r} otaqlı")
+        elif min_r or max_r:
+            set_fields.append(f"• 🚪 *Otaq sayı:* {min_r or 1} - {max_r or 5} otaqlı")
+        else:
+            missing_fields.append("🚪 *Otaq sayı* (məsələn: 3 otaqlı)")
+
+        if bld != "any":
+            bld_tr = "Yeni tikili" if bld == "new" else "Köhnə tikili"
+            set_fields.append(f"• 🏢 *Bina növü:* {bld_tr}")
+        else:
+            missing_fields.append("🏢 *Bina növü* (Yeni tikili / Köhnə tikili)")
+
+        if seller != "any":
+            seller_tr = "Yalnız Ev Sahibindən (Maklersiz)" if seller == "owner" else "Agentlik/Makler"
+            set_fields.append(f"• 👤 *Satıcı:* {seller_tr}")
+
+        # Construct Output Message
+        lines = ["📝 *AXTARIŞ PARAMETRLƏRİNİN ÖN BAXIŞI (QARALAMA)*\n"]
+
+        if set_fields:
+            lines.append("✅ *Təyin edilmiş parametrlər:*")
+            lines.extend(set_fields)
+            lines.append("")
+
+        if missing_fields:
+            lines.append("❓ *Dəqiqləşdirilə bilən parametrlər:*")
+            for mf in missing_fields:
+                lines.append(f"  └ {mf}")
+            lines.append("")
+
+        lines.append("───────────────────────────────")
+        lines.append("⚠️ *Bu axtarış parametri hələ YADDA SAXLANILMAYIB!*\n")
+        lines.append("Axtarışı təsdiqləyib yadda saxlamaq üçün aşağıdakı təsdiq sözlərindən birini yazın:")
+        lines.append("📌 **AZ:** `Təsdiq` və ya `Hə` / `Bəli` / `Ok`")
+        lines.append("📌 **RU:** `Подтверждаю` və ya `Да`")
+        lines.append("📌 **EN:** `Confirm` və ya `Yes`\n")
+        lines.append("✏️ *Düzəliş və ya əlavə etmək üçün mətni birbaşa bura yazın.*")
+        lines.append("❌ *Ləğv etmək üçün:* `/cancel` və ya `Ləğv` yazın.")
+
+        return "\n".join(lines)
+
+    @staticmethod
+    async def _confirm_and_save_draft(db: AsyncSession, tenant: Tenant) -> str:
+        """Confirms draft and commits SavedSearch to DB."""
+        if not tenant.draft_search_json:
+            return "Heç bir aktiv axtarış qaralaması tapılmadı."
+
+        try:
+            draft = json.loads(tenant.draft_search_json)
+        except Exception:
+            draft = {}
+
+        raw_text = draft.get("raw_text", "Axtarış parametrləri")
+        district = draft.get("district")
+        min_p = draft.get("min_price")
+        max_p = draft.get("max_price")
+        min_r = draft.get("min_rooms")
+        max_r = draft.get("max_rooms")
+        seller = draft.get("seller_type", "any")
+        bld = draft.get("building_type", "any")
 
         new_search = SavedSearch(
             tenant_id=tenant.id,
-            name=f"Axtarış: {parsed.district or 'Ümumi'}",
-            raw_criteria_text=criteria_text,
-            district=parsed.district,
-            min_price=parsed.min_price,
-            max_price=parsed.max_price,
-            min_rooms=parsed.min_rooms,
-            max_rooms=parsed.max_rooms,
-            seller_type=parsed.seller_type,
-            building_type=parsed.building_type,
+            name=f"Axtarış: {district or 'Ümumi'}",
+            raw_criteria_text=raw_text,
+            district=district,
+            min_price=min_p,
+            max_price=max_p,
+            min_rooms=min_r,
+            max_rooms=max_r,
+            seller_type=seller,
+            building_type=bld,
             is_active=True
         )
         db.add(new_search)
+        tenant.draft_search_json = None
         await db.commit()
         await db.refresh(new_search)
 
+        summary_parts = []
+        if district: summary_parts.append(f"Rayon: {district}")
+        if min_r: summary_parts.append(f"Otaq: {min_r} otaqlı")
+        if min_p or max_p: summary_parts.append(f"Qiymət: {int(min_p or 0):,}-{int(max_p or 0):,} AZN")
+        summary_str = " | ".join(summary_parts) if summary_parts else raw_text
+
         return (
-            f"✅ *Yeni axtarış saxlanıldı!* (#{new_search.id})\n\n"
-            f"📋 {parsed.summary_az}\n\n"
-            f"Bu parametrlərə uyğun yeni elan tapılan kimi sizə bildiriş göndəriləcək. 🚀"
+            f"✅ *Axtarışınız uğurla təsdiqləndi və yadda saxlanıldı!* (#{new_search.id})\n\n"
+            f"📋 *Parametrlər:* {summary_str}\n\n"
+            f"Bu parametrlərə uyğun yeni elan tapılan kimi dərhal bildiriş göndərəcəyik. 🚀"
         )
 
     @staticmethod
@@ -262,14 +404,14 @@ class BotCommandHandler:
         searches = res.scalars().all()
 
         if not searches:
-            return "Sizin hələ ki aktiv axtarışınız yoxdur. Yeni axtarış əlavə etmək üçün mətni birbaşa bura yazın."
+            return "Sizin hələ ki aktiv axtarışınız yoxdur. Yeni axtarış yaratmaq üçün parametrləri bura yazın."
 
         msg = ["📋 *Sizin Axtarışlarınız:*\n"]
         for s in searches:
             status_icon = "🟢" if s.is_active else "⏸️"
             msg.append(f"{status_icon} *#{s.id} {s.name}*\n   Parametr: {s.raw_criteria_text}\n")
 
-        msg.append("\n_Dayandırmaq üçün:_ `Dayandır <id>`\n_Aktiv etmək üçün:_ `Aktiv et <id>`\n_Silmək üçün:_ `Sil <id>`")
+        msg.append("\n_Dayandırmaq üçün:_ `/pause <id>`\n_Aktiv etmək üçün:_ `/resume <id>`\n_Silmək üçün:_ `/delete <id>`")
         return "\n".join(msg)
 
     @staticmethod
@@ -291,15 +433,18 @@ class BotCommandHandler:
     def _get_help_message(app_name: str) -> str:
         return (
             f"🤖 *{app_name} - Əmr Siyahısı*\n\n"
-            f"1️⃣ *Axtarışlarım* - Aktiv axtarış parametrlərini göstərir\n"
-            f"2️⃣ *Yeni axtarış <mətn>* - Yeni axtarış əlavə edir\n"
-            f"3️⃣ *Kanalı dəyiş* - WhatsApp ↔ Telegram keçidi\n"
-            f"4️⃣ *Planım nə vaxt bitir?* - Tarif və hesab statusu\n"
-            f"5️⃣ *Dayandır <id>* - Axtarışı müvəqqəti saxlayır\n"
-            f"6️⃣ *Aktiv et <id>* - Axtarışı yenidən aktiv edir\n"
-            f"7️⃣ *Sil <id>* - Axtarışı silir\n\n"
-            f"💬 Elan gəldikdə cavab verə bilərsiniz:\n"
-            f"• `Maraqlanıram <id>`\n"
-            f"• `Keç <id>`\n"
-            f"• `Satılıb <id>`"
+            f"1️⃣ `/searches` - Aktiv axtarışların siyahısı\n"
+            f"2️⃣ `/yeni <mətn>` - Yeni axtarış parametrlərini daxil etmək\n"
+            f"3️⃣ `/channel` - WhatsApp ↔ Telegram bildiriş kanalı seçimi\n"
+            f"4️⃣ `/status` - Tarif və abunə müddəti\n"
+            f"5️⃣ `/pause <id>` - Axtarışı müvəqqəti dayandırmaq\n"
+            f"6️⃣ `/resume <id>` - Axtarışı yenidən aktiv etmək\n"
+            f"7️⃣ `/delete <id>` - Axtarışı silmək\n"
+            f"8️⃣ `/cancel` - Qaralamanı ləğv etmək\n\n"
+            f"💬 *Təsdiq Sözləri (Axtarışı Saxlamaq Üçün):*\n"
+            f"• AZ: `Təsdiq` / `Hə` / `Bəli` / `Ok`\n"
+            f"• RU: `Подтверждаю` / `Да`\n"
+            f"• EN: `Confirm` / `Yes`\n\n"
+            f"💬 *Elan reaksiyaları:*\n"
+            f"• `Maraqlanıram <id>` | `Keç <id>` | `Satılıb <id>`"
         )

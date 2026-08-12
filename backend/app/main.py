@@ -18,7 +18,9 @@ async def lifespan(app: FastAPI):
     # Startup: create tables automatically if sqlite/postgres table structure needed
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    logger.info("[Startup] Database tables verified.")
+        from sqlalchemy import text
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS draft_search_json TEXT;"))
+    logger.info("[Startup] Database tables and columns verified.")
 
     # Auto-seed default admin user if none exists
     from app.db.session import AsyncSessionLocal

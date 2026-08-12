@@ -12,7 +12,7 @@ async def test_bot_onboarding_and_commands():
     async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with async_session() as db:
-        # Initial onboarding message
+        # Initial onboarding message with criteria (returns draft wizard)
         res1 = await BotCommandHandler.handle_incoming_message(
             db=db,
             channel="telegram",
@@ -20,7 +20,17 @@ async def test_bot_onboarding_and_commands():
             sender_name="Orxan Agent",
             raw_text="Yasamalda 120 min AZN 2 otaqlı"
         )
-        assert "hesabınız yaradıldı" in res1.lower() or "axtarış parametrləri" in res1.lower()
+        assert "axtarış parametrlərinin ön baxışı" in res1.lower() or "təsdiq" in res1.lower()
+
+        # Send confirmation keyword ("Təsdiq") to commit search to DB
+        res_confirm = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="telegram",
+            sender_id="999888777",
+            sender_name="Orxan Agent",
+            raw_text="Təsdiq"
+        )
+        assert "uğurla təsdiqləndi" in res_confirm.lower() or "yadda saxlanıldı" in res_confirm.lower()
 
         # List searches
         res2 = await BotCommandHandler.handle_incoming_message(
@@ -33,13 +43,13 @@ async def test_bot_onboarding_and_commands():
         assert "Sizin Axtarışlarınız" in res2
         assert "Yasamal" in res2
 
-        # Help message
+        # Help message via slash command /help
         res3 = await BotCommandHandler.handle_incoming_message(
             db=db,
             channel="telegram",
             sender_id="999888777",
             sender_name="Orxan Agent",
-            raw_text="Kömək"
+            raw_text="/help"
         )
         assert "Əmr Siyahısı" in res3
 

@@ -41,6 +41,7 @@ class Tenant(Base):
     referral_balance: Mapped[float] = mapped_column(Float, default=0.0) # Bonus credit in AZN
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    draft_search_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships
     users = relationship("User", back_populates="tenant", cascade="all, delete-orphan")
