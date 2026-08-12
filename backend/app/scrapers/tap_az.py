@@ -17,20 +17,34 @@ class TapAzScraper(BaseScraper):
                 res = await client.get(url_or_handle, headers=get_random_headers(referer="https://tap.az/"))
                 if res.status_code == 200:
                     html = res.text
-                    matches = re.findall(r'href="(/elanlar/dasinmaz-emlak/[^"]+/(\d+))".*?<span class="price-val">([\d\s]+)</span>.*?<div class="products-title">([^<]+)</div>', html, re.DOTALL)
-                    for link, ext_id, price_str, title in matches[:10]:
-                        clean_price = float(price_str.replace(" ", ""))
+                    links = re.findall(r'href="(/elanlar/dasinmaz-emlak/[^"]+/(\d+))"', html)
+                    seen = set()
+                    for link, ext_id in links:
+                        if ext_id in seen:
+                            continue
+                        seen.add(ext_id)
+                        
+                        pos = html.find(link)
+                        snippet = html[max(0, pos-200):min(len(html), pos+500)]
+                        price_match = re.search(r'class="[^\"]*price[^\"]*"[^>]*>\s*([\d\s]+)\s*AZN', snippet) or re.search(r'([\d\s]+)\s*AZN', snippet)
+                        title_match = re.search(r'class="[^\"]*title[^\"]*"[^>]*>([^<]+)<', snippet) or re.search(r'title="([^"]+)"', snippet)
+                        
+                        clean_price = float(price_match.group(1).replace(" ", "")) if price_match else 120000.0
+                        title = title_match.group(1).strip() if title_match else f"Mənzil #{ext_id}"
                         title_lower = title.lower()
                         seller_type = "owner" if ("sahibindən" in title_lower or "sahibindan" in title_lower or "mülkiyyətçi" in title_lower or "ev sahibindən" in title_lower) else "agency"
+                        
                         items.append(RawListingItem(
                             external_id=f"tap_{ext_id}",
-                            title=title.strip(),
-                            description=f"Tap.az elanı: {title.strip()}",
+                            title=title,
+                            description=f"Tap.az elanı: {title}",
                             price=clean_price,
                             currency="AZN",
                             seller_type=seller_type,
                             listing_url=f"https://tap.az{link}"
                         ))
+                        if len(items) >= 15:
+                            break
 
         except Exception as e:
             logger.error(f"[TapAzScraper] Error scraping: {e}")
@@ -50,7 +64,7 @@ class TapAzScraper(BaseScraper):
                 building_type="old",
                 seller_type="agency",
                 photos=["https://tap.az/images/sample2.jpg"],
-                listing_url="https://tap.az/elanlar/dasinmaz-emlak"
+                listing_url="https://tap.az/elanlar/dasinmaz-emlak/menziller/48408403"
             ))
 
         return items

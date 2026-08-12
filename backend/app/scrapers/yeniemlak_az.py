@@ -44,7 +44,7 @@ class YeniEmlakAzScraper(BaseScraper):
                 area_sqm=75.0,
                 building_type="new",
                 seller_type="owner",
-                listing_url="https://yeniemlak.az/elan/4010401"
+                listing_url="https://yeniemlak.az/elan/kiraye-2-otaqli-bina-evi-menzil-yasamal-rayonu-yeni-yasamal-qes-murad-mirzeyev-kucesi-167054"
             ))
 
         return items

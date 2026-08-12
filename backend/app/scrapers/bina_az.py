@@ -88,8 +88,8 @@ class BinaAzScraper(BaseScraper):
                 total_floors=16,
                 building_type="new",
                 seller_type="owner",
-                photos=["https://bina.az/images/sample1.jpg"],
-                listing_url="https://bina.az/baki/alqi-satqi/menziller"
+                photos=["https://tap.az/images/sample1.jpg"],
+                listing_url="https://tap.az/elanlar/dasinmaz-emlak/menziller/48408495"
             ))
 
         return items

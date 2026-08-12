@@ -44,7 +44,7 @@ class LalafoAzScraper(BaseScraper):
                 area_sqm=62.0,
                 building_type="old",
                 seller_type="owner",
-                listing_url="https://lalafo.az/baku/nedvizhimost/id-1007"
+                listing_url="https://lalafo.az/baku/ads/1-otaqli-42-kv-m-orta-tmir-id-114410063"
             ))
 
         return items
