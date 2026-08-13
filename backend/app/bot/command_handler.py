@@ -37,7 +37,10 @@ class BotCommandHandler:
         channel: str,            # "telegram" or "whatsapp"
         sender_id: str,          # telegram chat_id or whatsapp phone number / group JID
         sender_name: str,        # display name
-        raw_text: str
+        raw_text: str,
+        from_me: bool = False,
+        instance_name: Optional[str] = None,
+        group_subject: Optional[str] = None
     ) -> Optional[str]:
         """
         Shared command handler for WhatsApp and Telegram bots.
@@ -48,30 +51,78 @@ class BotCommandHandler:
         text_lower = raw_text_trimmed.lower()
         app_name = await get_app_name(db)
 
-        # 1. Find Tenant
+        # 1. Resolve Tenant
         tenant = None
         if channel == "telegram":
             stmt = select(Tenant).where(Tenant.telegram_chat_id == sender_id)
             res = await db.execute(stmt)
             tenant = res.scalars().first()
         elif channel == "whatsapp":
-            stmt = select(Tenant).where(Tenant.whatsapp_number == sender_id)
-            res = await db.execute(stmt)
-            tenant = res.scalars().first()
-            
-            # Fallback for WhatsApp Groups or instances
+            # First try matching by instance_name (e.g. tenant_1 -> ID 1)
+            if instance_name and instance_name.startswith("tenant_"):
+                try:
+                    t_id = int(instance_name.replace("tenant_", ""))
+                    stmt_id = select(Tenant).where(Tenant.id == t_id)
+                    res_id = await db.execute(stmt_id)
+                    tenant = res_id.scalars().first()
+                except ValueError:
+                    pass
+
+            if not tenant:
+                clean_sender = sender_id.replace("+", "").replace(" ", "").split("@")[0]
+                stmt_w = select(Tenant).where(Tenant.preferred_channel == "whatsapp")
+                res_w = await db.execute(stmt_w)
+                all_w = res_w.scalars().all()
+                for t in all_w:
+                    if t.whatsapp_number and t.whatsapp_number.replace("+", "").replace(" ", "") in clean_sender:
+                        tenant = t
+                        break
+
             if not tenant:
                 stmt_fb = select(Tenant).where(Tenant.preferred_channel == "whatsapp").order_by(Tenant.id.asc())
                 res_fb = await db.execute(stmt_fb)
                 tenant = res_fb.scalars().first()
 
-        # Ultimate fallback if no specific tenant matched
         if not tenant:
-            stmt_any = select(Tenant).order_by(Tenant.id.asc())
-            res_any = await db.execute(stmt_any)
-            tenant = res_any.scalars().first()
+            return None
 
-        # 2. Handle Slash Commands & Fast-Path Menu Shortcuts (Always accessible)
+        # 2. Strict Group Filtering for WhatsApp
+        is_group = "@g.us" in sender_id
+        if channel == "whatsapp" and is_group:
+            allowed_groups = list(tenant.allowed_group_jids or [])
+            subject_str = (group_subject or "").lower()
+
+            is_pair_cmd = any(cmd in text_lower for cmd in ["/pair_group", "/set_group", "/bot_here", "/group_pair", "pair group", "bot qoş", "bot qos"])
+            is_unpair_cmd = any(cmd in text_lower for cmd in ["/unpair_group", "/remove_group", "bot ayır", "bot ayir"])
+
+            if is_pair_cmd:
+                if sender_id not in allowed_groups:
+                    allowed_groups.append(sender_id)
+                    tenant.allowed_group_jids = allowed_groups
+                    await db.commit()
+                return f"✅ Bu WhatsApp qrupu (*{group_subject or 'AI Working Group'}*) AI Əmlak Agentinə uğurla qoşuldu və aktivləşdirildi! 🚀"
+
+            if is_unpair_cmd:
+                if sender_id in allowed_groups:
+                    allowed_groups.remove(sender_id)
+                    tenant.allowed_group_jids = allowed_groups
+                    await db.commit()
+                return f"🛑 Bu WhatsApp qrupu AI Əmlak Agentindən ayrıldı."
+
+            # Check if auto-pair keyword matched in group name
+            group_keywords = ["ai", "emlak", "əmlak", "real estate", "mənzil", "menzil", "agent", "baza", "axtarış", "axtaris", "bot"]
+            is_keyword_group = any(kw in subject_str for kw in group_keywords)
+
+            if sender_id not in allowed_groups:
+                if is_keyword_group:
+                    allowed_groups.append(sender_id)
+                    tenant.allowed_group_jids = allowed_groups
+                    await db.commit()
+                else:
+                    # Message in an un-paired family/friends/other random WhatsApp group -> SILENTLY IGNORE!
+                    return None
+
+        # 3. Handle Slash Commands & Fast-Path Menu Shortcuts
         if text_lower in ["/start", "/help", "/kömək", "/komak", "kömək", "komak", "help", "menu", "menyu", "salam", "hi", "start"]:
             return BotCommandHandler._get_start_message(app_name)
 

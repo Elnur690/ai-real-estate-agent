@@ -33,8 +33,16 @@ class WhatsAppAdapter:
             key = data.get("key", {})
             msg_id = key.get("id")
 
-            # Allow self-messages for solo agents who pair their single WhatsApp number
-            if key.get("fromMe"):
+            from_me = bool(key.get("fromMe"))
+            remote_jid = key.get("remoteJid", "")
+            if not remote_jid:
+                return None
+
+            is_group = "@g.us" in remote_jid
+            group_subject = payload.get("data", {}).get("groupMetadata", {}).get("subject") or data.get("pushName") or ""
+
+            # Check outbound bot message to prevent response loops
+            if from_me:
                 if msg_id in SENT_BOT_MESSAGE_IDS:
                     try:
                         SENT_BOT_MESSAGE_IDS.remove(msg_id)
@@ -42,16 +50,18 @@ class WhatsAppAdapter:
                         pass
                     logger.info(f"[WhatsAppAdapter] Skipping outbound bot response (msg_id={msg_id})")
                     return None
-                logger.info(f"[WhatsAppAdapter] Processing solo agent self-message (fromMe=True, msg_id={msg_id})")
 
-            remote_jid = key.get("remoteJid", "")
-            if not remote_jid:
+            # 1-on-1 Private Direct Chat Guard:
+            # If someone else (from_me=False) messages the agent's personal WhatsApp 1-on-1,
+            # DO NOT respond at all! Silently ignore so bot never sends welcome messages to private contacts.
+            if not is_group and not from_me:
+                logger.info(f"[WhatsAppAdapter] Ignoring 1-on-1 private message from 3rd party ({remote_jid}) on personal agent number.")
                 return None
 
             # Determine recipient ID: for groups (@g.us), use full JID; for direct chat, extract phone number
-            if "@g.us" in remote_jid:
+            if is_group:
                 sender_id = remote_jid
-                sender_name = data.get("pushName") or "WhatsApp Group Member"
+                sender_name = group_subject or "WhatsApp Group"
             else:
                 sender_id = remote_jid.split("@")[0] if "@" in remote_jid else remote_jid
                 sender_name = data.get("pushName") or "WhatsApp User"
@@ -86,7 +96,7 @@ class WhatsAppAdapter:
                 logger.info(f"[WhatsAppAdapter] Message missing text or sender_id. Text: '{raw_text}', Sender: '{sender_id}'")
                 return None
 
-            logger.info(f"[WhatsAppAdapter] Processing incoming message from {sender_name} ({sender_id}): '{raw_text}'")
+            logger.info(f"[WhatsAppAdapter] Processing incoming message from {sender_name} ({sender_id}) [fromMe={from_me}, isGroup={is_group}]: '{raw_text}'")
 
             async with AsyncSessionLocal() as db:
                 response_text = await BotCommandHandler.handle_incoming_message(
@@ -94,7 +104,10 @@ class WhatsAppAdapter:
                     channel="whatsapp",
                     sender_id=sender_id,
                     sender_name=sender_name,
-                    raw_text=raw_text
+                    raw_text=raw_text,
+                    from_me=from_me,
+                    instance_name=instance_name,
+                    group_subject=group_subject
                 )
 
             if response_text:
@@ -108,6 +121,7 @@ class WhatsAppAdapter:
             return response_text
         except Exception as e:
             logger.error(f"[WhatsAppAdapter] Webhook error: {e}", exc_info=True)
+            return None
             return None
 
     @staticmethod
