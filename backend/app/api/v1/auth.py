@@ -92,6 +92,29 @@ async def get_me(current_user: User = Depends(get_current_user)):
     }
 
 
+class AdminUserResponse(BaseModel):
+    id: int
+    name: str
+    email: str
+    phone: str | None = None
+    role: str
+    created_at: datetime | None = None
+
+
+class CreateAdminRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+    phone: str | None = None
+
+
+class UpdateAdminRequest(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    password: str | None = None
+
+
 class UpdateProfileRequest(BaseModel):
     name: str | None = None
     email: str | None = None
@@ -138,29 +161,6 @@ async def update_profile(
         role=current_user.role,
         created_at=current_user.created_at
     )
-
-
-class AdminUserResponse(BaseModel):
-    id: int
-    name: str
-    email: str
-    phone: str | None = None
-    role: str
-    created_at: datetime | None = None
-
-
-class CreateAdminRequest(BaseModel):
-    name: str
-    email: str
-    password: str
-    phone: str | None = None
-
-
-class UpdateAdminRequest(BaseModel):
-    name: str | None = None
-    email: str | None = None
-    phone: str | None = None
-    password: str | None = None
 
 
 @router.get("/admins", response_model=list[AdminUserResponse])
