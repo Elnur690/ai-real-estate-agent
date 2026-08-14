@@ -262,6 +262,31 @@ async def update_plan(
     if body.backup_enabled is not None:
         plan.backup_enabled = body.backup_enabled
 
+    # Cascade updated feature permissions to all tenants currently on this plan
+    from sqlalchemy import update as sa_update
+    tenant_updates = {}
+    if body.feature_makler_detector is not None:
+        tenant_updates["feature_makler_detector"] = body.feature_makler_detector
+    if body.feature_avm_bargain_finder is not None:
+        tenant_updates["feature_avm_bargain_finder"] = body.feature_avm_bargain_finder
+    if body.feature_b2b_cobrokering is not None:
+        tenant_updates["feature_b2b_cobrokering"] = body.feature_b2b_cobrokering
+    if body.feature_social_brochure is not None:
+        tenant_updates["feature_social_brochure"] = body.feature_social_brochure
+    if body.feature_client_intake_bot is not None:
+        tenant_updates["feature_client_intake_bot"] = body.feature_client_intake_bot
+    if body.feature_aged_listings is not None:
+        tenant_updates["feature_aged_listings"] = body.feature_aged_listings
+    if body.backup_enabled is not None:
+        tenant_updates["backup_enabled"] = body.backup_enabled
+
+    if tenant_updates:
+        await db.execute(
+            sa_update(Tenant)
+            .where(Tenant.plan == plan.code)
+            .values(**tenant_updates)
+        )
+
     await db.commit()
     await db.refresh(plan)
 

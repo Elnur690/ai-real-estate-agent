@@ -23,6 +23,23 @@ class B2BService:
         if not listing.source_id:
             return 0
 
+        from app.models.plan import Plan
+
+        # Check seller tenant and their plan B2B permission in real-time
+        stmt_s = select(Tenant).where(Tenant.id == listing.source_id)
+        res_s = await db.execute(stmt_s)
+        seller = res_s.scalars().first()
+        if not seller or seller.status != "active":
+            return 0
+
+        stmt_sp = select(Plan).where(Plan.code == seller.plan)
+        res_sp = await db.execute(stmt_sp)
+        seller_plan = res_sp.scalars().first()
+        seller_b2b = seller_plan.feature_b2b_cobrokering if seller_plan else seller.feature_b2b_cobrokering
+        if not seller_b2b:
+            logger.info(f"[B2B] Seller '{seller.name}' (Plan: {seller.plan}) does not have B2B co-brokering enabled. Skipping distribution.")
+            return 0
+
         stmt_searches = select(SavedSearch).where(SavedSearch.is_active == True)
         res_searches = await db.execute(stmt_searches)
         searches = res_searches.scalars().all()
@@ -32,11 +49,19 @@ class B2BService:
 
         for s in searches:
             # Check buyer tenant has B2B feature enabled
-            stmt_t = select(Tenant).where(Tenant.id == s.tenant_id, Tenant.status == "active", Tenant.feature_b2b_cobrokering == True)
+            stmt_t = select(Tenant).where(Tenant.id == s.tenant_id, Tenant.status == "active")
             res_t = await db.execute(stmt_t)
             buyer_tenant = res_t.scalars().first()
 
-            if not buyer_tenant:
+            if not buyer_tenant or buyer_tenant.id == listing.source_id:
+                continue
+
+            # Check buyer plan feature in real-time
+            stmt_bp = select(Plan).where(Plan.code == buyer_tenant.plan)
+            res_bp = await db.execute(stmt_bp)
+            buyer_plan = res_bp.scalars().first()
+            buyer_b2b = buyer_plan.feature_b2b_cobrokering if buyer_plan else buyer_tenant.feature_b2b_cobrokering
+            if not buyer_b2b:
                 continue
 
             # Evaluate matching criteria

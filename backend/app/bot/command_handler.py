@@ -734,10 +734,27 @@ class BotCommandHandler:
         await db.commit()
         await db.refresh(listing)
 
+        from app.models.plan import Plan
+        stmt_plan = select(Plan).where(Plan.code == tenant.plan)
+        res_plan = await db.execute(stmt_plan)
+        plan_obj = res_plan.scalars().first()
+        b2b_allowed = plan_obj.feature_b2b_cobrokering if plan_obj else tenant.feature_b2b_cobrokering
+
+        app_name = await get_app_name(db)
+
+        if not b2b_allowed:
+            return (
+                f"📋 *ELAN BAZAYA ƏLAVƏ EDİLDİ ({app_name})*\n\n"
+                f"🏠 *{listing.title}*\n"
+                f"💰 *Qiymət:* {int(listing.price)} {listing.currency}\n"
+                f"📍 *Məkan:* {district or 'Bakı'} ({metro or 'Metro göstərilməyib'})\n"
+                f"🚪 *Otaq:* {listing.rooms or '-'} | 📐 *Sahə:* {listing.area_sqm or '-'} m²\n\n"
+                f"🔒 *Qeyd:* Sizin hazırkı `{tenant.plan.upper()}` planınızda B2B Co-Brokering şəbəkəsi aktiv deyil. Elanınız digər agentlərin axtarışlarına avtomatik paylanmadı. Aktivləşdirmək üçün planınızı yüksəldin."
+            )
+
         # Trigger B2B Co-Brokering Notification to other matching agents
         b2b_matches = await B2BService.evaluate_b2b_cobrokering(db, listing)
 
-        app_name = await get_app_name(db)
         return (
             f"🚀 *ELANINIZ UĞURLA DƏRC EDİLDİ VƏ PARTNYORLARA ÇATDIRILDI! ({app_name})*\n\n"
             f"🏠 *{listing.title}*\n"
