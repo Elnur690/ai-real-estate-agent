@@ -11,6 +11,7 @@ class RawListingItem(BaseModel):
     district: Optional[str] = None
     metro_station: Optional[str] = None
     address_raw: Optional[str] = None
+    phone_number: Optional[str] = None
     rooms: Optional[int] = None
     area_sqm: Optional[float] = None
     floor: Optional[int] = None

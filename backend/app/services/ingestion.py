@@ -150,6 +150,10 @@ class IngestionService:
                         await db.commit()
                         db_listing = existing_listing
                     else:
+                        from app.core.baku_locations import extract_az_phone
+                        phone_res = extract_az_phone(item.phone_number or f"{item.title} {item.description or ''} {item.address_raw or ''}")
+                        extracted_phone = phone_res[0] if phone_res else None
+
                         db_listing = Listing(
                             source_id=source.id,
                             external_id=item.external_id,
@@ -160,6 +164,7 @@ class IngestionService:
                             district=item.district,
                             metro_station=item.metro_station,
                             address_raw=item.address_raw,
+                            phone_number=item.phone_number or extracted_phone,
                             rooms=item.rooms,
                             area_sqm=item.area_sqm,
                             floor=item.floor,
@@ -276,6 +281,15 @@ class IngestionService:
 
                 makler_tag = "\n⚠️ *Makler Şübhəsi:* Böyük ehtimalla agentlik elanıdır." if (listing.makler_score and listing.makler_score >= 0.5) else ""
 
+                from app.core.baku_locations import extract_az_phone
+                phone_info = extract_az_phone(listing.phone_number or f"{listing.title} {listing.description or ''} {listing.address_raw or ''}")
+
+                if phone_info:
+                    formatted_phone, raw_phone = phone_info
+                    contact_line = f"📞 *Zəng / Əlaqə:* [{formatted_phone}](tel:{raw_phone}) (`{formatted_phone}`)"
+                else:
+                    contact_line = f"📞 [ZƏNG ET / ƏLAQƏ SAXLAYIN]({listing.listing_url})"
+
                 msg_text = (
                     f"🔥 *YENİ UYĞUN ELAN! ({app_name})*\n"
                     f"🎯 *Uyğunluq:* %{int(score * 100)}{bargain_tag}{first_post_tag}{makler_tag}\n\n"
@@ -285,7 +299,7 @@ class IngestionService:
                     f"📐 *Otaq / Sahə:* {listing.rooms or '-'} otaqlı | {listing.area_sqm or '-'} m²\n"
                     f"👤 *Satıcı:* {seller_str}\n"
                     f"🏢 *Bina:* {bld_str}\n\n"
-                    f"📞 [ZƏNG ET / ƏLAQƏ SAXLAYIN]({listing.listing_url})\n"
+                    f"{contact_line}\n"
                     f"🔗 [Elana keçid et]({listing.listing_url})\n\n"
                     f"💬 *Reaksiya bildirin:*\n"
                     f"`Maraqlanıram {new_match.id}` | `Keç {new_match.id}` | `Satılıb {new_match.id}`"
