@@ -14,6 +14,7 @@ interface DistrictHeatmap {
 interface PropertyPin {
   id: number;
   title: string;
+  source_name?: string;
   price: number;
   currency: string;
   district: string;
@@ -35,6 +36,31 @@ export const BakuPropertyMap: React.FC = () => {
   const [selectedDistrict, setSelectedDistrict] = useState<string>('all');
   const [filterBargainOnly, setFilterBargainOnly] = useState(false);
   const [selectedPin, setSelectedPin] = useState<PropertyPin | null>(null);
+
+  const getSourceBadgeColor = (source?: string) => {
+    switch ((source || '').toLowerCase()) {
+      case 'bina.az':
+        return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
+      case 'tap.az':
+        return 'bg-amber-500/20 text-amber-300 border-amber-500/30';
+      case 'yeniemlak.az':
+        return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
+      case 'lalafo.az':
+        return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
+      case 'evonline.az':
+        return 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30';
+      case 'binam.az':
+        return 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30';
+      case 'ipoteka.az':
+        return 'bg-rose-500/20 text-rose-300 border-rose-500/30';
+      case 'ev10.az':
+        return 'bg-teal-500/20 text-teal-300 border-teal-500/30';
+      case 'vipemlak.az':
+        return 'bg-amber-400/20 text-amber-200 border-amber-400/30';
+      default:
+        return 'bg-slate-700/50 text-slate-300 border-slate-600';
+    }
+  };
 
   const getValidExternalUrl = (url?: string) => {
     if (!url) return '#';
@@ -122,47 +148,46 @@ export const BakuPropertyMap: React.FC = () => {
         ))}
       </div>
 
-      {/* Map Controls */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-dark-800/80 p-3 rounded-2xl border border-slate-800">
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <div className="flex items-center gap-1.5 text-xs text-slate-300">
-            <Filter className="w-3.5 h-3.5 text-slate-400" />
-            <span>District:</span>
+      {/* Interactive Map Visual Grid */}
+      <div className="glass-card rounded-2xl border border-slate-800 p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-sm font-bold text-white">
+              Baku Property Pins ({filteredPins.length})
+            </h3>
+            {selectedDistrict !== 'all' && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono">
+                {selectedDistrict}
+              </span>
+            )}
           </div>
-          <select
-            value={selectedDistrict}
-            onChange={(e) => setSelectedDistrict(e.target.value)}
-            className="glass-input px-3 py-1.5 rounded-xl text-xs text-white bg-dark-900 border border-slate-700"
-          >
-            <option value="all">All Baku Districts ({pins.length} pins)</option>
-            {heatmap.map(h => (
-              <option key={h.district} value={h.district}>{h.district} ({h.active_count} listings)</option>
-            ))}
-          </select>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setFilterBargainOnly(!filterBargainOnly)}
+              className={`text-xs px-3 py-1.5 rounded-xl border flex items-center gap-1.5 font-medium transition-all ${
+                filterBargainOnly
+                  ? 'bg-emerald-500 text-dark-900 border-emerald-400 font-bold'
+                  : 'bg-dark-800 text-slate-300 border-slate-700 hover:bg-dark-700'
+              }`}
+            >
+              <TrendingDown className="w-3.5 h-3.5" />
+              Bargains Only (-10%+)
+            </button>
+            {selectedDistrict !== 'all' && (
+              <button
+                onClick={() => setSelectedDistrict('all')}
+                className="text-xs text-slate-400 hover:text-white px-2 py-1"
+              >
+                Clear District
+              </button>
+            )}
+          </div>
         </div>
 
-        <button
-          onClick={() => setFilterBargainOnly(!filterBargainOnly)}
-          className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl border transition-all ${
-            filterBargainOnly
-              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-              : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
-          }`}
-        >
-          <TrendingDown className="w-3.5 h-3.5" />
-          <span>Only Urgent Bargains (-10%+ Below Market)</span>
-        </button>
-      </div>
-
-      {/* Visual Interactive Map Canvas */}
-      <div className="glass-card rounded-2xl border border-slate-800 p-4 relative min-h-[450px] overflow-hidden flex flex-col justify-between">
-        {/* Background Grid Map Layout */}
-        <div className="absolute inset-0 bg-dark-950 opacity-90 flex items-center justify-center pointer-events-none">
-          <div className="w-full h-full bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px] opacity-40"></div>
-        </div>
-
-        {/* Pins Map Display */}
-        <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {/* Property Pins Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[520px] overflow-y-auto pr-1">
           {filteredPins.map(p => (
             <div
               key={p.id}
@@ -173,17 +198,18 @@ export const BakuPropertyMap: React.FC = () => {
                   : 'bg-dark-800/80 border-slate-700 hover:bg-dark-700'
               }`}
             >
-              <div className="flex justify-between items-start">
-                <span className="text-xs font-bold text-white truncate max-w-[200px]">{p.title}</span>
-                {p.is_bargain ? (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500 text-dark-900 font-extrabold flex items-center gap-1">
-                    <TrendingDown className="w-3 h-3" /> {p.bargain_percentage}%
+              <div className="flex justify-between items-start gap-2">
+                <span className="text-xs font-bold text-white truncate max-w-[180px]">{p.title}</span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <span className={`text-[10px] px-2 py-0.5 rounded-md border font-semibold ${getSourceBadgeColor(p.source_name)}`}>
+                    {p.source_name || 'Bina.az'}
                   </span>
-                ) : (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
-                    Fair Price
-                  </span>
-                )}
+                  {p.is_bargain ? (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-500 text-dark-900 font-extrabold flex items-center gap-0.5">
+                      <TrendingDown className="w-2.5 h-2.5" /> {p.bargain_percentage}%
+                    </span>
+                  ) : null}
+                </div>
               </div>
 
               <div className="flex items-baseline gap-2">
@@ -216,15 +242,6 @@ export const BakuPropertyMap: React.FC = () => {
             </div>
           )}
         </div>
-
-        {/* Legend Footer */}
-        <div className="relative z-10 pt-4 mt-4 border-t border-slate-800 flex flex-wrap items-center justify-between text-xs text-slate-400 gap-2">
-          <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Bargain (-10%+ Below Market)</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span> Fair Market Value</span>
-          </div>
-          <span>Showing {filteredPins.length} Baku property pins</span>
-        </div>
       </div>
 
       {/* Property Pin Detail Modal */}
@@ -233,15 +250,26 @@ export const BakuPropertyMap: React.FC = () => {
           <div className="glass-card w-full max-w-md p-6 rounded-2xl border border-slate-800 space-y-4">
             <div className="flex justify-between items-start">
               <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-                  {selectedPin.district} District {selectedPin.metro_station ? `• ${selectedPin.metro_station} Metro` : ''}
-                </span>
-                <h3 className="text-base font-bold text-white mt-1">{selectedPin.title}</h3>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[11px] px-2.5 py-0.5 rounded-md border font-semibold ${getSourceBadgeColor(selectedPin.source_name)}`}>
+                    🌐 {selectedPin.source_name || 'Bina.az'}
+                  </span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                    {selectedPin.district} District {selectedPin.metro_station ? `• ${selectedPin.metro_station} Metro` : ''}
+                  </span>
+                </div>
+                <h3 className="text-base font-bold text-white mt-1.5">{selectedPin.title}</h3>
               </div>
               <button onClick={() => setSelectedPin(null)} className="text-slate-400 hover:text-white">&times;</button>
             </div>
 
             <div className="p-3 bg-dark-900 rounded-xl border border-slate-800 space-y-2 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">Source Portal:</span>
+                <span className={`text-xs px-2 py-0.5 rounded font-semibold border ${getSourceBadgeColor(selectedPin.source_name)}`}>
+                  {selectedPin.source_name || 'Bina.az'}
+                </span>
+              </div>
               <div className="flex justify-between items-center">
                 <span className="text-slate-400">Total Price:</span>
                 <strong className="text-base font-extrabold text-emerald-400">{Math.round(selectedPin.price).toLocaleString()} {selectedPin.currency}</strong>
@@ -271,9 +299,9 @@ export const BakuPropertyMap: React.FC = () => {
                 href={getValidExternalUrl(selectedPin.listing_url)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-4 py-2 text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl flex items-center gap-1.5"
+                className="px-4 py-2 text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl flex items-center gap-1.5 shadow-lg shadow-emerald-500/20"
               >
-                <span>View Original Listing</span>
+                <span>View on {selectedPin.source_name || 'Portal'}</span>
                 <ExternalLink className="w-3.5 h-3.5" />
               </a>
             </div>

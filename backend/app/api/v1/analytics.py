@@ -67,9 +67,49 @@ async def get_property_heatmap(db: AsyncSession = Depends(get_db), current_user 
         else:
             formatted_url = raw_url
 
+        # Extract clean source name
+        source_name = "Bina.az"
+        ext_id = (l.external_id or "").lower()
+        url_lower = (l.listing_url or "").lower()
+        if "tap" in ext_id or "tap.az" in url_lower:
+            source_name = "Tap.az"
+        elif "yeniemlak" in ext_id or "yeniemlak.az" in url_lower:
+            source_name = "YeniEmlak.az"
+        elif "lalafo" in ext_id or "lalafo.az" in url_lower:
+            source_name = "Lalafo.az"
+        elif "binam" in ext_id or "binam.az" in url_lower:
+            source_name = "Binam.az"
+        elif "evonline" in ext_id or "evonline.az" in url_lower:
+            source_name = "EvOnline.az"
+        elif "ev10" in ext_id or "ev10.az" in url_lower:
+            source_name = "Ev10.az"
+        elif "ipoteka" in ext_id or "ipoteka.az" in url_lower:
+            source_name = "Ipoteka.az"
+        elif "vipemlak" in ext_id or "vipemlak.az" in url_lower:
+            source_name = "VipEmlak.az"
+        elif "binalar" in ext_id or "binalar.az" in url_lower:
+            source_name = "Binalar.az"
+        elif "ofis" in ext_id or "ofis.az" in url_lower:
+            source_name = "Ofis.az"
+        elif "unvan" in ext_id or "unvan.az" in url_lower:
+            source_name = "Unvan.az"
+        elif "homdom" in ext_id or "homdom.az" in url_lower:
+            source_name = "HomDom.az"
+        elif "rahatemlak" in ext_id or "rahatemlak.az" in url_lower:
+            source_name = "RahatEmlak.az"
+        elif "kub" in ext_id or "kub.az" in url_lower:
+            source_name = "Kub.az"
+        elif "mulk" in ext_id or "mulk.az" in url_lower:
+            source_name = "Mulk.az"
+        elif "villa" in ext_id or "villa.az" in url_lower:
+            source_name = "Villa.az"
+        elif "telegram" in ext_id:
+            source_name = "Telegram"
+
         pins.append({
             "id": l.id,
             "title": l.title,
+            "source_name": source_name,
             "price": l.price,
             "currency": l.currency,
             "district": matched_key,
