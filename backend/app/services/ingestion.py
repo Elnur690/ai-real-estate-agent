@@ -158,6 +158,7 @@ class IngestionService:
                             price=item.price,
                             currency=item.currency,
                             district=item.district,
+                            metro_station=item.metro_station,
                             address_raw=item.address_raw,
                             rooms=item.rooms,
                             area_sqm=item.area_sqm,

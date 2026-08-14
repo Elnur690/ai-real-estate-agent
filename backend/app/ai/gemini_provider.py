@@ -258,43 +258,51 @@ Return JSON ONLY:
                 return 0.0
             score -= 0.45
 
-        # 2. Strict Metro Station Check
+        # 2. Strict Metro Station Check with Proximity Intelligence
         if criteria.metro_station:
-            from app.core.baku_locations import BAKU_METRO_STATIONS, extract_metro_station
-            target_metro = criteria.metro_station.lower()
+            from app.core.baku_locations import BAKU_METRO_STATIONS, extract_metro_station, is_adjacent_metro
+            target_metro = criteria.metro_station
+            target_metro_lower = target_metro.lower()
             listing_metro = (listing.get("metro_station") or "").lower()
             listing_full_text = f"{listing.get('title') or ''} {listing.get('address_raw') or ''} {listing.get('description') or ''} {listing_metro}".lower()
             
-            aliases = [target_metro] + [a.lower() for a in BAKU_METRO_STATIONS.get(criteria.metro_station, [])]
+            aliases = [target_metro_lower] + [a.lower() for a in BAKU_METRO_STATIONS.get(target_metro, [])]
             metro_matched = any(alias in listing_full_text for alias in aliases)
             
             if metro_matched:
                 score += 0.1
             else:
                 extracted_other_metro = extract_metro_station(listing_full_text)
-                if extracted_other_metro and extracted_other_metro.lower() != target_metro:
-                    return 0.0 # Hard rejection: listing is explicitly at another metro station
+                if extracted_other_metro:
+                    if is_adjacent_metro(target_metro, extracted_other_metro):
+                        score -= 0.15 # Close proximity neighbor (1 stop away)
+                    else:
+                        return 0.0 # Distant metro station -> HARD REJECTION
                 else:
-                    score -= 0.55 # Strict penalty if target metro is missing
+                    score -= 0.55
 
-        # 3. Strict District Check
+        # 3. Strict District Check with Neighboring Proximity Intelligence
         if criteria.district:
-            from app.core.baku_locations import BAKU_DISTRICTS, extract_baku_district
-            target_district = criteria.district.lower()
+            from app.core.baku_locations import BAKU_DISTRICTS, extract_baku_district, is_adjacent_district
+            target_district = criteria.district
+            target_district_lower = target_district.lower()
             listing_district = (listing.get("district") or "").lower()
             listing_full_text = f"{listing.get('title') or ''} {listing.get('address_raw') or ''} {listing.get('description') or ''} {listing_district}".lower()
             
-            district_aliases = [target_district] + [a.lower() for a in BAKU_DISTRICTS.get(criteria.district, [])]
+            district_aliases = [target_district_lower] + [a.lower() for a in BAKU_DISTRICTS.get(target_district, [])]
             district_matched = any(alias in listing_full_text for alias in district_aliases)
             
             if district_matched:
                 pass
             else:
                 extracted_other_district = extract_baku_district(listing_full_text)
-                if extracted_other_district and extracted_other_district.lower() != target_district:
-                    return 0.0 # Hard rejection: listing is explicitly in a different district
+                if extracted_other_district:
+                    if is_adjacent_district(target_district, extracted_other_district):
+                        score -= 0.20 # Adjacent neighboring district
+                    else:
+                        return 0.0 # Distant district -> HARD REJECTION
                 else:
-                    score -= 0.5 # Strict penalty for missing requested district
+                    score -= 0.50
 
         # 4. Rooms check
         rooms = listing.get("rooms")

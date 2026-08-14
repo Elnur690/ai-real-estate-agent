@@ -42,9 +42,9 @@ class TapAzScraper(BaseScraper):
                         rooms_m = re.search(r'(\d+)\s*-\s*otaqlı', raw_text) or re.search(r'(\d+)\s*otaqlı', raw_text)
                         rooms = int(rooms_m.group(1)) if rooms_m else None
                         area_m = re.search(r'([\d.]+)\s*m²', raw_text)
-                        area = float(area_m.group(1)) if area_m else (rooms * 35.0 if rooms else 60.0)
+                        area = float(area_m.group(1)) if area_m else None
 
-                        district = extract_baku_district(raw_text) or "Bakı"
+                        district = extract_baku_district(raw_text) 
                         metro = extract_metro_station(raw_text)
 
                         title = re.sub(r'[\d\s]+\|\s*₼\s*\|?', '', raw_text).strip()

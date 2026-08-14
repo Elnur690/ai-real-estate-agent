@@ -36,11 +36,11 @@ class HomDomAzScraper(BaseScraper):
                         if not raw_text or len(raw_text) < 5:
                             continue
 
-                        district = extract_baku_district(raw_text) or extract_baku_district(href) or "Bakı"
+                        district = extract_baku_district(raw_text) or extract_baku_district(href) 
                         metro = extract_metro_station(raw_text) or extract_metro_station(href)
 
                         price_m = re.search(r'([\d\s]+)\s*AZN', raw_text) or re.search(r'([\d\s]+)\s*₼', raw_text)
-                        price = float(price_m.group(1).replace(" ", "")) if price_m else 115000.0
+                        price = float(price_m.group(1).replace(" ", "")) if price_m else 0.0
 
                         rooms_m = re.search(r'(\d+)\s*otaq', raw_text)
                         rooms = int(rooms_m.group(1)) if rooms_m else 2

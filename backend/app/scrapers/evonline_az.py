@@ -38,15 +38,15 @@ class EvOnlineAzScraper(BaseScraper):
                         raw_text = parent.get_text(separator=" | ", strip=True) if parent else a.get_text(strip=True)
 
                         price_m = re.search(r'([\d\s]+)\s*₼', raw_text) or re.search(r'([\d\s]+)\s*AZN', raw_text)
-                        price = float(price_m.group(1).replace(" ", "")) if price_m else 100000.0
+                        price = float(price_m.group(1).replace(" ", "")) if price_m else 0.0
 
                         rooms_m = re.search(r'(\d+)\s*otaq', raw_text)
                         rooms = int(rooms_m.group(1)) if rooms_m else None
 
                         area_m = re.search(r'([\d.]+)\s*m²', raw_text)
-                        area = float(area_m.group(1)) if area_m else (rooms * 35.0 if rooms else 60.0)
+                        area = float(area_m.group(1)) if area_m else None
 
-                        district = extract_baku_district(raw_text) or "Bakı"
+                        district = extract_baku_district(raw_text) 
                         metro = extract_metro_station(raw_text)
 
                         bld_type = "new" if "yeni" in raw_text.lower() else "old"

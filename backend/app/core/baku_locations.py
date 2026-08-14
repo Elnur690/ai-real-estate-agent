@@ -28,6 +28,35 @@ BAKU_METRO_STATIONS: Dict[str, List[str]] = {
     "Xocəsən": ["xocəsən", "xocesen", "xocəsən m", "xocesen m"]
 }
 
+# Baku Metro Lines Network Adjacency Graph (1-stop neighboring stations)
+METRO_ADJACENCY: Dict[str, List[str]] = {
+    "Dərnəgül": ["Azadlıq prospekti"],
+    "Azadlıq prospekti": ["Dərnəgül", "Nəsimi"],
+    "Nəsimi": ["Azadlıq prospekti", "Memar Əcəmi"],
+    "Memar Əcəmi": ["Nəsimi", "20 Yanvar", "8 Noyabr", "Avtovağzal"],
+    "20 Yanvar": ["Memar Əcəmi", "İnşaatçılar"],
+    "İnşaatçılar": ["20 Yanvar", "Elmlər Akademiyası"],
+    "Elmlər Akademiyası": ["İnşaatçılar", "Nizami"],
+    "Nizami": ["Elmlər Akademiyası", "28 May"],
+    "28 May": ["Nizami", "Gənclik", "Sahil", "Cəfər Cabbarlı"],
+    "Cəfər Cabbarlı": ["28 May", "Xətai"],
+    "Sahil": ["28 May", "İçərişəhər"],
+    "İçərişəhər": ["Sahil"],
+    "Gənclik": ["28 May", "Nəriman Nərimanov"],
+    "Nəriman Nərimanov": ["Gənclik", "Ulduz"],
+    "Ulduz": ["Nəriman Nərimanov", "Koroğlu"],
+    "Koroğlu": ["Ulduz", "Qara Qarayev"],
+    "Qara Qarayev": ["Koroğlu", "Neftçilər"],
+    "Neftçilər": ["Qara Qarayev", "Xalqlar Dostluğu"],
+    "Xalqlar Dostluğu": ["Neftçilər", "Əhmədli"],
+    "Əhmədli": ["Xalqlar Dostluğu", "Həzi Aslanov"],
+    "Həzi Aslanov": ["Əhmədli"],
+    "8 Noyabr": ["Memar Əcəmi", "Avtovağzal"],
+    "Avtovağzal": ["8 Noyabr", "Memar Əcəmi", "Xocəsən"],
+    "Xocəsən": ["Avtovağzal"],
+    "Xətai": ["Cəfər Cabbarlı", "28 May"]
+}
+
 BAKU_DISTRICTS: Dict[str, List[str]] = {
     "Binəqədi": [
         "binəqədi", "bineqedi", "azadlıq", "azadliq", "dərnəgül", "dernegul", "biləcəri", "bileceri",
@@ -87,6 +116,24 @@ BAKU_DISTRICTS: Dict[str, List[str]] = {
     ]
 }
 
+# Baku Adjacent Geographical Neighboring Districts
+DISTRICT_ADJACENCY: Dict[str, List[str]] = {
+    "Binəqədi": ["Nəsimi", "Nərimanov", "Abşeron"],
+    "Nəsimi": ["Yasamal", "Binəqədi", "Nərimanov", "Səbail"],
+    "Yasamal": ["Nəsimi", "Səbail", "Binəqədi", "Abşeron"],
+    "Səbail": ["Yasamal", "Nəsimi", "Xətai", "Qaradağ"],
+    "Nərimanov": ["Nəsimi", "Binəqədi", "Nizami", "Xətai"],
+    "Nizami": ["Nərimanov", "Xətai", "Sabunçu", "Suraxanı"],
+    "Xətai": ["Nərimanov", "Nizami", "Suraxanı", "Səbail"],
+    "Sabunçu": ["Nizami", "Suraxanı", "Abşeron", "Xəzər"],
+    "Suraxanı": ["Xətai", "Nizami", "Sabunçu", "Xəzər"],
+    "Xəzər": ["Sabunçu", "Suraxanı", "Pirallahi"],
+    "Abşeron": ["Binəqədi", "Yasamal", "Sabunçu", "Sumqayıt", "Qaradağ"],
+    "Sumqayıt": ["Abşeron"],
+    "Qaradağ": ["Səbail", "Yasamal", "Abşeron"],
+    "Pirallahi": ["Xəzər"]
+}
+
 def extract_metro_station(text: str) -> Optional[str]:
     """Extract Baku Metro station name from text input if present."""
     if not text:
@@ -108,3 +155,17 @@ def extract_baku_district(text: str) -> Optional[str]:
             if kw in text_lower:
                 return dist_name
     return None
+
+def is_adjacent_metro(target_metro: str, candidate_metro: str) -> bool:
+    """Returns True if candidate_metro is an immediate 1-stop neighbor of target_metro."""
+    if not target_metro or not candidate_metro:
+        return False
+    neighbors = METRO_ADJACENCY.get(target_metro, [])
+    return candidate_metro in neighbors
+
+def is_adjacent_district(target_district: str, candidate_district: str) -> bool:
+    """Returns True if candidate_district is an immediate geographical neighbor of target_district."""
+    if not target_district or not candidate_district:
+        return False
+    neighbors = DISTRICT_ADJACENCY.get(target_district, [])
+    return candidate_district in neighbors

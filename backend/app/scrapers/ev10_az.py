@@ -34,22 +34,23 @@ class Ev10AzScraper(BaseScraper):
                             continue
                         seen.add(ext_id)
 
-                        parent = a.find_parent("div", class_=re.compile(r'item|card|col|post')) or a.find_parent("tr")
+                        parent = a.find_parent("div", class_=re.compile(r'item|card|col|post', re.I)) or a.find_parent("tr") or a
                         raw_text = parent.get_text(separator=" | ", strip=True) if parent else a.get_text(strip=True)
 
-                        price_m = re.search(r'([\d\s]+)\s*AZN', raw_text) or re.search(r'([\d\s]+)\s*₼', raw_text) or re.search(r'([\d\s]+)\s*manat', raw_text)
-                        price = float(price_m.group(1).replace(" ", "")) if price_m else 95000.0
+                        price_m = re.search(r'([\d,.\s]+)\s*(?:AZN|₼|manat)', raw_text, re.IGNORECASE)
+                        clean_pr_str = price_m.group(1).replace(" ", "").replace(",", "").replace("\xa0", "") if price_m else ""
+                        price = float(clean_pr_str) if clean_pr_str and clean_pr_str.replace(".", "", 1).isdigit() else 0.0
 
                         rooms_m = re.search(r'(\d+)\s*otaq', raw_text)
                         rooms = int(rooms_m.group(1)) if rooms_m else None
 
                         area_m = re.search(r'([\d.]+)\s*m²', raw_text) or re.search(r'([\d.]+)\s*kv', raw_text)
-                        area = float(area_m.group(1)) if area_m else (rooms * 35.0 if rooms else 65.0)
+                        area = float(area_m.group(1)) if area_m else None
 
-                        district = extract_baku_district(raw_text) or "Bakı"
-                        metro = extract_metro_station(raw_text)
+                        district = extract_baku_district(raw_text) or extract_baku_district(href)
+                        metro = extract_metro_station(raw_text) or extract_metro_station(href)
 
-                        title = f"{rooms or ''} otaqlı mənzil {int(price)} AZN ({district})" if rooms else f"Mənzil {int(price)} AZN ({district})"
+                        title = f"{rooms or ''} otaqlı mənzil {int(price)} AZN ({district or 'Bakı'})" if rooms else f"Mənzil {int(price)} AZN ({district or 'Bakı'})"
 
                         items.append(RawListingItem(
                             external_id=f"ev10_{ext_id}",

@@ -37,15 +37,18 @@ async def get_property_heatmap(db: AsyncSession = Depends(get_db), current_user 
     }
     pins = []
 
-    for l in listings:
-        district_name = l.district or "Yasamal"
-        matched_key = "Yasamal"
-        for k in BAKU_DISTRICT_COORDINATES:
-            if k.lower() in district_name.lower():
-                matched_key = k
-                break
+    from app.core.baku_locations import extract_baku_district
 
-        coords = BAKU_DISTRICT_COORDINATES.get(matched_key, {"lat": 40.3800, "lng": 49.8500})
+    for l in listings:
+        detected = l.district or extract_baku_district(f"{l.title} {l.address_raw or ''} {l.description or ''}")
+        matched_key = None
+        if detected:
+            for k in BAKU_DISTRICT_COORDINATES:
+                if k.lower() in detected.lower():
+                    matched_key = k
+                    break
+
+        coords = BAKU_DISTRICT_COORDINATES.get(matched_key, {"lat": 40.3800, "lng": 49.8500}) if matched_key else {"lat": 40.4093, "lng": 49.8671}
         
         lat_offset = (hash(l.external_id or str(l.id)) % 100 - 50) * 0.0001
         lng_offset = (hash(str(l.id) + "lng") % 100 - 50) * 0.0001

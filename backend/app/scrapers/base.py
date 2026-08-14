@@ -9,6 +9,7 @@ class RawListingItem(BaseModel):
     price: float
     currency: str = "AZN"
     district: Optional[str] = None
+    metro_station: Optional[str] = None
     address_raw: Optional[str] = None
     rooms: Optional[int] = None
     area_sqm: Optional[float] = None

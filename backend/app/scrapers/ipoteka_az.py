@@ -30,16 +30,16 @@ class IpotekaAzScraper(BaseScraper):
                         pos = html.find(link)
                         snippet = html[pos:pos+1000] if pos != -1 else ""
                         price_match = re.search(r'([\d\s]+)\s*AZN', snippet)
-                        clean_price = float(price_match.group(1).replace(" ", "")) if price_match else 110000.0
+                        clean_price = float(price_match.group(1).replace(" ", "")) if price_match else 0.0
 
                         clean_slug = slug.replace("-", " ")
-                        district = extract_baku_district(clean_slug) or "Bakı"
+                        district = extract_baku_district(clean_slug) 
                         metro = extract_metro_station(clean_slug)
 
                         rooms_m = re.search(r'(\d+)\s*otaq', clean_slug) or re.search(r'(\d+)\s*otaq', snippet)
                         rooms = int(rooms_m.group(1)) if rooms_m else None
                         area_m = re.search(r'([\d.]+)\s*m²', snippet) or re.search(r'([\d.]+)\s*kv', snippet)
-                        area = float(area_m.group(1)) if area_m else (rooms * 35.0 if rooms else 65.0)
+                        area = float(area_m.group(1)) if area_m else None
 
                         title = f"{rooms or ''} otaqlı ipotekalı mənzil ({district})" if rooms else f"İpotekalı mənzil ({district})"
 
