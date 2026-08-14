@@ -78,6 +78,8 @@ export const TenantsView: React.FC = () => {
   const [paymentPlan, setPaymentPlan] = useState<string>('starter');
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [cashDays, setCashDays] = useState<number>(30);
+  const [cashIncludeAgedListings, setCashIncludeAgedListings] = useState<boolean>(false);
+  const [cashAgedMaxMonths, setCashAgedMaxMonths] = useState<number>(12);
   const [cashNotes, setCashNotes] = useState<string>('');
 
   const loadTenants = async () => {
@@ -290,25 +292,36 @@ export const TenantsView: React.FC = () => {
     }
   };
 
+  const calculateCashTotal = (planCode: string, days: number, includeAged: boolean) => {
+    const planObj = availablePlans.find(p => p.code === planCode);
+    const basePrice = planObj ? planObj.price : 29.0;
+    const addonPrice = planObj?.addon_aged_listings_price !== undefined ? planObj.addon_aged_listings_price : 15.0;
+    const multiplier = days === 365 ? 10 : (days === 180 ? 5 : (days === 90 ? 2.7 : 1));
+    const total = (basePrice * multiplier) + (includeAged ? (addonPrice * multiplier) : 0);
+    return Math.round(total);
+  };
+
   const openCashPaymentModal = (t: Tenant) => {
     setPaymentModalTenant(t);
     const planObj = availablePlans.find(p => p.code === t.plan) || availablePlans[0];
     const initialPlan = planObj ? planObj.code : 'starter';
-    const initialPrice = planObj ? planObj.price : 29.0;
+    const isAgedActive = !!t.feature_aged_listings;
+    const maxMonths = t.addon_aged_max_months || 12;
     
     setPaymentPlan(initialPlan);
     setCashDays(30);
-    setCashAmount(initialPrice);
+    setCashIncludeAgedListings(isAgedActive);
+    setCashAgedMaxMonths(maxMonths);
+
+    const initialAmount = calculateCashTotal(initialPlan, 30, isAgedActive);
+    setCashAmount(initialAmount);
     setCashNotes(`Cash payment received for ${t.name} (1 Month)`);
   };
 
-  const handlePlanOrPeriodChange = (planCode: string, days: number) => {
+  const handlePlanOrPeriodChange = (planCode: string, days: number, includeAged: boolean = cashIncludeAgedListings) => {
     setPaymentPlan(planCode);
     setCashDays(days);
-    const planObj = availablePlans.find(p => p.code === planCode);
-    const basePrice = planObj ? planObj.price : 29.0;
-    const multiplier = days === 365 ? 10 : (days === 180 ? 5 : (days === 90 ? 2.7 : 1));
-    const calculatedAmount = Math.round(basePrice * multiplier);
+    const calculatedAmount = calculateCashTotal(planCode, days, includeAged);
     setCashAmount(calculatedAmount);
     setCashNotes(`Cash payment for ${planCode.toUpperCase()} (${days} days)`);
   };
@@ -321,6 +334,8 @@ export const TenantsView: React.FC = () => {
         plan: paymentPlan,
         duration_days: cashDays,
         amount_paid: Number(cashAmount),
+        include_aged_listings: cashIncludeAgedListings,
+        addon_aged_max_months: cashAgedMaxMonths,
         notes: cashNotes
       });
       setPaymentModalTenant(null);
@@ -328,7 +343,7 @@ export const TenantsView: React.FC = () => {
       if (selectedTenant && selectedTenant.tenant.id === paymentModalTenant.id) {
         handleSelectTenant(paymentModalTenant.id);
       }
-      alert('Cash payment confirmed! Tenant subscription activated.');
+      alert('Cash payment confirmed! Tenant subscription and features activated.');
     } catch (e: any) {
       console.error(e);
       alert(e.response?.data?.detail || 'Failed to record cash payment');
@@ -1029,6 +1044,47 @@ export const TenantsView: React.FC = () => {
                     <option value={365}>1 Year (365 Days)</option>
                   </select>
                 </div>
+              </div>
+
+              {/* Aged Listings Add-on Option */}
+              <div className="p-3 bg-dark-900/80 rounded-xl border border-slate-800 space-y-2">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={cashIncludeAgedListings}
+                      onChange={(e) => {
+                        const val = e.target.checked;
+                        setCashIncludeAgedListings(val);
+                        handlePlanOrPeriodChange(paymentPlan, cashDays, val);
+                      }}
+                      className="rounded accent-emerald-500"
+                    />
+                    <span className="text-xs font-semibold text-slate-200">
+                      Aged Active Listings Add-on
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-purple-400 font-mono font-semibold">
+                    +{((availablePlans.find(p => p.code === paymentPlan)?.addon_aged_listings_price) ?? 15)} AZN/mo
+                  </span>
+                </label>
+
+                {cashIncludeAgedListings && (
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-xs">
+                    <span className="text-slate-400">Historical Lookback Limit:</span>
+                    <select
+                      value={cashAgedMaxMonths}
+                      onChange={(e) => setCashAgedMaxMonths(Number(e.target.value))}
+                      className="bg-dark-800 border border-slate-700 text-white rounded-lg px-2 py-1 text-xs font-medium"
+                    >
+                      <option value={1}>1 Month</option>
+                      <option value={3}>3 Months</option>
+                      <option value={6}>6 Months</option>
+                      <option value={12}>12 Months (1 Year)</option>
+                      <option value={24}>24 Months (2 Years)</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
               <div>

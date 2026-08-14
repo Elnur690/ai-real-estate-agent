@@ -187,9 +187,11 @@ async def update_tenant(tenant_id: int, body: UpdateTenantRequest, db: AsyncSess
             tenant.feature_avm_bargain_finder = db_plan.feature_avm_bargain_finder
             tenant.feature_social_brochure = db_plan.feature_social_brochure
             tenant.feature_client_intake_bot = db_plan.feature_client_intake_bot
-            tenant.feature_multi_location = db_plan.feature_multi_location
-            tenant.max_locations_per_search = db_plan.max_locations_per_search
+            tenant.feature_multi_location = getattr(db_plan, 'feature_multi_location', True)
+            tenant.max_locations_per_search = getattr(db_plan, 'max_locations_per_search', 5)
             tenant.backup_enabled = db_plan.backup_enabled
+            if getattr(db_plan, 'feature_aged_listings', False):
+                tenant.feature_aged_listings = True
 
     for field, val in update_data.items():
         setattr(tenant, field, val)
@@ -197,6 +199,45 @@ async def update_tenant(tenant_id: int, body: UpdateTenantRequest, db: AsyncSess
     await db.commit()
     await db.refresh(tenant)
     return tenant
+
+class TenantCashPaymentRequest(BaseModel):
+    plan: Optional[str] = None
+    duration_days: int = 30
+    amount_paid: Optional[float] = None
+    amount: Optional[float] = None
+    include_aged_listings: Optional[bool] = None
+    addon_aged_max_months: Optional[int] = 12
+    use_referral_balance: bool = True
+    notes: Optional[str] = None
+
+@router.post("/{tenant_id}/cash-payment")
+async def record_tenant_cash_payment(
+    tenant_id: int,
+    body: TenantCashPaymentRequest,
+    db: AsyncSession = Depends(get_db),
+    current_admin = Depends(get_current_admin)
+):
+    from app.api.v1.payments import process_tenant_cash_payment
+    amt = body.amount_paid if body.amount_paid is not None else body.amount
+    payment = await process_tenant_cash_payment(
+        db=db,
+        current_admin_id=current_admin.id,
+        tenant_id=tenant_id,
+        amount=amt,
+        days_covered=body.duration_days,
+        plan=body.plan,
+        include_aged_listings=body.include_aged_listings,
+        addon_aged_max_months=body.addon_aged_max_months,
+        use_referral_balance=body.use_referral_balance,
+        notes=body.notes
+    )
+    return {
+        "status": "success",
+        "payment_id": payment.id,
+        "amount": payment.amount,
+        "period_covered_start": payment.period_covered_start,
+        "period_covered_end": payment.period_covered_end
+    }
 
 @router.delete("/{tenant_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_tenant(tenant_id: int, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
