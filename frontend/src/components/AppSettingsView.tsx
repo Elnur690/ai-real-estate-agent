@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Sliders, Save, CheckCircle, Cpu, Key, CheckCircle2, AlertTriangle, Play, History, Building2, SlidersHorizontal, Database, Users, Plus, Trash2, ShieldCheck, Mail, Phone, Lock } from 'lucide-react';
+import { Sliders, Save, CheckCircle, Cpu, Key, CheckCircle2, AlertTriangle, Play, History, Building2, SlidersHorizontal, Database, Users, Plus, Trash2, ShieldCheck, Mail, Phone, Lock, Edit2, UserCheck, KeyRound } from 'lucide-react';
 import api from '../api';
 import { AIProviderConfigItem, AICallLogItem, AdminUser } from '../types';
 
@@ -98,6 +98,7 @@ const AppSettingsAITaskCard: React.FC<AppSettingsAITaskCardProps> = ({ task, cfg
         >
           <Play className="w-3 h-3" /> Test Connection
         </button>
+
         <button
           type="button"
           onClick={() => onSave(task.key, selectedProvider, selectedModel, apiKeyInput)}
@@ -116,6 +117,17 @@ export const AppSettingsView: React.FC = () => {
   const [savingBranding, setSavingBranding] = useState(false);
   const [brandingSaved, setBrandingSaved] = useState(false);
 
+  // My Profile state
+  const [myProfile, setMyProfile] = useState<{ id: number; name: string; email: string; phone?: string; role: string } | null>(null);
+  const [profName, setProfName] = useState('');
+  const [profEmail, setProfEmail] = useState('');
+  const [profPhone, setProfPhone] = useState('');
+  const [profCurrPassword, setProfCurrPassword] = useState('');
+  const [profNewPassword, setProfNewPassword] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileSuccess, setProfileSuccess] = useState('');
+  const [profileError, setProfileError] = useState('');
+
   // Admin users state
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [loadingAdmins, setLoadingAdmins] = useState(false);
@@ -126,6 +138,15 @@ export const AppSettingsView: React.FC = () => {
   const [newAdminPhone, setNewAdminPhone] = useState('');
   const [addingAdmin, setAddingAdmin] = useState(false);
   const [adminError, setAdminError] = useState('');
+
+  // Edit Admin Modal state
+  const [editingAdmin, setEditingAdmin] = useState<AdminUser | null>(null);
+  const [editAdminName, setEditAdminName] = useState('');
+  const [editAdminEmail, setEditAdminEmail] = useState('');
+  const [editAdminPhone, setEditAdminPhone] = useState('');
+  const [editAdminPassword, setEditAdminPassword] = useState('');
+  const [savingEditAdmin, setSavingEditAdmin] = useState(false);
+  const [editAdminError, setEditAdminError] = useState('');
 
   // AI Provider state
   const [configs, setConfigs] = useState<AIProviderConfigItem[]>([]);
@@ -145,6 +166,20 @@ export const AppSettingsView: React.FC = () => {
       const res = await api.get('/settings');
       if (res.data) {
         setSettingsMap((prev) => ({ ...prev, ...res.data }));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const loadMyProfile = async () => {
+    try {
+      const res = await api.get('/auth/me');
+      if (res.data) {
+        setMyProfile(res.data);
+        setProfName(res.data.name || '');
+        setProfEmail(res.data.email || '');
+        setProfPhone(res.data.phone || '');
       }
     } catch (e) {
       console.error(e);
@@ -183,7 +218,65 @@ export const AppSettingsView: React.FC = () => {
     loadSettings();
     loadAiConfigs();
     loadAdmins();
+    loadMyProfile();
   }, []);
+
+  const handleUpdateMyProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileError('');
+    setProfileSuccess('');
+    setSavingProfile(true);
+    try {
+      const res = await api.put('/auth/profile', {
+        name: profName,
+        email: profEmail,
+        phone: profPhone || undefined,
+        current_password: profCurrPassword || undefined,
+        new_password: profNewPassword || undefined
+      });
+      setMyProfile(res.data);
+      setProfCurrPassword('');
+      setProfNewPassword('');
+      setProfileSuccess('Your administrator profile has been updated successfully!');
+      setTimeout(() => setProfileSuccess(''), 4000);
+      await loadAdmins();
+    } catch (e: any) {
+      setProfileError(e.response?.data?.detail || 'Failed to update administrator profile.');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleOpenEditAdmin = (adm: AdminUser) => {
+    setEditingAdmin(adm);
+    setEditAdminName(adm.name);
+    setEditAdminEmail(adm.email);
+    setEditAdminPhone(adm.phone || '');
+    setEditAdminPassword('');
+    setEditAdminError('');
+  };
+
+  const handleSaveEditAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAdmin) return;
+    setEditAdminError('');
+    setSavingEditAdmin(true);
+    try {
+      await api.put(`/auth/admins/${editingAdmin.id}`, {
+        name: editAdminName,
+        email: editAdminEmail,
+        phone: editAdminPhone || undefined,
+        password: editAdminPassword || undefined
+      });
+      setEditingAdmin(null);
+      await loadAdmins();
+      await loadMyProfile();
+    } catch (e: any) {
+      setEditAdminError(e.response?.data?.detail || 'Failed to update administrator.');
+    } finally {
+      setSavingEditAdmin(false);
+    }
+  };
 
   const handleCreateAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -545,15 +638,139 @@ export const AppSettingsView: React.FC = () => {
         </form>
       )}
 
-      {/* SUB-TAB 4: Admin Users Management */}
+      {/* SUB-TAB 4: Admin Users & Profile Management */}
       {activeSubTab === 'admins' && (
-        <div className="space-y-4">
+        <div className="space-y-6">
+          {/* Section 1: My Personal Admin Profile */}
+          <div className="bg-dark-800/90 p-6 rounded-2xl border border-slate-800 shadow-xl space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-4">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <UserCheck className="w-5 h-5 text-emerald-400" />
+                  My Personal Administrator Profile
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Update your personal admin credentials, display name, contact phone, or change your secure login password.
+                </p>
+              </div>
+              <span className="text-xs px-3 py-1 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20 font-mono font-semibold self-start sm:self-auto">
+                Logged in as: {myProfile?.name || 'Superadmin'}
+              </span>
+            </div>
+
+            {profileError && (
+              <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{profileError}</span>
+              </div>
+            )}
+
+            {profileSuccess && (
+              <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 shrink-0" />
+                <span>{profileSuccess}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateMyProfile} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="text-xs text-slate-300 font-semibold block mb-1">Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={profName}
+                    onChange={(e) => setProfName(e.target.value)}
+                    className="w-full bg-dark-900 border border-slate-700/80 px-3.5 py-2.5 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-300 font-semibold block mb-1">Email Address</label>
+                  <div className="relative">
+                    <Mail className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-500" />
+                    <input
+                      type="email"
+                      required
+                      value={profEmail}
+                      onChange={(e) => setProfEmail(e.target.value)}
+                      className="w-full bg-dark-900 border border-slate-700/80 pl-9 pr-3.5 py-2.5 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-300 font-semibold block mb-1">Phone Number</label>
+                  <div className="relative">
+                    <Phone className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-500" />
+                    <input
+                      type="text"
+                      placeholder="+994501234567"
+                      value={profPhone}
+                      onChange={(e) => setProfPhone(e.target.value)}
+                      className="w-full bg-dark-900 border border-slate-700/80 pl-9 pr-3.5 py-2.5 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Password Change Sub-section */}
+              <div className="pt-3 border-t border-slate-800/80">
+                <h4 className="text-xs font-bold text-slate-300 mb-3 flex items-center gap-1.5">
+                  <KeyRound className="w-3.5 h-3.5 text-purple-400" />
+                  Change Password (Leave blank to keep unchanged)
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">Current Password (Required for password changes)</label>
+                    <div className="relative">
+                      <Lock className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-500" />
+                      <input
+                        type="password"
+                        placeholder="Current password"
+                        value={profCurrPassword}
+                        onChange={(e) => setProfCurrPassword(e.target.value)}
+                        className="w-full bg-dark-900 border border-slate-700/80 pl-9 pr-3.5 py-2.5 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">New Password (Min. 6 characters)</label>
+                    <div className="relative">
+                      <Lock className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-500" />
+                      <input
+                        type="password"
+                        placeholder="Enter new password"
+                        value={profNewPassword}
+                        onChange={(e) => setProfNewPassword(e.target.value)}
+                        className="w-full bg-dark-900 border border-slate-700/80 pl-9 pr-3.5 py-2.5 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 flex justify-end">
+                <button
+                  type="submit"
+                  disabled={savingProfile}
+                  className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{savingProfile ? 'Saving Profile...' : 'Save Profile Changes'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Section 2: Team Administrators */}
           <div className="bg-dark-800/90 p-6 rounded-2xl border border-slate-800 shadow-xl space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
               <div>
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
                   <ShieldCheck className="w-5 h-5 text-purple-400" />
-                  Platform Administrators ({admins.length})
+                  All Platform Administrators ({admins.length})
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
                   Manage accounts with full superadmin privileges to configure system rules, agents, plans, and AI integrations.
@@ -590,9 +807,15 @@ export const AppSettingsView: React.FC = () => {
                         <div>
                           <div className="text-xs font-bold text-white flex items-center gap-1.5">
                             {adm.name}
-                            <span className="text-[10px] px-2 py-0.2 rounded-full bg-purple-500/10 text-purple-400 font-mono font-semibold">
-                              Superadmin
-                            </span>
+                            {myProfile?.id === adm.id ? (
+                              <span className="text-[10px] px-2 py-0.2 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-mono font-semibold">
+                                You
+                              </span>
+                            ) : (
+                              <span className="text-[10px] px-2 py-0.2 rounded-full bg-purple-500/10 text-purple-400 font-mono font-semibold">
+                                Superadmin
+                              </span>
+                            )}
                           </div>
                           <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
                             <Mail className="w-3 h-3 text-slate-500" /> {adm.email}
@@ -613,14 +836,27 @@ export const AppSettingsView: React.FC = () => {
                       )}
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteAdmin(adm.id, adm.name)}
-                      className="text-slate-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-500/10 transition-all"
-                      title="Remove Administrator"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditAdmin(adm)}
+                        className="text-slate-400 hover:text-purple-300 p-1.5 rounded-lg hover:bg-purple-500/10 transition-all"
+                        title="Edit Administrator"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+
+                      {myProfile?.id !== adm.id && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteAdmin(adm.id, adm.name)}
+                          className="text-slate-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-500/10 transition-all"
+                          title="Remove Administrator"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
 
@@ -631,6 +867,106 @@ export const AppSettingsView: React.FC = () => {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Edit Administrator Modal */}
+      {editingAdmin && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-card w-full max-w-md p-6 rounded-2xl border border-slate-800 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Edit2 className="w-5 h-5 text-purple-400" />
+                Edit Administrator: {editingAdmin.name}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingAdmin(null)}
+                className="text-slate-400 hover:text-white"
+              >
+                &times;
+              </button>
+            </div>
+
+            {editAdminError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{editAdminError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEditAdmin} className="space-y-3 text-xs">
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editAdminName}
+                  onChange={(e) => setEditAdminName(e.target.value)}
+                  className="w-full bg-dark-900 border border-slate-700/80 px-3 py-2 rounded-xl text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">Email Address</label>
+                <div className="relative">
+                  <Mail className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500" />
+                  <input
+                    type="email"
+                    required
+                    value={editAdminEmail}
+                    onChange={(e) => setEditAdminEmail(e.target.value)}
+                    className="w-full bg-dark-900 border border-slate-700/80 pl-9 pr-3 py-2 rounded-xl text-white focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">Phone Number (Optional)</label>
+                <div className="relative">
+                  <Phone className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500" />
+                  <input
+                    type="text"
+                    placeholder="+994501234567"
+                    value={editAdminPhone}
+                    onChange={(e) => setEditAdminPhone(e.target.value)}
+                    className="w-full bg-dark-900 border border-slate-700/80 pl-9 pr-3 py-2 rounded-xl text-white focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">Reset Password (Leave blank to keep unchanged)</label>
+                <div className="relative">
+                  <Lock className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500" />
+                  <input
+                    type="password"
+                    placeholder="Enter new password (optional)"
+                    value={editAdminPassword}
+                    onChange={(e) => setEditAdminPassword(e.target.value)}
+                    className="w-full bg-dark-900 border border-slate-700/80 pl-9 pr-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingAdmin(null)}
+                  className="px-4 py-2 text-slate-400 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEditAdmin}
+                  className="px-5 py-2 font-semibold bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-white rounded-xl flex items-center gap-1.5 shadow-lg shadow-purple-500/20 disabled:opacity-50"
+                >
+                  <span>{savingEditAdmin ? 'Saving...' : 'Save Changes'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

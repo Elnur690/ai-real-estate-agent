@@ -85,9 +85,59 @@ async def get_me(current_user: User = Depends(get_current_user)):
         "id": current_user.id,
         "name": current_user.name,
         "email": current_user.email,
+        "phone": current_user.phone,
         "role": current_user.role,
-        "tenant_id": current_user.tenant_id
+        "tenant_id": current_user.tenant_id,
+        "created_at": current_user.created_at
     }
+
+
+class UpdateProfileRequest(BaseModel):
+    name: str | None = None
+    email: EmailStr | None = None
+    phone: str | None = None
+    current_password: str | None = None
+    new_password: str | None = None
+
+
+@router.put("/profile", response_model=AdminUserResponse)
+async def update_profile(
+    body: UpdateProfileRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update personal admin profile information & password."""
+    if body.email and body.email.lower().strip() != current_user.email:
+        # Verify unique email
+        stmt = select(User).where(User.email == body.email.lower().strip(), User.id != current_user.id)
+        res = await db.execute(stmt)
+        if res.scalars().first():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email is already taken by another user.")
+        current_user.email = body.email.lower().strip()
+
+    if body.name:
+        current_user.name = body.name.strip()
+    if body.phone is not None:
+        current_user.phone = body.phone.strip() if body.phone else None
+
+    if body.new_password:
+        if not body.current_password or not verify_password(body.current_password, current_user.password_hash):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect.")
+        if len(body.new_password) < 6:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be at least 6 characters.")
+        current_user.password_hash = get_password_hash(body.new_password)
+
+    await db.commit()
+    await db.refresh(current_user)
+
+    return AdminUserResponse(
+        id=current_user.id,
+        name=current_user.name,
+        email=current_user.email,
+        phone=current_user.phone,
+        role=current_user.role,
+        created_at=current_user.created_at
+    )
 
 
 class AdminUserResponse(BaseModel):
@@ -104,6 +154,13 @@ class CreateAdminRequest(BaseModel):
     email: EmailStr
     password: str
     phone: str | None = None
+
+
+class UpdateAdminRequest(BaseModel):
+    name: str | None = None
+    email: EmailStr | None = None
+    phone: str | None = None
+    password: str | None = None
 
 
 @router.get("/admins", response_model=list[AdminUserResponse])
@@ -167,6 +224,53 @@ async def create_admin(
     )
 
 
+@router.put("/admins/{admin_id}", response_model=AdminUserResponse)
+async def update_admin(
+    admin_id: int,
+    body: UpdateAdminRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update administrator details or reset password (Admin only)."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only administrators can edit admins.")
+
+    stmt = select(User).where(User.id == admin_id, User.role == "admin")
+    res = await db.execute(stmt)
+    target_admin = res.scalars().first()
+
+    if not target_admin:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin user not found.")
+
+    if body.email and body.email.lower().strip() != target_admin.email:
+        stmt_e = select(User).where(User.email == body.email.lower().strip(), User.id != admin_id)
+        res_e = await db.execute(stmt_e)
+        if res_e.scalars().first():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email is already taken.")
+        target_admin.email = body.email.lower().strip()
+
+    if body.name:
+        target_admin.name = body.name.strip()
+    if body.phone is not None:
+        target_admin.phone = body.phone.strip() if body.phone else None
+    if body.password:
+        if len(body.password) < 6:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password must be at least 6 characters.")
+        target_admin.password_hash = get_password_hash(body.password)
+
+    await db.commit()
+    await db.refresh(target_admin)
+
+    return AdminUserResponse(
+        id=target_admin.id,
+        name=target_admin.name,
+        email=target_admin.email,
+        phone=target_admin.phone,
+        role=target_admin.role,
+        created_at=target_admin.created_at
+    )
+
+
 @router.delete("/admins/{admin_id}")
 async def delete_admin(
     admin_id: int,
@@ -190,4 +294,5 @@ async def delete_admin(
     await db.delete(target_admin)
     await db.commit()
     return {"message": f"Administrator '{target_admin.name}' has been successfully removed."}
+
 
