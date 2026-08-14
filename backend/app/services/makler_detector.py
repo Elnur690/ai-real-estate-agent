@@ -63,8 +63,12 @@ class MaklerDetectorService:
         # Phone Number Multi-Listing Frequency Analysis
         phone_match = re.search(r'(\+?994|0)?\s*(50|51|55|70|77|99|10)\s*\d{3}\s*\d{2}\s*\d{2}', text_lower)
         if phone_match:
-            clean_phone = re.sub(r'\D', '', phone_match.group())
-            stmt_count = select(func.count(Listing.id)).where(Listing.description.like(f"%{clean_phone}%"))
+            raw_digits = re.sub(r'\D', '', phone_match.group())
+            phone_suffix = raw_digits[-7:] if len(raw_digits) >= 7 else raw_digits
+            stmt_count = select(func.count(Listing.id)).where(
+                (Listing.phone_number.like(f"%{phone_suffix}%")) |
+                (Listing.description.like(f"%{phone_suffix}%"))
+            )
             res_count = await db.execute(stmt_count)
             phone_listings_count = res_count.scalar() or 0
 

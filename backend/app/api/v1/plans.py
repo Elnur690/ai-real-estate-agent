@@ -91,6 +91,7 @@ async def list_plans(db: AsyncSession = Depends(get_db)):
             price=plan.price,
             currency=plan.currency,
             billing_period=plan.billing_period,
+            trial_days=plan.trial_days or 7,
             is_active=plan.is_active,
             max_agents=plan.max_agents,
             feature_makler_detector=plan.feature_makler_detector,
@@ -127,6 +128,7 @@ async def create_plan(
         price=body.price,
         currency=body.currency.upper(),
         billing_period=body.billing_period,
+        trial_days=body.trial_days or 7,
         is_active=body.is_active,
         max_agents=body.max_agents,
         feature_makler_detector=body.feature_makler_detector,
@@ -148,6 +150,7 @@ async def create_plan(
         price=plan.price,
         currency=plan.currency,
         billing_period=plan.billing_period,
+        trial_days=plan.trial_days or 7,
         is_active=plan.is_active,
         max_agents=plan.max_agents,
         feature_makler_detector=plan.feature_makler_detector,
@@ -221,6 +224,8 @@ async def update_plan(
         plan.currency = body.currency.upper()
     if body.billing_period is not None:
         plan.billing_period = body.billing_period
+    if body.trial_days is not None:
+        plan.trial_days = body.trial_days
     if body.is_active is not None:
         plan.is_active = body.is_active
     if body.max_agents is not None:
@@ -253,6 +258,7 @@ async def update_plan(
         price=plan.price,
         currency=plan.currency,
         billing_period=plan.billing_period,
+        trial_days=plan.trial_days or 7,
         is_active=plan.is_active,
         max_agents=plan.max_agents,
         feature_makler_detector=plan.feature_makler_detector,

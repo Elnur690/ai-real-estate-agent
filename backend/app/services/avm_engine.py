@@ -22,12 +22,23 @@ class AVMEngineService:
         if not listing.district:
             return listing
 
-        # 2. Dynamic District Average Price per SQM
-        stmt = select(func.avg(Listing.price_per_sqm)).where(
-            Listing.district == listing.district,
-            Listing.price_per_sqm > 0,
-            Listing.is_active == True
-        )
+        is_rental = listing.price < 10000
+
+        # 2. Dynamic District Average Price per SQM (Separated by Sale vs Rental)
+        if is_rental:
+            stmt = select(func.avg(Listing.price_per_sqm)).where(
+                Listing.district == listing.district,
+                Listing.price_per_sqm > 0,
+                Listing.price < 10000,
+                Listing.is_active == True
+            )
+        else:
+            stmt = select(func.avg(Listing.price_per_sqm)).where(
+                Listing.district == listing.district,
+                Listing.price_per_sqm > 0,
+                Listing.price >= 10000,
+                Listing.is_active == True
+            )
         res = await db.execute(stmt)
         avg_sqm = res.scalar()
 

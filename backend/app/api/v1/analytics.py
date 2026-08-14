@@ -27,7 +27,7 @@ BAKU_DISTRICT_COORDINATES: Dict[str, Dict[str, float]] = {
 @router.get("/map")
 async def get_property_heatmap(db: AsyncSession = Depends(get_db), current_user = Depends(get_current_user)):
     """Returns price/m² heatmap and property pins for Baku interactive map view."""
-    stmt = select(Listing).order_by(Listing.id.desc()).limit(150)
+    stmt = select(Listing).where(Listing.is_active == True).order_by(Listing.id.desc()).limit(200)
     res = await db.execute(stmt)
     listings = res.scalars().all()
 
