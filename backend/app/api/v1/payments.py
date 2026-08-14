@@ -18,6 +18,7 @@ class CreatePaymentRequest(BaseModel):
     days_covered: int = 30
     duration_days: Optional[int] = None # Alias for days_covered
     plan: Optional[str] = None
+    payment_category: Optional[str] = "full" # "full" | "addon_only" | "plan_only" | "custom"
     include_aged_listings: Optional[bool] = None
     addon_aged_max_months: Optional[int] = 12
     use_referral_balance: bool = True
@@ -52,6 +53,7 @@ async def process_tenant_cash_payment(
     currency: str = "AZN",
     days_covered: int = 30,
     plan: Optional[str] = None,
+    payment_category: Optional[str] = "full",
     include_aged_listings: Optional[bool] = None,
     addon_aged_max_months: Optional[int] = 12,
     use_referral_balance: bool = True,
@@ -85,20 +87,50 @@ async def process_tenant_cash_payment(
         tenant.max_locations_per_search = getattr(db_plan, 'max_locations_per_search', 5)
         tenant.backup_enabled = db_plan.backup_enabled
 
-    # Handle Aged Listings Add-on
-    if include_aged_listings is not None:
-        tenant.feature_aged_listings = bool(include_aged_listings)
+    # Calculate period multiplier
+    if days_covered == 365:
+        multiplier = 10.0
+    elif days_covered == 180:
+        multiplier = 5.0
+    elif days_covered == 90:
+        multiplier = 2.7
+    elif days_covered == 60:
+        multiplier = 2.0
+    else:
+        multiplier = max(1.0, round(days_covered / 30.0, 2))
+
+    addon_price_per_month = getattr(db_plan, 'addon_aged_listings_price', 15.0) if db_plan else 15.0
+    if addon_price_per_month is None or addon_price_per_month <= 0:
+        addon_price_per_month = 15.0
+
+    category = (payment_category or "full").lower().strip()
+
+    if category == "addon_only":
+        # Addon only payment
+        base_price = 0.0
+        addon_fee = round(addon_price_per_month * multiplier, 2)
+        tenant.feature_aged_listings = True
         if addon_aged_max_months:
             tenant.addon_aged_max_months = int(addon_aged_max_months)
+        default_notes = f"Cash payment received for AGED LISTINGS ADDON ONLY ({days_covered} days coverage)"
+    elif category == "plan_only":
+        # Plan only payment
+        base_price = round((db_plan.price if db_plan else 29.0) * multiplier, 2)
+        addon_fee = 0.0
+        if include_aged_listings is False:
+            tenant.feature_aged_listings = False
+        default_notes = f"Cash payment received for {plan_code.upper()} plan ({days_covered} days coverage)"
     else:
-        if db_plan and getattr(db_plan, 'feature_aged_listings', False):
-            tenant.feature_aged_listings = True
-        # If tenant already had it active, keep it active!
-
-    # Calculate default price if not explicitly given or <= 0
-    multiplier = 10 if days_covered == 365 else (5 if days_covered == 180 else (2.7 if days_covered == 90 else 1))
-    base_price = (db_plan.price if db_plan else 29.0) * multiplier
-    addon_fee = ((getattr(db_plan, 'addon_aged_listings_price', 15.0) or 15.0) * multiplier) if tenant.feature_aged_listings else 0.0
+        # Full Plan + Addon (if selected or previously active)
+        base_price = round((db_plan.price if db_plan else 29.0) * multiplier, 2)
+        has_aged = include_aged_listings if include_aged_listings is not None else tenant.feature_aged_listings
+        addon_fee = round(addon_price_per_month * multiplier, 2) if has_aged else 0.0
+        if include_aged_listings is not None:
+            tenant.feature_aged_listings = bool(include_aged_listings)
+            if addon_aged_max_months:
+                tenant.addon_aged_max_months = int(addon_aged_max_months)
+        addon_label = f" + Aged Listings Addon ({tenant.addon_aged_max_months or 12} mo.)" if tenant.feature_aged_listings else ""
+        default_notes = f"Cash payment received for {plan_code.upper()} plan{addon_label} ({days_covered} days coverage)"
 
     final_amount = amount if (amount is not None and amount > 0) else round(base_price + addon_fee, 2)
     pay_currency = currency or (db_plan.currency if db_plan else "AZN")
@@ -110,22 +142,24 @@ async def process_tenant_cash_payment(
         final_amount = round(final_amount - referral_discount, 2)
         tenant.referral_balance = round(tenant.referral_balance - referral_discount, 2)
 
-    start_date = datetime.now(timezone.utc)
+    now_utc = datetime.now(timezone.utc)
 
-    # Ensure timezone awareness for expiration calculation
+    # Calculate cumulative coverage period extension
     if tenant.plan_expires_at:
         curr_expires = tenant.plan_expires_at
         if curr_expires.tzinfo is None:
             curr_expires = curr_expires.replace(tzinfo=timezone.utc)
-        if curr_expires > start_date:
+        if curr_expires > now_utc:
+            period_start = curr_expires
             end_date = curr_expires + timedelta(days=days_covered)
         else:
-            end_date = start_date + timedelta(days=days_covered)
+            period_start = now_utc
+            end_date = now_utc + timedelta(days=days_covered)
     else:
-        end_date = start_date + timedelta(days=days_covered)
+        period_start = now_utc
+        end_date = now_utc + timedelta(days=days_covered)
 
-    addon_label = f" + Aged Listings Addon ({tenant.addon_aged_max_months or 12} mo.)" if tenant.feature_aged_listings else ""
-    notes_str = notes or f"Cash payment received for {plan_code.upper()} plan{addon_label} ({days_covered} days coverage)"
+    notes_str = notes or default_notes
     if referral_discount > 0:
         notes_str += f" [Applied {referral_discount} AZN referral bonus discount]"
 
@@ -133,10 +167,10 @@ async def process_tenant_cash_payment(
         tenant_id=tenant.id,
         amount=final_amount,
         currency=pay_currency,
-        period_covered_start=start_date,
+        period_covered_start=period_start,
         period_covered_end=end_date,
         received_by=current_admin_id,
-        received_at=start_date,
+        received_at=now_utc,
         notes=notes_str
     )
     db.add(payment)
@@ -161,12 +195,19 @@ async def record_cash_payment(body: CreatePaymentRequest, db: AsyncSession = Dep
             currency=body.currency,
             days_covered=days,
             plan=body.plan,
+            payment_category=body.payment_category,
             include_aged_listings=body.include_aged_listings,
             addon_aged_max_months=body.addon_aged_max_months,
             use_referral_balance=body.use_referral_balance,
             notes=body.notes
         )
         return payment
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"[Record Payment Error] Failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to record payment: {str(e)}")
     except HTTPException:
         raise
     except Exception as e:

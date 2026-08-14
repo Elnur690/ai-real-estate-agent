@@ -75,6 +75,7 @@ export const TenantsView: React.FC = () => {
 
   // Cash Payment Modal State
   const [paymentModalTenant, setPaymentModalTenant] = useState<Tenant | null>(null);
+  const [paymentCategory, setPaymentCategory] = useState<'full' | 'addon_only' | 'plan_only'>('full');
   const [paymentPlan, setPaymentPlan] = useState<string>('starter');
   const [cashAmount, setCashAmount] = useState<number>(0);
   const [cashDays, setCashDays] = useState<number>(30);
@@ -292,38 +293,50 @@ export const TenantsView: React.FC = () => {
     }
   };
 
-  const calculateCashTotal = (planCode: string, days: number, includeAged: boolean) => {
+  const calculateCashTotal = (planCode: string, days: number, includeAged: boolean, category: string = paymentCategory) => {
     const planObj = availablePlans.find(p => p.code === planCode);
     const basePrice = planObj ? planObj.price : 29.0;
     const addonPrice = planObj?.addon_aged_listings_price !== undefined ? planObj.addon_aged_listings_price : 15.0;
-    const multiplier = days === 365 ? 10 : (days === 180 ? 5 : (days === 90 ? 2.7 : 1));
-    const total = (basePrice * multiplier) + (includeAged ? (addonPrice * multiplier) : 0);
-    return Math.round(total);
+    const multiplier = days === 365 ? 10 : (days === 180 ? 5 : (days === 90 ? 2.7 : (days === 60 ? 2.0 : 1)));
+
+    if (category === 'addon_only') {
+      return Math.round(addonPrice * multiplier);
+    } else if (category === 'plan_only') {
+      return Math.round(basePrice * multiplier);
+    } else {
+      return Math.round((basePrice * multiplier) + (includeAged ? (addonPrice * multiplier) : 0));
+    }
   };
 
-  const openCashPaymentModal = (t: Tenant) => {
+  const openCashPaymentModal = (t: Tenant, defaultCategory: 'full' | 'addon_only' | 'plan_only' = 'full') => {
     setPaymentModalTenant(t);
     const planObj = availablePlans.find(p => p.code === t.plan) || availablePlans[0];
     const initialPlan = planObj ? planObj.code : 'starter';
-    const isAgedActive = !!t.feature_aged_listings;
+    const isAgedActive = defaultCategory === 'addon_only' ? true : !!t.feature_aged_listings;
     const maxMonths = t.addon_aged_max_months || 12;
     
+    setPaymentCategory(defaultCategory);
     setPaymentPlan(initialPlan);
     setCashDays(30);
     setCashIncludeAgedListings(isAgedActive);
     setCashAgedMaxMonths(maxMonths);
 
-    const initialAmount = calculateCashTotal(initialPlan, 30, isAgedActive);
+    const initialAmount = calculateCashTotal(initialPlan, 30, isAgedActive, defaultCategory);
     setCashAmount(initialAmount);
-    setCashNotes(`Cash payment received for ${t.name} (1 Month)`);
+    const notePrefix = defaultCategory === 'addon_only' 
+      ? `Cash payment for Aged Listings Addon ONLY - ${t.name}`
+      : `Cash payment received for ${t.name} (${t.plan.toUpperCase()} Plan)`;
+    setCashNotes(notePrefix);
   };
 
-  const handlePlanOrPeriodChange = (planCode: string, days: number, includeAged: boolean = cashIncludeAgedListings) => {
+  const handlePlanOrPeriodChange = (planCode: string, days: number, includeAged: boolean = cashIncludeAgedListings, category: 'full' | 'addon_only' | 'plan_only' = paymentCategory) => {
     setPaymentPlan(planCode);
     setCashDays(days);
-    const calculatedAmount = calculateCashTotal(planCode, days, includeAged);
+    setPaymentCategory(category);
+    const calculatedAmount = calculateCashTotal(planCode, days, includeAged, category);
     setCashAmount(calculatedAmount);
-    setCashNotes(`Cash payment for ${planCode.toUpperCase()} (${days} days)`);
+    const label = category === 'addon_only' ? 'Aged Listings Addon' : `${planCode.toUpperCase()} Plan`;
+    setCashNotes(`Cash payment for ${label} (${days} days)`);
   };
 
   const handleRecordCashPayment = async (e: React.FormEvent) => {
@@ -334,12 +347,13 @@ export const TenantsView: React.FC = () => {
         plan: paymentPlan,
         duration_days: cashDays,
         amount_paid: Number(cashAmount),
-        include_aged_listings: cashIncludeAgedListings,
+        payment_category: paymentCategory,
+        include_aged_listings: paymentCategory === 'addon_only' ? true : (paymentCategory === 'plan_only' ? false : cashIncludeAgedListings),
         addon_aged_max_months: cashAgedMaxMonths,
         notes: cashNotes
       });
       setPaymentModalTenant(null);
-      loadTenants();
+      await loadTenants();
       if (selectedTenant && selectedTenant.tenant.id === paymentModalTenant.id) {
         handleSelectTenant(paymentModalTenant.id);
       }
@@ -1004,24 +1018,68 @@ export const TenantsView: React.FC = () => {
             </div>
 
             <form onSubmit={handleRecordCashPayment} className="space-y-3">
+              {/* Payment Category Selector */}
               <div>
-                <label className="text-xs text-slate-400 block mb-1">Subscription Plan</label>
-                <select
-                  value={paymentPlan}
-                  onChange={(e) => handlePlanOrPeriodChange(e.target.value, cashDays)}
-                  className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800 capitalize"
-                >
-                  {availablePlans.map((p) => (
-                    <option key={p.id} value={p.code}>
-                      {p.name} ({p.price} {p.currency}) - {p.max_agents || 1} Seats
-                    </option>
-                  ))}
-                </select>
+                <label className="text-xs text-slate-400 block mb-1">Payment Type / Item</label>
+                <div className="grid grid-cols-3 gap-1.5 p-1 bg-dark-900 rounded-xl border border-slate-800 text-xs font-medium">
+                  <button
+                    type="button"
+                    onClick={() => handlePlanOrPeriodChange(paymentPlan, cashDays, cashIncludeAgedListings, 'full')}
+                    className={`py-1.5 rounded-lg text-center transition-all ${
+                      paymentCategory === 'full' 
+                        ? 'bg-emerald-500 text-white shadow-md font-semibold' 
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Plan + Addon
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePlanOrPeriodChange(paymentPlan, cashDays, true, 'addon_only')}
+                    className={`py-1.5 rounded-lg text-center transition-all ${
+                      paymentCategory === 'addon_only' 
+                        ? 'bg-purple-600 text-white shadow-md font-semibold' 
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Addon Only
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePlanOrPeriodChange(paymentPlan, cashDays, false, 'plan_only')}
+                    className={`py-1.5 rounded-lg text-center transition-all ${
+                      paymentCategory === 'plan_only' 
+                        ? 'bg-blue-600 text-white shadow-md font-semibold' 
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Plan Only
+                  </button>
+                </div>
               </div>
+
+              {paymentCategory !== 'addon_only' && (
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">Subscription Plan</label>
+                  <select
+                    value={paymentPlan}
+                    onChange={(e) => handlePlanOrPeriodChange(e.target.value, cashDays, cashIncludeAgedListings, paymentCategory)}
+                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800 capitalize"
+                  >
+                    {availablePlans.map((p) => (
+                      <option key={p.id} value={p.code}>
+                        {p.name} ({p.price} {p.currency}) - {p.max_agents || 1} Seats
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 block mb-1">Amount Paid (AZN)</label>
+                  <label className="text-xs text-slate-400 block mb-1">
+                    {paymentCategory === 'addon_only' ? 'Add-on Fee (AZN)' : 'Amount Paid (AZN)'}
+                  </label>
                   <input
                     type="number"
                     step="0.01"
@@ -1032,13 +1090,14 @@ export const TenantsView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-slate-400 block mb-1">Subscription Period</label>
+                  <label className="text-xs text-slate-400 block mb-1">Coverage Period</label>
                   <select
                     value={cashDays}
-                    onChange={(e) => handlePlanOrPeriodChange(paymentPlan, Number(e.target.value))}
+                    onChange={(e) => handlePlanOrPeriodChange(paymentPlan, Number(e.target.value), cashIncludeAgedListings, paymentCategory)}
                     className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
                   >
                     <option value={30}>1 Month (30 Days)</option>
+                    <option value={60}>2 Months (60 Days)</option>
                     <option value={90}>3 Months (90 Days)</option>
                     <option value={180}>6 Months (180 Days)</option>
                     <option value={365}>1 Year (365 Days)</option>
@@ -1047,30 +1106,55 @@ export const TenantsView: React.FC = () => {
               </div>
 
               {/* Aged Listings Add-on Option */}
-              <div className="p-3 bg-dark-900/80 rounded-xl border border-slate-800 space-y-2">
-                <label className="flex items-center justify-between cursor-pointer">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={cashIncludeAgedListings}
-                      onChange={(e) => {
-                        const val = e.target.checked;
-                        setCashIncludeAgedListings(val);
-                        handlePlanOrPeriodChange(paymentPlan, cashDays, val);
-                      }}
-                      className="rounded accent-emerald-500"
-                    />
-                    <span className="text-xs font-semibold text-slate-200">
-                      Aged Active Listings Add-on
+              {paymentCategory === 'full' && (
+                <div className="p-3 bg-dark-900/80 rounded-xl border border-slate-800 space-y-2">
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={cashIncludeAgedListings}
+                        onChange={(e) => {
+                          const val = e.target.checked;
+                          setCashIncludeAgedListings(val);
+                          handlePlanOrPeriodChange(paymentPlan, cashDays, val, paymentCategory);
+                        }}
+                        className="rounded accent-emerald-500"
+                      />
+                      <span className="text-xs font-semibold text-slate-200">
+                        Include Aged Active Listings Add-on
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-purple-400 font-mono font-semibold">
+                      +{((availablePlans.find(p => p.code === paymentPlan)?.addon_aged_listings_price) ?? 15)} AZN/mo
                     </span>
-                  </div>
-                  <span className="text-[11px] text-purple-400 font-mono font-semibold">
-                    +{((availablePlans.find(p => p.code === paymentPlan)?.addon_aged_listings_price) ?? 15)} AZN/mo
-                  </span>
-                </label>
+                  </label>
 
-                {cashIncludeAgedListings && (
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-xs">
+                  {cashIncludeAgedListings && (
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-xs">
+                      <span className="text-slate-400">Historical Lookback Limit:</span>
+                      <select
+                        value={cashAgedMaxMonths}
+                        onChange={(e) => setCashAgedMaxMonths(Number(e.target.value))}
+                        className="bg-dark-800 border border-slate-700 text-white rounded-lg px-2 py-1 text-xs font-medium"
+                      >
+                        <option value={1}>1 Month</option>
+                        <option value={3}>3 Months</option>
+                        <option value={6}>6 Months</option>
+                        <option value={12}>12 Months (1 Year)</option>
+                        <option value={24}>24 Months (2 Years)</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {paymentCategory === 'addon_only' && (
+                <div className="p-3 bg-purple-950/20 rounded-xl border border-purple-500/30 space-y-2 text-xs">
+                  <div className="flex items-center justify-between text-purple-300 font-semibold">
+                    <span>Aged Listings Archive Add-on</span>
+                    <span>15 AZN / month</span>
+                  </div>
+                  <div className="flex items-center justify-between pt-1 border-t border-purple-500/20">
                     <span className="text-slate-400">Historical Lookback Limit:</span>
                     <select
                       value={cashAgedMaxMonths}
@@ -1084,8 +1168,8 @@ export const TenantsView: React.FC = () => {
                       <option value={24}>24 Months (2 Years)</option>
                     </select>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
               <div>
                 <label className="text-xs text-slate-400 block mb-1">Payment Reference / Notes</label>

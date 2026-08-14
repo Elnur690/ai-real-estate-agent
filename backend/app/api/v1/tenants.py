@@ -205,6 +205,7 @@ class TenantCashPaymentRequest(BaseModel):
     duration_days: int = 30
     amount_paid: Optional[float] = None
     amount: Optional[float] = None
+    payment_category: Optional[str] = "full" # "full" | "addon_only" | "plan_only" | "custom"
     include_aged_listings: Optional[bool] = None
     addon_aged_max_months: Optional[int] = 12
     use_referral_balance: bool = True
@@ -226,6 +227,7 @@ async def record_tenant_cash_payment(
         amount=amt,
         days_covered=body.duration_days,
         plan=body.plan,
+        payment_category=body.payment_category,
         include_aged_listings=body.include_aged_listings,
         addon_aged_max_months=body.addon_aged_max_months,
         use_referral_balance=body.use_referral_balance,

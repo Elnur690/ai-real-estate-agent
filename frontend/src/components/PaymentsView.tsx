@@ -10,24 +10,33 @@ export const PaymentsView: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
 
+  const [paymentCategory, setPaymentCategory] = useState<'full' | 'addon_only' | 'plan_only'>('full');
   const [newPayment, setNewPayment] = useState({
     tenant_id: 0,
     amount: 0,
     currency: 'AZN',
     days_covered: 30,
+    payment_category: 'full',
     include_aged_listings: false,
     addon_aged_max_months: 12,
     notes: ''
   });
 
-  const calculatePaymentAmount = (tenantId: number, days: number, includeAged: boolean) => {
+  const calculatePaymentAmount = (tenantId: number, days: number, includeAged: boolean, category: string = paymentCategory) => {
     const selected = tenants.find(t => t.id === tenantId);
     const planCode = selected ? selected.plan : 'starter';
     const planObj = plans.find(p => p.code.toLowerCase() === planCode.toLowerCase());
     const basePrice = planObj ? planObj.price : 29.0;
     const addonPrice = planObj?.addon_aged_listings_price !== undefined ? planObj.addon_aged_listings_price : 15.0;
-    const multiplier = days === 365 ? 10 : (days === 180 ? 5 : (days === 90 ? 2.7 : 1));
-    return Math.round((basePrice * multiplier) + (includeAged ? (addonPrice * multiplier) : 0));
+    const multiplier = days === 365 ? 10 : (days === 180 ? 5 : (days === 90 ? 2.7 : (days === 60 ? 2.0 : 1)));
+
+    if (category === 'addon_only') {
+      return Math.round(addonPrice * multiplier);
+    } else if (category === 'plan_only') {
+      return Math.round(basePrice * multiplier);
+    } else {
+      return Math.round((basePrice * multiplier) + (includeAged ? (addonPrice * multiplier) : 0));
+    }
   };
 
   const loadData = async () => {
@@ -58,6 +67,7 @@ export const PaymentsView: React.FC = () => {
           amount: total,
           currency: matchPlan ? matchPlan.currency : 'AZN',
           days_covered: 30,
+          payment_category: 'full',
           include_aged_listings: isAged,
           addon_aged_max_months: maxMonths,
           notes: `Cash collected for ${firstTenant.name} (${firstTenant.plan.toUpperCase()} Plan)`
@@ -80,7 +90,7 @@ export const PaymentsView: React.FC = () => {
       const matchPlan = plans.find(p => p.code.toLowerCase() === selected.plan.toLowerCase());
       const isAged = !!selected.feature_aged_listings;
       const maxMonths = selected.addon_aged_max_months || 12;
-      const total = calculatePaymentAmount(tenantId, newPayment.days_covered, isAged);
+      const total = calculatePaymentAmount(tenantId, newPayment.days_covered, isAged, paymentCategory);
 
       setNewPayment(prev => ({
         ...prev,
@@ -94,12 +104,14 @@ export const PaymentsView: React.FC = () => {
     }
   };
 
-  const handlePeriodOrAddonChange = (days: number, includeAged: boolean) => {
-    const total = calculatePaymentAmount(newPayment.tenant_id, days, includeAged);
+  const handlePeriodOrAddonChange = (days: number, includeAged: boolean, category: 'full' | 'addon_only' | 'plan_only' = paymentCategory) => {
+    setPaymentCategory(category);
+    const total = calculatePaymentAmount(newPayment.tenant_id, days, includeAged, category);
     setNewPayment(prev => ({
       ...prev,
       days_covered: days,
-      include_aged_listings: includeAged,
+      payment_category: category,
+      include_aged_listings: category === 'addon_only' ? true : (category === 'plan_only' ? false : includeAged),
       amount: total
     }));
   };
@@ -107,9 +119,12 @@ export const PaymentsView: React.FC = () => {
   const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post('/payments', newPayment);
+      await api.post('/payments', {
+        ...newPayment,
+        payment_category: paymentCategory
+      });
       setShowModal(false);
-      loadData();
+      await loadData();
     } catch (e) {
       console.error(e);
     }
@@ -178,6 +193,45 @@ export const PaymentsView: React.FC = () => {
             <h3 className="text-lg font-bold text-white">Record Cash Payment & Activate Account</h3>
             <form onSubmit={handleRecordPayment} className="space-y-3">
               <div>
+                <label className="text-xs text-slate-400 block mb-1">Payment Type / Item</label>
+                <div className="grid grid-cols-3 gap-1.5 p-1 bg-dark-900 rounded-xl border border-slate-800 text-xs font-medium">
+                  <button
+                    type="button"
+                    onClick={() => handlePeriodOrAddonChange(newPayment.days_covered, newPayment.include_aged_listings, 'full')}
+                    className={`py-1.5 rounded-lg text-center transition-all ${
+                      paymentCategory === 'full' 
+                        ? 'bg-emerald-500 text-white shadow-md font-semibold' 
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Plan + Addon
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePeriodOrAddonChange(newPayment.days_covered, true, 'addon_only')}
+                    className={`py-1.5 rounded-lg text-center transition-all ${
+                      paymentCategory === 'addon_only' 
+                        ? 'bg-purple-600 text-white shadow-md font-semibold' 
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Addon Only
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePeriodOrAddonChange(newPayment.days_covered, false, 'plan_only')}
+                    className={`py-1.5 rounded-lg text-center transition-all ${
+                      paymentCategory === 'plan_only' 
+                        ? 'bg-blue-600 text-white shadow-md font-semibold' 
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Plan Only
+                  </button>
+                </div>
+              </div>
+
+              <div>
                 <label className="text-xs text-slate-400 block mb-1">Select Tenant / Agent</label>
                 <select
                   value={newPayment.tenant_id}
@@ -192,7 +246,9 @@ export const PaymentsView: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 block mb-1">Plan Fee Amount (AZN)</label>
+                  <label className="text-xs text-slate-400 block mb-1">
+                    {paymentCategory === 'addon_only' ? 'Add-on Fee (AZN)' : 'Amount Paid (AZN)'}
+                  </label>
                   <input
                     type="number"
                     required
@@ -206,10 +262,11 @@ export const PaymentsView: React.FC = () => {
                   <label className="text-xs text-slate-400 block mb-1">Coverage Period</label>
                   <select
                     value={newPayment.days_covered}
-                    onChange={(e) => handlePeriodOrAddonChange(Number(e.target.value), newPayment.include_aged_listings)}
+                    onChange={(e) => handlePeriodOrAddonChange(Number(e.target.value), newPayment.include_aged_listings, paymentCategory)}
                     className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
                   >
                     <option value={30}>1 Month (30 Days)</option>
+                    <option value={60}>2 Months (60 Days)</option>
                     <option value={90}>3 Months (90 Days)</option>
                     <option value={180}>6 Months (180 Days)</option>
                     <option value={365}>1 Year (365 Days)</option>
@@ -218,29 +275,54 @@ export const PaymentsView: React.FC = () => {
               </div>
 
               {/* Aged Listings Addon Option */}
-              <div className="p-3 bg-dark-900/80 rounded-xl border border-slate-800 space-y-2">
-                <label className="flex items-center justify-between cursor-pointer">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={newPayment.include_aged_listings}
-                      onChange={(e) => {
-                        const val = e.target.checked;
-                        handlePeriodOrAddonChange(newPayment.days_covered, val);
-                      }}
-                      className="rounded accent-emerald-500"
-                    />
-                    <span className="text-xs font-semibold text-slate-200">
-                      Aged Active Listings Add-on
+              {paymentCategory === 'full' && (
+                <div className="p-3 bg-dark-900/80 rounded-xl border border-slate-800 space-y-2">
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={newPayment.include_aged_listings}
+                        onChange={(e) => {
+                          const val = e.target.checked;
+                          handlePeriodOrAddonChange(newPayment.days_covered, val, paymentCategory);
+                        }}
+                        className="rounded accent-emerald-500"
+                      />
+                      <span className="text-xs font-semibold text-slate-200">
+                        Include Aged Active Listings Add-on
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-purple-400 font-mono font-semibold">
+                      +15 AZN/mo
                     </span>
-                  </div>
-                  <span className="text-[11px] text-purple-400 font-mono font-semibold">
-                    +15 AZN/mo
-                  </span>
-                </label>
+                  </label>
 
-                {newPayment.include_aged_listings && (
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-xs">
+                  {newPayment.include_aged_listings && (
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-xs">
+                      <span className="text-slate-400">Historical Lookback Limit:</span>
+                      <select
+                        value={newPayment.addon_aged_max_months}
+                        onChange={(e) => setNewPayment({ ...newPayment, addon_aged_max_months: Number(e.target.value) })}
+                        className="bg-dark-800 border border-slate-700 text-white rounded-lg px-2 py-1 text-xs font-medium"
+                      >
+                        <option value={1}>1 Month</option>
+                        <option value={3}>3 Months</option>
+                        <option value={6}>6 Months</option>
+                        <option value={12}>12 Months (1 Year)</option>
+                        <option value={24}>24 Months (2 Years)</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {paymentCategory === 'addon_only' && (
+                <div className="p-3 bg-purple-950/20 rounded-xl border border-purple-500/30 space-y-2 text-xs">
+                  <div className="flex items-center justify-between text-purple-300 font-semibold">
+                    <span>Aged Listings Archive Add-on</span>
+                    <span>15 AZN / month</span>
+                  </div>
+                  <div className="flex items-center justify-between pt-1 border-t border-purple-500/20">
                     <span className="text-slate-400">Historical Lookback Limit:</span>
                     <select
                       value={newPayment.addon_aged_max_months}
@@ -254,8 +336,8 @@ export const PaymentsView: React.FC = () => {
                       <option value={24}>24 Months (2 Years)</option>
                     </select>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
               <div>
                 <label className="text-xs text-slate-400 block mb-1">Notes / Internal Reference</label>
