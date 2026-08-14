@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from jose import jwt
 from passlib.context import CryptContext
 from sqlalchemy import select
@@ -94,7 +94,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
 
 class UpdateProfileRequest(BaseModel):
     name: str | None = None
-    email: EmailStr | None = None
+    email: str | None = None
     phone: str | None = None
     current_password: str | None = None
     new_password: str | None = None
@@ -151,14 +151,14 @@ class AdminUserResponse(BaseModel):
 
 class CreateAdminRequest(BaseModel):
     name: str
-    email: EmailStr
+    email: str
     password: str
     phone: str | None = None
 
 
 class UpdateAdminRequest(BaseModel):
     name: str | None = None
-    email: EmailStr | None = None
+    email: str | None = None
     phone: str | None = None
     password: str | None = None
 
