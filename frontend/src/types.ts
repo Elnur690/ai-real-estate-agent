@@ -24,6 +24,8 @@ export interface Tenant {
   feature_client_intake_bot?: boolean;
   referral_code?: string;
   referral_balance?: number;
+  parent_tenant_id?: number;
+  assigned_districts?: string[];
   created_at: string;
 }
 

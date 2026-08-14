@@ -205,6 +205,23 @@ async def create_sub_agent(tenant_id: int, body: CreateSubAgentRequest, db: Asyn
     if not parent:
         raise HTTPException(status_code=404, detail="Parent Agency tenant not found")
 
+    # Validate max_agents limit
+    from app.models.plan import Plan
+    stmt_plan = select(Plan).where(Plan.code == parent.plan)
+    res_plan = await db.execute(stmt_plan)
+    plan_obj = res_plan.scalars().first()
+    max_seats = plan_obj.max_agents if plan_obj else 1
+
+    stmt_count = select(Tenant).where(Tenant.parent_tenant_id == parent.id)
+    res_count = await db.execute(stmt_count)
+    existing_sub_agents = res_count.scalars().all()
+
+    if len(existing_sub_agents) + 1 >= max_seats:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Maksimum agent limiti ({max_seats} nəfər) dolub. Yeni agent əlavə etmək üçün planı yüksəldin."
+        )
+
     sub_agent = Tenant(
         name=body.name,
         type="individual_agent",

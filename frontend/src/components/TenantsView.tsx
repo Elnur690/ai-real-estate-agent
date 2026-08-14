@@ -1,13 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { UserPlus, Search, ShieldCheck, Clock, AlertCircle, Phone, MessageSquare, Plus, CheckCircle, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff, DollarSign, Edit3, Trash2, X, AlertTriangle } from 'lucide-react';
+import { UserPlus, Search, ShieldCheck, Clock, AlertCircle, Phone, MessageSquare, Plus, CheckCircle, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff, DollarSign, Edit3, Trash2, X, AlertTriangle, Users, MapPin } from 'lucide-react';
 import api from '../api';
 import { Tenant, SavedSearch } from '../types';
+
+const BAKU_DISTRICT_OPTIONS = [
+  "Yasamal", "Nəsimi", "Binəqədi", "Nərimanov", "Səbail",
+  "Xətai", "Nizami", "Sabunçu", "Suraxanı", "Xəzər",
+  "Abşeron", "Sumqayıt", "Qaradağ", "Pirallahi"
+];
 
 export const TenantsView: React.FC = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedTenant, setSelectedTenant] = useState<{ tenant: Tenant; saved_searches: SavedSearch[] } | null>(null);
+  const [selectedTenant, setSelectedTenant] = useState<{ tenant: Tenant; saved_searches: SavedSearch[]; sub_agents?: Tenant[] } | null>(null);
   
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
@@ -25,6 +31,19 @@ export const TenantsView: React.FC = () => {
   });
 
   const [availablePlans, setAvailablePlans] = useState<any[]>([]);
+
+  // Sub-Agent Modal State
+  const [showAddSubAgentModal, setShowAddSubAgentModal] = useState(false);
+  const [subAgentParent, setSubAgentParent] = useState<Tenant | null>(null);
+  const [subAgentForm, setSubAgentForm] = useState({
+    name: '',
+    phone: '',
+    preferred_channel: 'telegram',
+    whatsapp_number: '',
+    telegram_chat_id: '',
+    assigned_districts: [] as string[]
+  });
+  const [subAgentLoading, setSubAgentLoading] = useState(false);
 
   // Edit Modal State
   const [editTenant, setEditTenant] = useState<Tenant | null>(null);
@@ -130,6 +149,9 @@ export const TenantsView: React.FC = () => {
     try {
       await api.delete(`/tenants/${deleteTenantTarget.id}`);
       setDeleteTenantTarget(null);
+      if (selectedTenant && selectedTenant.tenant.id === deleteTenantTarget.id) {
+        setSelectedTenant(null);
+      }
       loadTenants();
     } catch (err) {
       console.error(err);
@@ -139,114 +161,170 @@ export const TenantsView: React.FC = () => {
     }
   };
 
-  const calculatePriceForPeriod = (planCode: string, days: number) => {
-    const matchPlan = availablePlans.find(p => p.code.toLowerCase() === planCode.toLowerCase());
-    const monthlyPrice = matchPlan ? matchPlan.price : (planCode === 'pro' ? 100 : planCode === 'agency' ? 250 : 50);
-    const months = days / 30;
-    return Math.round(monthlyPrice * (months >= 12 ? 12 : months));
+  const handleCreateTenant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.post('/tenants', newTenant);
+      setShowAddModal(false);
+      setNewTenant({
+        name: '',
+        phone: '',
+        type: 'individual_agent',
+        preferred_channel: 'telegram',
+        plan: availablePlans[0]?.code || 'starter',
+        trial_days: 7,
+        telegram_handle: '',
+        whatsapp_number: '',
+        backup_enabled: false,
+        backup_frequency_days: 7
+      });
+      loadTenants();
+    } catch (e: any) {
+      console.error(e);
+      alert(e.response?.data?.detail || 'Failed to create tenant');
+    }
   };
 
-  const handlePlanOrPeriodChange = (newPlan: string, newDays: number) => {
-    setPaymentPlan(newPlan);
-    setCashDays(newDays);
-    const newPrice = calculatePriceForPeriod(newPlan, newDays);
-    setCashAmount(newPrice);
-    if (paymentModalTenant) {
-      setCashNotes(`Cash received for ${paymentModalTenant.name} (${newPlan.toUpperCase()} Plan - ${newDays} days)`);
+  const handleSelectTenant = async (id: number) => {
+    try {
+      const [tRes, subRes] = await Promise.all([
+        api.get(`/tenants/${id}`),
+        api.get(`/tenants/${id}/sub-agents`).catch(() => ({ data: [] }))
+      ]);
+      setSelectedTenant({
+        ...tRes.data,
+        sub_agents: subRes.data || []
+      });
+      
+      const t = tRes.data.tenant;
+      if (t && t.preferred_channel === 'whatsapp') {
+        checkWhatsAppStatus(`tenant_${t.id}`);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const openAddSubAgentModal = (parent: Tenant) => {
+    setSubAgentParent(parent);
+    setSubAgentForm({
+      name: '',
+      phone: '',
+      preferred_channel: parent.preferred_channel || 'telegram',
+      whatsapp_number: '',
+      telegram_chat_id: '',
+      assigned_districts: []
+    });
+    setShowAddSubAgentModal(true);
+  };
+
+  const handleCreateSubAgent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!subAgentParent) return;
+    setSubAgentLoading(true);
+    try {
+      await api.post(`/tenants/${subAgentParent.id}/sub-agents`, subAgentForm);
+      setShowAddSubAgentModal(false);
+      alert('Sub-agent uğurla əlavə edildi!');
+      handleSelectTenant(subAgentParent.id);
+      loadTenants();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.detail || 'Sub-agent əlavə edilərkən xəta baş verdi.');
+    } finally {
+      setSubAgentLoading(false);
+    }
+  };
+
+  const toggleDistrictAssignment = (district: string) => {
+    setSubAgentForm(prev => {
+      const exists = prev.assigned_districts.includes(district);
+      return {
+        ...prev,
+        assigned_districts: exists
+          ? prev.assigned_districts.filter(d => d !== district)
+          : [...prev.assigned_districts, district]
+      };
+    });
+  };
+
+  const checkWhatsAppStatus = async (instanceName: string) => {
+    setWaLoading(true);
+    try {
+      const res = await api.get(`/whatsapp/status?instance_name=${instanceName}`);
+      setWaStatus(res.data);
+    } catch (e) {
+      console.error(e);
+      setWaStatus(null);
+    } finally {
+      setWaLoading(false);
+    }
+  };
+
+  const generateWhatsAppQrCode = async (instanceName: string) => {
+    setWaLoading(true);
+    setWaQrCode(null);
+    try {
+      const res = await api.post(`/whatsapp/qrcode?instance_name=${instanceName}`);
+      if (res.data?.qrcode) {
+        setWaQrCode(res.data.qrcode);
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Failed to generate WhatsApp QR code.');
+    } finally {
+      setWaLoading(false);
     }
   };
 
   const openCashPaymentModal = (t: Tenant) => {
-    const pCode = (t.plan || 'starter').toLowerCase();
     setPaymentModalTenant(t);
-    setPaymentPlan(pCode);
+    const planObj = availablePlans.find(p => p.code === t.plan) || availablePlans[0];
+    const initialPlan = planObj ? planObj.code : 'starter';
+    const initialPrice = planObj ? planObj.price : 29.0;
+    
+    setPaymentPlan(initialPlan);
     setCashDays(30);
-    const initialPrice = calculatePriceForPeriod(pCode, 30);
     setCashAmount(initialPrice);
-    setCashNotes(`Cash received for ${t.name} (${pCode.toUpperCase()} Plan - 30 days)`);
+    setCashNotes(`Cash payment received for ${t.name} (1 Month)`);
+  };
+
+  const handlePlanOrPeriodChange = (planCode: string, days: number) => {
+    setPaymentPlan(planCode);
+    setCashDays(days);
+    const planObj = availablePlans.find(p => p.code === planCode);
+    const basePrice = planObj ? planObj.price : 29.0;
+    const multiplier = days === 365 ? 10 : (days === 180 ? 5 : (days === 90 ? 2.7 : 1));
+    const calculatedAmount = Math.round(basePrice * multiplier);
+    setCashAmount(calculatedAmount);
+    setCashNotes(`Cash payment for ${planCode.toUpperCase()} (${days} days)`);
   };
 
   const handleRecordCashPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!paymentModalTenant) return;
     try {
-      await api.post('/payments', {
-        tenant_id: paymentModalTenant.id,
+      await api.post(`/tenants/${paymentModalTenant.id}/cash-payment`, {
         plan: paymentPlan,
-        amount: cashAmount,
-        days_covered: cashDays,
+        duration_days: cashDays,
+        amount_paid: Number(cashAmount),
         notes: cashNotes
       });
       setPaymentModalTenant(null);
       loadTenants();
-    } catch (err) {
-      console.error(err);
-      alert('Failed to record payment.');
-    }
-  };
-
-  const checkWhatsAppStatus = async (instName?: string) => {
-    try {
-      const res = await api.get('/whatsapp/status', {
-        params: { instance_name: instName || 'realestate_agent' }
-      });
-      setWaStatus(res.data);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const generateWhatsAppQrCode = async (instName?: string) => {
-    setWaLoading(true);
-    setWaQrCode(null);
-    setWaPairingCode(null);
-    try {
-      const res = await api.post('/whatsapp/qrcode', {
-        instance_name: instName || 'realestate_agent'
-      });
-      if (res.data && res.data.qrcode) {
-        let qr = res.data.qrcode;
-        if (!qr.startsWith('data:image')) {
-          qr = `data:image/png;base64,${qr}`;
-        }
-        setWaQrCode(qr);
-        setWaPairingCode(res.data.pairing_code || null);
-      } else {
-        alert(res.data?.detail || 'WhatsApp instance already connected or initializing...');
+      if (selectedTenant && selectedTenant.tenant.id === paymentModalTenant.id) {
+        handleSelectTenant(paymentModalTenant.id);
       }
-      checkWhatsAppStatus(instName);
-    } catch (err: any) {
-      alert(err.response?.data?.detail || 'Failed to generate WhatsApp QR Code.');
-    } finally {
-      setWaLoading(false);
-    }
-  };
-
-  const handleCreateTenant = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const res = await api.post('/tenants', newTenant);
-      setShowAddModal(false);
-      loadTenants();
-
-      if (newTenant.preferred_channel === 'whatsapp') {
-        checkWhatsAppStatus(`tenant_${res.data.id}`);
-      }
-    } catch (e) {
+      alert('Cash payment confirmed! Tenant subscription activated.');
+    } catch (e: any) {
       console.error(e);
+      alert(e.response?.data?.detail || 'Failed to record cash payment');
     }
   };
 
-  const handleSelectTenant = async (tenantId: number) => {
-    try {
-      const res = await api.get(`/tenants/${tenantId}`);
-      setSelectedTenant(res.data);
-      if (res.data.tenant.preferred_channel === 'whatsapp') {
-        checkWhatsAppStatus(`tenant_${tenantId}`);
-      }
-    } catch (e) {
-      console.error(e);
-    }
+  const getPlanMaxAgents = (planCode: string) => {
+    const plan = availablePlans.find(p => p.code === planCode);
+    return plan?.max_agents || (planCode === 'agency' ? 10 : (planCode === 'pro' ? 3 : 1));
   };
 
   const filteredTenants = tenants.filter(t => 
@@ -260,7 +338,7 @@ export const TenantsView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-white">Tenant & Agent Management</h2>
-          <p className="text-slate-400 text-xs mt-0.5">Manage agents, subscription plans, cash payments, edit details, and delete accounts.</p>
+          <p className="text-slate-400 text-xs mt-0.5">Manage individual agents, agency teams, sub-agent seat allocations, and territory routing.</p>
         </div>
         <button
           onClick={openAddModal}
@@ -276,7 +354,7 @@ export const TenantsView: React.FC = () => {
         <Search className="w-5 h-5 absolute left-3.5 top-3 text-slate-400" />
         <input
           type="text"
-          placeholder="Search tenants by name or phone..."
+          placeholder="Search tenants by name, agency, or phone..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full glass-input pl-11 pr-4 py-2.5 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
@@ -288,82 +366,121 @@ export const TenantsView: React.FC = () => {
         <table className="w-full text-left text-sm text-slate-300">
           <thead className="bg-dark-800/80 text-slate-400 font-medium text-xs uppercase tracking-wider border-b border-slate-800">
             <tr>
-              <th className="p-4">Agent / Tenant</th>
-              <th className="p-4">Type</th>
+              <th className="p-4">Agent / Agency</th>
+              <th className="p-4">Account Type</th>
               <th className="p-4">Channel</th>
-              <th className="p-4">Plan</th>
+              <th className="p-4">Plan & Seats</th>
               <th className="p-4">Status</th>
               <th className="p-4">Expires</th>
               <th className="p-4 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60">
-            {filteredTenants.map((t) => (
-              <tr key={t.id} className="hover:bg-dark-700/30 transition-colors">
-                <td className="p-4">
-                  <div className="font-semibold text-white">{t.name}</div>
-                  <div className="text-xs text-slate-400">{t.phone}</div>
-                </td>
-                <td className="p-4 capitalize">{t.type.replace('_', ' ')}</td>
-                <td className="p-4">
-                  <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${
-                    t.preferred_channel === 'whatsapp' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-                  }`}>
-                    {t.preferred_channel === 'whatsapp' ? 'WhatsApp' : 'Telegram'}
-                  </span>
-                </td>
-                <td className="p-4 capitalize font-medium text-slate-200">{t.plan}</td>
-                <td className="p-4">
-                  <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${
-                    t.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' :
-                    t.status === 'pending' ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400'
-                  }`}>
-                    {t.status === 'pending' ? 'Pending Payment' : t.status}
-                  </span>
-                </td>
-                <td className="p-4 text-xs text-slate-400">
-                  {t.plan_expires_at ? new Date(t.plan_expires_at).toLocaleDateString() : 'Pending Cash Payment'}
-                </td>
-                <td className="p-4 text-right space-x-1.5">
-                  <button
-                    onClick={() => handleSelectTenant(t.id)}
-                    className="text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium"
-                    title="Pairing & Details"
-                  >
-                    Details
-                  </button>
-                  {t.status !== 'active' ? (
+            {filteredTenants.map((t) => {
+              const maxSeats = getPlanMaxAgents(t.plan);
+              const subAgentsCount = tenants.filter(st => st.parent_tenant_id === t.id).length;
+              const isSubAgent = Boolean(t.parent_tenant_id);
+
+              return (
+                <tr key={t.id} className="hover:bg-dark-700/30 transition-colors">
+                  <td className="p-4">
+                    <div className="flex items-center gap-2">
+                      <div className="font-semibold text-white">{t.name}</div>
+                      {isSubAgent && (
+                        <span className="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-500/30 px-1.5 py-0.5 rounded font-mono">
+                          Sub-Agent
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-slate-400">{t.phone}</div>
+                  </td>
+                  <td className="p-4">
+                    <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full font-medium ${
+                      t.type === 'agency' ? 'bg-purple-500/10 text-purple-300 border border-purple-500/20' : 'bg-slate-700/50 text-slate-300'
+                    }`}>
+                      {t.type === 'agency' ? '🏢 Agency' : '👤 Individual'}
+                    </span>
+                  </td>
+                  <td className="p-4">
+                    <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${
+                      t.preferred_channel === 'whatsapp' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                    }`}>
+                      {t.preferred_channel === 'whatsapp' ? 'WhatsApp' : 'Telegram'}
+                    </span>
+                  </td>
+                  <td className="p-4">
+                    <div className="capitalize font-medium text-slate-200">{t.plan}</div>
+                    {t.type === 'agency' || maxSeats > 1 ? (
+                      <div className="text-[11px] text-purple-400 flex items-center gap-1 mt-0.5">
+                        <Users className="w-3 h-3" />
+                        {subAgentsCount + 1} / {maxSeats} Seats
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-slate-500">1 Seat</div>
+                    )}
+                  </td>
+                  <td className="p-4">
+                    <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${
+                      t.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' :
+                      t.status === 'pending' ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400'
+                    }`}>
+                      {t.status === 'pending' ? 'Pending Payment' : t.status}
+                    </span>
+                  </td>
+                  <td className="p-4 text-xs text-slate-400">
+                    {t.plan_expires_at ? new Date(t.plan_expires_at).toLocaleDateString() : 'Pending Cash Payment'}
+                  </td>
+                  <td className="p-4 text-right space-x-1.5">
+                    {(t.type === 'agency' || maxSeats > 1) && (
+                      <button
+                        onClick={() => openAddSubAgentModal(t)}
+                        className="text-xs px-2.5 py-1.5 rounded-lg bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 border border-purple-500/30 font-medium inline-flex items-center gap-1"
+                        title="Add Sub-Agent Seat"
+                      >
+                        <Plus className="w-3 h-3" />
+                        Sub-Agent
+                      </button>
+                    )}
                     <button
-                      onClick={() => openCashPaymentModal(t)}
-                      className="text-xs px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30 font-semibold"
+                      onClick={() => handleSelectTenant(t.id)}
+                      className="text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium"
+                      title="Team & Details"
                     >
-                      Activate
+                      Details
                     </button>
-                  ) : (
+                    {t.status !== 'active' ? (
+                      <button
+                        onClick={() => openCashPaymentModal(t)}
+                        className="text-xs px-2.5 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30 font-semibold"
+                      >
+                        Activate
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => openCashPaymentModal(t)}
+                        className="text-xs px-2.5 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 font-medium"
+                      >
+                        Renew
+                      </button>
+                    )}
                     <button
-                      onClick={() => openCashPaymentModal(t)}
-                      className="text-xs px-2.5 py-1.5 rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 font-medium"
+                      onClick={() => openEditModal(t)}
+                      className="text-xs p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20"
+                      title="Edit Agent"
                     >
-                      Renew
+                      <Edit3 className="w-3.5 h-3.5" />
                     </button>
-                  )}
-                  <button
-                    onClick={() => openEditModal(t)}
-                    className="text-xs p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20"
-                    title="Edit Agent"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => setDeleteTenantTarget(t)}
-                    className="text-xs p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20"
-                    title="Delete Tenant"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </td>
-              </tr>
-            ))}
+                    <button
+                      onClick={() => setDeleteTenantTarget(t)}
+                      className="text-xs p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20"
+                      title="Delete Tenant"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
             {filteredTenants.length === 0 && (
               <tr>
                 <td colSpan={7} className="p-8 text-center text-slate-500">
@@ -375,22 +492,148 @@ export const TenantsView: React.FC = () => {
         </table>
       </div>
 
+      {/* Add Sub-Agent Modal */}
+      {showAddSubAgentModal && subAgentParent && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-card w-full max-w-md p-6 rounded-2xl border border-slate-800 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Users className="w-5 h-5 text-purple-400" />
+                  Add Sub-Agent / Team Member
+                </h3>
+                <p className="text-xs text-purple-300 mt-0.5">
+                  Agency: <span className="font-semibold text-white">{subAgentParent.name}</span> ({subAgentParent.plan.toUpperCase()} Plan)
+                </p>
+              </div>
+              <button onClick={() => setShowAddSubAgentModal(false)} className="text-slate-400 hover:text-white">&times;</button>
+            </div>
+
+            <form onSubmit={handleCreateSubAgent} className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Agent Full Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Rauf Əliyev"
+                  value={subAgentForm.name}
+                  onChange={(e) => setSubAgentForm({ ...subAgentForm, name: e.target.value })}
+                  className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Phone Number *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="+994501234567"
+                  value={subAgentForm.phone}
+                  onChange={(e) => setSubAgentForm({ ...subAgentForm, phone: e.target.value })}
+                  className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Preferred Bot Channel</label>
+                <select
+                  value={subAgentForm.preferred_channel}
+                  onChange={(e) => setSubAgentForm({ ...subAgentForm, preferred_channel: e.target.value })}
+                  className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
+                >
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="telegram">Telegram</option>
+                </select>
+              </div>
+
+              {subAgentForm.preferred_channel === 'whatsapp' ? (
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">WhatsApp Number</label>
+                  <input
+                    type="text"
+                    placeholder="+994501234567"
+                    value={subAgentForm.whatsapp_number}
+                    onChange={(e) => setSubAgentForm({ ...subAgentForm, whatsapp_number: e.target.value })}
+                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">Telegram Chat ID / Username</label>
+                  <input
+                    type="text"
+                    placeholder="@agent_username or 123456789"
+                    value={subAgentForm.telegram_chat_id}
+                    onChange={(e) => setSubAgentForm({ ...subAgentForm, telegram_chat_id: e.target.value })}
+                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="text-xs text-slate-400 block mb-1.5 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                  Assigned Territories (Automatic District Routing)
+                </label>
+                <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto p-2 bg-dark-800/80 rounded-xl border border-slate-700/60">
+                  {BAKU_DISTRICT_OPTIONS.map((dist) => {
+                    const isSelected = subAgentForm.assigned_districts.includes(dist);
+                    return (
+                      <button
+                        type="button"
+                        key={dist}
+                        onClick={() => toggleDistrictAssignment(dist)}
+                        className={`text-xs px-2.5 py-1 rounded-lg text-left transition-all ${
+                          isSelected
+                            ? 'bg-purple-600 text-white font-semibold'
+                            : 'bg-dark-700/40 text-slate-300 hover:bg-dark-700'
+                        }`}
+                      >
+                        {isSelected ? '✓ ' : '+ '}{dist}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">When listings in selected districts are found, they route directly to this agent.</p>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowAddSubAgentModal(false)}
+                  className="px-4 py-2 text-sm text-slate-400 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={subAgentLoading}
+                  className="px-5 py-2 text-sm font-medium bg-purple-600 hover:bg-purple-500 text-white rounded-xl shadow-lg shadow-purple-500/20 flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  {subAgentLoading ? 'Adding...' : 'Add Team Member'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Edit Tenant Modal */}
       {editTenant && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-card w-full max-w-lg p-6 rounded-2xl border border-slate-800 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Edit3 className="w-5 h-5 text-blue-400" /> Edit Agent / Tenant #{editTenant.id}
+          <div className="glass-card w-full max-w-md p-6 rounded-2xl border border-slate-800 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-blue-400" />
+                Edit Tenant Details
               </h3>
-              <button onClick={() => setEditTenant(null)} className="text-slate-400 hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
+              <button onClick={() => setEditTenant(null)} className="text-slate-400 hover:text-white">&times;</button>
             </div>
 
             <form onSubmit={handleUpdateTenant} className="space-y-3">
               <div>
-                <label className="text-xs text-slate-400 block mb-1">Agent / Agency Name</label>
+                <label className="text-xs text-slate-400 block mb-1">Full Name / Agency Name</label>
                 <input
                   type="text"
                   required
@@ -400,52 +643,39 @@ export const TenantsView: React.FC = () => {
                 />
               </div>
 
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Phone Number</label>
+                <input
+                  type="text"
+                  required
+                  value={editFormData.phone}
+                  onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
+                  className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 block mb-1">Phone Number</label>
-                  <input
-                    type="text"
-                    required
-                    value={editFormData.phone}
-                    onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
-                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
-                  />
+                  <label className="text-xs text-slate-400 block mb-1">Account Type</label>
+                  <select
+                    value={editFormData.type}
+                    onChange={(e) => setEditFormData({ ...editFormData, type: e.target.value })}
+                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
+                  >
+                    <option value="individual_agent">Individual Agent</option>
+                    <option value="agency">Agency / Brokerage</option>
+                  </select>
                 </div>
-
                 <div>
-                  <label className="text-xs text-slate-400 block mb-1">Delivery Channel</label>
+                  <label className="text-xs text-slate-400 block mb-1">Bot Channel</label>
                   <select
                     value={editFormData.preferred_channel}
                     onChange={(e) => setEditFormData({ ...editFormData, preferred_channel: e.target.value })}
                     className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
                   >
-                    <option value="telegram">Telegram Bot</option>
-                    <option value="whatsapp">WhatsApp (Evolution API)</option>
+                    <option value="telegram">Telegram</option>
+                    <option value="whatsapp">WhatsApp</option>
                   </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-slate-400 block mb-1">WhatsApp Number / JID</label>
-                  <input
-                    type="text"
-                    placeholder="+994501234567"
-                    value={editFormData.whatsapp_number}
-                    onChange={(e) => setEditFormData({ ...editFormData, whatsapp_number: e.target.value })}
-                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs text-slate-400 block mb-1">Telegram Chat ID</label>
-                  <input
-                    type="text"
-                    placeholder="999888777"
-                    value={editFormData.telegram_chat_id}
-                    onChange={(e) => setEditFormData({ ...editFormData, telegram_chat_id: e.target.value })}
-                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white font-mono"
-                  />
                 </div>
               </div>
 
@@ -454,49 +684,37 @@ export const TenantsView: React.FC = () => {
                 <select
                   value={editFormData.plan}
                   onChange={(e) => setEditFormData({ ...editFormData, plan: e.target.value })}
-                  className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
+                  className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800 capitalize"
                 >
                   {availablePlans.map((p) => (
                     <option key={p.id} value={p.code}>
-                      {p.name} ({p.price} {p.currency}/{p.billing_period})
+                      {p.name} ({p.price} {p.currency}) - {p.max_agents || 1} Seats
                     </option>
                   ))}
-                  {availablePlans.length === 0 && (
-                    <>
-                      <option value="free">Free Trial Tier</option>
-                      <option value="starter">Starter Agent Plan</option>
-                      <option value="pro">Pro Agent Plan</option>
-                      <option value="agency">Agency Team Plan</option>
-                    </>
-                  )}
                 </select>
               </div>
 
-              <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-300 font-medium">Backup-as-a-Service (BaaS) Plan</span>
+              {editFormData.preferred_channel === 'whatsapp' ? (
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">WhatsApp Number</label>
                   <input
-                    type="checkbox"
-                    checked={editFormData.backup_enabled}
-                    onChange={(e) => setEditFormData({ ...editFormData, backup_enabled: e.target.checked })}
-                    className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500"
+                    type="text"
+                    value={editFormData.whatsapp_number}
+                    onChange={(e) => setEditFormData({ ...editFormData, whatsapp_number: e.target.value })}
+                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
                   />
                 </div>
-                {editFormData.backup_enabled && (
-                  <div>
-                    <label className="text-[10px] text-slate-400 block mb-1">Backup Frequency</label>
-                    <select
-                      value={editFormData.backup_frequency_days}
-                      onChange={(e) => setEditFormData({ ...editFormData, backup_frequency_days: Number(e.target.value) })}
-                      className="w-full glass-input px-2.5 py-1.5 rounded-lg text-xs text-white bg-dark-800"
-                    >
-                      <option value={1}>Daily Automated Backup (24h)</option>
-                      <option value={7}>Weekly Automated Backup (7 days)</option>
-                      <option value={30}>Monthly Automated Backup (30 days)</option>
-                    </select>
-                  </div>
-                )}
-              </div>
+              ) : (
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">Telegram Chat ID</label>
+                  <input
+                    type="text"
+                    value={editFormData.telegram_chat_id}
+                    onChange={(e) => setEditFormData({ ...editFormData, telegram_chat_id: e.target.value })}
+                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
+                  />
+                </div>
+              )}
 
               <div className="flex justify-end gap-3 pt-3">
                 <button
@@ -508,9 +726,9 @@ export const TenantsView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-sm font-medium bg-blue-500 hover:bg-blue-600 text-white rounded-xl"
+                  className="px-5 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-500/20"
                 >
-                  Save Agent Changes
+                  Save Changes
                 </button>
               </div>
             </form>
@@ -518,29 +736,22 @@ export const TenantsView: React.FC = () => {
         </div>
       )}
 
-      {/* Delete Tenant Confirmation Modal */}
+      {/* Delete Confirmation Modal */}
       {deleteTenantTarget && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-card w-full max-w-md p-6 rounded-2xl border border-red-500/30 space-y-4">
+          <div className="glass-card w-full max-w-sm p-6 rounded-2xl border border-red-500/30 space-y-4">
             <div className="flex items-center gap-3 text-red-400">
-              <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
-                <AlertTriangle className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-white">Delete Tenant Account?</h3>
-                <p className="text-xs text-slate-400">This action will remove all saved searches and matches.</p>
-              </div>
+              <AlertTriangle className="w-6 h-6" />
+              <h3 className="text-base font-bold text-white">Delete Tenant Account</h3>
             </div>
-
-            <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-slate-300">
-              Are you sure you want to permanently delete <strong>{deleteTenantTarget.name}</strong> ({deleteTenantTarget.phone})?
-            </div>
-
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Are you sure you want to permanently delete <strong className="text-white">{deleteTenantTarget.name}</strong> ({deleteTenantTarget.phone})? This will delete all their saved searches, matches, and sub-agents.
+            </p>
             <div className="flex justify-end gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => setDeleteTenantTarget(null)}
-                className="px-4 py-2 text-sm text-slate-400 hover:text-white"
+                className="px-3 py-1.5 text-xs text-slate-400 hover:text-white"
               >
                 Cancel
               </button>
@@ -548,27 +759,34 @@ export const TenantsView: React.FC = () => {
                 type="button"
                 disabled={deleting}
                 onClick={handleDeleteTenant}
-                className="px-5 py-2 text-sm font-medium bg-red-500 hover:bg-red-600 text-white rounded-xl flex items-center gap-1.5 shadow-lg shadow-red-500/20"
+                className="px-4 py-1.5 text-xs font-semibold bg-red-600 hover:bg-red-500 text-white rounded-xl shadow-lg shadow-red-500/20"
               >
-                <Trash2 className="w-4 h-4" />
-                {deleting ? 'Deleting...' : 'Confirm Delete Tenant'}
+                {deleting ? 'Deleting...' : 'Confirm Delete'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Add Tenant Modal with WhatsApp Pairing */}
+      {/* Add Tenant Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="glass-card w-full max-w-lg p-6 rounded-2xl border border-slate-800 space-y-4 max-h-[90vh] overflow-y-auto my-6">
-            <h3 className="text-lg font-bold text-white">Create Agent Tenant & Channel Setup</h3>
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-card w-full max-w-md p-6 rounded-2xl border border-slate-800 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-emerald-400" />
+                Add New Agent / Agency
+              </h3>
+              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-white">&times;</button>
+            </div>
+
             <form onSubmit={handleCreateTenant} className="space-y-3">
               <div>
-                <label className="text-xs text-slate-400 block mb-1">Agent / Agency Name</label>
+                <label className="text-xs text-slate-400 block mb-1">Full Name / Agency Name *</label>
                 <input
                   type="text"
                   required
+                  placeholder="e.g. Elnur Məmmədov və ya Real Estate Agency"
                   value={newTenant.name}
                   onChange={(e) => setNewTenant({ ...newTenant, name: e.target.value })}
                   className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
@@ -576,150 +794,80 @@ export const TenantsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-xs text-slate-400 block mb-1">Phone Number (International format)</label>
+                <label className="text-xs text-slate-400 block mb-1">Phone Number (Login & Identity) *</label>
                 <input
                   type="text"
                   required
                   placeholder="+994501234567"
                   value={newTenant.phone}
-                  onChange={(e) => setNewTenant({ ...newTenant, phone: e.target.value, whatsapp_number: e.target.value })}
+                  onChange={(e) => setNewTenant({ ...newTenant, phone: e.target.value })}
                   className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 block mb-1">Delivery Channel</label>
+                  <label className="text-xs text-slate-400 block mb-1">Account Type</label>
+                  <select
+                    value={newTenant.type}
+                    onChange={(e) => setNewTenant({ ...newTenant, type: e.target.value })}
+                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
+                  >
+                    <option value="individual_agent">Individual Agent</option>
+                    <option value="agency">Agency / Team</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">Preferred Bot Channel</label>
                   <select
                     value={newTenant.preferred_channel}
                     onChange={(e) => setNewTenant({ ...newTenant, preferred_channel: e.target.value })}
                     className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
                   >
-                    <option value="telegram">Telegram Bot</option>
-                    <option value="whatsapp">WhatsApp (Evolution API)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs text-slate-400 block mb-1">Subscription Plan</label>
-                  <select
-                    value={newTenant.plan}
-                    onChange={(e) => setNewTenant({ ...newTenant, plan: e.target.value })}
-                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
-                  >
-                    {availablePlans.map((p) => (
-                      <option key={p.id} value={p.code}>
-                        {p.name} ({p.price} {p.currency}/{p.billing_period})
-                      </option>
-                    ))}
-                    {availablePlans.length === 0 && (
-                      <>
-                        <option value="free">Free Trial Tier (Daily)</option>
-                        <option value="starter">Starter Agent Plan</option>
-                        <option value="pro">Pro Agent Plan</option>
-                        <option value="agency">Agency Team Plan</option>
-                      </>
-                    )}
+                    <option value="telegram">Telegram</option>
+                    <option value="whatsapp">WhatsApp</option>
                   </select>
                 </div>
               </div>
 
-              {newTenant.plan === 'free' && (
-                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl space-y-1">
-                  <label className="text-xs text-amber-300 font-semibold block mb-1">
-                    Free Trial Duration (Days)
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={1}
-                      max={90}
-                      value={newTenant.trial_days}
-                      onChange={(e) => setNewTenant({ ...newTenant, trial_days: Number(e.target.value) })}
-                      className="w-full glass-input px-3 py-1.5 rounded-lg text-sm text-white font-bold bg-dark-900 border-amber-500/40"
-                    />
-                    <span className="text-xs text-amber-300 font-medium whitespace-nowrap">Days Trial</span>
-                  </div>
-                  <p className="text-[10px] text-amber-400/80">
-                    Agent will get active access for {newTenant.trial_days} days. When finished, system will auto-stop access and offer paid plans over Telegram/WhatsApp.
-                  </p>
-                </div>
-              )}
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Subscription Plan</label>
+                <select
+                  value={newTenant.plan}
+                  onChange={(e) => setNewTenant({ ...newTenant, plan: e.target.value })}
+                  className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800 capitalize"
+                >
+                  {availablePlans.map((p) => (
+                    <option key={p.id} value={p.code}>
+                      {p.name} ({p.price} {p.currency}) - {p.max_agents || 1} Seats
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-              {/* WhatsApp Evolution Setup Box */}
-              {newTenant.preferred_channel === 'whatsapp' && (
-                <div className="p-4 bg-dark-900/80 border border-emerald-500/30 rounded-xl space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                      <QrCode className="w-4 h-4 text-emerald-400" />
-                      WhatsApp Evolution API Pairing
-                    </span>
-                    {waStatus?.connected ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold">
-                        <Wifi className="w-3 h-3" /> Connected
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-semibold">
-                        <WifiOff className="w-3 h-3" /> Unpaired
-                      </span>
-                    )}
-                  </div>
-
-                  <p className="text-[11px] text-slate-400">
-                    Pair your agent's WhatsApp phone number using QR Code to automatically broadcast matching listings, buyer requests, and group notifications.
-                  </p>
-
-                  {!waQrCode ? (
-                    <button
-                      type="button"
-                      disabled={waLoading}
-                      onClick={() => generateWhatsAppQrCode()}
-                      className="w-full flex items-center justify-center gap-2 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-semibold py-2 rounded-xl text-xs transition-colors"
-                    >
-                      {waLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <QrCode className="w-3.5 h-3.5" />}
-                      <span>Generate & Display WhatsApp QR Code</span>
-                    </button>
-                  ) : (
-                    <div className="flex flex-col items-center space-y-2 pt-2 bg-white/5 p-3 rounded-xl border border-slate-700">
-                      <img src={waQrCode} alt="WhatsApp QR Code" className="w-48 h-48 rounded-lg shadow-lg bg-white p-2" />
-                      <span className="text-[11px] text-slate-300 text-center font-medium">
-                        Open WhatsApp on your phone → Linked Devices → Link a Device → Scan QR Code
-                      </span>
-                      {waPairingCode && (
-                        <div className="text-xs font-mono text-emerald-400">
-                          Pairing Code: <span className="font-bold">{waPairingCode}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-300 font-medium">Backup-as-a-Service (BaaS) Plan</span>
+              {newTenant.preferred_channel === 'whatsapp' ? (
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">WhatsApp Number</label>
                   <input
-                    type="checkbox"
-                    checked={newTenant.backup_enabled}
-                    onChange={(e) => setNewTenant({ ...newTenant, backup_enabled: e.target.checked })}
-                    className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500"
+                    type="text"
+                    placeholder="+994501234567"
+                    value={newTenant.whatsapp_number}
+                    onChange={(e) => setNewTenant({ ...newTenant, whatsapp_number: e.target.value })}
+                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
                   />
                 </div>
-                {newTenant.backup_enabled && (
-                  <div>
-                    <label className="text-[10px] text-slate-400 block mb-1">Backup Frequency</label>
-                    <select
-                      value={newTenant.backup_frequency_days}
-                      onChange={(e) => setNewTenant({ ...newTenant, backup_frequency_days: Number(e.target.value) })}
-                      className="w-full glass-input px-2.5 py-1.5 rounded-lg text-xs text-white bg-dark-800"
-                    >
-                      <option value={1}>Daily Automated Backup (24h)</option>
-                      <option value={7}>Weekly Automated Backup (7 days)</option>
-                      <option value={30}>Monthly Automated Backup (30 days)</option>
-                    </select>
-                  </div>
-                )}
-              </div>
+              ) : (
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">Telegram Handle</label>
+                  <input
+                    type="text"
+                    placeholder="@agent_username"
+                    value={newTenant.telegram_handle}
+                    onChange={(e) => setNewTenant({ ...newTenant, telegram_handle: e.target.value })}
+                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
+                  />
+                </div>
+              )}
 
               <div className="flex justify-end gap-3 pt-3">
                 <button
@@ -731,9 +879,10 @@ export const TenantsView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 text-sm font-medium bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl"
+                  className="px-5 py-2 text-sm font-medium bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl shadow-lg shadow-emerald-500/20 flex items-center gap-1.5"
                 >
-                  Save Tenant (Pending Cash Payment)
+                  <Plus className="w-4 h-4" />
+                  Create Agent
                 </button>
               </div>
             </form>
@@ -741,25 +890,17 @@ export const TenantsView: React.FC = () => {
         </div>
       )}
 
-      {/* Confirm Cash Payment Modal */}
+      {/* Cash Payment Modal */}
       {paymentModalTenant && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="glass-card w-full max-w-md p-6 rounded-2xl border border-slate-800 space-y-4">
-            <h3 className="text-lg font-bold text-white">Record Cash Payment & Activate Account</h3>
-            <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 text-xs text-slate-300 space-y-1">
-              <div><span className="text-slate-400">Agent:</span> <strong className="text-white">{paymentModalTenant.name}</strong> ({paymentModalTenant.phone})</div>
-              <div><span className="text-slate-400">Selected Plan:</span> <strong className="text-emerald-400 capitalize">{paymentModalTenant.plan} Plan</strong></div>
-              {paymentModalTenant.referral_code && (
-                <div><span className="text-slate-400">Referral Code:</span> <code className="text-amber-400">{paymentModalTenant.referral_code}</code></div>
-              )}
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <DollarSign className="w-5 h-5 text-emerald-400" />
+                Record Cash Payment & Activate
+              </h3>
+              <button onClick={() => setPaymentModalTenant(null)} className="text-slate-400 hover:text-white">&times;</button>
             </div>
-
-            {!!paymentModalTenant.referral_balance && paymentModalTenant.referral_balance > 0 && (
-              <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-300 flex items-center justify-between">
-                <span>🎁 Referral Bonus Credit Available: <strong>{paymentModalTenant.referral_balance} AZN</strong></span>
-                <span className="text-[10px] bg-emerald-500/20 px-2 py-0.5 rounded font-bold">Auto-Deducted on Save</span>
-              </div>
-            )}
 
             <form onSubmit={handleRecordCashPayment} className="space-y-3">
               <div>
@@ -767,36 +908,28 @@ export const TenantsView: React.FC = () => {
                 <select
                   value={paymentPlan}
                   onChange={(e) => handlePlanOrPeriodChange(e.target.value, cashDays)}
-                  className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
+                  className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800 capitalize"
                 >
                   {availablePlans.map((p) => (
                     <option key={p.id} value={p.code}>
-                      {p.name} ({p.price} {p.currency}/mo)
+                      {p.name} ({p.price} {p.currency}) - {p.max_agents || 1} Seats
                     </option>
                   ))}
-                  {availablePlans.length === 0 && (
-                    <>
-                      <option value="free">Free Trial Tier (0 AZN)</option>
-                      <option value="starter">Starter Agent Plan (50 AZN/mo)</option>
-                      <option value="pro">Pro Agent Plan (100 AZN/mo)</option>
-                      <option value="agency">Agency Team Plan (250 AZN/mo)</option>
-                    </>
-                  )}
                 </select>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400 block mb-1">Total Fee (AZN)</label>
+                  <label className="text-xs text-slate-400 block mb-1">Amount Paid (AZN)</label>
                   <input
                     type="number"
+                    step="0.01"
                     required
                     value={cashAmount}
                     onChange={(e) => setCashAmount(Number(e.target.value))}
-                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white font-bold text-emerald-400"
+                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white font-bold"
                   />
                 </div>
-
                 <div>
                   <label className="text-xs text-slate-400 block mb-1">Subscription Period</label>
                   <select
@@ -848,7 +981,10 @@ export const TenantsView: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="glass-card w-full max-w-lg p-6 rounded-2xl border border-slate-800 space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex justify-between items-center">
-              <h3 className="text-lg font-bold text-white">{selectedTenant.tenant.name}</h3>
+              <div>
+                <h3 className="text-lg font-bold text-white">{selectedTenant.tenant.name}</h3>
+                <span className="text-xs text-purple-400 font-mono capitalize">{selectedTenant.tenant.type.replace('_', ' ')}</span>
+              </div>
               <button onClick={() => setSelectedTenant(null)} className="text-slate-400 hover:text-white">&times;</button>
             </div>
 
@@ -858,6 +994,57 @@ export const TenantsView: React.FC = () => {
               <div><span className="text-slate-400">Channel:</span> {selectedTenant.tenant.preferred_channel}</div>
               <div><span className="text-slate-400">Status:</span> {selectedTenant.tenant.status}</div>
             </div>
+
+            {/* Agency Team Members Section */}
+            {(selectedTenant.tenant.type === 'agency' || (selectedTenant.sub_agents && selectedTenant.sub_agents.length > 0)) && (
+              <div className="p-4 bg-dark-900 border border-purple-500/30 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-purple-300 flex items-center gap-1.5">
+                    <Users className="w-4 h-4" /> Team Members & Sub-Agents ({selectedTenant.sub_agents?.length || 0})
+                  </span>
+                  <button
+                    onClick={() => openAddSubAgentModal(selectedTenant.tenant)}
+                    className="text-[11px] px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-semibold flex items-center gap-1"
+                  >
+                    <Plus className="w-3 h-3" />
+                    Add Sub-Agent
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {selectedTenant.sub_agents && selectedTenant.sub_agents.length > 0 ? (
+                    selectedTenant.sub_agents.map(sa => (
+                      <div key={sa.id} className="p-2.5 rounded-xl bg-dark-800 border border-slate-700/60 flex items-center justify-between text-xs">
+                        <div>
+                          <div className="font-semibold text-white">{sa.name}</div>
+                          <div className="text-slate-400 text-[11px]">{sa.phone} • {sa.preferred_channel}</div>
+                          {sa.assigned_districts && sa.assigned_districts.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {sa.assigned_districts.map((d: string) => (
+                                <span key={d} className="text-[10px] bg-purple-500/20 text-purple-300 px-1.5 py-0.2 rounded font-mono">
+                                  {d}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => setDeleteTenantTarget(sa)}
+                          className="text-red-400 hover:text-red-300 p-1.5"
+                          title="Remove Sub-Agent"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-xs text-slate-500 italic p-2 text-center">
+                      No sub-agents added yet. Click 'Add Sub-Agent' above to assign seats to team members.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* WhatsApp Connection Card */}
             {selectedTenant.tenant.preferred_channel === 'whatsapp' && (
