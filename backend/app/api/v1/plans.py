@@ -29,6 +29,8 @@ class PlanResponse(BaseModel):
     feature_b2b_cobrokering: bool
     feature_social_brochure: bool
     feature_client_intake_bot: bool
+    feature_aged_listings: bool = False
+    addon_aged_listings_price: float = 0.0
     backup_enabled: bool
     subscriber_count: int = 0
 
@@ -48,6 +50,8 @@ class CreatePlanRequest(BaseModel):
     feature_b2b_cobrokering: bool = True
     feature_social_brochure: bool = True
     feature_client_intake_bot: bool = True
+    feature_aged_listings: bool = False
+    addon_aged_listings_price: float = 0.0
     backup_enabled: bool = True
 
 
@@ -65,6 +69,8 @@ class UpdatePlanRequest(BaseModel):
     feature_b2b_cobrokering: Optional[bool] = None
     feature_social_brochure: Optional[bool] = None
     feature_client_intake_bot: Optional[bool] = None
+    feature_aged_listings: Optional[bool] = None
+    addon_aged_listings_price: Optional[float] = None
     backup_enabled: Optional[bool] = None
 
 
@@ -99,6 +105,8 @@ async def list_plans(db: AsyncSession = Depends(get_db)):
             feature_b2b_cobrokering=plan.feature_b2b_cobrokering,
             feature_social_brochure=plan.feature_social_brochure,
             feature_client_intake_bot=plan.feature_client_intake_bot,
+            feature_aged_listings=getattr(plan, 'feature_aged_listings', False),
+            addon_aged_listings_price=getattr(plan, 'addon_aged_listings_price', 0.0),
             backup_enabled=plan.backup_enabled,
             subscriber_count=sub_count
         ))
@@ -136,6 +144,8 @@ async def create_plan(
         feature_b2b_cobrokering=body.feature_b2b_cobrokering,
         feature_social_brochure=body.feature_social_brochure,
         feature_client_intake_bot=body.feature_client_intake_bot,
+        feature_aged_listings=body.feature_aged_listings,
+        addon_aged_listings_price=body.addon_aged_listings_price,
         backup_enabled=body.backup_enabled
     )
     db.add(plan)
@@ -158,6 +168,8 @@ async def create_plan(
         feature_b2b_cobrokering=plan.feature_b2b_cobrokering,
         feature_social_brochure=plan.feature_social_brochure,
         feature_client_intake_bot=plan.feature_client_intake_bot,
+        feature_aged_listings=plan.feature_aged_listings,
+        addon_aged_listings_price=plan.addon_aged_listings_price,
         backup_enabled=plan.backup_enabled,
         subscriber_count=0
     )
@@ -188,6 +200,7 @@ async def get_plan(
         price=plan.price,
         currency=plan.currency,
         billing_period=plan.billing_period,
+        trial_days=plan.trial_days or 7,
         is_active=plan.is_active,
         max_agents=plan.max_agents,
         feature_makler_detector=plan.feature_makler_detector,
@@ -195,6 +208,8 @@ async def get_plan(
         feature_b2b_cobrokering=plan.feature_b2b_cobrokering,
         feature_social_brochure=plan.feature_social_brochure,
         feature_client_intake_bot=plan.feature_client_intake_bot,
+        feature_aged_listings=getattr(plan, 'feature_aged_listings', False),
+        addon_aged_listings_price=getattr(plan, 'addon_aged_listings_price', 0.0),
         backup_enabled=plan.backup_enabled,
         subscriber_count=sub_count
     )
@@ -240,6 +255,10 @@ async def update_plan(
         plan.feature_social_brochure = body.feature_social_brochure
     if body.feature_client_intake_bot is not None:
         plan.feature_client_intake_bot = body.feature_client_intake_bot
+    if body.feature_aged_listings is not None:
+        plan.feature_aged_listings = body.feature_aged_listings
+    if body.addon_aged_listings_price is not None:
+        plan.addon_aged_listings_price = body.addon_aged_listings_price
     if body.backup_enabled is not None:
         plan.backup_enabled = body.backup_enabled
 
@@ -266,6 +285,8 @@ async def update_plan(
         feature_b2b_cobrokering=plan.feature_b2b_cobrokering,
         feature_social_brochure=plan.feature_social_brochure,
         feature_client_intake_bot=plan.feature_client_intake_bot,
+        feature_aged_listings=getattr(plan, 'feature_aged_listings', False),
+        addon_aged_listings_price=getattr(plan, 'addon_aged_listings_price', 0.0),
         backup_enabled=plan.backup_enabled,
         subscriber_count=sub_count
     )

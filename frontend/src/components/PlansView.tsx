@@ -18,6 +18,8 @@ export interface PlanItem {
   feature_b2b_cobrokering: boolean;
   feature_social_brochure: boolean;
   feature_client_intake_bot: boolean;
+  feature_aged_listings?: boolean;
+  addon_aged_listings_price?: number;
   backup_enabled: boolean;
   subscriber_count: number;
 }
@@ -43,6 +45,8 @@ export function PlansView() {
   const [formBrochure, setFormBrochure] = useState(true);
   const [formIntake, setFormIntake] = useState(true);
   const [formBackup, setFormBackup] = useState(true);
+  const [formAgedListings, setFormAgedListings] = useState(false);
+  const [formAddonPrice, setFormAddonPrice] = useState<number>(15);
   const [submitting, setSubmitting] = useState(false);
 
   const fetchPlans = () => {
@@ -74,6 +78,8 @@ export function PlansView() {
     setFormBrochure(true);
     setFormIntake(true);
     setFormBackup(true);
+    setFormAgedListings(false);
+    setFormAddonPrice(15);
     setEditingPlan(null);
     setIsCreateOpen(true);
   };
@@ -94,6 +100,8 @@ export function PlansView() {
     setFormBrochure(plan.feature_social_brochure);
     setFormIntake(plan.feature_client_intake_bot);
     setFormBackup(plan.backup_enabled);
+    setFormAgedListings(!!plan.feature_aged_listings);
+    setFormAddonPrice(plan.addon_aged_listings_price || 15);
     setIsCreateOpen(true);
   };
 
@@ -117,6 +125,8 @@ export function PlansView() {
           feature_b2b_cobrokering: formB2b,
           feature_social_brochure: formBrochure,
           feature_client_intake_bot: formIntake,
+          feature_aged_listings: formAgedListings,
+          addon_aged_listings_price: formAddonPrice,
           backup_enabled: formBackup,
         });
       } else {
@@ -135,6 +145,8 @@ export function PlansView() {
           feature_b2b_cobrokering: formB2b,
           feature_social_brochure: formBrochure,
           feature_client_intake_bot: formIntake,
+          feature_aged_listings: formAgedListings,
+          addon_aged_listings_price: formAddonPrice,
           backup_enabled: formBackup,
         });
       }
@@ -291,6 +303,24 @@ export function PlansView() {
                     <span className={plan.backup_enabled ? 'text-slate-200' : 'text-slate-500 line-through'}>
                       Automated BaaS Data Backups
                     </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      {plan.feature_aged_listings ? (
+                        <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                      ) : (
+                        <X className="w-4 h-4 text-slate-600 shrink-0" />
+                      )}
+                      <span className={plan.feature_aged_listings ? 'text-slate-200' : 'text-slate-500 line-through'}>
+                        Aged Inventory Archive (1-12+ mo.)
+                      </span>
+                    </div>
+                    {plan.addon_aged_listings_price && plan.addon_aged_listings_price > 0 ? (
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 font-semibold">
+                        +{plan.addon_aged_listings_price} AZN Add-on
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -507,6 +537,32 @@ export function PlansView() {
                       className="rounded accent-emerald-500"
                     />
                     <span className="text-slate-300">BaaS Data Backups</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 bg-dark-900/60 rounded-xl border border-slate-800 cursor-pointer col-span-2">
+                    <input
+                      type="checkbox"
+                      checked={formAgedListings}
+                      onChange={(e) => setFormAgedListings(e.target.checked)}
+                      className="rounded accent-emerald-500"
+                    />
+                    <div className="flex-1 flex items-center justify-between">
+                      <span className="text-slate-300">Aged Active Listings Archive (Listings sitting for XX months)</span>
+                      {formAgedListings && (
+                        <div className="flex items-center gap-1.5 text-xs">
+                          <span className="text-slate-400">Add-on Price:</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={formAddonPrice}
+                            onChange={(e) => setFormAddonPrice(Number(e.target.value))}
+                            className="w-16 bg-dark-800 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <span className="text-emerald-400 font-semibold">AZN</span>
+                        </div>
+                      )}
+                    </div>
                   </label>
                 </div>
               </div>

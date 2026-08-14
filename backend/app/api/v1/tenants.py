@@ -29,6 +29,8 @@ class CreateTenantRequest(BaseModel):
     feature_b2b_cobrokering: bool = False
     feature_social_brochure: bool = False
     feature_client_intake_bot: bool = False
+    feature_aged_listings: bool = False
+    addon_aged_max_months: int = 12
 
 class UpdateTenantRequest(BaseModel):
     name: Optional[str] = None
@@ -46,6 +48,8 @@ class UpdateTenantRequest(BaseModel):
     feature_b2b_cobrokering: Optional[bool] = None
     feature_social_brochure: Optional[bool] = None
     feature_client_intake_bot: Optional[bool] = None
+    feature_aged_listings: Optional[bool] = None
+    addon_aged_max_months: Optional[int] = None
 
 class TenantResponse(BaseModel):
     id: int
@@ -70,6 +74,8 @@ class TenantResponse(BaseModel):
     feature_b2b_cobrokering: bool
     feature_social_brochure: bool
     feature_client_intake_bot: bool
+    feature_aged_listings: bool = False
+    addon_aged_max_months: int = 12
     referral_code: Optional[str] = None
     referral_balance: float
     created_at: Optional[datetime] = None
@@ -118,6 +124,8 @@ async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(ge
         feature_social_brochure=db_plan.feature_social_brochure if db_plan else True,
         feature_b2b_cobrokering=db_plan.feature_b2b_cobrokering if db_plan else True,
         feature_client_intake_bot=db_plan.feature_client_intake_bot if db_plan else True,
+        feature_aged_listings=getattr(db_plan, 'feature_aged_listings', False) or body.feature_aged_listings,
+        addon_aged_max_months=body.addon_aged_max_months or 12,
         plan_started_at=datetime.now(timezone.utc),
         plan_expires_at=expires_at,
         status=initial_status

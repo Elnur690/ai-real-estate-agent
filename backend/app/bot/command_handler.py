@@ -244,6 +244,12 @@ class BotCommandHandler:
                 return f"✅ *Promokod təsdiqləndi!* `{val_res['code']}` — {disc} güzəşt tətbiq edildi!"
             return f"❌ {val_res.get('error', 'Promokod xətası')}"
 
+        # Aged / Stale Active Listings Archive Query (/aged [months] [district], /kohne [months], /stale [months])
+        aged_match = re.search(r'^(?:/aged|aged|/kohne|kohne|/kohnə|kohnə|/stale|stale)\s*(.*)', text_lower)
+        if aged_match:
+            args = aged_match.group(1).strip()
+            return await BotCommandHandler._handle_aged_listings_query(db, tenant, args, app_name)
+
         # 4. Handle Pending Draft Confirmation
         if tenant.draft_search_json and text_lower in ALL_CONFIRM_KEYWORDS:
             return await BotCommandHandler._confirm_and_save_draft(db, tenant)
@@ -577,6 +583,7 @@ class BotCommandHandler:
             f"▪️ `/channel` — Bildiriş kanalını dəyişmək (WhatsApp ↔ Telegram)\n"
             f"▪️ `/status` — Abunə tarifiniz və istifadə müddətiniz\n"
             f"▪️ `/referral` — Dəvət kodunuz və qazandığınız bonus balansınız\n"
+            f"▪️ `/aged <ay> [rayon]` — Köhnə/Bazar Arxivi: Uzun müddət satışda qalan aktiv mənzillər (nümunə: `/aged 2 Yasamal`)\n"
             f"▪️ `/cancel` — Hazırkı axtarış qaralamasını ləğv etmək\n"
             f"▪️ `/help` — Bu kömək təlimatını yenidən göstərmək\n\n"
             f"👥 *WHATSAPP QRUP İSTİFADƏSİ:*\n"
@@ -586,6 +593,106 @@ class BotCommandHandler:
             f"💬 *ELAN REAKSİYALARI:*\n"
             f"• `Maraqlanıram <id>` | `Keç <id>` | `Satılıb <id>`\n"
             f"• `/elan <mətn>` — Öz mənzil elanınızı B2B partnyor agentlərə təqdim etmək"
+        )
+
+    @staticmethod
+    async def _handle_aged_listings_query(db: AsyncSession, tenant: Tenant, args_str: str, app_name: str) -> str:
+        """
+        Aged Active Listings Archive query (/aged [months] [district] [max_price]).
+        Checks if tenant or parent has feature_aged_listings enabled.
+        Returns active listings on the market for >= X months (1 to 24).
+        """
+        from datetime import datetime, timedelta, timezone
+        from app.models.listing import Listing
+
+        # Check add-on entitlement
+        has_addon = tenant.feature_aged_listings
+        if not has_addon and tenant.parent_tenant_id:
+            stmt_p = select(Tenant).where(Tenant.id == tenant.parent_tenant_id)
+            res_p = await db.execute(stmt_p)
+            parent = res_p.scalars().first()
+            if parent and parent.feature_aged_listings:
+                has_addon = True
+
+        if not has_addon:
+            return (
+                f"🔒 *KÖHNƏ / AKTİV BAZAR ARXİVİ (Aged Inventory Add-on) — {app_name}*\n\n"
+                f"Bu funksiya ilə bazarda uzun müddətdir (1-12 ay) satışda qalan və satıcısı qiymət endiriminə daha açıq olan *aktiv* elanları aşkar edə bilərsiniz.\n\n"
+                f"💎 *Bu add-on sizin abunəlikdə aktiv deyil.*\n"
+                f"Aktivləşdirmək və ya abunə planınıza əlavə etmək üçün administratorla əlaqə saxlayın."
+            )
+
+        # Parse months from args (e.g. "2 Yasamal", "3", "1 150000")
+        months = 1
+        district_query = None
+        max_price = None
+
+        if args_str:
+            tokens = args_str.split()
+            for token in tokens:
+                if token.isdigit():
+                    num = int(token)
+                    if num <= 24 and months == 1:
+                        months = max(1, num)
+                    elif num > 1000:
+                        max_price = float(num)
+                else:
+                    district_query = token
+
+        max_allowed = tenant.addon_aged_max_months or 12
+        if months > max_allowed:
+            months = max_allowed
+
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=months * 30)
+
+        stmt = (
+            select(Listing)
+            .where(
+                Listing.is_active == True,
+                Listing.created_at <= cutoff_date
+            )
+        )
+        if district_query:
+            stmt = stmt.where(Listing.district.ilike(f"%{district_query}%") | Listing.address_raw.ilike(f"%{district_query}%"))
+        if max_price:
+            stmt = stmt.where(Listing.price <= max_price)
+
+        stmt = stmt.order_by(Listing.created_at.asc()).limit(6)
+        res = await db.execute(stmt)
+        listings = res.scalars().all()
+
+        if not listings:
+            filter_msg = f" '{district_query}' rayonunda" if district_query else ""
+            return (
+                f"🔍 *KÖHNƏ AKTİV ELANLAR ({months}+ aydır satışda)*\n\n"
+                f"Seçilmiş parametrlərə uyğun{filter_msg} ən azı *{months} ay* əvvəl yerləşdirilmiş və hələ də satışda olan aktiv elan tapılmadı.\n"
+                f"💡 Məsələn: `/aged 1 Yasamal` və ya `/aged 2`"
+            )
+
+        now = datetime.now(timezone.utc)
+        items_text = []
+        for l in listings:
+            created = l.created_at or now
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            days_on_market = max(1, (now - created).days)
+            months_on_market = days_on_market // 30
+            rem_days = days_on_market % 30
+            age_str = f"{months_on_market} ay {rem_days} gün" if months_on_market > 0 else f"{days_on_market} gün"
+
+            items_text.append(
+                f"🏠 *{l.title or 'Mənzil'}*\n"
+                f"⏱️ *Bazarda qalma müddəti:* ⌛ *{age_str}* (Aktivdir)\n"
+                f"💰 *Qiymət:* {int(l.price)} {l.currency}\n"
+                f"📍 *Məkan:* {l.district or 'Bakı'} {f'({l.metro_station})' if l.metro_station else ''}\n"
+                f"🚪 *Otaq:* {l.rooms or '-'} | 📐 *Sahə:* {l.area_sqm or '-'} m²\n"
+                f"🔗 [Elana bax]({l.listing_url})"
+            )
+
+        return (
+            f"📅 *KÖHNƏ / BAZARDA QALAN AKTİV ELANLAR ({months}+ aydır satışda)*\n"
+            f"💡 *Qeyd:* Bu mənzillər uzun müddətdir satışda olduğu üçün qiymət endirimi danışıqları üçün əlverişlidir.\n\n"
+            + "\n\n───────────────\n\n".join(items_text)
         )
 
     @staticmethod

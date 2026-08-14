@@ -27,7 +27,9 @@ export const TenantsView: React.FC = () => {
     telegram_handle: '',
     whatsapp_number: '',
     backup_enabled: false,
-    backup_frequency_days: 7
+    backup_frequency_days: 7,
+    feature_aged_listings: false,
+    addon_aged_max_months: 12
   });
 
   const [availablePlans, setAvailablePlans] = useState<any[]>([]);
@@ -56,7 +58,9 @@ export const TenantsView: React.FC = () => {
     whatsapp_number: '',
     telegram_chat_id: '',
     backup_enabled: false,
-    backup_frequency_days: 7
+    backup_frequency_days: 7,
+    feature_aged_listings: false,
+    addon_aged_max_months: 12
   });
 
   // Delete Confirmation Modal State
@@ -126,7 +130,9 @@ export const TenantsView: React.FC = () => {
       whatsapp_number: t.whatsapp_number || t.phone || '',
       telegram_chat_id: t.telegram_chat_id || '',
       backup_enabled: t.backup_enabled || false,
-      backup_frequency_days: t.backup_frequency_days || 7
+      backup_frequency_days: t.backup_frequency_days || 7,
+      feature_aged_listings: t.feature_aged_listings || false,
+      addon_aged_max_months: t.addon_aged_max_months || 12
     });
   };
 
@@ -176,7 +182,9 @@ export const TenantsView: React.FC = () => {
         telegram_handle: '',
         whatsapp_number: '',
         backup_enabled: false,
-        backup_frequency_days: 7
+        backup_frequency_days: 7,
+        feature_aged_listings: false,
+        addon_aged_max_months: 12
       });
       loadTenants();
     } catch (e: any) {
@@ -732,6 +740,37 @@ export const TenantsView: React.FC = () => {
                 </div>
               )}
 
+              {/* Aged Listings Addon */}
+              <div className="pt-2 border-t border-slate-800">
+                <label className="flex items-center gap-2 p-2.5 bg-dark-800/80 rounded-xl border border-slate-700/60 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editFormData.feature_aged_listings}
+                    onChange={(e) => setEditFormData({ ...editFormData, feature_aged_listings: e.target.checked })}
+                    className="rounded accent-emerald-500"
+                  />
+                  <div className="flex-1 flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-200">Aged Inventory Archive Add-on</span>
+                    {editFormData.feature_aged_listings && (
+                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <span className="text-slate-400 text-[11px]">Max:</span>
+                        <select
+                          value={editFormData.addon_aged_max_months}
+                          onChange={(e) => setEditFormData({ ...editFormData, addon_aged_max_months: Number(e.target.value) })}
+                          className="bg-dark-900 border border-slate-700 text-emerald-400 rounded-lg px-2 py-0.5 text-xs font-semibold"
+                        >
+                          <option value={1}>1 Month</option>
+                          <option value={3}>3 Months</option>
+                          <option value={6}>6 Months</option>
+                          <option value={12}>12 Months</option>
+                          <option value={24}>24 Months</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                </label>
+              </div>
+
               <div className="flex justify-end gap-3 pt-3">
                 <button
                   type="button"
@@ -885,6 +924,37 @@ export const TenantsView: React.FC = () => {
                 </div>
               )}
 
+              {/* Aged Listings Addon */}
+              <div className="pt-2 border-t border-slate-800">
+                <label className="flex items-center gap-2 p-2.5 bg-dark-800/80 rounded-xl border border-slate-700/60 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newTenant.feature_aged_listings}
+                    onChange={(e) => setNewTenant({ ...newTenant, feature_aged_listings: e.target.checked })}
+                    className="rounded accent-emerald-500"
+                  />
+                  <div className="flex-1 flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-200">Aged Inventory Archive Add-on</span>
+                    {newTenant.feature_aged_listings && (
+                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <span className="text-slate-400 text-[11px]">Max:</span>
+                        <select
+                          value={newTenant.addon_aged_max_months}
+                          onChange={(e) => setNewTenant({ ...newTenant, addon_aged_max_months: Number(e.target.value) })}
+                          className="bg-dark-900 border border-slate-700 text-emerald-400 rounded-lg px-2 py-0.5 text-xs font-semibold"
+                        >
+                          <option value={1}>1 Month</option>
+                          <option value={3}>3 Months</option>
+                          <option value={6}>6 Months</option>
+                          <option value={12}>12 Months</option>
+                          <option value={24}>24 Months</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                </label>
+              </div>
+
               <div className="flex justify-end gap-3 pt-3">
                 <button
                   type="button"
@@ -1009,6 +1079,16 @@ export const TenantsView: React.FC = () => {
               <div><span className="text-slate-400">Plan:</span> {selectedTenant.tenant.plan}</div>
               <div><span className="text-slate-400">Channel:</span> {selectedTenant.tenant.preferred_channel}</div>
               <div><span className="text-slate-400">Status:</span> {selectedTenant.tenant.status}</div>
+              <div className="col-span-2 flex items-center gap-2 pt-1 border-t border-slate-700/50">
+                <span className="text-slate-400">Aged Listings Archive:</span>
+                {selectedTenant.tenant.feature_aged_listings ? (
+                  <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                    ✓ Active (Up to {selectedTenant.tenant.addon_aged_max_months || 12} Months Lookback)
+                  </span>
+                ) : (
+                  <span className="text-slate-500 font-normal">Add-on Not Active</span>
+                )}
+              </div>
             </div>
 
             {/* Agency Team Members Section */}

@@ -19,12 +19,14 @@ class Plan(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     max_agents: Mapped[int] = mapped_column(Integer, default=1)
 
-    # Feature Toggles
+    # Feature Toggles & Add-ons
     feature_makler_detector: Mapped[bool] = mapped_column(Boolean, default=True)
     feature_avm_bargain_finder: Mapped[bool] = mapped_column(Boolean, default=True)
     feature_b2b_cobrokering: Mapped[bool] = mapped_column(Boolean, default=True)
     feature_social_brochure: Mapped[bool] = mapped_column(Boolean, default=True)
     feature_client_intake_bot: Mapped[bool] = mapped_column(Boolean, default=True)
+    feature_aged_listings: Mapped[bool] = mapped_column(Boolean, default=False)
+    addon_aged_listings_price: Mapped[float] = mapped_column(Float, default=0.0) # Optional add-on price in AZN
     backup_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

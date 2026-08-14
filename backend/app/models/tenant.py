@@ -29,12 +29,14 @@ class Tenant(Base):
     backup_frequency_days: Mapped[int] = mapped_column(default=7)  # 1 (daily) | 7 (weekly) | 30 (monthly)
     last_backup_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    # 🚀 Killer Feature Plan Options
+    # 🚀 Killer Feature Plan & Add-on Options
     feature_makler_detector: Mapped[bool] = mapped_column(default=False)
     feature_avm_bargain_finder: Mapped[bool] = mapped_column(default=False)
     feature_b2b_cobrokering: Mapped[bool] = mapped_column(default=False)
     feature_social_brochure: Mapped[bool] = mapped_column(default=False)
     feature_client_intake_bot: Mapped[bool] = mapped_column(default=False)
+    feature_aged_listings: Mapped[bool] = mapped_column(default=False)
+    addon_aged_max_months: Mapped[int] = mapped_column(default=12) # Max historical lookback limit in months (1-24)
 
     # 🎁 Referral System & Promo Code Reward Options
     referral_code: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True)
