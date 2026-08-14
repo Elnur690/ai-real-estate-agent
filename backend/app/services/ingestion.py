@@ -250,7 +250,7 @@ class IngestionService:
             score = await ai_provider.score_match(listing_dict, criteria)
 
             if score >= 0.60:
-                stmt_m = select(Match).where(Match.listing_id == listing.id, Match.saved_search_id == search.id)
+                stmt_m = select(Match).where(Match.listing_id == listing.id, Match.tenant_id == tenant.id)
                 res_m = await db.execute(stmt_m)
                 if res_m.scalars().first():
                     continue

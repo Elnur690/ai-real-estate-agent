@@ -15,7 +15,7 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
         return
 
     chat_id = str(update.effective_chat.id)
-    user_name = update.effective_user.first_name or update.effective_user.username or "Agent"
+    user_name = update.effective_user.username or update.effective_user.first_name or "Agent"
     raw_text = update.effective_message.text or ""
 
     async with AsyncSessionLocal() as db:
@@ -27,19 +27,29 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
             raw_text=raw_text
         )
 
-    await update.effective_message.reply_text(response_text, parse_mode="Markdown")
+    if response_text:
+        try:
+            await update.effective_message.reply_text(response_text, parse_mode="Markdown")
+        except Exception:
+            # Fallback to plain text if Markdown parser encounters unmatched characters
+            await update.effective_message.reply_text(response_text)
 
 
 async def send_telegram_notification(chat_id: str, message_text: str) -> bool:
-    """Send an async Telegram notification to an agent."""
+    """Send an async Telegram notification to an agent with markdown fallback resilience."""
     if not settings.TELEGRAM_BOT_TOKEN:
         logger.warning("[TelegramAdapter] TELEGRAM_BOT_TOKEN not configured.")
         return False
     try:
         from telegram import Bot
         bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
-        await bot.send_message(chat_id=chat_id, text=message_text, parse_mode="Markdown")
-        return True
+        try:
+            await bot.send_message(chat_id=chat_id, text=message_text, parse_mode="Markdown", disable_web_page_preview=True)
+            return True
+        except Exception as e:
+            logger.warning(f"[TelegramAdapter] Markdown parsing failed, retrying plain text: {e}")
+            await bot.send_message(chat_id=chat_id, text=message_text, disable_web_page_preview=True)
+            return True
     except Exception as e:
         logger.error(f"[TelegramAdapter] Failed to send notification to {chat_id}: {e}")
         return False

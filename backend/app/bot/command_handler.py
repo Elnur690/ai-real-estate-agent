@@ -19,7 +19,11 @@ async def get_app_name(db: AsyncSession) -> str:
     return val if val else "RealEstate AI Agent"
 
 CONFIRMATION_KEYWORDS = {
-    "az": ["təsdiq", "təsdiqlə", "tesdiq", "tesdiqle", "hə", "he", "bəli", "beli", "ok", "təmin et", "tamam", "yadda saxla"],
+    "az": [
+        "təsdiq", "təsdiqlə", "tesdiq", "tesdiqle", "hə", "he", "bəli", "beli", "ok", "təmin et", "tamam",
+        "yadda saxla", "aha", "super", "yarat", "tesdiq edirem", "təsdiq edirəm", "qeyd et", "qəbul", "qabul",
+        "razıyam", "raziyam", "bəli təsdiq edirəm", "he tesdiqle", "saxla"
+    ],
     "ru": ["подтверждаю", "подтвердить", "да", "ок", "сохранить", "принять"],
     "en": ["confirm", "yes", "save", "accept", "ok"]
 }
@@ -57,6 +61,17 @@ class BotCommandHandler:
             stmt = select(Tenant).where(Tenant.telegram_chat_id == sender_id)
             res = await db.execute(stmt)
             tenant = res.scalars().first()
+
+            if not tenant and sender_name:
+                clean_handle = sender_name.lstrip("@").lower()
+                stmt_h = select(Tenant).where(Tenant.telegram_handle.ilike(f"%{clean_handle}%"))
+                res_h = await db.execute(stmt_h)
+                matched_t = res_h.scalars().first()
+                if matched_t:
+                    matched_t.telegram_chat_id = sender_id
+                    await db.commit()
+                    tenant = matched_t
+
         elif channel == "whatsapp":
             # First try matching by instance_name (e.g. tenant_1 -> ID 1)
             if instance_name and instance_name.startswith("tenant_"):
@@ -74,7 +89,9 @@ class BotCommandHandler:
                 res_w = await db.execute(stmt_w)
                 all_w = res_w.scalars().all()
                 for t in all_w:
-                    if t.whatsapp_number and t.whatsapp_number.replace("+", "").replace(" ", "") in clean_sender:
+                    t_wa = (t.whatsapp_number or "").replace("+", "").replace(" ", "")
+                    t_ph = (t.phone or "").replace("+", "").replace(" ", "")
+                    if (t_wa and (t_wa in clean_sender or clean_sender in t_wa)) or (t_ph and (t_ph in clean_sender or clean_sender in t_ph)):
                         tenant = t
                         break
 
@@ -484,6 +501,18 @@ class BotCommandHandler:
         if min_r: summary_parts.append(f"Otaq: {min_r} otaqlı")
         if min_p or max_p: summary_parts.append(f"Qiymət: {int(min_p or 0):,}-{int(max_p or 0):,} AZN")
         summary_str = " | ".join(summary_parts) if summary_parts else raw_text
+
+        # Evaluate recent listings for instant match delivery
+        try:
+            from app.models.listing import Listing
+            from app.services.ingestion import IngestionService
+            stmt_rec = select(Listing).where(Listing.is_active == True).order_by(Listing.id.desc()).limit(30)
+            res_rec = await db.execute(stmt_rec)
+            recent_listings = res_rec.scalars().all()
+            for l in recent_listings:
+                await IngestionService._evaluate_and_deliver_matches(db, l)
+        except Exception as e:
+            logger.error(f"[CommandHandler] Error during instant match evaluation: {e}")
 
         return (
             f"✅ *Axtarışınız uğurla təsdiqləndi və yadda saxlanıldı!* (#{new_search.id})\n\n"
