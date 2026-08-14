@@ -75,6 +75,10 @@ services:
       - SECRET_KEY
       - ENCRYPTION_KEY
       - GEMINI_API_KEY
+      - TELEGRAM_BOT_TOKEN
+      - EVOLUTION_API_URL
+      - EVOLUTION_API_KEY
+      - EVOLUTION_INSTANCE_NAME
     volumes:
       - backup_data:/app/backups
     depends_on:

@@ -1,75 +1,82 @@
 import re
 import logging
 import httpx
+from bs4 import BeautifulSoup
 from typing import List
 from app.scrapers.base import BaseScraper, RawListingItem
-from app.scrapers.utils import get_random_headers, polite_delay
+from app.scrapers.utils import get_random_headers
+from app.core.baku_locations import extract_baku_district, extract_metro_station
 
 logger = logging.getLogger(__name__)
 
 class BinaAzScraper(BaseScraper):
-    async def scrape_source(self, url_or_handle: str = "https://bina.az/") -> List[RawListingItem]:
+    async def scrape_source(self, url_or_handle: str = "https://bina.az/items?leased=false&category_id=1&city_id=1") -> List[RawListingItem]:
         logger.info(f"[BinaAzScraper] Fetching listings from {url_or_handle}")
         items: List[RawListingItem] = []
 
-        try:
-            target_url = url_or_handle if "bina.az" in url_or_handle else "https://bina.az/"
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-                res = await client.get(target_url, headers=get_random_headers(referer="https://bina.az/"))
-                if res.status_code == 200:
-                    html = res.text
-                    # Extract unique item links, e.g., /items/6359443
-                    item_matches = list(set(re.findall(r'href="(/items/(\d+))"', html)))
-                    
-                    for link, ext_id in item_matches[:5]:
-                        item_url = f"https://bina.az{link}"
-                        try:
-                            await polite_delay(0.5, 1.5)
-                            item_res = await client.get(item_url, headers=get_random_headers(referer=target_url))
-                            if item_res.status_code == 200:
-                                item_html = item_res.text
-                                
-                                title_match = re.search(r'<h1[^>]*>(.*?)</h1>', item_html, re.DOTALL)
-                                price_match = re.search(r'([\d\s]+)\s*AZN', item_html)
-                                
-                                title = title_match.group(1).strip() if title_match else f"Mənzil #{ext_id}"
-                                price = float(price_match.group(1).replace(" ", "")) if price_match else 0.0
-                                
-                                rooms_match = re.search(r'(\d+)\s*otaqlı', title, re.IGNORECASE)
-                                area_match = re.search(r'([\d.]+)\s*m²', title, re.IGNORECASE)
-                                
-                                rooms = int(rooms_match.group(1)) if rooms_match else None
-                                area = float(area_match.group(1)) if area_match else None
-                                
-                                district = "Bakı"
-                                for d in ["Yasamal", "Nəsimi", "Xətai", "Nərimanov", "Binəqədi", "Sabunçu", "Suraxanı", "Səbail", "Nizami", "Xəzər", "Sumqayıt"]:
-                                    if d.lower() in title.lower() or d.lower() in item_html.lower():
-                                        district = d
-                                        break
-                                
-                                text_lower = item_html.lower()
-                                seller_type = "owner" if ("sahibindən" in text_lower or "sahibindan" in text_lower or "mülkiyyətçi" in text_lower or "mülkiyyətçidən" in text_lower or "ev sahibindən" in text_lower) else "agency"
-                                building_type = "new" if "yeni tikili" in title.lower() else ("old" if "köhnə tikili" in title.lower() else None)
+        # Ensure we hit the direct listings collection URL
+        target_url = "https://bina.az/items?leased=false&category_id=1&city_id=1" if ("alqi-satqi" in url_or_handle or url_or_handle.endswith("bina.az/")) else url_or_handle
 
-                                items.append(RawListingItem(
-                                    external_id=f"bina_{ext_id}",
-                                    title=title,
-                                    description=f"Bina.az mənzil elanı #{ext_id}: {title}",
-                                    price=price,
-                                    currency="AZN",
-                                    district=district,
-                                    address_raw=district,
-                                    rooms=rooms,
-                                    area_sqm=area,
-                                    building_type=building_type,
-                                    seller_type=seller_type,
-                                    photos=[],
-                                    listing_url=item_url
-                                ))
-                        except Exception as e_item:
-                            logger.error(f"[BinaAzScraper] Error fetching item {ext_id}: {e_item}")
+        try:
+            headers = get_random_headers(referer="https://bina.az/")
+            headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                res = await client.get(target_url, headers=headers)
+                if res.status_code == 200:
+                    soup = BeautifulSoup(res.text, "html.parser")
+                    cards = soup.find_all("div", class_=re.compile(r'items-i|items_i|card_item|item-card|vi_item'))
+                    seen = set()
+
+                    for c in cards:
+                        link = c.find("a", href=re.compile(r'/items/(\d+)'))
+                        if not link:
+                            continue
+                        href = link['href']
+                        m_id = re.search(r'/items/(\d+)', href)
+                        if not m_id:
+                            continue
+                        ext_id = m_id.group(1)
+                        if ext_id in seen:
+                            continue
+                        seen.add(ext_id)
+
+                        raw_text = c.get_text(separator=" | ", strip=True)
+                        # Text example: "165 000 | AZN | Zığ q. | 4 otaqlı | 158 m² | Bakı, dünən 15:39"
+                        price_m = re.search(r'([\d\s]+)\s*\|\s*AZN', raw_text) or re.search(r'([\d\s]+)\s*AZN', raw_text)
+                        price = float(price_m.group(1).replace(" ", "")) if price_m else 0.0
+
+                        rooms_m = re.search(r'(\d+)\s*otaqlı', raw_text)
+                        rooms = int(rooms_m.group(1)) if rooms_m else None
+                        area_m = re.search(r'([\d.]+)\s*m²', raw_text)
+                        area = float(area_m.group(1)) if area_m else (rooms * 35.0 if rooms else 60.0)
+
+                        district = extract_baku_district(raw_text) or "Bakı"
+                        metro = extract_metro_station(raw_text)
+
+                        seller_type = "agency" if "agentlik" in raw_text.lower() else "owner"
+                        bld_type = "new" if "yeni tikili" in raw_text.lower() else ("old" if "köhnə tikili" in raw_text.lower() else "new")
+
+                        title = f"{rooms or ''} otaqlı mənzil {int(price)} AZN ({district})" if rooms else f"Mənzil {int(price)} AZN ({district})"
+
+                        items.append(RawListingItem(
+                            external_id=f"bina_{ext_id}",
+                            title=title,
+                            description=f"Bina.az elanı: {raw_text}",
+                            price=price,
+                            currency="AZN",
+                            district=district,
+                            metro_station=metro,
+                            rooms=rooms,
+                            area_sqm=area,
+                            building_type=bld_type,
+                            seller_type=seller_type,
+                            listing_url=f"https://bina.az{href}"
+                        ))
+                        if len(items) >= 28:
+                            break
 
         except Exception as e:
             logger.error(f"[BinaAzScraper] Error scraping: {e}")
 
+        logger.info(f"[BinaAzScraper] Extracted {len(items)} listings.")
         return items

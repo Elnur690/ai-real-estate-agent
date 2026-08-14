@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS metro_station VARCHAR(255);"))
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS price_usd DOUBLE PRECISION;"))
         await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS trial_days INTEGER DEFAULT 7;"))
-        await conn.execute(text("DELETE FROM listings WHERE title LIKE 'İpotekalı mənzil%' OR external_id LIKE '%sample%' OR external_id LIKE '%ipoteka_%' OR area_sqm IS NULL OR area_sqm = 0;"))
+        await conn.execute(text("DELETE FROM listings WHERE external_id LIKE '%sample%';"))
     logger.info("[Startup] Database tables and columns verified.")
 
     # Auto-seed default admin user if none exists
@@ -83,6 +83,23 @@ async def lifespan(app: FastAPI):
     import asyncio
     from app.services.trial_tracker import TrialTrackerService
     asyncio.create_task(TrialTrackerService.start_background_tracker())
+
+    # Start background continuous scraper ingestion loop
+    async def _background_ingestion_loop():
+        from app.services.ingestion import IngestionService
+        from app.db.session import AsyncSessionLocal
+        logger.info("[Startup] Ingestion worker initialized. Running first scraping cycle in 10s...")
+        await asyncio.sleep(10)
+        while True:
+            try:
+                async with AsyncSessionLocal() as db:
+                    res = await IngestionService.run_ingestion_cycle(db)
+                    logger.info(f"[BackgroundIngestion] Scraping & matching cycle completed: {res}")
+            except Exception as e:
+                logger.error(f"[BackgroundIngestion] Error during ingestion cycle: {e}")
+            await asyncio.sleep(600) # Every 10 minutes
+
+    asyncio.create_task(_background_ingestion_loop())
 
     yield
 

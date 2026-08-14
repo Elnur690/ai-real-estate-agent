@@ -44,9 +44,9 @@ class IngestionService:
         if not sources or len(sources) < 17:
             existing_handles = {s.url_or_handle for s in sources}
             default_sources = [
-                ListingSource(type="website", name="Bina.az", url_or_handle="https://bina.az/", status="active"),
+                ListingSource(type="website", name="Bina.az", url_or_handle="https://bina.az/items?leased=false&category_id=1&city_id=1", status="active"),
                 ListingSource(type="website", name="Tap.az", url_or_handle="https://tap.az/elanlar/dasinmaz-emlak/menziller", status="active"),
-                ListingSource(type="website", name="YeniEmlak.az", url_or_handle="https://yeniemlak.az/", status="active"),
+                ListingSource(type="website", name="YeniEmlak.az", url_or_handle="https://yeniemlak.az/elan/axtar", status="active"),
                 ListingSource(type="website", name="EvOnline.az", url_or_handle="https://evonline.az/index.php", status="active"),
                 ListingSource(type="website", name="Ev10.az", url_or_handle="https://ev10.az/", status="active"),
                 ListingSource(type="website", name="VipEmlak.az", url_or_handle="https://vipemlak.az/", status="active"),
@@ -243,7 +243,7 @@ class IngestionService:
             }
             score = await ai_provider.score_match(listing_dict, criteria)
 
-            if score >= 0.65:
+            if score >= 0.60:
                 stmt_m = select(Match).where(Match.listing_id == listing.id, Match.saved_search_id == search.id)
                 res_m = await db.execute(stmt_m)
                 if res_m.scalars().first():
