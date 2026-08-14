@@ -10,6 +10,7 @@ import { AppSettingsView } from './components/AppSettingsView';
 import { ScrapersView } from './components/ScrapersView';
 
 import { BakuPropertyMap } from './components/BakuPropertyMap';
+import { AdminProfileModal } from './components/AdminProfileModal';
 import { MapPin } from 'lucide-react';
 
 export function App() {
@@ -17,6 +18,7 @@ export function App() {
   const [userName, setUserName] = useState<string>(() => localStorage.getItem('user_name') || 'Admin');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'tenants' | 'payments' | 'plans' | 'scrapers' | 'map' | 'settings'>('dashboard');
   const [appName, setAppName] = useState('RealEstate AI Agent');
+  const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
 
   useEffect(() => {
     const handleLogout = () => {
@@ -100,16 +102,31 @@ export function App() {
           </nav>
         </div>
 
-        <div className="pt-6 border-t border-slate-800 space-y-4">
-          <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span className="text-xs font-medium text-slate-300 truncate max-w-[120px]">{userName}</span>
-            </div>
+        <div className="pt-4 border-t border-slate-800 space-y-3">
+          <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-dark-900/80 border border-slate-800/80 hover:border-emerald-500/30 transition-all">
+            <button
+              onClick={() => setShowProfileModal(true)}
+              className="flex items-center gap-2.5 text-left flex-1 min-w-0 group"
+              title="Click to edit your admin profile & password"
+            >
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-emerald-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                {userName.charAt(0).toUpperCase()}
+              </div>
+              <div className="truncate min-w-0">
+                <div className="text-xs font-bold text-white group-hover:text-emerald-400 transition-colors truncate">
+                  {userName}
+                </div>
+                <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3 text-emerald-400 shrink-0" />
+                  <span>Admin Profile</span>
+                </div>
+              </div>
+            </button>
+
             <button
               onClick={handleLogout}
               title="Sign Out"
-              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors shrink-0"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -132,6 +149,13 @@ export function App() {
         {activeTab === 'map' && <BakuPropertyMap />}
         {activeTab === 'settings' && <AppSettingsView />}
       </main>
+
+      {/* Admin Profile Modal */}
+      <AdminProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        onProfileUpdated={(name) => setUserName(name)}
+      />
     </div>
   );
 }
