@@ -88,3 +88,106 @@ async def get_me(current_user: User = Depends(get_current_user)):
         "role": current_user.role,
         "tenant_id": current_user.tenant_id
     }
+
+
+class AdminUserResponse(BaseModel):
+    id: int
+    name: str
+    email: str
+    phone: str | None = None
+    role: str
+    created_at: datetime | None = None
+
+
+class CreateAdminRequest(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+    phone: str | None = None
+
+
+@router.get("/admins", response_model=list[AdminUserResponse])
+async def list_admins(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """List all platform administrators (Admin only)."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only administrators can manage admins.")
+
+    stmt = select(User).where(User.role == "admin").order_by(User.id.asc())
+    res = await db.execute(stmt)
+    admins = res.scalars().all()
+    return [
+        AdminUserResponse(
+            id=u.id,
+            name=u.name,
+            email=u.email,
+            phone=u.phone,
+            role=u.role,
+            created_at=u.created_at
+        ) for u in admins
+    ]
+
+
+@router.post("/admins", response_model=AdminUserResponse, status_code=status.HTTP_201_CREATED)
+async def create_admin(
+    body: CreateAdminRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Add a new platform administrator (Admin only)."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only administrators can add new admins.")
+
+    # Check if email is already taken
+    stmt = select(User).where(User.email == body.email.lower().strip())
+    res = await db.execute(stmt)
+    if res.scalars().first():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"User with email '{body.email}' already exists."
+        )
+
+    new_admin = User(
+        name=body.name.strip(),
+        email=body.email.lower().strip(),
+        phone=body.phone.strip() if body.phone else None,
+        role="admin",
+        password_hash=get_password_hash(body.password)
+    )
+    db.add(new_admin)
+    await db.commit()
+    await db.refresh(new_admin)
+
+    return AdminUserResponse(
+        id=new_admin.id,
+        name=new_admin.name,
+        email=new_admin.email,
+        phone=new_admin.phone,
+        role=new_admin.role,
+        created_at=new_admin.created_at
+    )
+
+
+@router.delete("/admins/{admin_id}")
+async def delete_admin(
+    admin_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Remove an administrator account."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only administrators can remove admins.")
+
+    if current_user.id == admin_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot delete your own admin account.")
+
+    stmt = select(User).where(User.id == admin_id, User.role == "admin")
+    res = await db.execute(stmt)
+    target_admin = res.scalars().first()
+
+    if not target_admin:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin user not found.")
+
+    await db.delete(target_admin)
+    await db.commit()
+    return {"message": f"Administrator '{target_admin.name}' has been successfully removed."}
+

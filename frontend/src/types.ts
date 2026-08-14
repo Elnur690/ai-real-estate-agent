@@ -89,3 +89,13 @@ export interface ScraperSource {
   last_scraped_at?: string;
   created_at: string;
 }
+
+export interface AdminUser {
+  id: number;
+  name: string;
+  email: string;
+  phone?: string;
+  role: string;
+  created_at?: string;
+}
+

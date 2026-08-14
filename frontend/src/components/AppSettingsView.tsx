@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Sliders, Save, CheckCircle, Cpu, Key, CheckCircle2, AlertTriangle, Play, History, Building2, SlidersHorizontal, Database } from 'lucide-react';
+import { Sliders, Save, CheckCircle, Cpu, Key, CheckCircle2, AlertTriangle, Play, History, Building2, SlidersHorizontal, Database, Users, Plus, Trash2, ShieldCheck, Mail, Phone, Lock } from 'lucide-react';
 import api from '../api';
-import { AIProviderConfigItem, AICallLogItem } from '../types';
+import { AIProviderConfigItem, AICallLogItem, AdminUser } from '../types';
 
 interface TaskType {
   key: string;
@@ -101,9 +101,9 @@ const AppSettingsAITaskCard: React.FC<AppSettingsAITaskCardProps> = ({ task, cfg
         <button
           type="button"
           onClick={() => onSave(task.key, selectedProvider, selectedModel, apiKeyInput)}
-          className="px-3 py-1.5 bg-gradient-to-r from-purple-500 to-teal-500 hover:from-purple-400 hover:to-teal-400 text-white rounded-lg text-xs font-semibold shadow-md"
+          className="text-xs font-semibold bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 px-3.5 py-1.5 rounded-xl flex items-center gap-1 transition-all"
         >
-          Save Config
+          <Save className="w-3 h-3" /> Save Config
         </button>
       </div>
     </div>
@@ -111,20 +111,23 @@ const AppSettingsAITaskCard: React.FC<AppSettingsAITaskCardProps> = ({ task, cfg
 };
 
 export const AppSettingsView: React.FC = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'branding' | 'ai' | 'automation'>('branding');
-
-  // App Branding State
-  const [settingsMap, setSettingsMap] = useState<Record<string, string>>({
-    app_name: 'RealEstate AI Agent',
-    support_phone: '+994501234567',
-    app_logo_url: '',
-    makler_threshold: '0.7',
-    cobrokering_default_split: '50'
-  });
-  const [brandingSaved, setBrandingSaved] = useState(false);
+  const [activeSubTab, setActiveSubTab] = useState<'branding' | 'ai' | 'automation' | 'admins'>('branding');
+  const [settingsMap, setSettingsMap] = useState<Record<string, string>>({});
   const [savingBranding, setSavingBranding] = useState(false);
+  const [brandingSaved, setBrandingSaved] = useState(false);
 
-  // AI Provider State
+  // Admin users state
+  const [admins, setAdmins] = useState<AdminUser[]>([]);
+  const [loadingAdmins, setLoadingAdmins] = useState(false);
+  const [showAddAdminModal, setShowAddAdminModal] = useState(false);
+  const [newAdminName, setNewAdminName] = useState('');
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [newAdminPhone, setNewAdminPhone] = useState('');
+  const [addingAdmin, setAddingAdmin] = useState(false);
+  const [adminError, setAdminError] = useState('');
+
+  // AI Provider state
   const [configs, setConfigs] = useState<AIProviderConfigItem[]>([]);
   const [callLogs, setCallLogs] = useState<AICallLogItem[]>([]);
   const [loadingAi, setLoadingAi] = useState(false);
@@ -148,6 +151,18 @@ export const AppSettingsView: React.FC = () => {
     }
   };
 
+  const loadAdmins = async () => {
+    setLoadingAdmins(true);
+    try {
+      const res = await api.get('/auth/admins');
+      setAdmins(res.data || []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingAdmins(false);
+    }
+  };
+
   const loadAiConfigs = async () => {
     setLoadingAi(true);
     try {
@@ -167,7 +182,42 @@ export const AppSettingsView: React.FC = () => {
   useEffect(() => {
     loadSettings();
     loadAiConfigs();
+    loadAdmins();
   }, []);
+
+  const handleCreateAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminError('');
+    setAddingAdmin(true);
+    try {
+      await api.post('/auth/admins', {
+        name: newAdminName,
+        email: newAdminEmail,
+        password: newAdminPassword,
+        phone: newAdminPhone || undefined
+      });
+      setShowAddAdminModal(false);
+      setNewAdminName('');
+      setNewAdminEmail('');
+      setNewAdminPassword('');
+      setNewAdminPhone('');
+      await loadAdmins();
+    } catch (e: any) {
+      setAdminError(e.response?.data?.detail || 'Failed to create administrator account.');
+    } finally {
+      setAddingAdmin(false);
+    }
+  };
+
+  const handleDeleteAdmin = async (adminId: number, adminName: string) => {
+    if (!window.confirm(`Are you sure you want to remove administrator "${adminName}"?`)) return;
+    try {
+      await api.delete(`/auth/admins/${adminId}`);
+      await loadAdmins();
+    } catch (e: any) {
+      alert(e.response?.data?.detail || 'Failed to remove administrator.');
+    }
+  };
 
   const handleSaveBranding = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -238,13 +288,13 @@ export const AppSettingsView: React.FC = () => {
             </div>
             <div>
               <h2 className="text-xl font-bold text-white tracking-tight">System Settings & Configurations</h2>
-              <p className="text-xs text-slate-400">Manage runtime app parameters, AI Provider models, keys & automation thresholds</p>
+              <p className="text-xs text-slate-400">Manage runtime app parameters, admin accounts, AI Provider models, and automation</p>
             </div>
           </div>
         </div>
 
         {/* Sub-Navigation Tabs */}
-        <div className="flex items-center gap-1 bg-dark-900/90 p-1.5 rounded-xl border border-slate-800 self-start sm:self-auto">
+        <div className="flex items-center gap-1 bg-dark-900/90 p-1.5 rounded-xl border border-slate-800 self-start sm:self-auto flex-wrap">
           <button
             onClick={() => setActiveSubTab('branding')}
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
@@ -255,6 +305,18 @@ export const AppSettingsView: React.FC = () => {
           >
             <Building2 className="w-3.5 h-3.5" />
             <span>App Branding & Info</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab('admins')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              activeSubTab === 'admins'
+                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>Admin Users ({admins.length})</span>
           </button>
 
           <button
@@ -481,6 +543,200 @@ export const AppSettingsView: React.FC = () => {
             </button>
           </div>
         </form>
+      )}
+
+      {/* SUB-TAB 4: Admin Users Management */}
+      {activeSubTab === 'admins' && (
+        <div className="space-y-4">
+          <div className="bg-dark-800/90 p-6 rounded-2xl border border-slate-800 shadow-xl space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-purple-400" />
+                  Platform Administrators ({admins.length})
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Manage accounts with full superadmin privileges to configure system rules, agents, plans, and AI integrations.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAdminError('');
+                  setShowAddAdminModal(true);
+                }}
+                className="flex items-center gap-2 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-purple-500/20"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Administrator</span>
+              </button>
+            </div>
+
+            {loadingAdmins ? (
+              <div className="py-12 text-center text-xs text-slate-500">Loading administrators...</div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {admins.map((adm) => (
+                  <div
+                    key={adm.id}
+                    className="p-4 rounded-xl bg-dark-900 border border-slate-800 hover:border-slate-700/80 transition-all flex items-start justify-between gap-3 shadow-md"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-300 font-bold text-xs">
+                          {adm.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                            {adm.name}
+                            <span className="text-[10px] px-2 py-0.2 rounded-full bg-purple-500/10 text-purple-400 font-mono font-semibold">
+                              Superadmin
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+                            <Mail className="w-3 h-3 text-slate-500" /> {adm.email}
+                          </div>
+                        </div>
+                      </div>
+
+                      {adm.phone && (
+                        <div className="text-[11px] text-slate-400 flex items-center gap-1 pl-10">
+                          <Phone className="w-3 h-3 text-slate-500" /> {adm.phone}
+                        </div>
+                      )}
+
+                      {adm.created_at && (
+                        <div className="text-[10px] text-slate-500 pl-10">
+                          Created: {new Date(adm.created_at).toLocaleDateString()}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteAdmin(adm.id, adm.name)}
+                      className="text-slate-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-red-500/10 transition-all"
+                      title="Remove Administrator"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+
+                {admins.length === 0 && (
+                  <div className="col-span-full py-8 text-center text-xs text-slate-500">
+                    No administrators found.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Add Administrator Modal */}
+      {showAddAdminModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-card w-full max-w-md p-6 rounded-2xl border border-slate-800 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-purple-400" />
+                Add New Administrator
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAddAdminModal(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                &times;
+              </button>
+            </div>
+
+            {adminError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{adminError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateAdmin} className="space-y-3 text-xs">
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Samir Mammadov"
+                  value={newAdminName}
+                  onChange={(e) => setNewAdminName(e.target.value)}
+                  className="w-full bg-dark-900 border border-slate-700/80 px-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">Email Address</label>
+                <div className="relative">
+                  <Mail className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500" />
+                  <input
+                    type="email"
+                    required
+                    placeholder="admin@estate.az"
+                    value={newAdminEmail}
+                    onChange={(e) => setNewAdminEmail(e.target.value)}
+                    className="w-full bg-dark-900 border border-slate-700/80 pl-9 pr-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">Password</label>
+                <div className="relative">
+                  <Lock className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500" />
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    placeholder="Minimum 6 characters"
+                    value={newAdminPassword}
+                    onChange={(e) => setNewAdminPassword(e.target.value)}
+                    className="w-full bg-dark-900 border border-slate-700/80 pl-9 pr-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">Phone Number (Optional)</label>
+                <div className="relative">
+                  <Phone className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500" />
+                  <input
+                    type="text"
+                    placeholder="+994501234567"
+                    value={newAdminPhone}
+                    onChange={(e) => setNewAdminPhone(e.target.value)}
+                    className="w-full bg-dark-900 border border-slate-700/80 pl-9 pr-3 py-2 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowAddAdminModal(false)}
+                  className="px-4 py-2 text-slate-400 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={addingAdmin}
+                  className="px-5 py-2 font-semibold bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-white rounded-xl flex items-center gap-1.5 shadow-lg shadow-purple-500/20 disabled:opacity-50"
+                >
+                  <span>{addingAdmin ? 'Creating...' : 'Create Administrator'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
