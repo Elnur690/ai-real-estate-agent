@@ -47,6 +47,8 @@ class Listing(Base):
 
     building_type: Mapped[str | None] = mapped_column(String(50), nullable=True)  # new | old
     seller_type: Mapped[str | None] = mapped_column(String(50), nullable=True)    # owner | agency
+    offer_type: Mapped[str] = mapped_column(String(50), default="sale")            # sale | rent | daily_rent
+    property_type: Mapped[str] = mapped_column(String(50), default="apartment")   # apartment | house | office | commercial | land
     photos: Mapped[list[Any] | None] = mapped_column(JSON, default=list)
 
     # 🚀 Killer Feature Analytics Fields

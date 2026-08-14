@@ -35,6 +35,8 @@ Return JSON ONLY with this exact schema:
   "max_rooms": integer or null,
   "min_area": number or null,
   "max_area": number or null,
+  "offer_type": "sale" | "rent" | "any",
+  "property_type": "apartment" | "house" | "office" | "commercial" | "land" | "any",
   "seller_type": "owner" | "agency" | "any",
   "building_type": "new" | "old" | "any",
   "summary_az": "Friendly confirmation sentence in Azerbaijani language summarizing criteria"
@@ -69,6 +71,11 @@ Return JSON ONLY with this exact schema:
                     data["max_price"] = round(data["max_price_usd"] * rate, 2)
                 if data.get("min_price_usd") and not data.get("min_price"):
                     data["min_price"] = round(data["min_price_usd"] * rate, 2)
+
+                if not data.get("offer_type"):
+                    data["offer_type"] = "rent" if any(k in raw_text.lower() for k in ["kirayə", "kiraye", "icarə", "icare", "arenda", "aylıq"]) else "sale"
+                if not data.get("property_type"):
+                    data["property_type"] = "office" if "ofis" in raw_text.lower() else ("commercial" if any(k in raw_text.lower() for k in ["obyekt", "mağaza", "kafe"]) else "apartment")
 
                 return StructuredCriteria(**data)
             except Exception as e:
@@ -128,6 +135,22 @@ Return JSON ONLY with this exact schema:
             else:
                 max_price = float(p)
 
+        # Offer / Deal Type
+        offer_type = "sale"
+        if any(k in text_lower for k in ["kirayə", "kiraye", "icarə", "icare", "arenda", "aylıq", "ayliq", "günlük"]):
+            offer_type = "rent"
+
+        # Property Type
+        property_type = "apartment"
+        if any(k in text_lower for k in ["ofis", "ofisə", "ofislər", "ofis kimi"]):
+            property_type = "office"
+        elif any(k in text_lower for k in ["obyekt", "mağaza", "magaza", "restoran", "kafe", "anbar", "qeyri-yaşayış"]):
+            property_type = "commercial"
+        elif any(k in text_lower for k in ["həyət evi", "heyet evi", "bağ evi", "bag evi", "villa"]):
+            property_type = "house"
+        elif any(k in text_lower for k in ["torpaq", "sot", "hektar"]):
+            property_type = "land"
+
         # Seller type
         seller_type = "any"
         if "sahibindən" in text_lower or "ev sahibindən" in text_lower or "sahibi" in text_lower:
@@ -149,6 +172,11 @@ Return JSON ONLY with this exact schema:
             summary_parts.append(f"{found_metro} m/st yaxınlığında")
         if min_rooms:
             summary_parts.append(f"{min_rooms} otaqlı")
+        
+        prop_label = {"office": "ofis", "commercial": "obyekt", "house": "həyət evi/villa", "land": "torpaq"}.get(property_type, "mənzil")
+        deal_label = "kirayə" if offer_type == "rent" else "satış"
+        summary_parts.append(f"{deal_label} üçün {prop_label}")
+
         if max_price_usd:
             summary_parts.append(f"maksimum ${int(max_price_usd):,} USD ({int(max_price):,} AZN) qiymətinə")
         elif max_price:
@@ -171,6 +199,8 @@ Return JSON ONLY with this exact schema:
             max_price_usd=max_price_usd,
             min_rooms=min_rooms,
             max_rooms=max_rooms,
+            offer_type=offer_type,
+            property_type=property_type,
             seller_type=seller_type,
             building_type=building_type,
             summary_az=summary_az

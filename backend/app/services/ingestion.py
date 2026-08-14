@@ -172,6 +172,8 @@ class IngestionService:
                             total_floors=item.total_floors,
                             building_type=item.building_type,
                             seller_type=item.seller_type,
+                            offer_type=getattr(item, 'offer_type', 'sale') or 'sale',
+                            property_type=getattr(item, 'property_type', 'apartment') or 'apartment',
                             photos=item.photos,
                             listing_url=item.listing_url,
                             is_active=True
@@ -180,7 +182,7 @@ class IngestionService:
                         await db.commit()
                         await db.refresh(db_listing)
 
-                        # Run Makler Detector (First-posting & makler scoring)
+                        # Run Makler Detector (First-posting & makler scoring & classifier)
                         from app.services.makler_detector import MaklerDetectorService
                         from app.services.avm_engine import AVMEngineService
 
@@ -209,6 +211,8 @@ class IngestionService:
     def is_strict_match(search: SavedSearch, listing: Listing) -> bool:
         """
         Enforces strict hard filtering for saved search parameters:
+        - Offer / Deal Type (sale vs rent)
+        - Property Type (apartment vs house vs office vs commercial vs land)
         - Seller Type (owner vs agent)
         - Price limits (min / max)
         - Room count (min / max)
@@ -216,23 +220,74 @@ class IngestionService:
         - Metro Station
         - Building Type (new / old)
         """
-        # 1. Seller Type Filtering
+        from app.core.property_classifier import (
+            AGENCY_KEYWORDS, OWNER_KEYWORDS, COMMISSION_REGEX,
+            RENTAL_KEYWORDS, SALE_KEYWORDS
+        )
+
+        listing_text = f"{listing.title or ''} {listing.description or ''} {listing.address_raw or ''}".lower()
+
+        # 1. Offer / Deal Type Check (Sale vs Rent)
+        search_offer = (getattr(search, 'offer_type', 'sale') or 'sale').lower().strip()
+        list_offer = (getattr(listing, 'offer_type', 'sale') or 'sale').lower().strip()
+
+        if search_offer != "any":
+            if search_offer == "sale":
+                # Must not be a rental listing
+                if list_offer in ["rent", "daily_rent"]:
+                    return False
+                if any(kw in listing_text for kw in ["kirayəyə verilir", "icarəyə verilir", "kiraye verilir", "icareye verilir", "arendaya verilir", "aylıq kirayə", "ayliq kiraye", "aylıq icarə", "ayliq icare", "kirayə verilir"]):
+                    return False
+            elif search_offer in ["rent", "kiraye", "kirayə", "icarə", "icare"]:
+                # Must be a rental listing
+                if list_offer == "sale" and not any(kw in listing_text for kw in RENTAL_KEYWORDS):
+                    return False
+
+        # 2. Property Type Check (Apartment vs House vs Office vs Commercial vs Land)
+        search_prop = (getattr(search, 'property_type', 'apartment') or 'apartment').lower().strip()
+        list_prop = (getattr(listing, 'property_type', 'apartment') or 'apartment').lower().strip()
+
+        if search_prop != "any":
+            if search_prop in ["apartment", "menzil", "mənzil"]:
+                # Reject commercial, office, land, or standalone houses
+                if list_prop in ["office", "commercial", "land"]:
+                    return False
+                if any(k in listing_text for k in ["ofis kimi", "ofis icarə", "ofis üçün", "biznes mərkəzi", "plazada ofis", "ofisdir", "ofis satılır", "ofis kirayə"]):
+                    return False
+                if any(k in listing_text for k in ["obyekt kimi", "qeyri-yaşayış", "qeyri yasayis", "anbar satılır", "istehsalat sahəsi"]):
+                    return False
+            elif search_prop in ["office", "ofis"]:
+                if list_prop not in ["office", "commercial"]:
+                    return False
+            elif search_prop in ["house", "villa", "həyət evi", "heyet evi", "bağ evi", "bag evi"]:
+                if list_prop not in ["house"]:
+                    return False
+            elif search_prop in ["commercial", "obyekt"]:
+                if list_prop not in ["commercial", "office"]:
+                    return False
+            elif search_prop in ["land", "torpaq"]:
+                if list_prop not in ["land"]:
+                    return False
+
+        # 3. Seller Type Filtering
         search_seller = (search.seller_type or "any").lower().strip()
         if search_seller in ["owner", "sahibinden", "sahibindən"]:
-            # Hard rejection if listing is marked as agency, makler, or high makler score
+            # Hard rejection if listing is marked as agency, makler, or has makler signals
             if listing.seller_type in ["agent", "agency", "makler", "vasiteci", "vasitəçi", "rieltor"]:
                 return False
             if getattr(listing, 'is_makler', False):
                 return False
-            if (listing.makler_score or 0.0) >= 0.40:
+            if (listing.makler_score or 0.0) >= 0.30:
                 return False
             if listing.seller_type != "owner":
+                return False
+            if any(kw in listing_text for kw in AGENCY_KEYWORDS) or bool(COMMISSION_REGEX.search(listing_text)):
                 return False
         elif search_seller in ["agent", "agency", "makler"]:
             if listing.seller_type == "owner" and not getattr(listing, 'is_makler', False):
                 return False
 
-        # 2. Price Limits
+        # 4. Price Limits
         if search.min_price and search.min_price > 0:
             if listing.price and listing.price < search.min_price:
                 return False
@@ -240,7 +295,7 @@ class IngestionService:
             if listing.price and listing.price > search.max_price:
                 return False
 
-        # 3. Room Count
+        # 5. Room Count
         if search.min_rooms and search.min_rooms > 0:
             if listing.rooms and listing.rooms < search.min_rooms:
                 return False
@@ -248,7 +303,7 @@ class IngestionService:
             if listing.rooms and listing.rooms > search.max_rooms:
                 return False
 
-        # 4. Multi-Location (District and Metro Stations) Check
+        # 6. Multi-Location (District and Metro Stations) Check
         from app.core.baku_locations import BAKU_METRO_STATIONS, BAKU_DISTRICTS
 
         target_districts = []
@@ -264,25 +319,25 @@ class IngestionService:
         all_target_locations = list(dict.fromkeys(target_districts + target_metros))
 
         if all_target_locations:
-            list_text = f"{listing.district or ''} {listing.metro_station or ''} {listing.address_raw or ''} {listing.title or ''} {listing.description or ''}".lower()
+            list_text_loc = f"{listing.district or ''} {listing.metro_station or ''} {listing.address_raw or ''} {listing.title or ''} {listing.description or ''}".lower()
             
             matched_loc = False
             for loc in all_target_locations:
                 loc_lower = loc.lower()
                 # Direct string match
-                if loc_lower in list_text:
+                if loc_lower in list_text_loc:
                     matched_loc = True
                     break
                 # Station and District alias matches
                 aliases = BAKU_METRO_STATIONS.get(loc, []) + BAKU_DISTRICTS.get(loc, [])
-                if any(alias in list_text for alias in aliases):
+                if any(alias in list_text_loc for alias in aliases):
                     matched_loc = True
                     break
 
             if not matched_loc:
                 return False
 
-        # 6. Building Type
+        # 7. Building Type
         search_bld = (search.building_type or "any").lower().strip()
         if search_bld in ["new", "yeni", "yeni tikili"]:
             if listing.building_type and listing.building_type in ["old", "köhnə"]:
@@ -322,7 +377,9 @@ class IngestionService:
                 min_rooms=search.min_rooms,
                 max_rooms=search.max_rooms,
                 seller_type=search.seller_type or "any",
-                building_type=search.building_type or "any"
+                building_type=search.building_type or "any",
+                offer_type=getattr(search, 'offer_type', 'sale') or 'sale',
+                property_type=getattr(search, 'property_type', 'apartment') or 'apartment'
             )
 
             ai_provider = await ProviderFactory.get_provider(db, task_type="match_scoring", tenant_id=tenant.id)
@@ -334,7 +391,9 @@ class IngestionService:
                 "address_raw": listing.address_raw,
                 "description": listing.description,
                 "rooms": listing.rooms,
-                "seller_type": listing.seller_type
+                "seller_type": listing.seller_type,
+                "offer_type": getattr(listing, 'offer_type', 'sale') or 'sale',
+                "property_type": getattr(listing, 'property_type', 'apartment') or 'apartment'
             }
             score = await ai_provider.score_match(listing_dict, criteria)
 
@@ -361,6 +420,16 @@ class IngestionService:
                 seller_str = "Ev Sahibindən" if listing.seller_type == "owner" else "Vasitəçidən/Agentlikdən"
                 bld_str = "Yeni tikili" if listing.building_type == "new" else ("Köhnə tikili" if listing.building_type == "old" else "")
 
+                deal_label = "İcarə / Kirayə" if getattr(listing, 'offer_type', 'sale') == 'rent' else "Satış"
+                prop_map = {
+                    "apartment": "Mənzil",
+                    "house": "Həyət evi / Villa",
+                    "office": "Ofis",
+                    "commercial": "Obyekt / Qeyri-yaşayış",
+                    "land": "Torpaq sahəsi"
+                }
+                prop_label = prop_map.get(getattr(listing, 'property_type', 'apartment'), "Mənzil")
+
                 # Killer Feature Notification Tags
                 bargain_tag = f"\n🔥 *TƏCİLİ FÜRSƏT ELAN! ({abs(listing.bargain_percentage)}% Bazar Qiymətindən Aşağı)*" if (listing.bargain_percentage and listing.bargain_percentage <= -10.0) else ""
                 
@@ -383,11 +452,12 @@ class IngestionService:
                     f"🔥 *YENİ UYĞUN ELAN! ({app_name})*\n"
                     f"🎯 *Uyğunluq:* %{int(score * 100)}{bargain_tag}{first_post_tag}{makler_tag}\n\n"
                     f"🏠 *{listing.title}*\n"
+                    f"🏷️ *Növ / Əməliyyat:* {prop_label} ({deal_label})\n"
                     f"💰 *Qiymət:* {int(listing.price)} {listing.currency}" + (f" ({int(listing.price_per_sqm)} AZN/m²)" if listing.price_per_sqm else "") + "\n"
                     f"📍 *Məkan:* {listing.district or listing.address_raw or 'Bakı'}\n"
                     f"📐 *Otaq / Sahə:* {listing.rooms or '-'} otaqlı | {listing.area_sqm or '-'} m²\n"
-                    f"👤 *Satıcı:* {seller_str}\n"
-                    f"🏢 *Bina:* {bld_str}\n\n"
+                    f"👤 *Satıcı:* {seller_str}\n" +
+                    (f"🏢 *Bina:* {bld_str}\n\n" if bld_str else "\n") +
                     f"{contact_line}\n"
                     f"🔗 [Elana keçid et]({listing.listing_url})\n\n"
                     f"💬 *Reaksiya bildirin:*\n"

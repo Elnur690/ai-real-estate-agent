@@ -15,36 +15,40 @@ class MaklerDetectorService:
         1. First-Posting Verification: Checks if the exact same property was posted earlier by an agency/other user.
         2. Makler Disguise Score (0.0 to 1.0): Evaluates seller authenticity.
         """
-        text_lower = f"{listing.title or ''} {listing.description or ''} {listing.address_raw or ''}".lower()
+        from app.core.property_classifier import classify_property_and_offer, AGENCY_KEYWORDS, OWNER_KEYWORDS, COMMISSION_REGEX
+
+        text_lower = f"{listing.title or ''} {listing.description or ''} {listing.address_raw or ''} {listing.listing_url or ''}".lower()
         score = 0.0
 
-        # Strong Agent / Makler Keyword Signals
-        agency_keywords = [
-            "agentlik", "ofis haqqı", "ofis haqqi", "xidmət haqqı", "xidmet haqqi",
-            "komissiya", "makler", "vasitəçi", "vasiteci", "rieltor", "realtor",
-            "əmlak ofisi", "emlak ofisi", "daşınmaz əmlak", "dasinmaz emlak",
-            "şirkət", "sirket", "1% ofis", "1% xidmət", "1% xidmet", "2% ofis",
-            "2% xidmət", "2% xidmet", "ofis haqq", "xidmet haqq", "ofis faizi", "faizlə"
-        ]
+        # Run Property, Offer, and Seller classifier
+        detected_offer, detected_prop, detected_seller = classify_property_and_offer(
+            title=listing.title or "",
+            description=listing.description or "",
+            url=listing.listing_url or "",
+            raw_text=text_lower
+        )
 
-        # Strong Owner Signals
-        owner_keywords = [
-            "sahibindən", "sahibinden", "mülkiyyətçidən", "mulkiyyetciden",
-            "öz evimdir", "oz evimdir", "öz mənzilimdir", "oz menzilimdir",
-            "vasitəçisiz", "vasitecisiz"
-        ]
+        listing.offer_type = detected_offer
+        listing.property_type = detected_prop
 
-        has_agency_kw = any(kw in text_lower for kw in agency_keywords)
-        has_owner_kw = any(kw in text_lower for kw in owner_keywords)
+        has_agency_kw = any(kw in text_lower for kw in AGENCY_KEYWORDS) or bool(COMMISSION_REGEX.search(text_lower))
+        has_owner_kw = any(kw in text_lower for kw in OWNER_KEYWORDS)
 
-        if has_agency_kw:
+        # Agency / Broker signals strictly take precedence over "sahibindən"
+        if has_agency_kw or detected_seller == "agency":
             score = 1.0
             listing.seller_type = "agency"
             listing.is_makler = True
-        elif has_owner_kw:
+            listing.makler_score = 1.0
+        elif has_owner_kw and not has_agency_kw:
             score = 0.0
             listing.seller_type = "owner"
             listing.is_makler = False
+            listing.makler_score = 0.0
+        else:
+            listing.seller_type = detected_seller
+            listing.is_makler = (detected_seller == "agency")
+            listing.makler_score = 1.0 if (detected_seller == "agency") else 0.0
 
         # First-Posting History Analysis
         if listing.district and listing.rooms and listing.area_sqm:

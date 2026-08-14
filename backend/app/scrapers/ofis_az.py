@@ -51,6 +51,14 @@ class OfisAzScraper(BaseScraper):
 
                         title = f"{rooms or ''} otaqlı ofis/obyekt {int(price)} AZN ({district})" if rooms else f"Əmlak {int(price)} AZN ({district})"
 
+                        from app.core.property_classifier import classify_property_and_offer
+                        detected_offer, detected_prop, detected_seller = classify_property_and_offer(
+                            title=title,
+                            description=raw_text,
+                            url=href,
+                            raw_text=raw_text
+                        )
+
                         items.append(RawListingItem(
                             external_id=f"ofis_{ext_id}",
                             title=title,
@@ -63,6 +71,8 @@ class OfisAzScraper(BaseScraper):
                             area_sqm=area,
                             building_type="new",
                             seller_type="agency",
+                            offer_type=detected_offer,
+                            property_type="office",
                             listing_url=f"https://ofis.az{href}"
                         ))
                         if len(items) >= 25:

@@ -18,6 +18,8 @@ class RawListingItem(BaseModel):
     total_floors: Optional[int] = None
     building_type: Optional[str] = None # new | old
     seller_type: Optional[str] = None   # owner | agency
+    offer_type: Optional[str] = "sale"  # sale | rent | daily_rent
+    property_type: Optional[str] = "apartment" # apartment | house | office | commercial | land
     photos: List[str] = Field(default_factory=list)
     listing_url: str
 

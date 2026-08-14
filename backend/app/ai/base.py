@@ -16,6 +16,8 @@ class StructuredCriteria(BaseModel):
     max_area: Optional[float] = Field(None, description="Maximum area in sqm")
     seller_type: str = Field("any", description="owner | agency | any")
     building_type: str = Field("any", description="new | old | any")
+    offer_type: str = Field("sale", description="sale | rent | any")
+    property_type: str = Field("apartment", description="apartment | house | office | commercial | land | any")
     summary_az: str = Field("", description="Azerbaijani summary of criteria for confirmation message")
 
 
@@ -33,6 +35,8 @@ class StructuredListing(BaseModel):
     total_floors: Optional[int] = None
     building_type: Optional[str] = None
     seller_type: Optional[str] = None
+    offer_type: Optional[str] = "sale"
+    property_type: Optional[str] = "apartment"
     photos: List[str] = Field(default_factory=list)
 
 

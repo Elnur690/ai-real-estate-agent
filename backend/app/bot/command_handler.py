@@ -372,9 +372,22 @@ class BotCommandHandler:
         max_r = draft.get("max_rooms")
         seller = draft.get("seller_type", "any")
         bld = draft.get("building_type", "any")
+        offer = draft.get("offer_type", "sale")
+        prop = draft.get("property_type", "apartment")
 
         set_fields = []
         missing_fields = []
+
+        # Deal / Property Type
+        deal_tr = "İcarə / Kirayə" if offer == "rent" else "Satış"
+        prop_tr = {
+            "apartment": "Mənzil",
+            "house": "Həyət evi / Villa",
+            "office": "Ofis",
+            "commercial": "Obyekt",
+            "land": "Torpaq"
+        }.get(prop, "Mənzil")
+        set_fields.append(f"• 🏷️ *Növ / Əməliyyat:* {prop_tr} ({deal_tr})")
 
         if district:
             set_fields.append(f"• 📍 *Rayon(lar):* {district}")
@@ -402,12 +415,13 @@ class BotCommandHandler:
         elif min_r or max_r:
             set_fields.append(f"• 🚪 *Otaq sayı:* {min_r or 1} - {max_r or 5} otaqlı")
         else:
-            missing_fields.append("🚪 *Otaq sayı* (məsələn: 3 otaqlı)")
+            if prop == "apartment":
+                missing_fields.append("🚪 *Otaq sayı* (məsələn: 3 otaqlı)")
 
         if bld != "any":
             bld_tr = "Yeni tikili" if bld == "new" else "Köhnə tikili"
             set_fields.append(f"• 🏢 *Bina növü:* {bld_tr}")
-        else:
+        elif prop == "apartment":
             missing_fields.append("🏢 *Bina növü* (Yeni tikili / Köhnə tikili)")
 
         if seller != "any":
@@ -462,6 +476,8 @@ class BotCommandHandler:
         max_r = draft.get("max_rooms")
         seller = draft.get("seller_type", "any")
         bld = draft.get("building_type", "any")
+        offer = draft.get("offer_type", "sale")
+        prop = draft.get("property_type", "apartment")
 
         name_loc = district or metro_station or 'Ümumi'
         new_search = SavedSearch(
@@ -476,6 +492,8 @@ class BotCommandHandler:
             max_rooms=max_r,
             seller_type=seller,
             building_type=bld,
+            offer_type=offer,
+            property_type=prop,
             is_active=True
         )
         db.add(new_search)
