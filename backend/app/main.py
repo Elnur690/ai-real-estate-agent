@@ -90,7 +90,7 @@ async def lifespan(app: FastAPI):
         from app.services.ingestion import IngestionService
         from app.db.session import AsyncSessionLocal
         logger.info("[Startup] Ingestion worker initialized. Running first scraping cycle in 10s...")
-        await asyncio.sleep(10)
+        await asyncio.sleep(5)
         while True:
             try:
                 async with AsyncSessionLocal() as db:
@@ -98,7 +98,7 @@ async def lifespan(app: FastAPI):
                     logger.info(f"[BackgroundIngestion] Scraping & matching cycle completed: {res}")
             except Exception as e:
                 logger.error(f"[BackgroundIngestion] Error during ingestion cycle: {e}")
-            await asyncio.sleep(600) # Every 10 minutes
+            await asyncio.sleep(90) # Real-time: Every 90 seconds
 
     asyncio.create_task(_background_ingestion_loop())
 

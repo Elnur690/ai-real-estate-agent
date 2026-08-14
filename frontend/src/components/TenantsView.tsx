@@ -332,6 +332,17 @@ export const TenantsView: React.FC = () => {
     t.phone.includes(searchTerm)
   );
 
+  const handleDeleteSavedSearch = async (tenantId: number, searchId: number) => {
+    if (!confirm('Are you sure you want to delete this saved search?')) return;
+    try {
+      await api.delete(`/tenants/${tenantId}/saved-searches/${searchId}`);
+      handleSelectTenant(tenantId);
+    } catch (e) {
+      console.error(e);
+      alert('Failed to delete saved search.');
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header & Controls */}
@@ -1076,16 +1087,25 @@ export const TenantsView: React.FC = () => {
               <h4 className="text-sm font-semibold text-slate-200 mb-2">Saved Search Criteria ({selectedTenant.saved_searches.length})</h4>
               <div className="space-y-2">
                 {selectedTenant.saved_searches.map(s => (
-                  <div key={s.id} className="p-3 rounded-xl bg-dark-800 border border-slate-700/50 text-xs space-y-1">
-                    <div className="font-medium text-emerald-400">#{s.id} {s.name}</div>
-                    <div className="text-slate-300">{s.raw_criteria_text}</div>
-                    <div className="text-slate-500">
-                      District: {s.district || 'Any'} | Price: {s.min_price || 0}-{s.max_price || 'Any'} AZN
+                  <div key={s.id} className="p-3 rounded-xl bg-dark-800 border border-slate-700/50 text-xs flex items-center justify-between">
+                    <div className="space-y-1">
+                      <div className="font-medium text-emerald-400">#{s.id} {s.name}</div>
+                      <div className="text-slate-300">{s.raw_criteria_text}</div>
+                      <div className="text-slate-500">
+                        District: {s.district || 'Any'} | Price: {s.min_price || 0}-{s.max_price || 'Any'} AZN
+                      </div>
                     </div>
+                    <button
+                      onClick={() => handleDeleteSavedSearch(selectedTenant.tenant.id, s.id)}
+                      className="text-red-400 hover:text-red-300 p-1.5 rounded-lg hover:bg-red-500/10 ml-2 shrink-0"
+                      title="Delete Saved Search"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 ))}
                 {selectedTenant.saved_searches.length === 0 && (
-                  <div className="text-xs text-slate-500 italic">No saved search criteria set yet.</div>
+                  <div className="text-xs text-slate-500 italic">No active saved search criteria set.</div>
                 )}
               </div>
             </div>

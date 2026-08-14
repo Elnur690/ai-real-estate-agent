@@ -136,7 +136,7 @@ async def get_tenant_detail(tenant_id: int, db: AsyncSession = Depends(get_db), 
         raise HTTPException(status_code=404, detail="Tenant not found")
     
     # Get active saved searches count
-    stmt_s = select(SavedSearch).where(SavedSearch.tenant_id == tenant_id)
+    stmt_s = select(SavedSearch).where(SavedSearch.tenant_id == tenant_id, SavedSearch.is_active == True)
     res_s = await db.execute(stmt_s)
     searches = res_s.scalars().all()
 
@@ -144,6 +144,14 @@ async def get_tenant_detail(tenant_id: int, db: AsyncSession = Depends(get_db), 
         "tenant": TenantResponse.model_validate(tenant),
         "saved_searches": searches
     }
+
+@router.delete("/{tenant_id}/saved-searches/{search_id}")
+async def delete_saved_search(tenant_id: int, search_id: int, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
+    from sqlalchemy import update
+    stmt = update(SavedSearch).where(SavedSearch.id == search_id, SavedSearch.tenant_id == tenant_id).values(is_active=False)
+    await db.execute(stmt)
+    await db.commit()
+    return {"status": "deleted", "search_id": search_id}
 
 @router.patch("/{tenant_id}", response_model=TenantResponse)
 async def update_tenant(tenant_id: int, body: UpdateTenantRequest, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
