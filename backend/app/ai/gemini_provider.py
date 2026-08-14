@@ -243,41 +243,74 @@ Return JSON ONLY:
 
     async def score_match(self, listing: Dict[str, Any], criteria: StructuredCriteria) -> float:
         """
-        Calculate match relevance score (0.0 - 1.0).
+        Calculate match relevance score (0.0 - 1.0) with strict location and criteria enforcement.
         """
         score = 1.0
 
-        # Price check
+        # 1. Price check (Hard penalty for major out-of-budget)
         price = listing.get("price", 0)
         if criteria.min_price and price < criteria.min_price:
-            score -= 0.4
+            if price < criteria.min_price * 0.8:
+                return 0.0
+            score -= 0.35
         if criteria.max_price and price > criteria.max_price:
-            score -= 0.5
+            if price > criteria.max_price * 1.15:
+                return 0.0
+            score -= 0.45
 
-        # District check
-        if criteria.district:
-            listing_district = (listing.get("district") or "").lower()
-            if criteria.district.lower() not in listing_district:
-                score -= 0.3
-
-        # Metro station check
+        # 2. Strict Metro Station Check
         if criteria.metro_station:
-            listing_metro = (listing.get("metro_station") or listing.get("address_raw") or listing.get("description") or "").lower()
-            if criteria.metro_station.lower() in listing_metro:
-                score += 0.1 # Boost score if exact metro matches!
+            from app.core.baku_locations import BAKU_METRO_STATIONS, extract_metro_station
+            target_metro = criteria.metro_station.lower()
+            listing_metro = (listing.get("metro_station") or "").lower()
+            listing_full_text = f"{listing.get('title') or ''} {listing.get('address_raw') or ''} {listing.get('description') or ''} {listing_metro}".lower()
+            
+            aliases = [target_metro] + [a.lower() for a in BAKU_METRO_STATIONS.get(criteria.metro_station, [])]
+            metro_matched = any(alias in listing_full_text for alias in aliases)
+            
+            if metro_matched:
+                score += 0.1
             else:
-                score -= 0.2
+                extracted_other_metro = extract_metro_station(listing_full_text)
+                if extracted_other_metro and extracted_other_metro.lower() != target_metro:
+                    return 0.0 # Hard rejection: listing is explicitly at another metro station
+                else:
+                    score -= 0.55 # Strict penalty if target metro is missing
 
-        # Rooms check
+        # 3. Strict District Check
+        if criteria.district:
+            from app.core.baku_locations import BAKU_DISTRICTS, extract_baku_district
+            target_district = criteria.district.lower()
+            listing_district = (listing.get("district") or "").lower()
+            listing_full_text = f"{listing.get('title') or ''} {listing.get('address_raw') or ''} {listing.get('description') or ''} {listing_district}".lower()
+            
+            district_aliases = [target_district] + [a.lower() for a in BAKU_DISTRICTS.get(criteria.district, [])]
+            district_matched = any(alias in listing_full_text for alias in district_aliases)
+            
+            if district_matched:
+                pass
+            else:
+                extracted_other_district = extract_baku_district(listing_full_text)
+                if extracted_other_district and extracted_other_district.lower() != target_district:
+                    return 0.0 # Hard rejection: listing is explicitly in a different district
+                else:
+                    score -= 0.5 # Strict penalty for missing requested district
+
+        # 4. Rooms check
         rooms = listing.get("rooms")
         if rooms and criteria.min_rooms and rooms < criteria.min_rooms:
-            score -= 0.3
+            score -= 0.4
         if rooms and criteria.max_rooms and rooms > criteria.max_rooms:
-            score -= 0.3
+            score -= 0.4
 
-        # Seller type check
-        if criteria.seller_type != "any" and listing.get("seller_type"):
+        # 5. Seller type check
+        if criteria.seller_type and criteria.seller_type != "any" and listing.get("seller_type"):
             if criteria.seller_type != listing.get("seller_type"):
-                score -= 0.2
+                score -= 0.3
+
+        # 6. Building type check
+        if criteria.building_type and criteria.building_type != "any" and listing.get("building_type"):
+            if criteria.building_type != listing.get("building_type"):
+                score -= 0.25
 
         return max(0.0, min(1.0, round(score, 2)))
