@@ -19,93 +19,99 @@ class B2BService:
         """
         Evaluates an exclusive property submitted by Agent B against active saved searches of Agent A.
         Creates B2BMatch records and notifies both agents for 50/50 commission co-brokering.
+        Only applies to agent-submitted listings (external_id starts with 'agent_').
         """
-        if not listing.source_id:
+        if not listing.source_id or not (listing.external_id and listing.external_id.startswith("agent_")):
             return 0
 
-        from app.models.plan import Plan
+        try:
+            from app.models.plan import Plan
 
-        # Check seller tenant and their plan B2B permission in real-time
-        stmt_s = select(Tenant).where(Tenant.id == listing.source_id)
-        res_s = await db.execute(stmt_s)
-        seller = res_s.scalars().first()
-        if not seller or seller.status != "active":
-            return 0
+            # Check seller tenant and their plan B2B permission in real-time
+            stmt_s = select(Tenant).where(Tenant.id == listing.source_id)
+            res_s = await db.execute(stmt_s)
+            seller = res_s.scalars().first()
+            if not seller or seller.status != "active":
+                return 0
 
-        stmt_sp = select(Plan).where(Plan.code == seller.plan)
-        res_sp = await db.execute(stmt_sp)
-        seller_plan = res_sp.scalars().first()
-        seller_b2b = seller_plan.feature_b2b_cobrokering if seller_plan else seller.feature_b2b_cobrokering
-        if not seller_b2b:
-            logger.info(f"[B2B] Seller '{seller.name}' (Plan: {seller.plan}) does not have B2B co-brokering enabled. Skipping distribution.")
-            return 0
+            stmt_sp = select(Plan).where(Plan.code == seller.plan)
+            res_sp = await db.execute(stmt_sp)
+            seller_plan = res_sp.scalars().first()
+            seller_b2b = seller_plan.feature_b2b_cobrokering if seller_plan else seller.feature_b2b_cobrokering
+            if not seller_b2b:
+                logger.info(f"[B2B] Seller '{seller.name}' (Plan: {seller.plan}) does not have B2B co-brokering enabled. Skipping distribution.")
+                return 0
 
-        stmt_searches = select(SavedSearch).where(SavedSearch.is_active == True)
-        res_searches = await db.execute(stmt_searches)
-        searches = res_searches.scalars().all()
+            stmt_searches = select(SavedSearch).where(SavedSearch.is_active == True)
+            res_searches = await db.execute(stmt_searches)
+            searches = res_searches.scalars().all()
 
-        app_name = await get_app_name(db)
-        b2b_count = 0
+            app_name = await get_app_name(db)
+            b2b_count = 0
 
-        for s in searches:
-            # Check buyer tenant has B2B feature enabled
-            stmt_t = select(Tenant).where(Tenant.id == s.tenant_id, Tenant.status == "active")
-            res_t = await db.execute(stmt_t)
-            buyer_tenant = res_t.scalars().first()
+            for s in searches:
+                # Check buyer tenant has B2B feature enabled
+                stmt_t = select(Tenant).where(Tenant.id == s.tenant_id, Tenant.status == "active")
+                res_t = await db.execute(stmt_t)
+                buyer_tenant = res_t.scalars().first()
 
-            if not buyer_tenant or buyer_tenant.id == listing.source_id:
-                continue
-
-            # Check buyer plan feature in real-time
-            stmt_bp = select(Plan).where(Plan.code == buyer_tenant.plan)
-            res_bp = await db.execute(stmt_bp)
-            buyer_plan = res_bp.scalars().first()
-            buyer_b2b = buyer_plan.feature_b2b_cobrokering if buyer_plan else buyer_tenant.feature_b2b_cobrokering
-            if not buyer_b2b:
-                continue
-
-            # Evaluate matching criteria
-            district_match = (not s.district) or (s.district.lower() in (listing.district or "").lower())
-            price_match = (not s.max_price or listing.price <= s.max_price) and (not s.min_price or listing.price >= s.min_price)
-            room_match = (not s.min_rooms or (listing.rooms and listing.rooms >= s.min_rooms))
-
-            if district_match and price_match and room_match:
-                # Check existing B2B match
-                stmt_exist = select(B2BMatch).where(
-                    B2BMatch.buyer_tenant_id == buyer_tenant.id,
-                    B2BMatch.listing_id == listing.id
-                )
-                res_exist = await db.execute(stmt_exist)
-                if res_exist.scalars().first():
+                if not buyer_tenant or buyer_tenant.id == listing.source_id:
                     continue
 
-                # Create B2B Match
-                b2b = B2BMatch(
-                    buyer_tenant_id=buyer_tenant.id,
-                    seller_tenant_id=listing.source_id, # Source owner tenant
-                    saved_search_id=s.id,
-                    listing_id=listing.id,
-                    status="pending"
-                )
-                db.add(b2b)
-                await db.commit()
-                await db.refresh(b2b)
-                b2b_count += 1
+                # Check buyer plan feature in real-time
+                stmt_bp = select(Plan).where(Plan.code == buyer_tenant.plan)
+                res_bp = await db.execute(stmt_bp)
+                buyer_plan = res_bp.scalars().first()
+                buyer_b2b = buyer_plan.feature_b2b_cobrokering if buyer_plan else buyer_tenant.feature_b2b_cobrokering
+                if not buyer_b2b:
+                    continue
 
-                # Send B2B Notification to Buyer Agent
-                msg = (
-                    f"🤝 *YENİ B2B PARTNYORLUQ İMKANI! ({app_name})*\n"
-                    f"Başqa bir agent platformada sizin axtarışınıza (%50/50 Komissiya) tam uyğun eksklüziv elan paylaşdı!\n\n"
-                    f"🏠 *{listing.title}*\n"
-                    f"💰 *Qiymət:* {int(listing.price)} {listing.currency}\n"
-                    f"📍 *Məkan:* {listing.district or 'Bakı'}\n\n"
-                    f"💬 *Əlaqə yaratmaq üçün cavab verin:*\n"
-                    f"`B2B Qəbul et {b2b.id}` | `B2B İmtina {b2b.id}`"
-                )
+                # Evaluate matching criteria
+                district_match = (not s.district) or (s.district.lower() in (listing.district or "").lower())
+                price_match = (not s.max_price or listing.price <= s.max_price) and (not s.min_price or listing.price >= s.min_price)
+                room_match = (not s.min_rooms or (listing.rooms and listing.rooms >= s.min_rooms))
 
-                if buyer_tenant.preferred_channel == "telegram" and buyer_tenant.telegram_chat_id:
-                    await send_telegram_notification(buyer_tenant.telegram_chat_id, msg)
-                elif buyer_tenant.preferred_channel == "whatsapp" and buyer_tenant.whatsapp_number:
-                    await WhatsAppAdapter.send_message(buyer_tenant.whatsapp_number, msg)
+                if district_match and price_match and room_match:
+                    # Check existing B2B match
+                    stmt_exist = select(B2BMatch).where(
+                        B2BMatch.buyer_tenant_id == buyer_tenant.id,
+                        B2BMatch.listing_id == listing.id
+                    )
+                    res_exist = await db.execute(stmt_exist)
+                    if res_exist.scalars().first():
+                        continue
 
-        return b2b_count
+                    # Create B2B Match
+                    b2b = B2BMatch(
+                        buyer_tenant_id=buyer_tenant.id,
+                        seller_tenant_id=listing.source_id, # Source owner tenant
+                        saved_search_id=s.id,
+                        listing_id=listing.id,
+                        status="pending"
+                    )
+                    db.add(b2b)
+                    await db.commit()
+                    await db.refresh(b2b)
+                    b2b_count += 1
+
+                    # Send B2B Notification to Buyer Agent
+                    msg = (
+                        f"🤝 *YENİ B2B PARTNYORLUQ İMKANI! ({app_name})*\n"
+                        f"Başqa bir agent platformada sizin axtarışınıza (%50/50 Komissiya) tam uyğun eksklüziv elan paylaşdı!\n\n"
+                        f"🏠 *{listing.title}*\n"
+                        f"💰 *Qiymət:* {int(listing.price)} {listing.currency}\n"
+                        f"📍 *Məkan:* {listing.district or 'Bakı'}\n\n"
+                        f"💬 *Əlaqə yaratmaq üçün cavab verin:*\n"
+                        f"`B2B Qəbul et {b2b.id}` | `B2B İmtina {b2b.id}`"
+                    )
+
+                    if buyer_tenant.preferred_channel == "telegram" and buyer_tenant.telegram_chat_id:
+                        await send_telegram_notification(buyer_tenant.telegram_chat_id, msg)
+                    elif buyer_tenant.preferred_channel == "whatsapp" and buyer_tenant.whatsapp_number:
+                        await WhatsAppAdapter.send_message(buyer_tenant.whatsapp_number, msg)
+
+            return b2b_count
+        except Exception as err:
+            logger.error(f"[B2BService] Error during evaluate_b2b_cobrokering: {err}")
+            await db.rollback()
+            return 0

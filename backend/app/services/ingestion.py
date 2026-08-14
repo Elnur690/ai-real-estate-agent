@@ -182,14 +182,10 @@ class IngestionService:
                         # Run Makler Detector (First-posting & makler scoring)
                         from app.services.makler_detector import MaklerDetectorService
                         from app.services.avm_engine import AVMEngineService
-                        from app.services.b2b_service import B2BService
 
                         db_listing = await MaklerDetectorService.analyze_listing(db, db_listing)
                         db_listing = await AVMEngineService.evaluate_listing_valuation(db, db_listing)
                         await db.commit()
-
-                        # Run B2B Agent Co-Brokering Matcher
-                        await B2BService.evaluate_b2b_cobrokering(db, db_listing)
 
                         total_scraped += 1
 
