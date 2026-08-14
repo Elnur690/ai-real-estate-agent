@@ -265,13 +265,18 @@ export const TenantsView: React.FC = () => {
     setWaLoading(true);
     setWaQrCode(null);
     try {
-      const res = await api.post(`/whatsapp/qrcode?instance_name=${instanceName}`);
+      const res = await api.post(`/whatsapp/qrcode`, { instance_name: instanceName });
       if (res.data?.qrcode) {
         setWaQrCode(res.data.qrcode);
+      } else if (res.data?.status === 'already_connected_or_initializing') {
+        alert('WhatsApp instance is already connected or currently initializing. Check status above.');
+      } else {
+        alert('QR code generation is pending. Please check Evolution API container status.');
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert('Failed to generate WhatsApp QR code.');
+      const detail = e.response?.data?.detail || e.message || 'Failed to generate WhatsApp QR code.';
+      alert(`WhatsApp QR Code Error: ${detail}`);
     } finally {
       setWaLoading(false);
     }

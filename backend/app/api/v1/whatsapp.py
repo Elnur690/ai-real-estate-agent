@@ -73,31 +73,41 @@ async def get_whatsapp_status(
 
 @router.post("/qrcode")
 async def get_whatsapp_qrcode(
-    body: ConnectWhatsAppRequest,
+    body: Optional[ConnectWhatsAppRequest] = None,
+    instance_name: Optional[str] = None,
     current_admin = Depends(get_current_admin)
 ):
     """Create Evolution API instance and return base64 QR code or pairing code for WhatsApp scanning."""
-    inst = body.instance_name or settings.EVOLUTION_INSTANCE_NAME
+    inst = (body.instance_name if body else None) or instance_name or settings.EVOLUTION_INSTANCE_NAME
     base_url = get_evolution_url()
     headers = get_evolution_headers()
 
-    # Step 1: Ensure Instance Exists
+    qrcode = None
+    pairing_code = None
+
+    # Step 1: Ensure Instance Exists or Create it
     create_url = f"{base_url}/instance/create"
     create_body = {
         "instanceName": inst,
+        "token": str(settings.EVOLUTION_API_KEY or "42960a4e6597e231787c5e0124a06248"),
         "qrcode": True,
         "integration": "WHATSAPP-BAILEYS"
     }
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=12.0) as client:
         try:
             res_c = await client.post(create_url, json=create_body, headers=headers)
             logger.info(f"[WhatsApp API] Instance create status: {res_c.status_code}")
+            if res_c.status_code in [200, 201]:
+                c_data = res_c.json()
+                if isinstance(c_data, dict):
+                    qrcode = c_data.get("qrcode", {}).get("base64") if isinstance(c_data.get("qrcode"), dict) else c_data.get("base64")
+                    pairing_code = c_data.get("pairingCode")
         except Exception as e:
             logger.warning(f"[WhatsApp API] Instance creation check notice: {e}")
 
         # Step 2: Set Webhook automatically
-        webhook_target = body.webhook_url or "https://realtor-api.erma.shop/api/v1/webhooks/whatsapp"
+        webhook_target = (body.webhook_url if body else None) or "https://realtor-api.erma.shop/api/v1/webhooks/whatsapp"
         webhook_url = f"{base_url}/webhook/set/{inst}"
         webhook_body = {
             "webhook": {
@@ -112,33 +122,37 @@ async def get_whatsapp_qrcode(
         except Exception as e:
             logger.warning(f"[WhatsApp API] Could not set webhook: {e}")
 
-        # Step 3: Fetch QR Code or Connection Details
-        connect_url = f"{base_url}/instance/connect/{inst}"
-        try:
-            res = await client.get(connect_url, headers=headers)
-            if res.status_code in [200, 201]:
-                data = res.json()
-                qrcode = data.get("base64") or data.get("code") or data.get("qrcode", {}).get("base64")
-                pairing_code = data.get("pairingCode")
-                return {
-                    "instance_name": inst,
-                    "status": "qr_ready",
-                    "qrcode": qrcode,
-                    "pairing_code": pairing_code,
-                    "webhook_url": webhook_target
-                }
-            else:
-                return {
-                    "instance_name": inst,
-                    "status": "already_connected_or_initializing",
-                    "detail": res.text
-                }
-        except Exception as e:
-            logger.error(f"[WhatsApp API] Connection error: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Evolution API service is initializing or unreachable. Please verify container 'realestate_evolution' is running. Error: {str(e)}"
-            )
+        # Step 3: Fetch QR Code or Connection Details if not already returned in create
+        if not qrcode:
+            connect_url = f"{base_url}/instance/connect/{inst}"
+            try:
+                res = await client.get(connect_url, headers=headers)
+                if res.status_code in [200, 201]:
+                    data = res.json()
+                    if isinstance(data, dict):
+                        qrcode = data.get("base64") or data.get("code") or (data.get("qrcode", {}).get("base64") if isinstance(data.get("qrcode"), dict) else data.get("qrcode"))
+                        pairing_code = data.get("pairingCode") or pairing_code
+                else:
+                    logger.warning(f"[WhatsApp API] Connect endpoint returned {res.status_code}: {res.text}")
+            except Exception as e:
+                logger.error(f"[WhatsApp API] Connection error: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"Evolution API is unreachable. Please verify container 'realestate_evolution' is running. Error: {str(e)}"
+                )
+
+        # Normalize QR code base64 format for frontend rendering
+        if qrcode and isinstance(qrcode, str):
+            if not qrcode.startswith("data:image"):
+                qrcode = f"data:image/png;base64,{qrcode}"
+
+        return {
+            "instance_name": inst,
+            "status": "qr_ready" if qrcode else "initializing",
+            "qrcode": qrcode,
+            "pairing_code": pairing_code,
+            "webhook_url": webhook_target
+        }
 
 
 @router.post("/disconnect")
