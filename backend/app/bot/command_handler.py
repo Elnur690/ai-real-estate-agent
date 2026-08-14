@@ -307,6 +307,32 @@ class BotCommandHandler:
                 draft = {}
 
         # Update draft dictionary with non-null parsed values
+        # Multi-Location Plan Entitlement Check
+        has_multi_loc = getattr(tenant, 'feature_multi_location', True)
+        max_locs = getattr(tenant, 'max_locations_per_search', 5) or 5
+        multi_loc_note = None
+
+        if new_parsed.district:
+            d_parts = [p.strip() for p in re.split(r'[,;/|\+]|\bvə\b|\bve\b', new_parsed.district) if p.strip()]
+            if len(d_parts) > 1:
+                if not has_multi_loc:
+                    new_parsed.district = d_parts[0]
+                    multi_loc_note = f"💡 *Qeyd:* Sizin `{tenant.plan.upper()}` tarifinizdə tək məkan axtarışı aktivdir. Yalnız birinci rayon (*{d_parts[0]}*) qeydə alındı."
+                elif len(d_parts) > max_locs:
+                    new_parsed.district = ", ".join(d_parts[:max_locs])
+                    multi_loc_note = f"💡 *Qeyd:* Tarifiniz üzrə maksimum *{max_locs}* məkan seçilə bilər. İlk {max_locs} rayon qeydə alındı."
+
+        if new_parsed.metro_station:
+            m_parts = [p.strip() for p in re.split(r'[,;/|\+]|\bvə\b|\bve\b', new_parsed.metro_station) if p.strip()]
+            if len(m_parts) > 1:
+                if not has_multi_loc:
+                    new_parsed.metro_station = m_parts[0]
+                    multi_loc_note = f"💡 *Qeyd:* Sizin `{tenant.plan.upper()}` tarifinizdə tək məkan axtarışı aktivdir. Yalnız birinci metro (*{m_parts[0]}*) qeydə alındı."
+                elif len(m_parts) > max_locs:
+                    new_parsed.metro_station = ", ".join(m_parts[:max_locs])
+                    multi_loc_note = f"💡 *Qeyd:* Tarifiniz üzrə maksimum *{max_locs}* metro stansiyası seçilə bilər."
+
+        # Update draft dictionary with non-null parsed values
         raw_text_accumulated = draft.get("raw_text", "")
         combined_text = f"{raw_text_accumulated} {new_input_text}".strip() if raw_text_accumulated else new_input_text
 
@@ -351,14 +377,14 @@ class BotCommandHandler:
         missing_fields = []
 
         if district:
-            set_fields.append(f"• 📍 *Rayon:* {district}")
+            set_fields.append(f"• 📍 *Rayon(lar):* {district}")
         else:
             missing_fields.append("📍 *Rayon* (məsələn: Yasamal, Nəsimi)")
 
         if metro_station:
-            set_fields.append(f"• 🚇 *Metro Stansiyası:* {metro_station} m/st")
+            set_fields.append(f"• 🚇 *Metro Stansiyaları:* {metro_station} m/st")
         else:
-            missing_fields.append("🚇 *Metro Stansiyası* (məsələn: Elmlər, 28 May, Gənclik)")
+            missing_fields.append("🚇 *Metro Stansiyası* (məsələn: Qarayev, Neftçilər, Elmlər)")
 
         if max_p_usd:
             set_fields.append(f"• 💰 *Qiymət:* ${int(max_p_usd):,} USD (məzənnə ilə ≈ {int(max_p):,} AZN)")
@@ -390,6 +416,9 @@ class BotCommandHandler:
 
         # Construct Output Message
         lines = ["📝 *AXTARIŞ PARAMETRLƏRİNİN ÖN BAXIŞI (QARALAMA)*\n"]
+
+        if multi_loc_note:
+            lines.append(f"{multi_loc_note}\n")
 
         if set_fields:
             lines.append("✅ *Təyin edilmiş parametrlər:*")
@@ -434,9 +463,10 @@ class BotCommandHandler:
         seller = draft.get("seller_type", "any")
         bld = draft.get("building_type", "any")
 
+        name_loc = district or metro_station or 'Ümumi'
         new_search = SavedSearch(
             tenant_id=tenant.id,
-            name=f"Axtarış: {district or metro_station or 'Ümumi'}",
+            name=f"Axtarış: {name_loc}",
             raw_criteria_text=raw_text,
             district=district,
             metro_station=metro_station,
@@ -454,7 +484,7 @@ class BotCommandHandler:
         await db.refresh(new_search)
 
         summary_parts = []
-        if district: summary_parts.append(f"Rayon: {district}")
+        if district: summary_parts.append(f"Məkan/Rayon: {district}")
         if metro_station: summary_parts.append(f"Metro: {metro_station}")
         if min_r: summary_parts.append(f"Otaq: {min_r} otaqlı")
         if min_p or max_p: summary_parts.append(f"Qiymət: {int(min_p or 0):,}-{int(max_p or 0):,} AZN")
@@ -475,7 +505,7 @@ class BotCommandHandler:
         return (
             f"✅ *Axtarışınız uğurla təsdiqləndi və yadda saxlanıldı!* (#{new_search.id})\n\n"
             f"📋 *Parametrlər:* {summary_str}\n\n"
-            f"Bu parametrlərə uyğun yeni elan tapılan kimi dərhal bildiriş göndərəcəyik. 🚀"
+            f"Bu məkanlara və parametrlərə uyğun yeni elan tapılan kimi dərhal bildiriş göndərəcəyik. 🚀"
         )
 
     @staticmethod

@@ -3,8 +3,9 @@ from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
 class StructuredCriteria(BaseModel):
-    district: Optional[str] = Field(None, description="District or location name, e.g., Yasamal, Nəsimi, Xətai")
-    metro_station: Optional[str] = Field(None, description="Baku metro station name, e.g., Elmlər Akademiyası, 28 May, Gənclik")
+    district: Optional[str] = Field(None, description="District or location name(s), e.g., Yasamal, Nəsimi, Xətai")
+    metro_station: Optional[str] = Field(None, description="Baku metro station name(s), e.g., Qara Qarayev, Neftçilər, Elmlər Akademiyası")
+    locations: List[str] = Field(default_factory=list, description="All requested target districts and metro stations")
     min_price: Optional[float] = Field(None, description="Minimum price in AZN")
     max_price: Optional[float] = Field(None, description="Maximum price in AZN")
     min_price_usd: Optional[float] = Field(None, description="Minimum price in USD")

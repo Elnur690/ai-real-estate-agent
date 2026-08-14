@@ -1,3 +1,4 @@
+import re
 import logging
 from datetime import datetime, timezone
 from sqlalchemy import select
@@ -247,18 +248,38 @@ class IngestionService:
             if listing.rooms and listing.rooms > search.max_rooms:
                 return False
 
-        # 4. District / Territory
-        if search.district and search.district.strip():
-            d = search.district.strip().lower()
-            list_text = f"{listing.district or ''} {listing.address_raw or ''} {listing.title or ''}".lower()
-            if d not in list_text:
-                return False
+        # 4. Multi-Location (District and Metro Stations) Check
+        from app.core.baku_locations import BAKU_METRO_STATIONS, BAKU_DISTRICTS
 
-        # 5. Metro Station
+        target_districts = []
+        if search.district and search.district.strip():
+            parts = re.split(r'[,;/|\+]|\bvə\b|\bve\b|\bya da\b|\bor\b', search.district, flags=re.IGNORECASE)
+            target_districts = [p.strip() for p in parts if p.strip()]
+
+        target_metros = []
         if search.metro_station and search.metro_station.strip():
-            m = search.metro_station.strip().lower()
-            list_text = f"{listing.metro_station or ''} {listing.address_raw or ''} {listing.title or ''} {listing.description or ''}".lower()
-            if m not in list_text:
+            parts = re.split(r'[,;/|\+]|\bvə\b|\bve\b|\bya da\b|\bor\b', search.metro_station, flags=re.IGNORECASE)
+            target_metros = [p.strip() for p in parts if p.strip()]
+
+        all_target_locations = list(dict.fromkeys(target_districts + target_metros))
+
+        if all_target_locations:
+            list_text = f"{listing.district or ''} {listing.metro_station or ''} {listing.address_raw or ''} {listing.title or ''} {listing.description or ''}".lower()
+            
+            matched_loc = False
+            for loc in all_target_locations:
+                loc_lower = loc.lower()
+                # Direct string match
+                if loc_lower in list_text:
+                    matched_loc = True
+                    break
+                # Station and District alias matches
+                aliases = BAKU_METRO_STATIONS.get(loc, []) + BAKU_DISTRICTS.get(loc, [])
+                if any(alias in list_text for alias in aliases):
+                    matched_loc = True
+                    break
+
+            if not matched_loc:
                 return False
 
         # 6. Building Type

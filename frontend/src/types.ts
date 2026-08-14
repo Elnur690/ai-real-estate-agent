@@ -21,6 +21,8 @@ export interface Tenant {
   feature_avm_bargain_finder?: boolean;
   feature_social_brochure?: boolean;
   feature_client_intake_bot?: boolean;
+  feature_multi_location?: boolean;
+  max_locations_per_search?: number;
   feature_aged_listings?: boolean;
   addon_aged_max_months?: number;
   referral_code?: string;

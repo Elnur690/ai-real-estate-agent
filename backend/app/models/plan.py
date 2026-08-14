@@ -25,6 +25,8 @@ class Plan(Base):
     feature_b2b_cobrokering: Mapped[bool] = mapped_column(Boolean, default=False)
     feature_social_brochure: Mapped[bool] = mapped_column(Boolean, default=True)
     feature_client_intake_bot: Mapped[bool] = mapped_column(Boolean, default=True)
+    feature_multi_location: Mapped[bool] = mapped_column(Boolean, default=True)
+    max_locations_per_search: Mapped[int] = mapped_column(Integer, default=5)
     feature_aged_listings: Mapped[bool] = mapped_column(Boolean, default=False)
     addon_aged_listings_price: Mapped[float] = mapped_column(Float, default=0.0) # Optional add-on price in AZN
     backup_enabled: Mapped[bool] = mapped_column(Boolean, default=True)

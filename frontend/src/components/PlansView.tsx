@@ -17,6 +17,8 @@ export interface PlanItem {
   feature_avm_bargain_finder: boolean;
   feature_social_brochure: boolean;
   feature_client_intake_bot: boolean;
+  feature_multi_location?: boolean;
+  max_locations_per_search?: number;
   feature_aged_listings?: boolean;
   addon_aged_listings_price?: number;
   backup_enabled: boolean;
@@ -42,6 +44,8 @@ export function PlansView() {
   const [formAvm, setFormAvm] = useState(true);
   const [formBrochure, setFormBrochure] = useState(true);
   const [formIntake, setFormIntake] = useState(true);
+  const [formMultiLocation, setFormMultiLocation] = useState(true);
+  const [formMaxLocations, setFormMaxLocations] = useState<number>(5);
   const [formBackup, setFormBackup] = useState(true);
   const [formAgedListings, setFormAgedListings] = useState(false);
   const [formAddonPrice, setFormAddonPrice] = useState<number>(15);
@@ -74,6 +78,8 @@ export function PlansView() {
     setFormAvm(true);
     setFormBrochure(true);
     setFormIntake(true);
+    setFormMultiLocation(true);
+    setFormMaxLocations(5);
     setFormBackup(true);
     setFormAgedListings(false);
     setFormAddonPrice(15);
@@ -95,6 +101,8 @@ export function PlansView() {
     setFormAvm(plan.feature_avm_bargain_finder);
     setFormBrochure(plan.feature_social_brochure);
     setFormIntake(plan.feature_client_intake_bot);
+    setFormMultiLocation(plan.feature_multi_location ?? true);
+    setFormMaxLocations(plan.max_locations_per_search || 5);
     setFormBackup(plan.backup_enabled);
     setFormAgedListings(!!plan.feature_aged_listings);
     setFormAddonPrice(plan.addon_aged_listings_price || 15);
@@ -120,6 +128,8 @@ export function PlansView() {
           feature_avm_bargain_finder: formAvm,
           feature_social_brochure: formBrochure,
           feature_client_intake_bot: formIntake,
+          feature_multi_location: formMultiLocation,
+          max_locations_per_search: formMaxLocations,
           feature_aged_listings: formAgedListings,
           addon_aged_listings_price: formAddonPrice,
           backup_enabled: formBackup,
@@ -139,6 +149,8 @@ export function PlansView() {
           feature_avm_bargain_finder: formAvm,
           feature_social_brochure: formBrochure,
           feature_client_intake_bot: formIntake,
+          feature_multi_location: formMultiLocation,
+          max_locations_per_search: formMaxLocations,
           feature_aged_listings: formAgedListings,
           addon_aged_listings_price: formAddonPrice,
           backup_enabled: formBackup,
@@ -264,6 +276,24 @@ export function PlansView() {
                     <span className={plan.feature_social_brochure ? 'text-slate-200' : 'text-slate-500 line-through'}>
                       PDF & Social Brochure Generator
                     </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      {plan.feature_multi_location ? (
+                        <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                      ) : (
+                        <X className="w-4 h-4 text-slate-600 shrink-0" />
+                      )}
+                      <span className={plan.feature_multi_location ? 'text-slate-200' : 'text-slate-500 line-through'}>
+                        Multi-Location Search (Multiple Metros/Areas)
+                      </span>
+                    </div>
+                    {plan.feature_multi_location ? (
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/15 text-blue-300 font-semibold">
+                        Max {plan.max_locations_per_search || 5} areas
+                      </span>
+                    ) : null}
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -510,6 +540,32 @@ export function PlansView() {
                       className="rounded accent-emerald-500"
                     />
                     <span className="text-slate-300">BaaS Data Backups</span>
+                  </label>
+
+                  <label className="flex items-center gap-2 p-2 bg-dark-900/60 rounded-xl border border-slate-800 cursor-pointer col-span-2">
+                    <input
+                      type="checkbox"
+                      checked={formMultiLocation}
+                      onChange={(e) => setFormMultiLocation(e.target.checked)}
+                      className="rounded accent-emerald-500"
+                    />
+                    <div className="flex-1 flex items-center justify-between">
+                      <span className="text-slate-300">Multi-Location Search (Selecting 2, 3 or more areas simultaneously)</span>
+                      {formMultiLocation && (
+                        <div className="flex items-center gap-1.5 text-xs">
+                          <span className="text-slate-400">Max Areas:</span>
+                          <input
+                            type="number"
+                            min="1"
+                            max="50"
+                            value={formMaxLocations}
+                            onChange={(e) => setFormMaxLocations(Number(e.target.value))}
+                            className="w-16 bg-dark-800 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                      )}
+                    </div>
                   </label>
 
                   <label className="flex items-center gap-2 p-2 bg-dark-900/60 rounded-xl border border-slate-800 cursor-pointer col-span-2">

@@ -1080,6 +1080,16 @@ export const TenantsView: React.FC = () => {
               <div><span className="text-slate-400">Channel:</span> {selectedTenant.tenant.preferred_channel}</div>
               <div><span className="text-slate-400">Status:</span> {selectedTenant.tenant.status}</div>
               <div className="col-span-2 flex items-center gap-2 pt-1 border-t border-slate-700/50">
+                <span className="text-slate-400">Multi-Location Search:</span>
+                {selectedTenant.tenant.feature_multi_location ? (
+                  <span className="text-blue-400 font-semibold flex items-center gap-1">
+                    ✓ Active (Up to {selectedTenant.tenant.max_locations_per_search || 5} Areas / Metros)
+                  </span>
+                ) : (
+                  <span className="text-slate-500 font-normal">Single Location Only</span>
+                )}
+              </div>
+              <div className="col-span-2 flex items-center gap-2 pt-1 border-t border-slate-700/50">
                 <span className="text-slate-400">Aged Listings Archive:</span>
                 {selectedTenant.tenant.feature_aged_listings ? (
                   <span className="text-emerald-400 font-semibold flex items-center gap-1">

@@ -25,11 +25,15 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS allowed_group_jids JSON;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS feature_aged_listings BOOLEAN DEFAULT FALSE;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS addon_aged_max_months INTEGER DEFAULT 12;"))
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS feature_multi_location BOOLEAN DEFAULT TRUE;"))
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS max_locations_per_search INTEGER DEFAULT 5;"))
         await conn.execute(text("ALTER TABLE saved_searches ADD COLUMN IF NOT EXISTS metro_station VARCHAR(255);"))
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS metro_station VARCHAR(255);"))
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS price_usd DOUBLE PRECISION;"))
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS phone_number VARCHAR(50);"))
         await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS trial_days INTEGER DEFAULT 7;"))
+        await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS feature_multi_location BOOLEAN DEFAULT TRUE;"))
+        await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS max_locations_per_search INTEGER DEFAULT 5;"))
         await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS feature_aged_listings BOOLEAN DEFAULT FALSE;"))
         await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS addon_aged_listings_price FLOAT DEFAULT 0.0;"))
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(50);"))
@@ -59,11 +63,12 @@ async def lifespan(app: FastAPI):
                 logger.info(f"[Startup] Auto-created initial Admin user ({settings.ADMIN_EMAIL})")
 
             # Auto-seed default subscription plans if missing per code
-                {"code": "free", "name": "Free Trial Tier", "description": "Basic listing scraper & trial alerts", "price": 0.0, "billing_period": "monthly", "max_agents": 1, "feature_makler_detector": True, "feature_avm_bargain_finder": False, "feature_social_brochure": False, "feature_client_intake_bot": False, "backup_enabled": False},
-                {"code": "starter", "name": "Starter Agent Plan", "description": "Individual agent listing alerts & Telegram bot", "price": 29.0, "billing_period": "monthly", "max_agents": 1, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "backup_enabled": False},
-                {"code": "pro", "name": "Pro Agent Plan", "description": "Full AI Makler Detector, AVM Bargain Finder & WhatsApp alerts", "price": 59.0, "billing_period": "monthly", "max_agents": 3, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "backup_enabled": True},
-                {"code": "agency", "name": "Agency Team Plan", "description": "Multi-agent team territory routing & automated backups", "price": 129.0, "billing_period": "monthly", "max_agents": 10, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "backup_enabled": True},
-                {"code": "enterprise", "name": "Enterprise Custom Plan", "description": "Unlimited agent seats, custom intake branding & dedicated AI model", "price": 299.0, "billing_period": "monthly", "max_agents": 50, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "backup_enabled": True},
+            default_plans_data = [
+                {"code": "free", "name": "Free Trial Tier", "description": "Basic listing scraper & trial alerts", "price": 0.0, "billing_period": "monthly", "max_agents": 1, "feature_makler_detector": True, "feature_avm_bargain_finder": False, "feature_social_brochure": False, "feature_client_intake_bot": False, "feature_multi_location": False, "max_locations_per_search": 1, "backup_enabled": False},
+                {"code": "starter", "name": "Starter Agent Plan", "description": "Individual agent listing alerts & Telegram bot", "price": 29.0, "billing_period": "monthly", "max_agents": 1, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 3, "backup_enabled": False},
+                {"code": "pro", "name": "Pro Agent Plan", "description": "Full AI Makler Detector, AVM Bargain Finder & WhatsApp alerts", "price": 59.0, "billing_period": "monthly", "max_agents": 3, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 5, "backup_enabled": True},
+                {"code": "agency", "name": "Agency Team Plan", "description": "Multi-agent team territory routing & automated backups", "price": 129.0, "billing_period": "monthly", "max_agents": 10, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 10, "backup_enabled": True},
+                {"code": "enterprise", "name": "Enterprise Custom Plan", "description": "Unlimited agent seats, custom intake branding & dedicated AI model", "price": 299.0, "billing_period": "monthly", "max_agents": 50, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 20, "backup_enabled": True},
             ]
             
             for pdata in default_plans_data:

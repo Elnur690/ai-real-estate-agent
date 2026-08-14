@@ -28,6 +28,8 @@ class CreateTenantRequest(BaseModel):
     feature_avm_bargain_finder: bool = False
     feature_social_brochure: bool = False
     feature_client_intake_bot: bool = False
+    feature_multi_location: bool = True
+    max_locations_per_search: int = 5
     feature_aged_listings: bool = False
     addon_aged_max_months: int = 12
 
@@ -46,6 +48,8 @@ class UpdateTenantRequest(BaseModel):
     feature_avm_bargain_finder: Optional[bool] = None
     feature_social_brochure: Optional[bool] = None
     feature_client_intake_bot: Optional[bool] = None
+    feature_multi_location: Optional[bool] = None
+    max_locations_per_search: Optional[int] = None
     feature_aged_listings: Optional[bool] = None
     addon_aged_max_months: Optional[int] = None
 
@@ -71,6 +75,8 @@ class TenantResponse(BaseModel):
     feature_avm_bargain_finder: bool
     feature_social_brochure: bool
     feature_client_intake_bot: bool
+    feature_multi_location: bool = True
+    max_locations_per_search: int = 5
     feature_aged_listings: bool = False
     addon_aged_max_months: int = 12
     referral_code: Optional[str] = None
@@ -120,6 +126,8 @@ async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(ge
         feature_avm_bargain_finder=db_plan.feature_avm_bargain_finder if db_plan else True,
         feature_social_brochure=db_plan.feature_social_brochure if db_plan else True,
         feature_client_intake_bot=db_plan.feature_client_intake_bot if db_plan else True,
+        feature_multi_location=db_plan.feature_multi_location if db_plan else body.feature_multi_location,
+        max_locations_per_search=db_plan.max_locations_per_search if db_plan else body.max_locations_per_search,
         feature_aged_listings=getattr(db_plan, 'feature_aged_listings', False) or body.feature_aged_listings,
         addon_aged_max_months=body.addon_aged_max_months or 12,
         plan_started_at=datetime.now(timezone.utc),
@@ -179,6 +187,8 @@ async def update_tenant(tenant_id: int, body: UpdateTenantRequest, db: AsyncSess
             tenant.feature_avm_bargain_finder = db_plan.feature_avm_bargain_finder
             tenant.feature_social_brochure = db_plan.feature_social_brochure
             tenant.feature_client_intake_bot = db_plan.feature_client_intake_bot
+            tenant.feature_multi_location = db_plan.feature_multi_location
+            tenant.max_locations_per_search = db_plan.max_locations_per_search
             tenant.backup_enabled = db_plan.backup_enabled
 
     for field, val in update_data.items():

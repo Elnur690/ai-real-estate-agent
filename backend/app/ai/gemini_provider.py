@@ -3,7 +3,7 @@ import asyncio
 import re
 from typing import List, Dict, Any
 from app.ai.base import AIProvider, StructuredCriteria, StructuredListing
-from app.core.baku_locations import extract_metro_station
+from app.core.baku_locations import extract_metro_station, extract_all_metro_stations, extract_all_baku_districts
 
 class GeminiProvider(AIProvider):
     def __init__(self, api_key: str | None = None, model_name: str = "gemini-1.5-flash"):
@@ -20,10 +20,13 @@ class GeminiProvider(AIProvider):
 Extract real estate search criteria from this user input (in Azerbaijani or Russian or English):
 "{raw_text}"
 
+Note: The user can specify multiple locations/districts or multiple metro stations (e.g., "Qarayev və Neftçilər", "Yasamal, Nəsimi").
+
 Return JSON ONLY with this exact schema:
 {{
-  "district": "string or null",
-  "metro_station": "Baku Metro station name or null (e.g., Elmlər Akademiyası, 28 May, Gənclik, Nərimanov)",
+  "district": "string or comma-separated districts or null (e.g., Yasamal, Nəsimi)",
+  "metro_station": "Baku Metro station name(s) or null (e.g., Qara Qarayev, Neftçilər, Elmlər Akademiyası)",
+  "locations": ["array of all target districts and metro stations mentioned, e.g. ['Qara Qarayev', 'Neftçilər']"],
   "min_price": number in AZN or null,
   "max_price": number in AZN or null,
   "min_price_usd": number in USD or null,
@@ -50,8 +53,15 @@ Return JSON ONLY with this exact schema:
                 data = json.loads(text)
 
                 # Ensure Baku metro station fallback if null
-                if not data.get("metro_station"):
-                    data["metro_station"] = extract_metro_station(raw_text)
+                all_metros = extract_all_metro_stations(raw_text)
+                all_districts = extract_all_baku_districts(raw_text)
+
+                if not data.get("metro_station") and all_metros:
+                    data["metro_station"] = ", ".join(all_metros)
+                if not data.get("district") and all_districts:
+                    data["district"] = ", ".join(all_districts)
+                if not data.get("locations"):
+                    data["locations"] = list(dict.fromkeys(all_metros + all_districts))
 
                 # If prices are in USD, auto-convert to AZN
                 rate = 1.70
@@ -70,15 +80,13 @@ Return JSON ONLY with this exact schema:
     def _heuristic_parse_criteria(self, text: str) -> StructuredCriteria:
         text_lower = text.lower()
 
-        # District & Metro Station extraction
-        districts = ["yasamal", "nəsimi", "xətai", "nərimanov", "binəqədi", "sabunçu", "suraxanı", "səbail", "nizami", "xəzər", "qaradağ", "pirallahi", "28 may", "gənclik", "elmlər"]
-        found_district = None
-        for d in districts:
-            if d in text_lower:
-                found_district = d.capitalize()
-                break
+        # Multi-District & Multi-Metro Station extraction
+        all_districts = extract_all_baku_districts(text)
+        all_metros = extract_all_metro_stations(text)
+        all_locs = list(dict.fromkeys(all_metros + all_districts))
 
-        found_metro = extract_metro_station(text)
+        found_district = ", ".join(all_districts) if all_districts else None
+        found_metro = ", ".join(all_metros) if all_metros else None
 
         # Rooms
         rooms_match = re.search(r'(\d+)\s*(?:otaq|otaqlı|otag)', text_lower)
@@ -156,6 +164,7 @@ Return JSON ONLY with this exact schema:
         return StructuredCriteria(
             district=found_district,
             metro_station=found_metro,
+            locations=all_locs,
             min_price=min_price,
             max_price=max_price,
             min_price_usd=min_price_usd,

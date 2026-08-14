@@ -122,3 +122,67 @@ def test_strict_match_owner_filtering():
         building_type="old"
     )
     assert IngestionService.is_strict_match(search, old_bld_listing) is False
+
+def test_strict_match_multi_location():
+    # Saved search with multiple locations (Qarayev, Neftçilər, Xalqlar)
+    search = SavedSearch(
+        tenant_id=1,
+        name="Multi-Location Search",
+        raw_criteria_text="Qarayev və Neftçilərdə mənzil",
+        seller_type="any",
+        metro_station="Qara Qarayev, Neftçilər",
+        district="Nizami",
+        min_price=80000,
+        max_price=160000,
+        min_rooms=2,
+        max_rooms=3,
+        building_type="any"
+    )
+
+    # 1. Listing in Qara Qarayev -> MATCH
+    qarayev_listing = Listing(
+        source_id=1,
+        external_id="201",
+        title="Qara Qarayev m/st yaxınlığında 2 otaqlı mənzil",
+        listing_url="https://bina.az/items/201",
+        metro_station="Qara Qarayev",
+        district="Nizami",
+        rooms=2,
+        price=120000.0,
+        seller_type="owner",
+        makler_score=0.0,
+        building_type="new"
+    )
+    assert IngestionService.is_strict_match(search, qarayev_listing) is True
+
+    # 2. Listing in Neftçilər -> MATCH
+    neftchilar_listing = Listing(
+        source_id=1,
+        external_id="202",
+        title="Neftçilər metrosunun yanı 3 otaqlı mənzil",
+        listing_url="https://bina.az/items/202",
+        metro_station="Neftçilər",
+        district="Nizami",
+        rooms=3,
+        price=140000.0,
+        seller_type="agency",
+        makler_score=0.2,
+        building_type="old"
+    )
+    assert IngestionService.is_strict_match(search, neftchilar_listing) is True
+
+    # 3. Listing in completely different location (Xırdalan / Abşeron) -> REJECT
+    xirdalan_listing = Listing(
+        source_id=1,
+        external_id="203",
+        title="Xırdalanda 2 otaqlı mənzil",
+        listing_url="https://bina.az/items/203",
+        district="Abşeron",
+        metro_station=None,
+        rooms=2,
+        price=90000.0,
+        seller_type="owner",
+        makler_score=0.0,
+        building_type="new"
+    )
+    assert IngestionService.is_strict_match(search, xirdalan_listing) is False

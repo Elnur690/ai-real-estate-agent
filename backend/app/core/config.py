@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     WEBHOOK_SECRET: Optional[str] = os.getenv("WEBHOOK_SECRET", None)
 
     # Telegram Scraping (Telethon)
-    TELEGRAM_API_ID: Optional[int] = os.getenv("TELEGRAM_API_ID", None)
+    TELEGRAM_API_ID: Optional[int | str] = None
     TELEGRAM_API_HASH: Optional[str] = os.getenv("TELEGRAM_API_HASH", None)
 
     # Gemini Fallback Key
@@ -62,6 +62,7 @@ class Settings(BaseSettings):
 
     class Config:
         case_sensitive = True
+        extra = "ignore"
         env_file = ".env"
 
 settings = Settings()

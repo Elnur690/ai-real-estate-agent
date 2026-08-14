@@ -136,25 +136,46 @@ DISTRICT_ADJACENCY: Dict[str, List[str]] = {
 
 def extract_metro_station(text: str) -> Optional[str]:
     """Extract Baku Metro station name from text input if present."""
+    stations = extract_all_metro_stations(text)
+    return stations[0] if stations else None
+
+def extract_all_metro_stations(text: str) -> List[str]:
+    """Extract all Baku Metro station names mentioned in text in order of appearance."""
     if not text:
-        return None
+        return []
     text_lower = text.lower()
+    found = []
+    # Sort by position in text if multiple
     for station_name, aliases in BAKU_METRO_STATIONS.items():
         for alias in aliases:
-            if alias in text_lower:
-                return station_name
-    return None
+            pos = text_lower.find(alias)
+            if pos != -1:
+                if station_name not in found:
+                    found.append((pos, station_name))
+                break
+    found.sort(key=lambda x: x[0])
+    return [name for _, name in found]
 
 def extract_baku_district(text: str) -> Optional[str]:
     """Extract official Baku district name from text input. Returns None if no district found."""
+    districts = extract_all_baku_districts(text)
+    return districts[0] if districts else None
+
+def extract_all_baku_districts(text: str) -> List[str]:
+    """Extract all official Baku district names mentioned in text in order of appearance."""
     if not text:
-        return None
+        return []
     text_lower = text.lower()
+    found = []
     for dist_name, keywords in BAKU_DISTRICTS.items():
         for kw in keywords:
-            if kw in text_lower:
-                return dist_name
-    return None
+            pos = text_lower.find(kw)
+            if pos != -1:
+                if dist_name not in found:
+                    found.append((pos, dist_name))
+                break
+    found.sort(key=lambda x: x[0])
+    return [name for _, name in found]
 
 def is_adjacent_metro(target_metro: str, candidate_metro: str) -> bool:
     """Returns True if candidate_metro is an immediate 1-stop neighbor of target_metro."""

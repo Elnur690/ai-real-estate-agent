@@ -28,6 +28,8 @@ class PlanResponse(BaseModel):
     feature_avm_bargain_finder: bool
     feature_social_brochure: bool
     feature_client_intake_bot: bool
+    feature_multi_location: bool = True
+    max_locations_per_search: int = 5
     feature_aged_listings: bool = False
     addon_aged_listings_price: float = 0.0
     backup_enabled: bool
@@ -48,6 +50,8 @@ class CreatePlanRequest(BaseModel):
     feature_avm_bargain_finder: bool = True
     feature_social_brochure: bool = True
     feature_client_intake_bot: bool = True
+    feature_multi_location: bool = True
+    max_locations_per_search: int = 5
     feature_aged_listings: bool = False
     addon_aged_listings_price: float = 0.0
     backup_enabled: bool = True
@@ -66,6 +70,8 @@ class UpdatePlanRequest(BaseModel):
     feature_avm_bargain_finder: Optional[bool] = None
     feature_social_brochure: Optional[bool] = None
     feature_client_intake_bot: Optional[bool] = None
+    feature_multi_location: Optional[bool] = None
+    max_locations_per_search: Optional[int] = None
     feature_aged_listings: Optional[bool] = None
     addon_aged_listings_price: Optional[float] = None
     backup_enabled: Optional[bool] = None
@@ -78,14 +84,12 @@ async def list_plans(db: AsyncSession = Depends(get_db)):
     res = await db.execute(stmt)
     plans = res.scalars().all()
 
-    # Get subscriber counts per plan code
-    stmt_counts = select(Tenant.plan, func.count(Tenant.id)).group_by(Tenant.plan)
-    res_counts = await db.execute(stmt_counts)
-    counts_map = {row[0].lower(): row[1] for row in res_counts.all() if row[0]}
-
     response_list = []
     for plan in plans:
-        sub_count = counts_map.get(plan.code.lower(), 0)
+        stmt_count = select(func.count(Tenant.id)).where(Tenant.plan == plan.code)
+        res_count = await db.execute(stmt_count)
+        sub_count = res_count.scalar() or 0
+
         response_list.append(PlanResponse(
             id=plan.id,
             code=plan.code,
@@ -101,6 +105,8 @@ async def list_plans(db: AsyncSession = Depends(get_db)):
             feature_avm_bargain_finder=plan.feature_avm_bargain_finder,
             feature_social_brochure=plan.feature_social_brochure,
             feature_client_intake_bot=plan.feature_client_intake_bot,
+            feature_multi_location=getattr(plan, 'feature_multi_location', True),
+            max_locations_per_search=getattr(plan, 'max_locations_per_search', 5),
             feature_aged_listings=getattr(plan, 'feature_aged_listings', False),
             addon_aged_listings_price=getattr(plan, 'addon_aged_listings_price', 0.0),
             backup_enabled=plan.backup_enabled,
@@ -139,6 +145,8 @@ async def create_plan(
         feature_avm_bargain_finder=body.feature_avm_bargain_finder,
         feature_social_brochure=body.feature_social_brochure,
         feature_client_intake_bot=body.feature_client_intake_bot,
+        feature_multi_location=body.feature_multi_location,
+        max_locations_per_search=body.max_locations_per_search,
         feature_aged_listings=body.feature_aged_listings,
         addon_aged_listings_price=body.addon_aged_listings_price,
         backup_enabled=body.backup_enabled
@@ -162,6 +170,8 @@ async def create_plan(
         feature_avm_bargain_finder=plan.feature_avm_bargain_finder,
         feature_social_brochure=plan.feature_social_brochure,
         feature_client_intake_bot=plan.feature_client_intake_bot,
+        feature_multi_location=plan.feature_multi_location,
+        max_locations_per_search=plan.max_locations_per_search,
         feature_aged_listings=plan.feature_aged_listings,
         addon_aged_listings_price=plan.addon_aged_listings_price,
         backup_enabled=plan.backup_enabled,
@@ -201,6 +211,8 @@ async def get_plan(
         feature_avm_bargain_finder=plan.feature_avm_bargain_finder,
         feature_social_brochure=plan.feature_social_brochure,
         feature_client_intake_bot=plan.feature_client_intake_bot,
+        feature_multi_location=getattr(plan, 'feature_multi_location', True),
+        max_locations_per_search=getattr(plan, 'max_locations_per_search', 5),
         feature_aged_listings=getattr(plan, 'feature_aged_listings', False),
         addon_aged_listings_price=getattr(plan, 'addon_aged_listings_price', 0.0),
         backup_enabled=plan.backup_enabled,
@@ -246,6 +258,10 @@ async def update_plan(
         plan.feature_social_brochure = body.feature_social_brochure
     if body.feature_client_intake_bot is not None:
         plan.feature_client_intake_bot = body.feature_client_intake_bot
+    if body.feature_multi_location is not None:
+        plan.feature_multi_location = body.feature_multi_location
+    if body.max_locations_per_search is not None:
+        plan.max_locations_per_search = body.max_locations_per_search
     if body.feature_aged_listings is not None:
         plan.feature_aged_listings = body.feature_aged_listings
     if body.addon_aged_listings_price is not None:
@@ -264,6 +280,10 @@ async def update_plan(
         tenant_updates["feature_social_brochure"] = body.feature_social_brochure
     if body.feature_client_intake_bot is not None:
         tenant_updates["feature_client_intake_bot"] = body.feature_client_intake_bot
+    if body.feature_multi_location is not None:
+        tenant_updates["feature_multi_location"] = body.feature_multi_location
+    if body.max_locations_per_search is not None:
+        tenant_updates["max_locations_per_search"] = body.max_locations_per_search
     if body.feature_aged_listings is not None:
         tenant_updates["feature_aged_listings"] = body.feature_aged_listings
     if body.backup_enabled is not None:
@@ -298,6 +318,8 @@ async def update_plan(
         feature_avm_bargain_finder=plan.feature_avm_bargain_finder,
         feature_social_brochure=plan.feature_social_brochure,
         feature_client_intake_bot=plan.feature_client_intake_bot,
+        feature_multi_location=getattr(plan, 'feature_multi_location', True),
+        max_locations_per_search=getattr(plan, 'max_locations_per_search', 5),
         feature_aged_listings=getattr(plan, 'feature_aged_listings', False),
         addon_aged_listings_price=getattr(plan, 'addon_aged_listings_price', 0.0),
         backup_enabled=plan.backup_enabled,
