@@ -579,6 +579,9 @@ class BotCommandHandler:
             f"▪️ `/referral` — Dəvət kodunuz və qazandığınız bonus balansınız\n"
             f"▪️ `/cancel` — Hazırkı axtarış qaralamasını ləğv etmək\n"
             f"▪️ `/help` — Bu kömək təlimatını yenidən göstərmək\n\n"
+            f"👥 *WHATSAPP QRUP İSTİFADƏSİ:*\n"
+            f"▪️ `/bot_here` və ya `/pair_group` (və ya `bot qoş`) — Botu işçi WhatsApp qrupunuza aktivləşdirmək\n"
+            f"▪️ `/unpair_group` (və ya `bot ayır`) — Botu WhatsApp qrupundan ayırmaq\n\n"
             f"🎙️ *SƏSLİ MESAJ:* WhatsApp və ya Telegram-da səsli mesaj göndərərək də axtarış yarada bilərsiniz!\n\n"
             f"💬 *ELAN REAKSİYALARI:*\n"
             f"• `Maraqlanıram <id>` | `Keç <id>` | `Satılıb <id>`\n"
@@ -608,7 +611,7 @@ class BotCommandHandler:
             external_id=f"agent_{tenant.id}_{int(datetime.now(timezone.utc).timestamp())}",
             title=title,
             description=raw_text,
-            price=struct_l.price if struct_l.price and struct_l.price > 0 else 100000.0,
+            price=struct_l.price if struct_l.price and struct_l.price > 0 else 0.0,
             currency=struct_l.currency or "AZN",
             district=district,
             metro_station=metro,
