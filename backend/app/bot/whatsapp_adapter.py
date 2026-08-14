@@ -17,6 +17,10 @@ class WhatsAppAdapter:
         Calls shared BotCommandHandler.
         """
         try:
+            import re
+            from sqlalchemy import select
+            from app.models.tenant import Tenant
+
             event = payload.get("event")
             instance_name = payload.get("instance") or settings.EVOLUTION_INSTANCE_NAME
             logger.info(f"[WhatsAppAdapter] Received webhook event: '{event}', instance: '{instance_name}'")
@@ -32,73 +36,121 @@ class WhatsAppAdapter:
 
             key = data.get("key", {})
             msg_id = key.get("id")
-
             from_me = bool(key.get("fromMe"))
             remote_jid = key.get("remoteJid", "")
             if not remote_jid:
                 return None
 
+            # Skip outbound bot messages to prevent echo loops
+            if from_me and msg_id in SENT_BOT_MESSAGE_IDS:
+                try:
+                    SENT_BOT_MESSAGE_IDS.remove(msg_id)
+                except KeyError:
+                    pass
+                logger.info(f"[WhatsAppAdapter] Skipping outbound bot response (msg_id={msg_id})")
+                return None
+
             is_group = "@g.us" in remote_jid
             group_subject = payload.get("data", {}).get("groupMetadata", {}).get("subject") or data.get("pushName") or ""
 
-            # Check outbound bot message to prevent response loops
-            if from_me:
-                if msg_id in SENT_BOT_MESSAGE_IDS:
+            # Resolve tenant for this WhatsApp instance
+            async with AsyncSessionLocal() as db:
+                tenant = None
+                if instance_name and instance_name.startswith("tenant_"):
                     try:
-                        SENT_BOT_MESSAGE_IDS.remove(msg_id)
-                    except KeyError:
+                        t_id = int(instance_name.replace("tenant_", ""))
+                        stmt_id = select(Tenant).where(Tenant.id == t_id)
+                        res_id = await db.execute(stmt_id)
+                        tenant = res_id.scalars().first()
+                    except ValueError:
                         pass
-                    logger.info(f"[WhatsAppAdapter] Skipping outbound bot response (msg_id={msg_id})")
+
+                if not tenant:
+                    clean_remote = re.sub(r'\D', '', remote_jid.split("@")[0])
+                    stmt_w = select(Tenant).where(Tenant.preferred_channel == "whatsapp")
+                    res_w = await db.execute(stmt_w)
+                    all_w = res_w.scalars().all()
+                    for t in all_w:
+                        t_wa = re.sub(r'\D', '', t.whatsapp_number or "")
+                        t_ph = re.sub(r'\D', '', t.phone or "")
+                        if (t_wa and (t_wa in clean_remote or clean_remote in t_wa)) or (t_ph and (t_ph in clean_remote or clean_remote in t_ph)):
+                            tenant = t
+                            break
+
+                if not tenant:
+                    logger.info(f"[WhatsAppAdapter] No registered tenant found for instance '{instance_name}' / remote '{remote_jid}'. Ignoring.")
                     return None
 
-            # 1-on-1 Private Direct Chat Guard:
-            # If someone else (from_me=False) messages the agent's personal WhatsApp 1-on-1,
-            # DO NOT respond at all! Silently ignore so bot never sends welcome messages to private contacts.
-            if not is_group and not from_me:
-                logger.info(f"[WhatsAppAdapter] Ignoring 1-on-1 private message from 3rd party ({remote_jid}) on personal agent number.")
-                return None
+                # Extract message text or audio
+                message = data.get("message", {})
+                if not isinstance(message, dict):
+                    message = {}
 
-            # Determine recipient ID: for groups (@g.us), use full JID; for direct chat, extract phone number
-            if is_group:
-                sender_id = remote_jid
-                sender_name = group_subject or "WhatsApp Group"
-            else:
-                sender_id = remote_jid.split("@")[0] if "@" in remote_jid else remote_jid
-                sender_name = data.get("pushName") or "WhatsApp User"
+                raw_text = (
+                    message.get("conversation") or
+                    message.get("extendedTextMessage", {}).get("text") or
+                    message.get("imageMessage", {}).get("caption") or
+                    message.get("videoMessage", {}).get("caption") or
+                    ""
+                )
 
-            message = data.get("message", {})
-            if not isinstance(message, dict):
-                message = {}
+                # Check for voice note / audio message
+                audio_msg = message.get("audioMessage") or message.get("pttMessage")
+                if not raw_text and audio_msg and isinstance(audio_msg, dict):
+                    audio_url = audio_msg.get("url")
+                    if audio_url:
+                        from app.services.audio_transcriber import AudioTranscriberService
+                        headers = {}
+                        if settings.EVOLUTION_API_KEY:
+                            headers["apikey"] = str(settings.EVOLUTION_API_KEY)
+                        logger.info(f"[WhatsAppAdapter] Voice note received. Transcribing audio...")
+                        transcribed = await AudioTranscriberService.transcribe_audio_url(audio_url, headers=headers)
+                        if transcribed:
+                            raw_text = transcribed
 
-            raw_text = (
-                message.get("conversation") or
-                message.get("extendedTextMessage", {}).get("text") or
-                message.get("imageMessage", {}).get("caption") or
-                message.get("videoMessage", {}).get("caption") or
-                ""
-            )
+                if not raw_text:
+                    return None
 
-            # Check for voice note / audio message
-            audio_msg = message.get("audioMessage") or message.get("pttMessage")
-            if not raw_text and audio_msg and isinstance(audio_msg, dict):
-                audio_url = audio_msg.get("url")
-                if audio_url:
-                    from app.services.audio_transcriber import AudioTranscriberService
-                    headers = {}
-                    if settings.EVOLUTION_API_KEY:
-                        headers["apikey"] = str(settings.EVOLUTION_API_KEY)
-                    logger.info(f"[WhatsAppAdapter] Voice note received from {sender_id}. Transcribing audio...")
-                    transcribed = await AudioTranscriberService.transcribe_audio_url(audio_url, headers=headers)
-                    if transcribed:
-                        raw_text = transcribed
+                text_lower = raw_text.strip().lower()
 
-            if not raw_text or not sender_id:
-                logger.info(f"[WhatsAppAdapter] Message missing text or sender_id. Text: '{raw_text}', Sender: '{sender_id}'")
-                return None
+                # STRICT FILTERING:
+                # Case 1: WhatsApp Group Chat (@g.us)
+                if is_group:
+                    allowed_groups = list(tenant.allowed_group_jids or [])
+                    is_pair_cmd = any(cmd in text_lower for cmd in ["/pair_group", "/set_group", "/bot_here", "/group_pair", "pair group", "bot qoş", "bot qos"])
+                    is_unpair_cmd = any(cmd in text_lower for cmd in ["/unpair_group", "/remove_group", "bot ayır", "bot ayir"])
 
-            logger.info(f"[WhatsAppAdapter] Processing incoming message from {sender_name} ({sender_id}) [fromMe={from_me}, isGroup={is_group}]: '{raw_text}'")
+                    # If group is not paired and not a pairing command, SILENTLY DROP!
+                    if remote_jid not in allowed_groups and not is_pair_cmd and not is_unpair_cmd:
+                        logger.info(f"[WhatsAppAdapter] Ignoring un-paired WhatsApp group ({remote_jid}).")
+                        return None
 
-            async with AsyncSessionLocal() as db:
+                    sender_id = remote_jid
+                    sender_name = group_subject or "WhatsApp Group"
+
+                # Case 2: 1-on-1 Direct Chat
+                else:
+                    # In a 1-on-1 chat, the bot MUST ONLY respond if it is the AGENT'S OWN CHAT (Self-chat / Message Yourself)
+                    remote_digits = re.sub(r'\D', '', remote_jid.split("@")[0])
+                    tenant_digits = [
+                        re.sub(r'\D', '', t.whatsapp_number or "") for t in [tenant] if t.whatsapp_number
+                    ] + [
+                        re.sub(r'\D', '', t.phone or "") for t in [tenant] if t.phone
+                    ]
+                    tenant_digits = [d for d in tenant_digits if d]
+
+                    is_self_chat = any(td and (td in remote_digits or remote_digits in td) for td in tenant_digits)
+
+                    if not is_self_chat:
+                        # Private conversation between agent and a 3rd party (client, friend, family). SILENTLY DROP!
+                        logger.info(f"[WhatsAppAdapter] Ignoring 1-on-1 conversation with third-party contact ({remote_jid}).")
+                        return None
+
+                    sender_id = remote_digits
+                    sender_name = data.get("pushName") or tenant.name or "Agent"
+
+                logger.info(f"[WhatsAppAdapter] Processing valid agent message from {sender_name} ({sender_id}): '{raw_text}'")
+
                 response_text = await BotCommandHandler.handle_incoming_message(
                     db=db,
                     channel="whatsapp",
@@ -110,18 +162,17 @@ class WhatsAppAdapter:
                     group_subject=group_subject
                 )
 
-            if response_text:
-                logger.info(f"[WhatsAppAdapter] Sending AI response to {sender_id} via instance '{instance_name}'...")
-                await WhatsAppAdapter.send_message(
-                    phone_number=sender_id,
-                    text=response_text,
-                    instance_name=instance_name
-                )
+                if response_text:
+                    logger.info(f"[WhatsAppAdapter] Sending AI response to {sender_id} via instance '{instance_name}'...")
+                    await WhatsAppAdapter.send_message(
+                        phone_number=sender_id,
+                        text=response_text,
+                        instance_name=instance_name
+                    )
 
-            return response_text
+                return response_text
         except Exception as e:
             logger.error(f"[WhatsAppAdapter] Webhook error: {e}", exc_info=True)
-            return None
             return None
 
     @staticmethod

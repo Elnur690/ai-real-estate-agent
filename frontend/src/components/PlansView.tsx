@@ -15,7 +15,6 @@ export interface PlanItem {
   max_agents: number;
   feature_makler_detector: boolean;
   feature_avm_bargain_finder: boolean;
-  feature_b2b_cobrokering: boolean;
   feature_social_brochure: boolean;
   feature_client_intake_bot: boolean;
   feature_aged_listings?: boolean;
@@ -41,7 +40,6 @@ export function PlansView() {
   const [formMaxAgents, setFormMaxAgents] = useState<number>(1);
   const [formMakler, setFormMakler] = useState(true);
   const [formAvm, setFormAvm] = useState(true);
-  const [formB2b, setFormB2b] = useState(true);
   const [formBrochure, setFormBrochure] = useState(true);
   const [formIntake, setFormIntake] = useState(true);
   const [formBackup, setFormBackup] = useState(true);
@@ -74,7 +72,6 @@ export function PlansView() {
     setFormMaxAgents(1);
     setFormMakler(true);
     setFormAvm(true);
-    setFormB2b(true);
     setFormBrochure(true);
     setFormIntake(true);
     setFormBackup(true);
@@ -96,7 +93,6 @@ export function PlansView() {
     setFormMaxAgents(plan.max_agents);
     setFormMakler(plan.feature_makler_detector);
     setFormAvm(plan.feature_avm_bargain_finder);
-    setFormB2b(plan.feature_b2b_cobrokering);
     setFormBrochure(plan.feature_social_brochure);
     setFormIntake(plan.feature_client_intake_bot);
     setFormBackup(plan.backup_enabled);
@@ -122,7 +118,6 @@ export function PlansView() {
           max_agents: formMaxAgents,
           feature_makler_detector: formMakler,
           feature_avm_bargain_finder: formAvm,
-          feature_b2b_cobrokering: formB2b,
           feature_social_brochure: formBrochure,
           feature_client_intake_bot: formIntake,
           feature_aged_listings: formAgedListings,
@@ -142,7 +137,6 @@ export function PlansView() {
           max_agents: formMaxAgents,
           feature_makler_detector: formMakler,
           feature_avm_bargain_finder: formAvm,
-          feature_b2b_cobrokering: formB2b,
           feature_social_brochure: formBrochure,
           feature_client_intake_bot: formIntake,
           feature_aged_listings: formAgedListings,
@@ -258,17 +252,6 @@ export function PlansView() {
                     )}
                     <span className={plan.feature_avm_bargain_finder ? 'text-slate-200' : 'text-slate-500 line-through'}>
                       AVM Valuation & Bargain Finder
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {plan.feature_b2b_cobrokering ? (
-                      <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-                    ) : (
-                      <X className="w-4 h-4 text-slate-600 shrink-0" />
-                    )}
-                    <span className={plan.feature_b2b_cobrokering ? 'text-slate-200' : 'text-slate-500 line-through'}>
-                      B2B Co-Brokering & Property Listing Sharing
                     </span>
                   </div>
 
@@ -497,16 +480,6 @@ export function PlansView() {
                       className="rounded accent-emerald-500"
                     />
                     <span className="text-slate-300">AVM Bargain Finder</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 p-2 bg-dark-900/60 rounded-xl border border-slate-800 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={formB2b}
-                      onChange={(e) => setFormB2b(e.target.checked)}
-                      className="rounded accent-emerald-500"
-                    />
-                    <span className="text-slate-300">B2B Co-Brokering</span>
                   </label>
 
                   <label className="flex items-center gap-2 p-2 bg-dark-900/60 rounded-xl border border-slate-800 cursor-pointer">

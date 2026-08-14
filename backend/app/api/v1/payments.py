@@ -65,7 +65,6 @@ async def record_cash_payment(body: CreatePaymentRequest, db: AsyncSession = Dep
             tenant.feature_makler_detector = db_plan.feature_makler_detector
             tenant.feature_avm_bargain_finder = db_plan.feature_avm_bargain_finder
             tenant.feature_social_brochure = db_plan.feature_social_brochure
-            tenant.feature_b2b_cobrokering = db_plan.feature_b2b_cobrokering
             tenant.feature_client_intake_bot = db_plan.feature_client_intake_bot
             tenant.backup_enabled = db_plan.backup_enabled
 

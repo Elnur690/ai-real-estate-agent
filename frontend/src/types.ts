@@ -19,7 +19,6 @@ export interface Tenant {
   last_backup_at?: string;
   feature_makler_detector?: boolean;
   feature_avm_bargain_finder?: boolean;
-  feature_b2b_cobrokering?: boolean;
   feature_social_brochure?: boolean;
   feature_client_intake_bot?: boolean;
   feature_aged_listings?: boolean;

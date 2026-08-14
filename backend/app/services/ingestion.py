@@ -205,6 +205,74 @@ class IngestionService:
         return {"scraped_count": total_scraped, "matched_count": total_matched}
 
     @staticmethod
+    def is_strict_match(search: SavedSearch, listing: Listing) -> bool:
+        """
+        Enforces strict hard filtering for saved search parameters:
+        - Seller Type (owner vs agent)
+        - Price limits (min / max)
+        - Room count (min / max)
+        - District / Location
+        - Metro Station
+        - Building Type (new / old)
+        """
+        # 1. Seller Type Filtering
+        search_seller = (search.seller_type or "any").lower().strip()
+        if search_seller in ["owner", "sahibinden", "sahibindən"]:
+            # Hard rejection if listing is marked as agency, makler, or high makler score
+            if listing.seller_type in ["agent", "agency", "makler", "vasiteci", "vasitəçi", "rieltor"]:
+                return False
+            if getattr(listing, 'is_makler', False):
+                return False
+            if (listing.makler_score or 0.0) >= 0.40:
+                return False
+            if listing.seller_type != "owner":
+                return False
+        elif search_seller in ["agent", "agency", "makler"]:
+            if listing.seller_type == "owner" and not getattr(listing, 'is_makler', False):
+                return False
+
+        # 2. Price Limits
+        if search.min_price and search.min_price > 0:
+            if listing.price and listing.price < search.min_price:
+                return False
+        if search.max_price and search.max_price > 0:
+            if listing.price and listing.price > search.max_price:
+                return False
+
+        # 3. Room Count
+        if search.min_rooms and search.min_rooms > 0:
+            if listing.rooms and listing.rooms < search.min_rooms:
+                return False
+        if search.max_rooms and search.max_rooms > 0:
+            if listing.rooms and listing.rooms > search.max_rooms:
+                return False
+
+        # 4. District / Territory
+        if search.district and search.district.strip():
+            d = search.district.strip().lower()
+            list_text = f"{listing.district or ''} {listing.address_raw or ''} {listing.title or ''}".lower()
+            if d not in list_text:
+                return False
+
+        # 5. Metro Station
+        if search.metro_station and search.metro_station.strip():
+            m = search.metro_station.strip().lower()
+            list_text = f"{listing.metro_station or ''} {listing.address_raw or ''} {listing.title or ''} {listing.description or ''}".lower()
+            if m not in list_text:
+                return False
+
+        # 6. Building Type
+        search_bld = (search.building_type or "any").lower().strip()
+        if search_bld in ["new", "yeni", "yeni tikili"]:
+            if listing.building_type and listing.building_type in ["old", "köhnə"]:
+                return False
+        elif search_bld in ["old", "kohne", "köhnə", "köhnə tikili"]:
+            if listing.building_type and listing.building_type in ["new", "yeni"]:
+                return False
+
+        return True
+
+    @staticmethod
     async def _evaluate_and_deliver_matches(db: AsyncSession, listing: Listing) -> int:
         stmt = select(SavedSearch).where(SavedSearch.is_active == True)
         res = await db.execute(stmt)
@@ -218,7 +286,11 @@ class IngestionService:
             res_t = await db.execute(stmt_t)
             tenant = res_t.scalars().first()
 
-            if not tenant:
+            if not tenant or tenant.status != "active":
+                continue
+
+            # Deterministic Strict Filter Check
+            if not IngestionService.is_strict_match(search, listing):
                 continue
 
             criteria = StructuredCriteria(

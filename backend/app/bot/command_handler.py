@@ -95,11 +95,6 @@ class BotCommandHandler:
                         tenant = t
                         break
 
-            if not tenant:
-                stmt_fb = select(Tenant).where(Tenant.preferred_channel == "whatsapp").order_by(Tenant.id.asc())
-                res_fb = await db.execute(stmt_fb)
-                tenant = res_fb.scalars().first()
-
         if not tenant:
             return None
 
@@ -107,7 +102,6 @@ class BotCommandHandler:
         is_group = "@g.us" in sender_id
         if channel == "whatsapp" and is_group:
             allowed_groups = list(tenant.allowed_group_jids or [])
-            subject_str = (group_subject or "").lower()
 
             is_pair_cmd = any(cmd in text_lower for cmd in ["/pair_group", "/set_group", "/bot_here", "/group_pair", "pair group", "bot qoş", "bot qos"])
             is_unpair_cmd = any(cmd in text_lower for cmd in ["/unpair_group", "/remove_group", "bot ayır", "bot ayir"])
@@ -126,18 +120,9 @@ class BotCommandHandler:
                     await db.commit()
                 return f"🛑 Bu WhatsApp qrupu AI Əmlak Agentindən ayrıldı."
 
-            # Check if auto-pair keyword matched in group name
-            group_keywords = ["ai", "emlak", "əmlak", "real estate", "mənzil", "menzil", "agent", "baza", "axtarış", "axtaris", "bot"]
-            is_keyword_group = any(kw in subject_str for kw in group_keywords)
-
             if sender_id not in allowed_groups:
-                if is_keyword_group:
-                    allowed_groups.append(sender_id)
-                    tenant.allowed_group_jids = allowed_groups
-                    await db.commit()
-                else:
-                    # Message in an un-paired family/friends/other random WhatsApp group -> SILENTLY IGNORE!
-                    return None
+                # Message in an un-paired WhatsApp group -> SILENTLY IGNORE!
+                return None
 
         # 3. Handle Slash Commands & Fast-Path Menu Shortcuts
         if text_lower in ["/start", "/help", "/kömək", "/komak", "kömək", "komak", "help", "menu", "menyu", "salam", "hi", "start"]:
@@ -204,23 +189,10 @@ class BotCommandHandler:
             res_b = await BrochureGeneratorService.generate_property_brochure(db, listing_id, tenant.id)
             if res_b.get("success"):
                 return (
-                    f"📸 *INSTAGRAM CAPTION / SOSİAL ŞƏBƏKƏ MƏTNİ:*\n\n"
-                    f"{res_b['instagram_caption']}\n\n"
-                    f"📄 *PDF Broşurınız hazırlandı!*"
+                    f"🏠 *Elan #{listing_id} üçün Sosial / PDF Buklet hazırdır!*\n\n"
+                    f"📎 [Bukleti Yüklə / Aç]({res_b['brochure_url']})"
                 )
             return f"Xəta: Elan #{listing_id} tapılmadı."
-
-        # B2B Co-brokering Acceptance Command (/b2b <id>)
-        b2b_match_cmd = re.search(r'^(?:/b2b|b2b)\s*(qəbul et|qabul et|imtina|accept|decline)?\s*#?\s*(\d+)', text_lower)
-        if b2b_match_cmd:
-            action = b2b_match_cmd.group(1) or "qəbul"
-            b2b_id = int(b2b_match_cmd.group(2))
-            from app.models.b2b_match import B2BMatch
-            new_st = "accepted" if "qəbul" in action or "qabul" in action or "accept" in action else "declined"
-            stmt_b = update(B2BMatch).where(B2BMatch.id == b2b_id, B2BMatch.buyer_tenant_id == tenant.id).values(status=new_st)
-            await db.execute(stmt_b)
-            await db.commit()
-            return f"B2B Partnyorluq statusu yeniləndi: *{new_st.capitalize()}* 🤝"
 
         # Referral Code & Program Info Command (/referral, /dəvət)
         if text_lower in ["dostunu dəvət et", "dostunu devet et", "referral", "/referral", "dəvət", "/dəvət", "devet", "/devet"]:
@@ -272,27 +244,7 @@ class BotCommandHandler:
                 await db.commit()
                 return f"Elan statusu yeniləndi: *{new_status.capitalize()}* ✅"
 
-        # 5. Property Listing Submission Command (/elan <text>, /post <text>, /share <text>, /satıram <text>, /paylaş <text>)
-        if text_lower.startswith(("/elan", "/post", "/share", "/satıram", "/satiram", "/paylaş", "/paylas")):
-            if not tenant.feature_b2b_cobrokering:
-                return (
-                    f"🔒 *Elan Paylaşımı və B2B Partnyorluq sizin tarifinizdə aktiv deyil.*\n\n"
-                    f"Bu imkan **Pro** və **Agency** planlarında mövcuddur. "
-                    f"Planınızı yüksəldərək öz elanlarınızı platformadakı digər agentlərə (%50/50 komissiya) çatdıra bilərsiniz!"
-                )
-            listing_text = raw_text_trimmed
-            for prefix in ["/elan", "/post", "/share", "/satıram", "/satiram", "/paylaş", "/paylas"]:
-                if listing_text.lower().startswith(prefix):
-                    listing_text = listing_text[len(prefix):].strip()
-                    break
-            if not listing_text:
-                return (
-                    "🏠 *Lütfən paylaşmaq istədiyiniz mənzil elanını yazın.*\n\n"
-                    "*Nümunə:* `/elan Yasamalda 3 otaqlı 145000 AZN 110 kv/m mənzil satılır. Tel: 0501234567`"
-                )
-            return await BotCommandHandler._process_listing_submission(db, tenant, listing_text)
-
-        # 6. Fast-path Explicit Add Search Command (/yeni, /add, /new)
+        # 5. Fast-path Explicit Add Search Command (/yeni, /add, /new)
         if text_lower.startswith(("/yeni", "/add", "/new", "/axtar", "yeni axtarış", "yeni axtaris")):
             criteria_text = raw_text_trimmed
             for prefix in ["/yeni", "/add", "/new", "/axtar", "yeni axtarış", "yeni axtaris"]:
@@ -591,8 +543,7 @@ class BotCommandHandler:
             f"▪️ `/unpair_group` (və ya `bot ayır`) — Botu WhatsApp qrupundan ayırmaq\n\n"
             f"🎙️ *SƏSLİ MESAJ:* WhatsApp və ya Telegram-da səsli mesaj göndərərək də axtarış yarada bilərsiniz!\n\n"
             f"💬 *ELAN REAKSİYALARI:*\n"
-            f"• `Maraqlanıram <id>` | `Keç <id>` | `Satılıb <id>`\n"
-            f"• `/elan <mətn>` — Öz mənzil elanınızı B2B partnyor agentlərə təqdim etmək"
+            f"• `Maraqlanıram <id>` | `Keç <id>` | `Satılıb <id>`"
         )
 
     @staticmethod
@@ -693,73 +644,4 @@ class BotCommandHandler:
             f"📅 *KÖHNƏ / BAZARDA QALAN AKTİV ELANLAR ({months}+ aydır satışda)*\n"
             f"💡 *Qeyd:* Bu mənzillər uzun müddətdir satışda olduğu üçün qiymət endirimi danışıqları üçün əlverişlidir.\n\n"
             + "\n\n───────────────\n\n".join(items_text)
-        )
-
-    @staticmethod
-    async def _process_listing_submission(db: AsyncSession, tenant: Tenant, raw_text: str) -> str:
-        """
-        Processes an agent submitting their own listing via /elan or /post or /share.
-        Parses text, creates Listing in DB, and evaluates B2B co-brokering matches instantly.
-        """
-        from datetime import datetime, timezone
-        from app.ai.factory import ProviderFactory
-        from app.models.listing import Listing
-        from app.services.b2b_service import B2BService
-        from app.core.baku_locations import extract_baku_district, extract_metro_station
-
-        ai_provider = await ProviderFactory.get_provider_for_task(db, "listing_parsing")
-        struct_l = await ai_provider.parse_telegram_listing(raw_text)
-
-        district = struct_l.district or extract_baku_district(raw_text)
-        metro = struct_l.metro_station or extract_metro_station(raw_text)
-        title = struct_l.title or f"{district or 'Bakı'} mənzil elanı"
-
-        listing = Listing(
-            external_id=f"agent_{tenant.id}_{int(datetime.now(timezone.utc).timestamp())}",
-            title=title,
-            description=raw_text,
-            price=struct_l.price if struct_l.price and struct_l.price > 0 else 0.0,
-            currency=struct_l.currency or "AZN",
-            district=district,
-            metro_station=metro,
-            rooms=struct_l.rooms,
-            area_sqm=struct_l.area_sqm,
-            building_type=struct_l.building_type or "new",
-            seller_type="owner",
-            source_id=tenant.id,
-            is_active=True,
-            listing_url="#"
-        )
-        db.add(listing)
-        await db.commit()
-        await db.refresh(listing)
-
-        from app.models.plan import Plan
-        stmt_plan = select(Plan).where(Plan.code == tenant.plan)
-        res_plan = await db.execute(stmt_plan)
-        plan_obj = res_plan.scalars().first()
-        b2b_allowed = plan_obj.feature_b2b_cobrokering if plan_obj else tenant.feature_b2b_cobrokering
-
-        app_name = await get_app_name(db)
-
-        if not b2b_allowed:
-            return (
-                f"📋 *ELAN BAZAYA ƏLAVƏ EDİLDİ ({app_name})*\n\n"
-                f"🏠 *{listing.title}*\n"
-                f"💰 *Qiymət:* {int(listing.price)} {listing.currency}\n"
-                f"📍 *Məkan:* {district or 'Bakı'} ({metro or 'Metro göstərilməyib'})\n"
-                f"🚪 *Otaq:* {listing.rooms or '-'} | 📐 *Sahə:* {listing.area_sqm or '-'} m²\n\n"
-                f"🔒 *Qeyd:* Sizin hazırkı `{tenant.plan.upper()}` planınızda B2B Co-Brokering şəbəkəsi aktiv deyil. Elanınız digər agentlərin axtarışlarına avtomatik paylanmadı. Aktivləşdirmək üçün planınızı yüksəldin."
-            )
-
-        # Trigger B2B Co-Brokering Notification to other matching agents
-        b2b_matches = await B2BService.evaluate_b2b_cobrokering(db, listing)
-
-        return (
-            f"🚀 *ELANINIZ UĞURLA DƏRC EDİLDİ VƏ PARTNYORLARA ÇATDIRILDI! ({app_name})*\n\n"
-            f"🏠 *{listing.title}*\n"
-            f"💰 *Qiymət:* {int(listing.price)} {listing.currency}\n"
-            f"📍 *Məkan:* {district or 'Bakı'} ({metro or 'Metro göstərilməyib'})\n"
-            f"🚪 *Otaq:* {listing.rooms or '-'} | 📐 *Sahə:* {listing.area_sqm or '-'} m²\n\n"
-            f"🤝 *B2B Şəbəkə:* Elanınız digər agentlərin (%50/50 Komissiya) alıcı istəkləri ilə avtomatik müqayisə edildi ({b2b_matches} agentə bildiriş göndərildi)."
         )

@@ -26,7 +26,6 @@ class CreateTenantRequest(BaseModel):
     backup_frequency_days: int = 7 # 1 (daily) | 7 (weekly) | 30 (monthly)
     feature_makler_detector: bool = False
     feature_avm_bargain_finder: bool = False
-    feature_b2b_cobrokering: bool = False
     feature_social_brochure: bool = False
     feature_client_intake_bot: bool = False
     feature_aged_listings: bool = False
@@ -45,7 +44,6 @@ class UpdateTenantRequest(BaseModel):
     backup_frequency_days: Optional[int] = None
     feature_makler_detector: Optional[bool] = None
     feature_avm_bargain_finder: Optional[bool] = None
-    feature_b2b_cobrokering: Optional[bool] = None
     feature_social_brochure: Optional[bool] = None
     feature_client_intake_bot: Optional[bool] = None
     feature_aged_listings: Optional[bool] = None
@@ -71,7 +69,6 @@ class TenantResponse(BaseModel):
     last_backup_at: Optional[datetime] = None
     feature_makler_detector: bool
     feature_avm_bargain_finder: bool
-    feature_b2b_cobrokering: bool
     feature_social_brochure: bool
     feature_client_intake_bot: bool
     feature_aged_listings: bool = False
@@ -122,7 +119,6 @@ async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(ge
         feature_makler_detector=db_plan.feature_makler_detector if db_plan else True,
         feature_avm_bargain_finder=db_plan.feature_avm_bargain_finder if db_plan else True,
         feature_social_brochure=db_plan.feature_social_brochure if db_plan else True,
-        feature_b2b_cobrokering=db_plan.feature_b2b_cobrokering if db_plan else True,
         feature_client_intake_bot=db_plan.feature_client_intake_bot if db_plan else True,
         feature_aged_listings=getattr(db_plan, 'feature_aged_listings', False) or body.feature_aged_listings,
         addon_aged_max_months=body.addon_aged_max_months or 12,
@@ -182,7 +178,6 @@ async def update_tenant(tenant_id: int, body: UpdateTenantRequest, db: AsyncSess
             tenant.feature_makler_detector = db_plan.feature_makler_detector
             tenant.feature_avm_bargain_finder = db_plan.feature_avm_bargain_finder
             tenant.feature_social_brochure = db_plan.feature_social_brochure
-            tenant.feature_b2b_cobrokering = db_plan.feature_b2b_cobrokering
             tenant.feature_client_intake_bot = db_plan.feature_client_intake_bot
             tenant.backup_enabled = db_plan.backup_enabled
 

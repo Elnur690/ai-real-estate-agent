@@ -603,21 +603,6 @@ export const AppSettingsView: React.FC = () => {
                 Listings with a Makler score above this threshold (0.0 to 1.0) are flagged as masked agencies.
               </span>
             </div>
-
-            <div>
-              <label className="text-xs text-slate-300 font-semibold block mb-1">Co-Brokering Default Commission Split % (`cobrokering_default_split`)</label>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={settingsMap['cobrokering_default_split'] || '50'}
-                onChange={(e) => setSettingsMap({ ...settingsMap, cobrokering_default_split: e.target.value })}
-                className="w-full bg-dark-900 border border-slate-700/80 px-3.5 py-2.5 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
-              />
-              <span className="text-[11px] text-slate-500 mt-1 block">
-                Default percentage split for B2B co-brokering deals.
-              </span>
-            </div>
           </div>
 
           <div className="pt-3 border-t border-slate-800 flex items-center justify-between">

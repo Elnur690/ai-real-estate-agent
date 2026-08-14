@@ -26,7 +26,6 @@ class PlanResponse(BaseModel):
     max_agents: int
     feature_makler_detector: bool
     feature_avm_bargain_finder: bool
-    feature_b2b_cobrokering: bool
     feature_social_brochure: bool
     feature_client_intake_bot: bool
     feature_aged_listings: bool = False
@@ -47,7 +46,6 @@ class CreatePlanRequest(BaseModel):
     max_agents: int = 1
     feature_makler_detector: bool = True
     feature_avm_bargain_finder: bool = True
-    feature_b2b_cobrokering: bool = True
     feature_social_brochure: bool = True
     feature_client_intake_bot: bool = True
     feature_aged_listings: bool = False
@@ -66,7 +64,6 @@ class UpdatePlanRequest(BaseModel):
     max_agents: Optional[int] = None
     feature_makler_detector: Optional[bool] = None
     feature_avm_bargain_finder: Optional[bool] = None
-    feature_b2b_cobrokering: Optional[bool] = None
     feature_social_brochure: Optional[bool] = None
     feature_client_intake_bot: Optional[bool] = None
     feature_aged_listings: Optional[bool] = None
@@ -102,7 +99,6 @@ async def list_plans(db: AsyncSession = Depends(get_db)):
             max_agents=plan.max_agents,
             feature_makler_detector=plan.feature_makler_detector,
             feature_avm_bargain_finder=plan.feature_avm_bargain_finder,
-            feature_b2b_cobrokering=plan.feature_b2b_cobrokering,
             feature_social_brochure=plan.feature_social_brochure,
             feature_client_intake_bot=plan.feature_client_intake_bot,
             feature_aged_listings=getattr(plan, 'feature_aged_listings', False),
@@ -141,7 +137,6 @@ async def create_plan(
         max_agents=body.max_agents,
         feature_makler_detector=body.feature_makler_detector,
         feature_avm_bargain_finder=body.feature_avm_bargain_finder,
-        feature_b2b_cobrokering=body.feature_b2b_cobrokering,
         feature_social_brochure=body.feature_social_brochure,
         feature_client_intake_bot=body.feature_client_intake_bot,
         feature_aged_listings=body.feature_aged_listings,
@@ -165,7 +160,6 @@ async def create_plan(
         max_agents=plan.max_agents,
         feature_makler_detector=plan.feature_makler_detector,
         feature_avm_bargain_finder=plan.feature_avm_bargain_finder,
-        feature_b2b_cobrokering=plan.feature_b2b_cobrokering,
         feature_social_brochure=plan.feature_social_brochure,
         feature_client_intake_bot=plan.feature_client_intake_bot,
         feature_aged_listings=plan.feature_aged_listings,
@@ -205,7 +199,6 @@ async def get_plan(
         max_agents=plan.max_agents,
         feature_makler_detector=plan.feature_makler_detector,
         feature_avm_bargain_finder=plan.feature_avm_bargain_finder,
-        feature_b2b_cobrokering=plan.feature_b2b_cobrokering,
         feature_social_brochure=plan.feature_social_brochure,
         feature_client_intake_bot=plan.feature_client_intake_bot,
         feature_aged_listings=getattr(plan, 'feature_aged_listings', False),
@@ -249,8 +242,6 @@ async def update_plan(
         plan.feature_makler_detector = body.feature_makler_detector
     if body.feature_avm_bargain_finder is not None:
         plan.feature_avm_bargain_finder = body.feature_avm_bargain_finder
-    if body.feature_b2b_cobrokering is not None:
-        plan.feature_b2b_cobrokering = body.feature_b2b_cobrokering
     if body.feature_social_brochure is not None:
         plan.feature_social_brochure = body.feature_social_brochure
     if body.feature_client_intake_bot is not None:
@@ -269,8 +260,6 @@ async def update_plan(
         tenant_updates["feature_makler_detector"] = body.feature_makler_detector
     if body.feature_avm_bargain_finder is not None:
         tenant_updates["feature_avm_bargain_finder"] = body.feature_avm_bargain_finder
-    if body.feature_b2b_cobrokering is not None:
-        tenant_updates["feature_b2b_cobrokering"] = body.feature_b2b_cobrokering
     if body.feature_social_brochure is not None:
         tenant_updates["feature_social_brochure"] = body.feature_social_brochure
     if body.feature_client_intake_bot is not None:
@@ -307,7 +296,6 @@ async def update_plan(
         max_agents=plan.max_agents,
         feature_makler_detector=plan.feature_makler_detector,
         feature_avm_bargain_finder=plan.feature_avm_bargain_finder,
-        feature_b2b_cobrokering=plan.feature_b2b_cobrokering,
         feature_social_brochure=plan.feature_social_brochure,
         feature_client_intake_bot=plan.feature_client_intake_bot,
         feature_aged_listings=getattr(plan, 'feature_aged_listings', False),

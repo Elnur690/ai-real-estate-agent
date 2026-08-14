@@ -22,7 +22,7 @@ class Plan(Base):
     # Feature Toggles & Add-ons
     feature_makler_detector: Mapped[bool] = mapped_column(Boolean, default=True)
     feature_avm_bargain_finder: Mapped[bool] = mapped_column(Boolean, default=True)
-    feature_b2b_cobrokering: Mapped[bool] = mapped_column(Boolean, default=True)
+    feature_b2b_cobrokering: Mapped[bool] = mapped_column(Boolean, default=False)
     feature_social_brochure: Mapped[bool] = mapped_column(Boolean, default=True)
     feature_client_intake_bot: Mapped[bool] = mapped_column(Boolean, default=True)
     feature_aged_listings: Mapped[bool] = mapped_column(Boolean, default=False)
