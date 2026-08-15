@@ -54,6 +54,14 @@ class RahatEmlakAzScraper(BaseScraper):
 
                         title = f"{rooms or ''} otaqlı mənzil {int(price)} AZN ({district})" if rooms else f"Mənzil {int(price)} AZN ({district})"
 
+                        from app.core.property_classifier import classify_property_and_offer
+                        detected_offer, detected_prop, detected_seller = classify_property_and_offer(
+                            title=title,
+                            description=raw_text,
+                            url=href,
+                            raw_text=raw_text
+                        )
+
                         items.append(RawListingItem(
                             external_id=f"rahatemlak_{ext_id}",
                             title=title,
@@ -65,11 +73,17 @@ class RahatEmlakAzScraper(BaseScraper):
                             rooms=rooms,
                             area_sqm=area,
                             building_type="new",
-                            seller_type="owner",
+                            seller_type=detected_seller,
+                            offer_type=detected_offer,
+                            property_type=detected_prop,
                             listing_url=f"{self.BASE_URL}{href}" if href.startswith('/') else href
                         ))
                         if len(items) >= 20:
                             break
+                elif res.status_code == 403:
+                    logger.warning(f"[RahatEmlakAzScraper] Site returned 403 Forbidden (Cloudflare WAF challenge on rahatemlak.az). Skipped gracefully.")
+                else:
+                    logger.warning(f"[RahatEmlakAzScraper] Unexpected HTTP status {res.status_code} fetching listings.")
 
         except Exception as e:
             logger.error(f"[RahatEmlakAzScraper] Error scraping: {e}")
