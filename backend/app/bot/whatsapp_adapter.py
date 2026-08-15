@@ -103,8 +103,9 @@ class WhatsAppAdapter:
                         headers = {}
                         if settings.EVOLUTION_API_KEY:
                             headers["apikey"] = str(settings.EVOLUTION_API_KEY)
-                        logger.info(f"[WhatsAppAdapter] Voice note received. Transcribing audio...")
-                        transcribed = await AudioTranscriberService.transcribe_audio_url(audio_url, headers=headers)
+                        audio_mime = audio_msg.get("mimetype") or "audio/ogg"
+                        logger.info(f"[WhatsAppAdapter] Voice note received ({audio_mime}). Transcribing audio...")
+                        transcribed = await AudioTranscriberService.transcribe_audio_url(audio_url, headers=headers, mime_type=audio_mime)
                         if transcribed:
                             raw_text = transcribed
 
