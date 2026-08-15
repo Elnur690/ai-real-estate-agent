@@ -286,3 +286,84 @@ def test_strict_match_offer_and_property_type():
         makler_score=1.0
     )
     assert IngestionService.is_strict_match(search, fake_owner_listing) is False
+
+def test_strict_match_multi_rooms_and_both_building_types():
+    # Search for 3 or 4 rooms, building_type="any" (matches both new and old buildings)
+    search = SavedSearch(
+        tenant_id=1,
+        name="3 or 4 rooms, any building",
+        raw_criteria_text="Nəsimidə 3 və ya 4 otaqlı mənzil",
+        seller_type="any",
+        offer_type="sale",
+        property_type="apartment",
+        building_type="any",
+        district="Nəsimi",
+        min_rooms=3,
+        max_rooms=4,
+        min_price=100000,
+        max_price=300000
+    )
+
+    # 1. 3-room in old building -> MATCH
+    listing_3_old = Listing(
+        source_id=1,
+        external_id="401",
+        title="Nəsimidə 3 otaqlı köhnə tikili",
+        listing_url="https://bina.az/items/401",
+        district="Nəsimi",
+        rooms=3,
+        price=180000.0,
+        seller_type="owner",
+        offer_type="sale",
+        property_type="apartment",
+        building_type="old"
+    )
+    assert IngestionService.is_strict_match(search, listing_3_old) is True
+
+    # 2. 4-room in new building -> MATCH
+    listing_4_new = Listing(
+        source_id=1,
+        external_id="402",
+        title="Nəsimidə 4 otaqlı yeni tikili",
+        listing_url="https://bina.az/items/402",
+        district="Nəsimi",
+        rooms=4,
+        price=250000.0,
+        seller_type="agency",
+        offer_type="sale",
+        property_type="apartment",
+        building_type="new"
+    )
+    assert IngestionService.is_strict_match(search, listing_4_new) is True
+
+    # 3. 2-room in new building -> REJECT (2 < 3)
+    listing_2_new = Listing(
+        source_id=1,
+        external_id="403",
+        title="Nəsimidə 2 otaqlı yeni tikili",
+        listing_url="https://bina.az/items/403",
+        district="Nəsimi",
+        rooms=2,
+        price=140000.0,
+        seller_type="owner",
+        offer_type="sale",
+        property_type="apartment",
+        building_type="new"
+    )
+    assert IngestionService.is_strict_match(search, listing_2_new) is False
+
+    # 4. 5-room in old building -> REJECT (5 > 4)
+    listing_5_old = Listing(
+        source_id=1,
+        external_id="404",
+        title="Nəsimidə 5 otaqlı köhnə tikili",
+        listing_url="https://bina.az/items/404",
+        district="Nəsimi",
+        rooms=5,
+        price=290000.0,
+        seller_type="owner",
+        offer_type="sale",
+        property_type="apartment",
+        building_type="old"
+    )
+    assert IngestionService.is_strict_match(search, listing_5_old) is False

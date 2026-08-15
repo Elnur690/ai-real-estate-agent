@@ -20,7 +20,10 @@ class GeminiProvider(AIProvider):
 Extract real estate search criteria from this user input (in Azerbaijani or Russian or English):
 "{raw_text}"
 
-Note: The user can specify multiple locations/districts or multiple metro stations (e.g., "Qarayev və Neftçilər", "Yasamal, Nəsimi").
+Important Rules:
+1. Multi-location: The user can specify multiple locations/districts or multiple metro stations (e.g., "Qarayev və Neftçilər", "Yasamal, Nəsimi").
+2. Multi-room: The user can specify multiple room numbers (e.g. "3 və ya 4 otaqlı", "2, 3 otaq", "3-4 otaqlı"). For "3 və ya 4 otaqlı" return "min_rooms": 3, "max_rooms": 4. For single "3 otaqlı" return "min_rooms": 3, "max_rooms": 3. If rooms not mentioned, return null for both.
+3. Building type: Return "new" ONLY if the user explicitly mentions new building ("yeni tikili", "novostroyka", "yeni bina"). Return "old" ONLY if the user explicitly mentions old building ("köhnə tikili", "leninqrad", "xruşovka", "stalinka", "köhnə bina"). If NOT explicitly mentioned or user wants any/all buildings, return "any" (meaning select both new and old buildings).
 
 Return JSON ONLY with this exact schema:
 {{
@@ -76,6 +79,8 @@ Return JSON ONLY with this exact schema:
                     data["offer_type"] = "rent" if any(k in raw_text.lower() for k in ["kirayə", "kiraye", "icarə", "icare", "arenda", "aylıq"]) else "sale"
                 if not data.get("property_type"):
                     data["property_type"] = "office" if "ofis" in raw_text.lower() else ("commercial" if any(k in raw_text.lower() for k in ["obyekt", "mağaza", "kafe"]) else "apartment")
+                if not data.get("building_type"):
+                    data["building_type"] = "any"
 
                 return StructuredCriteria(**data)
             except Exception as e:
@@ -95,19 +100,34 @@ Return JSON ONLY with this exact schema:
         found_district = ", ".join(all_districts) if all_districts else None
         found_metro = ", ".join(all_metros) if all_metros else None
 
-        # Rooms
-        rooms_match = re.search(r'(\d+)\s*(?:otaq|otaqlı|otag)', text_lower)
+        # Rooms (Single or Multi-room, e.g. "3 və ya 4 otaqlı", "2, 3 otaq", "3-4 otaq", "2 və 3 otaq")
         min_rooms, max_rooms = None, None
-        if rooms_match:
-            r = int(rooms_match.group(1))
-            min_rooms, max_rooms = r, r
+        
+        # 1. Multi-room pattern (e.g. 2, 3 otaq / 3-4 otaq / 3 və ya 4 otaq / 2 və 3 otaq / 2/3 otaq)
+        multi_room_match = re.search(
+            r'(\d+(?:\s*(?:-|–|,|\/|\bvə ya\b|\bya da\b|\bvə\b|\bve\b|\bya\b)\s*\d+)+)\s*(?:otaq|otaqlı|otag)',
+            text_lower
+        )
+        if multi_room_match:
+            digits = [int(d) for d in re.findall(r'\d+', multi_room_match.group(1)) if 1 <= int(d) <= 10]
+            if digits:
+                min_rooms = min(digits)
+                max_rooms = max(digits)
+        else:
+            # 2. Separate mentions like "2 otaq və ya 3 otaq" or single "3 otaqlı"
+            all_room_matches = re.findall(r'(\d+)\s*(?:otaq|otaqlı|otag)', text_lower)
+            if all_room_matches:
+                digits = [int(d) for d in all_room_matches if 1 <= int(d) <= 10]
+                if digits:
+                    min_rooms = min(digits)
+                    max_rooms = max(digits)
 
         # Currency USD Detection
         is_usd = any(c in text_lower for c in ["$", "usd", "dollar", "dolar"])
         rate = 1.70
 
         # Prices (e.g., 100-150 min, 120000, 100k, $100k)
-        text_for_price = re.sub(r'\d+\s*(?:otaq|otaqlı|otag)', '', text_lower)
+        text_for_price = re.sub(r'\d+(?:\s*(?:-|–|,|\/|\bvə ya\b|\bya da\b|\bvə\b|\bve\b|\bya\b)\s*\d+)*\s*(?:otaq|otaqlı|otag)', '', text_lower)
         min_price, max_price = None, None
         min_price_usd, max_price_usd = None, None
         
@@ -158,11 +178,11 @@ Return JSON ONLY with this exact schema:
         elif "agentlik" in text_lower or "makler" in text_lower:
             seller_type = "agency"
 
-        # Building type
+        # Building type (Select exactly if mentioned, otherwise select both -> "any")
         building_type = "any"
-        if "yeni tikili" in text_lower or "yeni" in text_lower:
+        if any(k in text_lower for k in ["yeni tikili", "yeni bina", "novostroyka", "yeni tikilidə"]):
             building_type = "new"
-        elif "köhnə tikili" in text_lower or "köhnə" in text_lower:
+        elif any(k in text_lower for k in ["köhnə tikili", "kohne tikili", "köhnə bina", "kohne bina", "leninqrad", "xruşovka", "stalinka", "fransız", "kiyev", "eksperimental"]):
             building_type = "old"
 
         summary_parts = []
@@ -170,8 +190,13 @@ Return JSON ONLY with this exact schema:
             summary_parts.append(f"{found_district} rayonunda")
         if found_metro:
             summary_parts.append(f"{found_metro} m/st yaxınlığında")
-        if min_rooms:
+        
+        if min_rooms and max_rooms and min_rooms == max_rooms:
             summary_parts.append(f"{min_rooms} otaqlı")
+        elif min_rooms and max_rooms and max_rooms == min_rooms + 1:
+            summary_parts.append(f"{min_rooms} və ya {max_rooms} otaqlı")
+        elif min_rooms or max_rooms:
+            summary_parts.append(f"{min_rooms or 1}-{max_rooms or 5} otaqlı")
         
         prop_label = {"office": "ofis", "commercial": "obyekt", "house": "həyət evi/villa", "land": "torpaq"}.get(property_type, "mənzil")
         deal_label = "kirayə" if offer_type == "rent" else "satış"
@@ -181,10 +206,14 @@ Return JSON ONLY with this exact schema:
             summary_parts.append(f"maksimum ${int(max_price_usd):,} USD ({int(max_price):,} AZN) qiymətinə")
         elif max_price:
             summary_parts.append(f"maksimum {int(max_price):,} AZN qiymətinə")
+        
         if seller_type == "owner":
             summary_parts.append("yalnız ev sahibindən")
+        
         if building_type == "new":
             summary_parts.append("yeni tikili")
+        elif building_type == "old":
+            summary_parts.append("köhnə tikili")
 
         summary_az = ", ".join(summary_parts) if summary_parts else "Daxil etdiyiniz parametrlərə uyğun"
         summary_az = f"{summary_az} əmlak axtarırsınız, düzdür?"

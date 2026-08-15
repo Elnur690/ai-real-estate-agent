@@ -28,6 +28,31 @@ async def test_metro_station_and_usd_conversion_parsing():
     assert criteria.max_price == 170000.0 # $100k USD * 1.70 = 170k AZN
     assert criteria.building_type == "new"
 
+@pytest.mark.asyncio
+async def test_multi_room_and_building_type_parsing():
+    provider = GeminiProvider(model_name="gemini-1.5-flash")
+    
+    # 1. "3 və ya 4 otaqlı", no building specified -> min_rooms=3, max_rooms=4, building_type="any"
+    text1 = "Nəsimidə 3 və ya 4 otaqlı mənzil"
+    c1 = await provider.parse_search_criteria(text1)
+    assert c1.min_rooms == 3
+    assert c1.max_rooms == 4
+    assert c1.building_type == "any"
+
+    # 2. "2, 3 otaq köhnə tikili" -> min_rooms=2, max_rooms=3, building_type="old"
+    text2 = "Yasamalda 2, 3 otaqlı köhnə tikili mənzil"
+    c2 = await provider.parse_search_criteria(text2)
+    assert c2.min_rooms == 2
+    assert c2.max_rooms == 3
+    assert c2.building_type == "old"
+
+    # 3. "3-4 otaq yeni tikili" -> min_rooms=3, max_rooms=4, building_type="new"
+    text3 = "Xətaidə 3-4 otaq yeni tikili"
+    c3 = await provider.parse_search_criteria(text3)
+    assert c3.min_rooms == 3
+    assert c3.max_rooms == 4
+    assert c3.building_type == "new"
+
 def test_fernet_key_encryption():
     plain = "sk-test-secret-key-12345"
     encrypted = encrypt_key(plain)

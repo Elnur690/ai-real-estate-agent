@@ -412,17 +412,20 @@ class BotCommandHandler:
 
         if min_r and max_r and min_r == max_r:
             set_fields.append(f"• 🚪 *Otaq sayı:* {min_r} otaqlı")
+        elif min_r and max_r and max_r == min_r + 1:
+            set_fields.append(f"• 🚪 *Otaq sayı:* {min_r} və ya {max_r} otaqlı")
         elif min_r or max_r:
             set_fields.append(f"• 🚪 *Otaq sayı:* {min_r or 1} - {max_r or 5} otaqlı")
         else:
             if prop == "apartment":
-                missing_fields.append("🚪 *Otaq sayı* (məsələn: 3 otaqlı)")
+                missing_fields.append("🚪 *Otaq sayı* (məsələn: 3 və ya 4 otaqlı)")
 
-        if bld != "any":
-            bld_tr = "Yeni tikili" if bld == "new" else "Köhnə tikili"
-            set_fields.append(f"• 🏢 *Bina növü:* {bld_tr}")
-        elif prop == "apartment":
-            missing_fields.append("🏢 *Bina növü* (Yeni tikili / Köhnə tikili)")
+        if bld == "new":
+            set_fields.append("• 🏢 *Bina növü:* Yalnız Yeni tikili")
+        elif bld == "old":
+            set_fields.append("• 🏢 *Bina növü:* Yalnız Köhnə tikili")
+        else:
+            set_fields.append("• 🏢 *Bina növü:* Hər ikisi (Yeni və Köhnə tikili)")
 
         if seller != "any":
             seller_tr = "Yalnız Ev Sahibindən (Maklersiz)" if seller == "owner" else "Agentlik/Makler"
@@ -504,8 +507,12 @@ class BotCommandHandler:
         summary_parts = []
         if district: summary_parts.append(f"Məkan/Rayon: {district}")
         if metro_station: summary_parts.append(f"Metro: {metro_station}")
-        if min_r: summary_parts.append(f"Otaq: {min_r} otaqlı")
+        if min_r and max_r and min_r == max_r:
+            summary_parts.append(f"Otaq: {min_r} otaqlı")
+        elif min_r and max_r:
+            summary_parts.append(f"Otaq: {min_r}-{max_r} otaqlı")
         if min_p or max_p: summary_parts.append(f"Qiymət: {int(min_p or 0):,}-{int(max_p or 0):,} AZN")
+        summary_parts.append(f"Bina: {'Yalnız Yeni' if bld == 'new' else ('Yalnız Köhnə' if bld == 'old' else 'Yeni və Köhnə')}")
         summary_str = " | ".join(summary_parts) if summary_parts else raw_text
 
         # Evaluate recent listings for instant match delivery
