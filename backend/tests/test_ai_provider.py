@@ -53,6 +53,23 @@ async def test_multi_room_and_building_type_parsing():
     assert c3.max_rooms == 4
     assert c3.building_type == "new"
 
+@pytest.mark.asyncio
+async def test_historical_lookback_in_search_criteria():
+    provider = GeminiProvider(model_name="gemini-1.5-flash")
+    raw_text = "Nəsimi rayonu mənzil, 3 və ya 4 otaqlı, 250000 - 300000 azn, yeni tikili, təmirli və əşyalı, sahibindən, 3 aydan bəri"
+    criteria = await provider.parse_search_criteria(raw_text)
+
+    assert criteria.district == "Nəsimi"
+    assert criteria.min_rooms == 3
+    assert criteria.max_rooms == 4
+    assert criteria.min_price == 250000.0
+    assert criteria.max_price == 300000.0
+    assert criteria.building_type == "new"
+    assert criteria.seller_type == "owner"
+    assert criteria.offer_type == "sale"
+    assert criteria.property_type == "apartment"
+    assert criteria.min_months_on_market == 3
+
 def test_fernet_key_encryption():
     plain = "sk-test-secret-key-12345"
     encrypted = encrypt_key(plain)

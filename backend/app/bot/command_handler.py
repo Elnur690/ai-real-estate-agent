@@ -374,6 +374,28 @@ class BotCommandHandler:
         bld = draft.get("building_type", "any")
         offer = draft.get("offer_type", "sale")
         prop = draft.get("property_type", "apartment")
+        min_months = draft.get("min_months_on_market")
+
+        # Aged listings addon verification
+        has_aged_addon = tenant.feature_aged_listings
+        if not has_aged_addon and tenant.parent_tenant_id:
+            stmt_p = select(Tenant).where(Tenant.id == tenant.parent_tenant_id)
+            res_p = await db.execute(stmt_p)
+            parent = res_p.scalars().first()
+            if parent and parent.feature_aged_listings:
+                has_aged_addon = True
+
+        aged_addon_note = None
+        if min_months:
+            if not has_aged_addon:
+                aged_addon_note = f"🔒 *Qeyd:* '{min_months} aydan bəri' (Bazar arxivi) funksiyası üçün Aged Listings Add-on tələb olunur. Aktivləşdirmək üçün administratorla əlaqə saxlayın."
+                draft["min_months_on_market"] = None
+                min_months = None
+            else:
+                max_cap = tenant.addon_aged_max_months or 12
+                if min_months > max_cap:
+                    min_months = max_cap
+                    draft["min_months_on_market"] = min_months
 
         set_fields = []
         missing_fields = []
@@ -431,11 +453,16 @@ class BotCommandHandler:
             seller_tr = "Yalnız Ev Sahibindən (Maklersiz)" if seller == "owner" else "Agentlik/Makler"
             set_fields.append(f"• 👤 *Satıcı:* {seller_tr}")
 
+        if min_months:
+            set_fields.append(f"• ⌛ *Bazarda qalma:* Ən azı {min_months} aydan bəri (Köhnə aktiv elanlar)")
+
         # Construct Output Message
         lines = ["📝 *AXTARIŞ PARAMETRLƏRİNİN ÖN BAXIŞI (QARALAMA)*\n"]
 
         if multi_loc_note:
             lines.append(f"{multi_loc_note}\n")
+        if aged_addon_note:
+            lines.append(f"{aged_addon_note}\n")
 
         if set_fields:
             lines.append("✅ *Təyin edilmiş parametrlər:*")
@@ -481,6 +508,7 @@ class BotCommandHandler:
         bld = draft.get("building_type", "any")
         offer = draft.get("offer_type", "sale")
         prop = draft.get("property_type", "apartment")
+        min_months = draft.get("min_months_on_market")
 
         name_loc = district or metro_station or 'Ümumi'
         new_search = SavedSearch(
@@ -497,6 +525,7 @@ class BotCommandHandler:
             building_type=bld,
             offer_type=offer,
             property_type=prop,
+            min_months_on_market=min_months,
             is_active=True
         )
         db.add(new_search)
@@ -513,13 +542,23 @@ class BotCommandHandler:
             summary_parts.append(f"Otaq: {min_r}-{max_r} otaqlı")
         if min_p or max_p: summary_parts.append(f"Qiymət: {int(min_p or 0):,}-{int(max_p or 0):,} AZN")
         summary_parts.append(f"Bina: {'Yalnız Yeni' if bld == 'new' else ('Yalnız Köhnə' if bld == 'old' else 'Yeni və Köhnə')}")
+        if min_months:
+            summary_parts.append(f"Bazarda qalma: Ən azı {min_months} aydan bəri")
         summary_str = " | ".join(summary_parts) if summary_parts else raw_text
 
-        # Evaluate recent listings for instant match delivery
+        # Evaluate recent / historical listings for instant match delivery
         try:
+            from datetime import datetime, timedelta, timezone
             from app.models.listing import Listing
             from app.services.ingestion import IngestionService
-            stmt_rec = select(Listing).where(Listing.is_active == True).order_by(Listing.id.desc()).limit(30)
+            
+            stmt_rec = select(Listing).where(Listing.is_active == True)
+            if min_months and min_months > 0:
+                cutoff = datetime.now(timezone.utc) - timedelta(days=min_months * 30)
+                stmt_rec = stmt_rec.where(Listing.created_at <= cutoff).order_by(Listing.created_at.asc()).limit(30)
+            else:
+                stmt_rec = stmt_rec.order_by(Listing.id.desc()).limit(30)
+
             res_rec = await db.execute(stmt_rec)
             recent_listings = res_rec.scalars().all()
             for l in recent_listings:

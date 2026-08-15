@@ -367,3 +367,53 @@ def test_strict_match_multi_rooms_and_both_building_types():
         building_type="old"
     )
     assert IngestionService.is_strict_match(search, listing_5_old) is False
+
+def test_strict_match_historical_lookback():
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+
+    # Saved search with 3 months lookback
+    search = SavedSearch(
+        tenant_id=1,
+        name="Aged 3+ months search",
+        raw_criteria_text="Nəsimidə 3 otaqlı 3 aydan bəri",
+        seller_type="any",
+        offer_type="sale",
+        property_type="apartment",
+        district="Nəsimi",
+        min_rooms=3,
+        max_rooms=3,
+        min_months_on_market=3
+    )
+
+    # 1. Listing posted 100 days ago (~3.3 months) -> MATCH
+    old_listing = Listing(
+        source_id=1,
+        external_id="501",
+        title="Nəsimidə 3 otaqlı mənzil",
+        listing_url="https://bina.az/items/501",
+        district="Nəsimi",
+        rooms=3,
+        price=180000.0,
+        seller_type="owner",
+        offer_type="sale",
+        property_type="apartment",
+        created_at=now - timedelta(days=100)
+    )
+    assert IngestionService.is_strict_match(search, old_listing) is True
+
+    # 2. Fresh listing posted 10 days ago -> REJECT (only 10 days on market < 90 days required)
+    fresh_listing = Listing(
+        source_id=1,
+        external_id="502",
+        title="Nəsimidə 3 otaqlı yeni elan",
+        listing_url="https://bina.az/items/502",
+        district="Nəsimi",
+        rooms=3,
+        price=180000.0,
+        seller_type="owner",
+        offer_type="sale",
+        property_type="apartment",
+        created_at=now - timedelta(days=10)
+    )
+    assert IngestionService.is_strict_match(search, fresh_listing) is False

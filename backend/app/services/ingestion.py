@@ -346,6 +346,17 @@ class IngestionService:
             if listing.building_type and listing.building_type in ["new", "yeni"]:
                 return False
 
+        # 8. Historical Lookback / Months on Market Filter
+        min_months = getattr(search, 'min_months_on_market', None)
+        if min_months and min_months > 0:
+            now_utc = datetime.now(timezone.utc)
+            list_created = listing.created_at or now_utc
+            if list_created.tzinfo is None:
+                list_created = list_created.replace(tzinfo=timezone.utc)
+            days_on_market = (now_utc - list_created).days
+            if days_on_market < (min_months * 30):
+                return False
+
         return True
 
     @staticmethod
@@ -379,7 +390,8 @@ class IngestionService:
                 seller_type=search.seller_type or "any",
                 building_type=search.building_type or "any",
                 offer_type=getattr(search, 'offer_type', 'sale') or 'sale',
-                property_type=getattr(search, 'property_type', 'apartment') or 'apartment'
+                property_type=getattr(search, 'property_type', 'apartment') or 'apartment',
+                min_months_on_market=getattr(search, 'min_months_on_market', None)
             )
 
             ai_provider = await ProviderFactory.get_provider(db, task_type="match_scoring", tenant_id=tenant.id)

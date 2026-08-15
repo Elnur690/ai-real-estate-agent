@@ -18,6 +18,7 @@ class StructuredCriteria(BaseModel):
     building_type: str = Field("any", description="new | old | any")
     offer_type: str = Field("sale", description="sale | rent | any")
     property_type: str = Field("apartment", description="apartment | house | office | commercial | land | any")
+    min_months_on_market: Optional[int] = Field(None, description="Minimum months property on market / lookback (e.g. 3 for '3 aydan bəri')")
     summary_az: str = Field("", description="Azerbaijani summary of criteria for confirmation message")
 
 

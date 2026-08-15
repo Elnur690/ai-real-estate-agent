@@ -26,6 +26,7 @@ class SavedSearch(Base):
     building_type: Mapped[str] = mapped_column(String(50), default="any")  # new | old | any
     offer_type: Mapped[str] = mapped_column(String(50), default="sale")    # sale | rent | any
     property_type: Mapped[str] = mapped_column(String(50), default="apartment")  # apartment | house | office | commercial | land | any
+    min_months_on_market: Mapped[int | None] = mapped_column(Integer, nullable=True) # Historical lookback parameter (e.g. 3 for "3 aydan bəri")
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

@@ -24,6 +24,7 @@ Important Rules:
 1. Multi-location: The user can specify multiple locations/districts or multiple metro stations (e.g., "Qarayev və Neftçilər", "Yasamal, Nəsimi").
 2. Multi-room: The user can specify multiple room numbers (e.g. "3 və ya 4 otaqlı", "2, 3 otaq", "3-4 otaqlı"). For "3 və ya 4 otaqlı" return "min_rooms": 3, "max_rooms": 4. For single "3 otaqlı" return "min_rooms": 3, "max_rooms": 3. If rooms not mentioned, return null for both.
 3. Building type: Return "new" ONLY if the user explicitly mentions new building ("yeni tikili", "novostroyka", "yeni bina"). Return "old" ONLY if the user explicitly mentions old building ("köhnə tikili", "leninqrad", "xruşovka", "stalinka", "köhnə bina"). If NOT explicitly mentioned or user wants any/all buildings, return "any" (meaning select both new and old buildings).
+4. Historical Lookback / Months on market: If user mentions '3 aydan bəri', '3 aydır satışda', '3 months on market', 'от 3 месяцев на рынке', set "min_months_on_market": 3. Otherwise null.
 
 Return JSON ONLY with this exact schema:
 {{
@@ -42,6 +43,7 @@ Return JSON ONLY with this exact schema:
   "property_type": "apartment" | "house" | "office" | "commercial" | "land" | "any",
   "seller_type": "owner" | "agency" | "any",
   "building_type": "new" | "old" | "any",
+  "min_months_on_market": integer or null,
   "summary_az": "Friendly confirmation sentence in Azerbaijani language summarizing criteria"
 }}
 """
@@ -81,6 +83,12 @@ Return JSON ONLY with this exact schema:
                     data["property_type"] = "office" if "ofis" in raw_text.lower() else ("commercial" if any(k in raw_text.lower() for k in ["obyekt", "mağaza", "kafe"]) else "apartment")
                 if not data.get("building_type"):
                     data["building_type"] = "any"
+
+                # Lookback fallback if missed by LLM
+                if not data.get("min_months_on_market"):
+                    lb_match = re.search(r'(\d+)\s*(?:aydan\s*bəri|aydan\s*beri|aydır\s*satışda|aydir\s*satisda|aydır\s*qalan|aydir\s*qalan|ay\s*əvvəldən|ay\s*evvelden|aylıq\s*arxiv|ayliq\s*arxiv|ay\s*bazar)', raw_text.lower())
+                    if lb_match:
+                        data["min_months_on_market"] = int(lb_match.group(1))
 
                 return StructuredCriteria(**data)
             except Exception as e:
@@ -122,12 +130,23 @@ Return JSON ONLY with this exact schema:
                     min_rooms = min(digits)
                     max_rooms = max(digits)
 
+        # Historical Lookback / Months on market (e.g. "3 aydan bəri", "3 aydır satışda", "2 ay əvvəldən")
+        min_months_on_market = None
+        lookback_match = re.search(
+            r'(\d+)\s*(?:aydan\s*bəri|aydan\s*beri|aydır\s*satışda|aydir\s*satisda|aydır\s*qalan|aydir\s*qalan|ay\s*əvvəldən|ay\s*evvelden|aylıq\s*arxiv|ayliq\s*arxiv|ay\s*bazar)',
+            text_lower
+        )
+        if lookback_match:
+            min_months_on_market = int(lookback_match.group(1))
+
         # Currency USD Detection
         is_usd = any(c in text_lower for c in ["$", "usd", "dollar", "dolar"])
         rate = 1.70
 
         # Prices (e.g., 100-150 min, 120000, 100k, $100k)
         text_for_price = re.sub(r'\d+(?:\s*(?:-|–|,|\/|\bvə ya\b|\bya da\b|\bvə\b|\bve\b|\bya\b)\s*\d+)*\s*(?:otaq|otaqlı|otag)', '', text_lower)
+        if lookback_match:
+            text_for_price = re.sub(r'\d+\s*(?:aydan\s*bəri|aydan\s*beri|aydır\s*satışda|aydir\s*satisda|aydır\s*qalan|aydir\s*qalan|ay\s*əvvəldən|ay\s*evvelden|aylıq\s*arxiv|ayliq\s*arxiv|ay\s*bazar)', '', text_for_price)
         min_price, max_price = None, None
         min_price_usd, max_price_usd = None, None
         
@@ -215,6 +234,9 @@ Return JSON ONLY with this exact schema:
         elif building_type == "old":
             summary_parts.append("köhnə tikili")
 
+        if min_months_on_market:
+            summary_parts.append(f"ən azı {min_months_on_market} aydan bəri bazarda olan")
+
         summary_az = ", ".join(summary_parts) if summary_parts else "Daxil etdiyiniz parametrlərə uyğun"
         summary_az = f"{summary_az} əmlak axtarırsınız, düzdür?"
 
@@ -232,6 +254,7 @@ Return JSON ONLY with this exact schema:
             property_type=property_type,
             seller_type=seller_type,
             building_type=building_type,
+            min_months_on_market=min_months_on_market,
             summary_az=summary_az
         )
 

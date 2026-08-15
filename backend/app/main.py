@@ -40,6 +40,7 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS max_locations_per_search INTEGER DEFAULT 5;"))
         await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS feature_aged_listings BOOLEAN DEFAULT FALSE;"))
         await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS addon_aged_listings_price FLOAT DEFAULT 0.0;"))
+        await conn.execute(text("ALTER TABLE saved_searches ADD COLUMN IF NOT EXISTS min_months_on_market INTEGER;"))
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(50);"))
         await conn.execute(text("DELETE FROM listings WHERE external_id LIKE '%sample%';"))
     logger.info("[Startup] Database tables and columns verified.")
