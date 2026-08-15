@@ -216,8 +216,8 @@ class BotCommandHandler:
                 return f"✅ *Promokod təsdiqləndi!* `{val_res['code']}` — {disc} güzəşt tətbiq edildi!"
             return f"❌ {val_res.get('error', 'Promokod xətası')}"
 
-        # Aged / Stale Active Listings Archive Query (/aged [months] [district], /kohne [months], /stale [months])
-        aged_match = re.search(r'^(?:/aged|aged|/kohne|kohne|/kohnə|kohnə|/stale|stale)\s*(.*)', text_lower)
+        # Aged / Stale Active Listings Archive Query (/aged, /since, /arxiv, /archive, /kohne, /stale)
+        aged_match = re.search(r'^(?:/aged|aged|/since|since|/arxiv|arxiv|/archive|archive|/kohne|kohne|/kohnə|kohnə|/stale|stale)\s*(.*)', text_lower)
         if aged_match:
             args = aged_match.group(1).strip()
             return await BotCommandHandler._handle_aged_listings_query(db, tenant, args, app_name)
