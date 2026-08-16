@@ -5,7 +5,10 @@ from bs4 import BeautifulSoup
 from typing import List
 from app.scrapers.base import BaseScraper, RawListingItem
 from app.scrapers.utils import get_random_headers
-from app.core.baku_locations import extract_baku_district, extract_metro_station
+from app.core.baku_locations import (
+    extract_baku_district, extract_metro_station, extract_baku_settlement,
+    SETTLEMENT_TO_DISTRICT, METRO_TO_DISTRICT
+)
 
 logger = logging.getLogger(__name__)
 
@@ -17,16 +20,19 @@ class TapAzScraper(BaseScraper):
         try:
             headers = get_random_headers(referer="https://tap.az/")
             headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            headers["Accept-Language"] = "az,ru;q=0.9,en-US;q=0.8,en;q=0.7"
             async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
                 res = await client.get(url_or_handle, headers=headers)
                 if res.status_code == 200:
                     soup = BeautifulSoup(res.text, "html.parser")
-                    cards = soup.find_all("a", href=re.compile(r'/elanlar/dasinmaz-emlak/menziller/(\d+)'))
+                    cards = soup.find_all("a", href=re.compile(r'/elanlar/dasinmaz-emlak/(?:menziller|heyet-evleri-baglar-villalar|ofisler|obyektler|torpaq)/(\d+)'))
+                    if not cards:
+                        cards = soup.find_all("a", href=re.compile(r'/elanlar/dasinmaz-emlak/[^"]+/(\d+)'))
                     seen = set()
 
                     for a in cards:
                         href = a['href']
-                        m_id = re.search(r'/elanlar/dasinmaz-emlak/menziller/(\d+)', href)
+                        m_id = re.search(r'/elanlar/dasinmaz-emlak/[^"]+/(\d+)', href)
                         if not m_id:
                             continue
                         ext_id = m_id.group(1)
@@ -34,9 +40,10 @@ class TapAzScraper(BaseScraper):
                             continue
                         seen.add(ext_id)
 
-                        raw_text = a.get_text(separator=" | ", strip=True)
+                        raw_text = a.get_text(separator=" | ", strip=True).replace('\xa0', ' ')
+                        raw_lower = raw_text.lower()
                         # Example: "63 500 | ₼ | 1-otaqlı yeni tikili, Xırdalan ş., 32 m² | Xırdalan,"
-                        price_m = re.search(r'([\d\s]+)\s*\|\s*₼', raw_text) or re.search(r'([\d\s]+)\s*₼', raw_text)
+                        price_m = re.search(r'([\d\s]+)\s*\|\s*₼', raw_text) or re.search(r'([\d\s]+)\s*₼', raw_text) or re.search(r'([\d\s]+)\s*AZN', raw_text)
                         price = float(price_m.group(1).replace(" ", "")) if price_m else 0.0
 
                         rooms_m = re.search(r'(\d+)\s*-\s*otaqlı', raw_text) or re.search(r'(\d+)\s*otaqlı', raw_text)
@@ -45,20 +52,42 @@ class TapAzScraper(BaseScraper):
                         area = float(area_m.group(1)) if area_m else None
 
                         district = extract_baku_district(raw_text) 
+                        settlement = extract_baku_settlement(raw_text)
                         metro = extract_metro_station(raw_text)
 
-                        title = re.sub(r'[\d\s]+\|\s*₼\s*\|?', '', raw_text).strip()
-                        title = title.replace('|', '').strip()
-                        if not title:
-                            title = f"{rooms or ''} otaqlı mənzil ({district})"
+                        if not district:
+                            if settlement and settlement in SETTLEMENT_TO_DISTRICT:
+                                district = SETTLEMENT_TO_DISTRICT[settlement]
+                            elif metro and metro in METRO_TO_DISTRICT:
+                                district = METRO_TO_DISTRICT[metro]
 
-                        seller_type = "owner" if any(w in raw_text.lower() for w in ["sahibindən", "sahibindan", "mülkiyyətçi", "ev sahibi"]) else "agency"
-                        bld_type = "new" if "yeni tikili" in raw_text.lower() else ("old" if "köhnə tikili" in raw_text.lower() else "new")
+                        # Offer Type
+                        is_rent = "kiraye" in href or "aylıq" in raw_lower or "icarə" in raw_lower or "/ ay" in raw_text
+                        offer_type = "rent" if is_rent else "sale"
+
+                        # Property Type
+                        if "villa" in href or any(k in raw_lower for k in ["villa", "həyət evi", "heyet evi", "bağ evi", "bag evi"]):
+                            prop_type = "villa"
+                        elif "ofis" in href or any(k in raw_lower for k in ["ofis", "plaza"]):
+                            prop_type = "office"
+                        elif "obyekt" in href or "obyekt" in raw_lower:
+                            prop_type = "commercial"
+                        elif "torpaq" in href or "torpaq" in raw_lower:
+                            prop_type = "land"
+                        else:
+                            prop_type = "apartment"
+
+                        title = re.sub(r'[\d\s]+\|\s*₼\s*\|?', '', raw_text).strip().replace('|', '').strip()
+                        if not title:
+                            title = f"{rooms or ''} otaqlı {prop_type.capitalize()} ({district or settlement or 'Bakı'})"
+
+                        seller_type = "agency" if any(w in raw_lower for w in ["agentlik", "vasitəçi", "makler", "şirkət"]) else "owner"
+                        bld_type = "new" if "yeni tikili" in raw_lower else ("old" if "köhnə tikili" in raw_lower else "new")
 
                         items.append(RawListingItem(
                             external_id=f"tap_{ext_id}",
                             title=title,
-                            description=f"Tap.az elanı: {title}",
+                            description=f"Tap.az: {raw_text}",
                             price=price,
                             currency="AZN",
                             district=district,
@@ -67,6 +96,8 @@ class TapAzScraper(BaseScraper):
                             area_sqm=area,
                             building_type=bld_type,
                             seller_type=seller_type,
+                            offer_type=offer_type,
+                            property_type=prop_type,
                             listing_url=f"https://tap.az{href}"
                         ))
                         if len(items) >= 28:
