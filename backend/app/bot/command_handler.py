@@ -159,27 +159,33 @@ class BotCommandHandler:
         if delete_match:
             search_id = int(delete_match.group(1))
             stmt = update(SavedSearch).where(SavedSearch.id == search_id, SavedSearch.tenant_id == tenant.id).values(is_active=False)
-            await db.execute(stmt)
+            res_del = await db.execute(stmt)
             await db.commit()
-            return f"Axtarış #{search_id} silindi. 🗑️"
+            if res_del.rowcount and res_del.rowcount > 0:
+                return f"Axtarış #{search_id} silindi. 🗑️"
+            return f"⚠️ Axtarış #{search_id} sizin hesabınızda tapılmadı."
 
         # Pause Search Command (/pause <id>, /dayandır <id>, dayandır <id>)
         pause_match = re.search(r'^(?:/pause|pause|/dayandır|/dayandir|dayandır|dayandir)\s*#?\s*(\d+)', text_lower)
         if pause_match:
             search_id = int(pause_match.group(1))
             stmt = update(SavedSearch).where(SavedSearch.id == search_id, SavedSearch.tenant_id == tenant.id).values(is_active=False)
-            await db.execute(stmt)
+            res_p = await db.execute(stmt)
             await db.commit()
-            return f"Axtarış #{search_id} dayandırıldı. ⏸️"
+            if res_p.rowcount and res_p.rowcount > 0:
+                return f"Axtarış #{search_id} dayandırıldı. ⏸️"
+            return f"⚠️ Axtarış #{search_id} sizin hesabınızda tapılmadı."
 
         # Resume Search Command (/resume <id>, /aktiv <id>, aktiv et <id>)
         resume_match = re.search(r'^(?:/resume|resume|/aktiv|aktiv|aktiv et)\s*#?\s*(\d+)', text_lower)
         if resume_match:
             search_id = int(resume_match.group(1))
             stmt = update(SavedSearch).where(SavedSearch.id == search_id, SavedSearch.tenant_id == tenant.id).values(is_active=True)
-            await db.execute(stmt)
+            res_r = await db.execute(stmt)
             await db.commit()
-            return f"Axtarış #{search_id} aktiv edildi. ▶️"
+            if res_r.rowcount and res_r.rowcount > 0:
+                return f"Axtarış #{search_id} aktiv edildi. ▶️"
+            return f"⚠️ Axtarış #{search_id} sizin hesabınızda tapılmadı."
 
         # Brochure & Social Kit Generation Command (/brochure <id>, /broşur <id>)
         brochure_match = re.search(r'^(?:/brochure|brochure|/broşur|broşur|/broshur|broshur)\s*#?\s*(\d+)', text_lower)
