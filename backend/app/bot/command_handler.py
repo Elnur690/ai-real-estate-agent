@@ -613,13 +613,7 @@ class BotCommandHandler:
             from app.models.listing import Listing
             from app.services.ingestion import IngestionService
             
-            stmt_rec = select(Listing).where(Listing.is_active == True)
-            if min_months and min_months > 0:
-                cutoff = datetime.now(timezone.utc) - timedelta(days=min_months * 30)
-                stmt_rec = stmt_rec.where(Listing.created_at <= cutoff).order_by(Listing.created_at.asc()).limit(30)
-            else:
-                stmt_rec = stmt_rec.order_by(Listing.id.desc()).limit(30)
-
+            stmt_rec = select(Listing).where(Listing.is_active == True).order_by(Listing.id.desc()).limit(50)
             res_rec = await db.execute(stmt_rec)
             recent_listings = res_rec.scalars().all()
             for l in recent_listings:
