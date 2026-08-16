@@ -55,25 +55,29 @@ class AudioTranscriberService:
         from google.genai import types
 
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        candidate_models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.0-flash-exp"]
 
         # Method 1: Inline binary part (Fastest, zero temp files, no upload delay)
-        try:
-            part = types.Part.from_bytes(
-                data=audio_bytes,
-                mime_type=clean_mime
-            )
+        for model_name in candidate_models:
+            try:
+                part = types.Part.from_bytes(
+                    data=audio_bytes,
+                    mime_type=clean_mime
+                )
 
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=[part, prompt]
-            )
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=[part, prompt]
+                )
 
-            transcript = response.text.strip() if response and response.text else None
-            if transcript:
-                logger.info(f"[AudioTranscriber] Audio transcribed successfully via inline bytes: '{transcript}'")
-                return transcript
-        except Exception as e:
-            logger.warning(f"[AudioTranscriber] Inline audio transcription attempt failed ({e}). Trying File API fallback...")
+                transcript = response.text.strip() if response and response.text else None
+                if transcript:
+                    logger.info(f"[AudioTranscriber] Audio transcribed successfully with {model_name} via inline bytes: '{transcript}'")
+                    return transcript
+            except Exception as e:
+                logger.warning(f"[AudioTranscriber] Inline audio transcription attempt with {model_name} failed ({e}).")
+
+        logger.info("[AudioTranscriber] Trying File API fallback across candidate models...")
 
         # Method 2: Temporary File Upload with explicit UploadFileConfig MIME type
         ext = ".ogg"
@@ -100,14 +104,20 @@ class AudioTranscriberService:
             except Exception:
                 audio_file = client.files.upload(file=temp_path)
 
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=[audio_file, prompt]
-            )
+            for model_name in candidate_models:
+                try:
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=[audio_file, prompt]
+                    )
 
-            transcript = response.text.strip() if response and response.text else None
-            logger.info(f"[AudioTranscriber] Audio transcribed successfully via File API: '{transcript}'")
-            return transcript
+                    transcript = response.text.strip() if response and response.text else None
+                    if transcript:
+                        logger.info(f"[AudioTranscriber] Audio transcribed successfully with {model_name} via File API: '{transcript}'")
+                        return transcript
+                except Exception as e:
+                    logger.warning(f"[AudioTranscriber] File API transcription attempt with {model_name} failed ({e}).")
+            return None
         except Exception as e:
             logger.error(f"[AudioTranscriber] Gemini audio transcription error: {e}", exc_info=True)
             return None

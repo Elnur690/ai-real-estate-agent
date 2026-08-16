@@ -6,9 +6,9 @@ from app.ai.base import AIProvider, StructuredCriteria, StructuredListing
 from app.core.baku_locations import extract_metro_station, extract_all_metro_stations, extract_all_baku_districts
 
 class GeminiProvider(AIProvider):
-    def __init__(self, api_key: str | None = None, model_name: str = "gemini-1.5-flash"):
+    def __init__(self, api_key: str | None = None, model_name: str = "gemini-2.0-flash"):
         self.api_key = api_key
-        self.model_name = model_name
+        self.model_name = model_name or "gemini-2.0-flash"
 
     async def parse_search_criteria(self, raw_text: str) -> StructuredCriteria:
         """Parse raw user criteria text into structured JSON."""
@@ -18,39 +18,49 @@ class GeminiProvider(AIProvider):
                 client = genai.Client(api_key=self.api_key)
                 prompt = f"""
 Extract real estate search criteria from this user input (in Azerbaijani or Russian or English):
+You are an expert real estate AI parsing user requests for Baku, Azerbaijan.
+Analyze the following natural language search criteria:
 "{raw_text}"
 
-Important Rules:
-1. Multi-location: The user can specify multiple locations/districts or multiple metro stations (e.g., "Qarayev və Neftçilər", "Yasamal, Nəsimi").
-2. Multi-room: The user can specify multiple room numbers (e.g. "3 və ya 4 otaqlı", "2, 3 otaq", "3-4 otaqlı"). For "3 və ya 4 otaqlı" return "min_rooms": 3, "max_rooms": 4. For single "3 otaqlı" return "min_rooms": 3, "max_rooms": 3. If rooms not mentioned, return null for both.
-3. Building type: Return "new" ONLY if the user explicitly mentions new building ("yeni tikili", "novostroyka", "yeni bina"). Return "old" ONLY if the user explicitly mentions old building ("köhnə tikili", "leninqrad", "xruşovka", "stalinka", "köhnə bina"). If NOT explicitly mentioned or user wants any/all buildings, return "any" (meaning select both new and old buildings).
-4. Historical Lookback / Months on market: If user mentions '3 aydan bəri', '3 aydır satışda', '3 months on market', 'от 3 месяцев на рынке', set "min_months_on_market": 3. Otherwise null.
-
-Return JSON ONLY with this exact schema:
+Extract structured JSON strictly with these exact keys:
 {{
-  "district": "string or comma-separated districts or null (e.g., Yasamal, Nəsimi)",
-  "metro_station": "Baku Metro station name(s) or null (e.g., Qara Qarayev, Neftçilər, Elmlər Akademiyası)",
-  "locations": ["array of all target districts and metro stations mentioned, e.g. ['Qara Qarayev', 'Neftçilər']"],
-  "min_price": number in AZN or null,
-  "max_price": number in AZN or null,
-  "min_price_usd": number in USD or null,
-  "max_price_usd": number in USD or null,
+  "district": "Comma-separated Baku districts or settlements if mentioned, else null",
+  "metro_station": "Comma-separated Baku metro stations if mentioned, else null",
+  "locations": ["List of all distinct Baku locations, settlements, or metro stations mentioned"],
+  "min_price": number or null,
+  "max_price": number or null,
+  "min_price_usd": number or null,
+  "max_price_usd": number or null,
   "min_rooms": integer or null,
   "max_rooms": integer or null,
   "min_area": number or null,
   "max_area": number or null,
   "offer_type": "sale" | "rent" | "any",
-  "property_type": "apartment" | "house" | "office" | "commercial" | "land" | "any",
+  "property_type": "apartment" | "villa" | "house" | "office" | "commercial" | "land" | "any",
   "seller_type": "owner" | "agency" | "any",
   "building_type": "new" | "old" | "any",
   "min_months_on_market": integer or null,
   "summary_az": "Friendly confirmation sentence in Azerbaijani language summarizing criteria"
 }}
 """
-                response = client.models.generate_content(
-                    model=self.model_name,
-                    contents=prompt,
-                )
+                models_to_try = [self.model_name, "gemini-2.0-flash", "gemini-1.5-flash"]
+                models_to_try = list(dict.fromkeys([m for m in models_to_try if m]))
+                response = None
+
+                for m in models_to_try:
+                    try:
+                        response = client.models.generate_content(
+                            model=m,
+                            contents=prompt,
+                        )
+                        if response and response.text:
+                            break
+                    except Exception as me:
+                        continue
+
+                if not response or not response.text:
+                    raise ValueError("Empty response from Gemini models")
+
                 text = response.text.strip()
                 if text.startswith("```json"):
                     text = text.split("```json", 1)[1].rsplit("```", 1)[0].strip()
