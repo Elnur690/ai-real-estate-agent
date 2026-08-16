@@ -55,7 +55,7 @@ class AudioTranscriberService:
         from google.genai import types
 
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        candidate_models = ["gemini-3.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+        candidate_models = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash"]
 
         # Method 1: Inline binary part (Fastest, zero temp files, no upload delay)
         for model_name in candidate_models:

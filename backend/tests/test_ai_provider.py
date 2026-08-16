@@ -4,7 +4,7 @@ from app.ai.factory import ProviderFactory, encrypt_key, decrypt_key
 
 @pytest.mark.asyncio
 async def test_gemini_heuristic_criteria_parsing():
-    provider = GeminiProvider(model_name="gemini-1.5-flash")
+    provider = GeminiProvider(model_name="gemini-3.5-flash")
     raw_text = "Yasamalda 100-150 min AZN 3 otaqlı ev sahibindən yeni tikili"
     criteria = await provider.parse_search_criteria(raw_text)
 
@@ -18,7 +18,7 @@ async def test_gemini_heuristic_criteria_parsing():
 
 @pytest.mark.asyncio
 async def test_metro_station_and_usd_conversion_parsing():
-    provider = GeminiProvider(model_name="gemini-1.5-flash")
+    provider = GeminiProvider(model_name="gemini-3.5-flash")
     raw_text = "Elmlər metrosuna yaxın $100k 2 otaqlı yeni tikili"
     criteria = await provider.parse_search_criteria(raw_text)
 
@@ -30,7 +30,7 @@ async def test_metro_station_and_usd_conversion_parsing():
 
 @pytest.mark.asyncio
 async def test_multi_room_and_building_type_parsing():
-    provider = GeminiProvider(model_name="gemini-1.5-flash")
+    provider = GeminiProvider(model_name="gemini-3.5-flash")
     
     # 1. "3 və ya 4 otaqlı", no building specified -> min_rooms=3, max_rooms=4, building_type="any"
     text1 = "Nəsimidə 3 və ya 4 otaqlı mənzil"
@@ -55,7 +55,7 @@ async def test_multi_room_and_building_type_parsing():
 
 @pytest.mark.asyncio
 async def test_historical_lookback_in_search_criteria():
-    provider = GeminiProvider(model_name="gemini-1.5-flash")
+    provider = GeminiProvider(model_name="gemini-3.5-flash")
     raw_text = "Nəsimi rayonu mənzil, 3 və ya 4 otaqlı, 250000 - 300000 azn, yeni tikili, təmirli və əşyalı, sahibindən, 3 aydan bəri"
     criteria = await provider.parse_search_criteria(raw_text)
 

@@ -156,9 +156,9 @@ export const AppSettingsView: React.FC = () => {
   const [testing, setTesting] = useState(false);
 
   const taskTypes: TaskType[] = [
-    { key: 'criteria_parsing', label: 'Criteria Parsing (Conversational Agent)', defaultProvider: 'gemini', defaultModel: 'gemini-1.5-flash' },
-    { key: 'listing_parsing', label: 'Telegram Unformatted Listing Parser', defaultProvider: 'gemini', defaultModel: 'gemini-1.5-flash' },
-    { key: 'match_scoring', label: 'Match Scoring Engine', defaultProvider: 'gemini', defaultModel: 'gemini-1.5-flash' },
+    { key: 'criteria_parsing', label: 'Criteria Parsing (Conversational Agent)', defaultProvider: 'gemini', defaultModel: 'gemini-3.5-flash' },
+    { key: 'listing_parsing', label: 'Telegram Unformatted Listing Parser', defaultProvider: 'gemini', defaultModel: 'gemini-3.5-flash' },
+    { key: 'match_scoring', label: 'Match Scoring Engine', defaultProvider: 'gemini', defaultModel: 'gemini-3.5-flash' },
   ];
 
   const loadSettings = async () => {
@@ -332,7 +332,7 @@ export const AppSettingsView: React.FC = () => {
       id: 0,
       task_type: taskType as any,
       provider: 'gemini',
-      model_name: 'gemini-1.5-flash',
+      model_name: 'gemini-3.5-flash',
       api_key_masked: '',
       is_active: true,
       updated_at: new Date().toISOString()

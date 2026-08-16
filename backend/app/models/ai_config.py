@@ -11,7 +11,7 @@ class AIProviderConfig(Base):
 
     task_type: Mapped[str] = mapped_column(String(50), default="criteria_parsing") # criteria_parsing | listing_parsing | match_scoring
     provider: Mapped[str] = mapped_column(String(50), default="gemini") # gemini | claude | gpt
-    model_name: Mapped[str] = mapped_column(String(100), default="gemini-1.5-flash")
+    model_name: Mapped[str] = mapped_column(String(100), default="gemini-3.5-flash")
     api_key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

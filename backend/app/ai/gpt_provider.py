@@ -5,9 +5,9 @@ from app.ai.gemini_provider import GeminiProvider
 
 class GPTProvider(AIProvider):
     def __init__(self, api_key: str | None = None, model_name: str = "gpt-4o"):
-        self.api_key = api_key
+        self.api_key = api_key or settings.OPENAI_API_KEY
         self.model_name = model_name
-        self.fallback = GeminiProvider(model_name="gemini-1.5-flash")
+        self.fallback = GeminiProvider(model_name="gemini-3.5-flash")
 
     async def parse_search_criteria(self, raw_text: str) -> StructuredCriteria:
         if self.api_key:

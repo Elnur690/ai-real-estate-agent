@@ -103,7 +103,7 @@ Listing items are categorized into **`owner`** (Ev Sahibindən) vs **`agency`** 
 The platform features an abstract multi-model LLM provider layer (`app/ai/factory.py`):
 
 - **Supported Models**:
-  - **Google Gemini**: `gemini-2.5-flash` (Default), `gemini-1.5-pro`
+  - **Google Gemini**: `gemini-3.5-flash` (Default), `gemini-3.6-flash`, `gemini-3.7-flash`
   - **Anthropic Claude**: `claude-3-5-sonnet-20241022`
   - **OpenAI GPT**: `gpt-4o`, `gpt-4o-mini`
 - **Security**: Tenant API keys are symmetrically encrypted using Fernet AES keys (`encrypt_key` / `decrypt_key`).
