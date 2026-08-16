@@ -4,7 +4,7 @@ import httpx
 from bs4 import BeautifulSoup
 from typing import List
 from app.scrapers.base import BaseScraper, RawListingItem
-from app.scrapers.utils import get_random_headers
+from app.scrapers.utils import get_random_headers, safe_float, safe_optional_float
 from app.core.baku_locations import (
     extract_baku_district, extract_metro_station, extract_baku_settlement,
     SETTLEMENT_TO_DISTRICT, METRO_TO_DISTRICT
@@ -19,10 +19,8 @@ class TapAzScraper(BaseScraper):
         seen = set()
 
         urls_to_fetch = [
-            "https://tap.az/elanlar/dasinmaz-emlak/villalar-bag-evleri",
-            "https://tap.az/elanlar/dasinmaz-emlak/menziller",
-            "https://tap.az/elanlar/dasinmaz-emlak/ofisler",
-            "https://tap.az/elanlar/dasinmaz-emlak"
+            "https://tap.az/elanlar/dasinmaz-emlak",
+            "https://tap.az/elanlar/dasinmaz-emlak/menziller"
         ] if ("tap.az/elanlar/dasinmaz-emlak" in url_or_handle) else [url_or_handle]
 
         headers = get_random_headers(referer="https://tap.az/")
@@ -53,12 +51,12 @@ class TapAzScraper(BaseScraper):
                             raw_lower = raw_text.lower()
 
                             price_m = re.search(r'([\d\s]+)\s*\|\s*₼', raw_text) or re.search(r'([\d\s]+)\s*₼', raw_text) or re.search(r'([\d\s]+)\s*AZN', raw_text)
-                            price = float(price_m.group(1).replace(" ", "")) if price_m else 0.0
+                            price = safe_float(price_m.group(1) if price_m else None, default=0.0)
 
                             rooms_m = re.search(r'(\d+)\s*-\s*otaqlı', raw_text) or re.search(r'(\d+)\s*otaqlı', raw_text)
                             rooms = int(rooms_m.group(1)) if rooms_m else None
                             area_m = re.search(r'([\d.]+)\s*m²', raw_text)
-                            area = float(area_m.group(1)) if area_m else None
+                            area = safe_optional_float(area_m.group(1) if area_m else None)
 
                             district = extract_baku_district(raw_text) 
                             settlement = extract_baku_settlement(raw_text)
