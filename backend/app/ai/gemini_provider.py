@@ -59,16 +59,22 @@ Return JSON ONLY with this exact schema:
                 
                 data = json.loads(text)
 
-                # Ensure Baku metro station fallback if null
+                # Ensure Baku metro station and settlement fallbacks
+                from app.core.baku_locations import extract_all_locations, extract_all_baku_settlements
                 all_metros = extract_all_metro_stations(raw_text)
                 all_districts = extract_all_baku_districts(raw_text)
+                all_settlements = extract_all_baku_settlements(raw_text)
+                all_locs = extract_all_locations(raw_text)
 
                 if not data.get("metro_station") and all_metros:
                     data["metro_station"] = ", ".join(all_metros)
-                if not data.get("district") and all_districts:
-                    data["district"] = ", ".join(all_districts)
+                if not data.get("district"):
+                    if all_settlements:
+                        data["district"] = ", ".join(all_settlements)
+                    elif all_districts:
+                        data["district"] = ", ".join(all_districts)
                 if not data.get("locations"):
-                    data["locations"] = list(dict.fromkeys(all_metros + all_districts))
+                    data["locations"] = all_locs
 
                 # If prices are in USD, auto-convert to AZN
                 rate = 1.70
@@ -80,7 +86,17 @@ Return JSON ONLY with this exact schema:
                 if not data.get("offer_type"):
                     data["offer_type"] = "rent" if any(k in raw_text.lower() for k in ["kirayə", "kiraye", "icarə", "icare", "arenda", "aylıq"]) else "sale"
                 if not data.get("property_type"):
-                    data["property_type"] = "office" if "ofis" in raw_text.lower() else ("commercial" if any(k in raw_text.lower() for k in ["obyekt", "mağaza", "kafe"]) else "apartment")
+                    raw_lower = raw_text.lower()
+                    if any(k in raw_lower for k in ["villa", "həyət evi", "heyet evi", "bağ evi", "bag evi", "həyət evləri", "bağ evləri"]):
+                        data["property_type"] = "villa"
+                    elif any(k in raw_lower for k in ["ofis", "ofislər", "biznes mərkəzi"]):
+                        data["property_type"] = "office"
+                    elif any(k in raw_lower for k in ["obyekt", "mağaza", "kafe"]):
+                        data["property_type"] = "commercial"
+                    elif any(k in raw_lower for k in ["torpaq", "sot", "hektar"]):
+                        data["property_type"] = "land"
+                    else:
+                        data["property_type"] = "apartment"
                 if not data.get("building_type"):
                     data["building_type"] = "any"
 
@@ -100,12 +116,14 @@ Return JSON ONLY with this exact schema:
     def _heuristic_parse_criteria(self, text: str) -> StructuredCriteria:
         text_lower = text.lower()
 
-        # Multi-District & Multi-Metro Station extraction
+        from app.core.baku_locations import extract_all_locations, extract_all_baku_settlements
+        # Multi-District, Multi-Settlement & Multi-Metro Station extraction
+        all_settlements = extract_all_baku_settlements(text)
         all_districts = extract_all_baku_districts(text)
         all_metros = extract_all_metro_stations(text)
-        all_locs = list(dict.fromkeys(all_metros + all_districts))
+        all_locs = extract_all_locations(text)
 
-        found_district = ", ".join(all_districts) if all_districts else None
+        found_district = ", ".join(all_settlements + all_districts) if (all_settlements or all_districts) else None
         found_metro = ", ".join(all_metros) if all_metros else None
 
         # Rooms (Single or Multi-room, e.g. "3 və ya 4 otaqlı", "2, 3 otaq", "3-4 otaq", "2 və 3 otaq")
@@ -181,12 +199,12 @@ Return JSON ONLY with this exact schema:
 
         # Property Type
         property_type = "apartment"
-        if any(k in text_lower for k in ["ofis", "ofisə", "ofislər", "ofis kimi"]):
+        if any(k in text_lower for k in ["villa", "həyət evi", "heyet evi", "bağ evi", "bag evi", "villalar", "həyət evləri", "bağ evləri"]):
+            property_type = "villa"
+        elif any(k in text_lower for k in ["ofis", "ofisə", "ofislər", "ofis kimi", "biznes mərkəzi"]):
             property_type = "office"
         elif any(k in text_lower for k in ["obyekt", "mağaza", "magaza", "restoran", "kafe", "anbar", "qeyri-yaşayış"]):
             property_type = "commercial"
-        elif any(k in text_lower for k in ["həyət evi", "heyet evi", "bağ evi", "bag evi", "villa"]):
-            property_type = "house"
         elif any(k in text_lower for k in ["torpaq", "sot", "hektar"]):
             property_type = "land"
 
@@ -206,9 +224,9 @@ Return JSON ONLY with this exact schema:
 
         summary_parts = []
         if found_district:
-            summary_parts.append(f"{found_district} rayonunda")
+            summary_parts.append(f"{found_district}")
         if found_metro:
-            summary_parts.append(f"{found_metro} m/st yaxınlığında")
+            summary_parts.append(f"{found_metro} m/st")
         
         if min_rooms and max_rooms and min_rooms == max_rooms:
             summary_parts.append(f"{min_rooms} otaqlı")
@@ -217,7 +235,13 @@ Return JSON ONLY with this exact schema:
         elif min_rooms or max_rooms:
             summary_parts.append(f"{min_rooms or 1}-{max_rooms or 5} otaqlı")
         
-        prop_label = {"office": "ofis", "commercial": "obyekt", "house": "həyət evi/villa", "land": "torpaq"}.get(property_type, "mənzil")
+        prop_label = {
+            "office": "ofis",
+            "commercial": "obyekt",
+            "villa": "villa/həyət evi",
+            "house": "villa/həyət evi",
+            "land": "torpaq"
+        }.get(property_type, "mənzil")
         deal_label = "kirayə" if offer_type == "rent" else "satış"
         summary_parts.append(f"{deal_label} üçün {prop_label}")
 

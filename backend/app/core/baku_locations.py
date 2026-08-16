@@ -58,62 +58,80 @@ METRO_ADJACENCY: Dict[str, List[str]] = {
 }
 
 BAKU_DISTRICTS: Dict[str, List[str]] = {
-    "Binəqədi": [
-        "binəqədi", "bineqedi", "azadlıq", "azadliq", "dərnəgül", "dernegul", "biləcəri", "bileceri",
-        "sulutəpə", "sulutepe", "rəsulzadə", "resulzade", "xutor", "m.ə.rəsulzadə", "28 may qəs",
-        "6-cı mikrorayon", "7-ci mikrorayon", "8-ci mikrorayon", "9-cu mikrorayon",
-        "6-cı mkr", "7-ci mkr", "8-ci mkr", "9-cu mkr", "6 ci mkr", "7 ci mkr", "8 ci mkr", "9 ci mkr"
-    ],
-    "Nəsimi": [
-        "nəsimi", "nesimi", "28 may", "memar əcəmi", "ecemi", "tibbi", "sirk", "papanin",
-        "1-ci mikrorayon", "2-ci mikrorayon", "3-cü mikrorayon", "4-cü mikrorayon", "5-ci mikrorayon",
-        "1-ci mkr", "2-ci mkr", "3-cü mkr", "4-cü mkr", "5-ci mkr", "1 ci mkr", "2 ci mkr", "3 ci mkr", "4 ci mkr", "5 ci mkr"
-    ],
-    "Yasamal": [
-        "yasamal", "yeni yasamal", "elmlər", "elmler", "inşaatçılar", "insaatcilar", "şərifzadə", "serifzade",
-        "hüseyn cavid", "musabəyov", "musabeyov", "tbilisi", "sovet", "izmir", "almaz park", "kristal abseron yasamal"
-    ],
-    "Xətai": [
-        "xətai", "xetai", "həzi aslanov", "hezi aslanov", "əhmədli", "ehmedli", "köhnə günəşli", "kohne gunesli",
-        "ağ şəhər", "ag seher", "nzs", "upd", "nobel", "8 noyabr pr", "megafun", "baku white city"
-    ],
-    "Nərimanov": [
-        "nərimanov", "nerimanov", "gənclik", "genclik", "montin", "təhsil nazirliyi", "kosmos", "böyükşor",
-        "ağa nemətulla", "aga nemetulla", "tebriz kucesi", "təbriz küçəsi", "heydər əliyev mərkəzi"
-    ],
-    "Səbail": [
-        "səbail", "sebail", "içərişəhər", "iceriseher", "sahil", "bayıl", "bayil", "badamdar",
-        "20-ci sahə", "şıxov", "sixov", "torqoviy", "fountain square", "port baku"
-    ],
-    "Nizami": [
-        "nizami r", "nizami rayonu", "neftçilər", "neftciler", "qara qarayev", "qarayev", "xalqlar",
-        "8-ci kilometr", "8 km", "8-ci km", "keşlə", "kesle", "babək", "babek"
-    ],
-    "Sabunçu": [
-        "sabunçu", "sabuncu", "bakıxanov", "bakixanov", "razin", "zabrat", "bilgəh", "kürdəxanı",
-        "maştağa", "mastaga", "nardaran", "pirşağı", "pirsagi", "ramana", "balaxanı", "balaxani"
-    ],
-    "Suraxanı": [
-        "suraxanı", "suraxani", "qaraçuxur", "qaracuxur", "yeni günəşli", "yeni gunesli", "əmircan",
-        "emircan", "bülbülə", "bulbule", "hövsan", "hovsan", "ziğ", "zig", "bahar"
-    ],
-    "Xəzər": [
-        "xəzər", "xezer", "mərdəkan", "merdekan", "şüvəlan", "suvelan", "buzovna", "binə qəs",
-        "bine qes", "türkan", "turkan", "zirə", "zire", "qala", "şaqan", "saqan"
-    ],
-    "Abşeron": [
-        "abşeron", "abseron", "xırdalan", "xirdalan", "masazır", "masazir", "saray", "novxanı",
-        "novxani", "qobu", "hökməli", "hokmeli", "mehdiabad", "fatmayı", "fatmayi", "digah", "məmədli", "məhəmmədi"
-    ],
-    "Sumqayıt": [
-        "sumqayıt", "sumqayit", "corat", "hacı zeynalabdin", "sumqayit bulvar", "sumqayıt bulvarı"
-    ],
-    "Qaradağ": [
-        "qaradağ", "qaradag", "lökbatan", "lokbatan", "sahil qəs", "puta", "qobustan qəs", "səngəçal", "sengecal"
-    ],
-    "Pirallahi": [
-        "pirallahi", "gürgən", "gurgen", "çilov", "neft daşları"
-    ]
+    "Binəqədi": ["binəqədi r", "bineqedi r", "binəqədi rayonu", "bineqedi rayonu", "binəqədidə", "bineqedide", "binəqədi", "bineqedi"],
+    "Nəsimi": ["nəsimi r", "nesimi r", "nəsimi rayonu", "nesimi rayonu", "nəsimidə", "nesimide", "nəsimi", "nesimi"],
+    "Yasamal": ["yasamal r", "yasamal rayonu", "yasamalda", "yeni yasamal", "yasamal"],
+    "Xətai": ["xətai r", "xetai r", "xətai rayonu", "xetai rayonu", "xətaidə", "xetaide", "xətai", "xetai"],
+    "Nərimanov": ["nərimanov r", "nerimanov r", "nərimanov rayonu", "nerimanov rayonu", "nərimanovda", "nerimanovda", "nərimanov", "nerimanov"],
+    "Səbail": ["səbail r", "sebail r", "səbail rayonu", "sebail rayonu", "səbaildə", "sebailde", "səbail", "sebail"],
+    "Nizami": ["nizami r", "nizami rayonu", "nizamidə", "nizamide"],
+    "Sabunçu": ["sabunçu r", "sabuncu r", "sabunçu rayonu", "sabuncu rayonu", "sabunçuda", "sabuncuda", "sabunçu", "sabuncu"],
+    "Suraxanı": ["suraxanı r", "suraxani r", "suraxanı rayonu", "suraxani rayonu", "suraxanıda", "suraxanida", "suraxanı", "suraxani"],
+    "Xəzər": ["xəzər r", "xezer r", "xəzər rayonu", "xezer rayonu", "xəzərdə", "xezerde", "xəzər", "xezer"],
+    "Abşeron": ["abşeron r", "abseron r", "abşeron rayonu", "abseron rayonu", "abşeronda", "abseronda", "abşeron", "abseron"],
+    "Sumqayıt": ["sumqayıt", "sumqayit", "sumqayıtda", "sumqayitda"],
+    "Qaradağ": ["qaradağ r", "qaradag r", "qaradağ rayonu", "qaradag rayonu", "qaradağda", "qaradagda", "qaradağ", "qaradag"],
+    "Pirallahi": ["pirallahi", "pirallahı", "pirallahida", "pirallahıda"]
+}
+
+# Baku Micro-Locations, Settlements & Quarters (Qəsəbələr, Mikrorayonlar, Yaşayış Massivləri)
+BAKU_SETTLEMENTS: Dict[str, List[str]] = {
+    "Badamdar": ["badamdar", "badamdarda", "badamdar qəs", "badamdar qes", "1-ci massiv", "2-ci massiv", "3-cü massiv"],
+    "Bayıl": ["bayıl", "bayil", "bayılda", "bayilde", "20-ci sahə", "20 ci sahe", "krasin"],
+    "Şıxov": ["şıxov", "sixov", "şıxovda", "bibiheybət", "bibiheybet"],
+    "Bakıxanov": ["bakıxanov", "bakixanov", "bakıxanovda", "bakixanovda", "razin", "razində"],
+    "Qaraçuxur": ["qaraçuxur", "qaracuxur", "qaraçuxurda", "qaracuxurda"],
+    "Yeni Günəşli": ["yeni günəşli", "yeni gunesli", "günəşli", "gunesli", "v massivi", "ab massivi", "d massivi", "q massivi"],
+    "Köhnə Günəşli": ["köhnə günəşli", "kohne gunesli"],
+    "Əhmədli": ["əhmədli qəs", "ehmedli qes", "əhmədli kəndi", "ehmedli kendi"],
+    "Hövsan": ["hövsan", "hovsan", "hövsanda", "hovsanda", "hövsan qəs", "hovsan qes"],
+    "Biləcəri": ["biləcəri", "bileceri", "biləcəridə", "bileceride"],
+    "Sulutəpə": ["sulutəpə", "sulutepe"],
+    "Rəsulzadə": ["rəsulzadə", "resulzade", "m.ə.rəsulzadə", "xutor"],
+    "Binə": ["binə qəs", "bine qes", "binədə", "binede", "atçılıq", "südçülük"],
+    "Mərdəkan": ["mərdəkan", "merdekan", "mərdəkanda", "merdekanda"],
+    "Şüvəlan": ["şüvəlan", "suvelan", "şüvəlanda", "suvelanda"],
+    "Buzovna": ["buzovna", "buzovnada"],
+    "Bilgəh": ["bilgəh", "bilgeh", "bilgəhdə", "bilgehde"],
+    "Zabrat": ["zabrat", "zabratda", "zabrat 1", "zabrat 2", "zabrat qəs"],
+    "Maştağa": ["maştağa", "mastaga", "maştağada", "mastagada"],
+    "Nardaran": ["nardaran", "nardaranda", "sea breeze"],
+    "Pirşağı": ["pirşağı", "pirsagi", "pirşağıda"],
+    "Kürdəxanı": ["kürdəxanı", "kurdexani"],
+    "Balaxanı": ["balaxanı", "balaxani"],
+    "Ramana": ["ramana", "ramanada"],
+    "Əmircan": ["əmircan", "emircan"],
+    "Bülbülə": ["bülbülə", "bulbule"],
+    "Zirə": ["zirə", "zire"],
+    "Türkan": ["türkan", "turkan"],
+    "Qala": ["qala", "qala qəs", "qalada"],
+    "Zığ": ["zığ", "zig", "zığ şossesi", "zig sossesi"],
+    "Xırdalan": ["xırdalan", "xirdalan", "xırdalanda", "xirdalanda", "aaaf park", "kristal abseron xirdalan"],
+    "Masazır": ["masazır", "masazir", "masazırda", "masazirda", "qurtuluş 93", "yeni baki"],
+    "Saray": ["saray", "sarayda", "saray qəs"],
+    "Novxanı": ["novxanı", "novxani", "novxanıda"],
+    "Mehdiabad": ["mehdiabad", "mehdiabadda"],
+    "Fatmayı": ["fatmayı", "fatmayi"],
+    "Digah": ["digah"],
+    "Məmmədli": ["məmədli", "məhəmmədi", "mehemmedi", "mammedli"],
+    "Lökbatan": ["lökbatan", "lokbatan", "lökbatanda", "sederek"],
+    "Sahil": ["sahil qəs", "sahil qes"],
+    "Qobustan": ["qobustan qəs", "qobustan qes"],
+    "Ağ Şəhər": ["ağ şəhər", "ag seher", "white city", "baku white city"],
+    "Port Baku": ["port baku", "port baki"],
+    "Montin": ["montin", "montində", "montinde"],
+    "Papanin": ["papanin", "papanində"],
+    "Kubinka": ["kubinka", "kubinkada"],
+    "Sovetski": ["sovetski", "sovet"],
+    "1-ci mikrorayon": ["1-ci mikrorayon", "1 ci mikrorayon", "1-ci mkr", "1 ci mkr", "1mkr"],
+    "2-ci mikrorayon": ["2-ci mikrorayon", "2 ci mikrorayon", "2-ci mkr", "2 ci mkr", "2mkr"],
+    "3-cü mikrorayon": ["3-cü mikrorayon", "3 cu mikrorayon", "3-cü mkr", "3 cu mkr", "3mkr"],
+    "4-cü mikrorayon": ["4-cü mikrorayon", "4 cu mikrorayon", "4-cü mkr", "4 cu mkr", "4mkr"],
+    "5-ci mikrorayon": ["5-ci mikrorayon", "5 ci mikrorayon", "5-ci mkr", "5 ci mkr", "5mkr"],
+    "6-cı mikrorayon": ["6-cı mikrorayon", "6 ci mikrorayon", "6-cı mkr", "6 ci mkr", "6mkr"],
+    "7-ci mikrorayon": ["7-ci mikrorayon", "7 ci mikrorayon", "7-ci mkr", "7 ci mkr", "7mkr"],
+    "8-ci mikrorayon": ["8-ci mikrorayon", "8 ci mikrorayon", "8-ci mkr", "8 ci mkr", "8mkr"],
+    "9-cu mikrorayon": ["9-cu mikrorayon", "9 cu mikrorayon", "9-cu mkr", "9 ci mkr", "9mkr"]
 }
 
 # Baku Adjacent Geographical Neighboring Districts
@@ -156,6 +174,27 @@ def extract_all_metro_stations(text: str) -> List[str]:
     found.sort(key=lambda x: x[0])
     return [name for _, name in found]
 
+def extract_baku_settlement(text: str) -> Optional[str]:
+    """Extract specific Baku settlement or micro-district name."""
+    settlements = extract_all_baku_settlements(text)
+    return settlements[0] if settlements else None
+
+def extract_all_baku_settlements(text: str) -> List[str]:
+    """Extract all specific Baku settlements and micro-locations mentioned in text."""
+    if not text:
+        return []
+    text_lower = text.lower()
+    found = []
+    for s_name, keywords in BAKU_SETTLEMENTS.items():
+        for kw in keywords:
+            pos = text_lower.find(kw)
+            if pos != -1:
+                if s_name not in found:
+                    found.append((pos, s_name))
+                break
+    found.sort(key=lambda x: x[0])
+    return [name for _, name in found]
+
 def extract_baku_district(text: str) -> Optional[str]:
     """Extract official Baku district name from text input. Returns None if no district found."""
     districts = extract_all_baku_districts(text)
@@ -176,6 +215,13 @@ def extract_all_baku_districts(text: str) -> List[str]:
                 break
     found.sort(key=lambda x: x[0])
     return [name for _, name in found]
+
+def extract_all_locations(text: str) -> List[str]:
+    """Extract all distinct locations (settlements, metro stations, districts) with maximum precision."""
+    settlements = extract_all_baku_settlements(text)
+    metros = extract_all_metro_stations(text)
+    districts = extract_all_baku_districts(text)
+    return list(dict.fromkeys(settlements + metros + districts))
 
 def is_adjacent_metro(target_metro: str, candidate_metro: str) -> bool:
     """Returns True if candidate_metro is an immediate 1-stop neighbor of target_metro."""

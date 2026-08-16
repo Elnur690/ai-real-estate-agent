@@ -243,24 +243,28 @@ class IngestionService:
                 if list_offer == "sale" and not any(kw in listing_text for kw in RENTAL_KEYWORDS):
                     return False
 
-        # 2. Property Type Check (Apartment vs House vs Office vs Commercial vs Land)
+        # 2. Property Type Check (Apartment vs Villa/House vs Office vs Commercial vs Land)
         search_prop = (getattr(search, 'property_type', 'apartment') or 'apartment').lower().strip()
         list_prop = (getattr(listing, 'property_type', 'apartment') or 'apartment').lower().strip()
 
         if search_prop != "any":
             if search_prop in ["apartment", "menzil", "mənzil"]:
                 # Reject commercial, office, land, or standalone houses
-                if list_prop in ["office", "commercial", "land"]:
+                if list_prop in ["office", "commercial", "land", "house", "villa"]:
                     return False
                 if any(k in listing_text for k in ["ofis kimi", "ofis icarə", "ofis üçün", "biznes mərkəzi", "plazada ofis", "ofisdir", "ofis satılır", "ofis kirayə"]):
                     return False
                 if any(k in listing_text for k in ["obyekt kimi", "qeyri-yaşayış", "qeyri yasayis", "anbar satılır", "istehsalat sahəsi"]):
                     return False
+                if any(k in listing_text for k in ["villa satılır", "həyət evi satılır", "bağ evi satılır"]):
+                    return False
             elif search_prop in ["office", "ofis"]:
                 if list_prop not in ["office", "commercial"]:
                     return False
+                if any(k in listing_text for k in ["yaşayış mənzili", "həyət evi", "bağ evi"]):
+                    return False
             elif search_prop in ["house", "villa", "həyət evi", "heyet evi", "bağ evi", "bag evi"]:
-                if list_prop not in ["house"]:
+                if list_prop not in ["house", "villa"]:
                     return False
             elif search_prop in ["commercial", "obyekt"]:
                 if list_prop not in ["commercial", "office"]:
@@ -303,8 +307,8 @@ class IngestionService:
             if listing.rooms and listing.rooms > search.max_rooms:
                 return False
 
-        # 6. Multi-Location (District and Metro Stations) Check
-        from app.core.baku_locations import BAKU_METRO_STATIONS, BAKU_DISTRICTS
+        # 6. Multi-Location (Settlements, District and Metro Stations) Check
+        from app.core.baku_locations import BAKU_METRO_STATIONS, BAKU_DISTRICTS, BAKU_SETTLEMENTS
 
         target_districts = []
         if search.district and search.district.strip():
@@ -328,8 +332,8 @@ class IngestionService:
                 if loc_lower in list_text_loc:
                     matched_loc = True
                     break
-                # Station and District alias matches
-                aliases = BAKU_METRO_STATIONS.get(loc, []) + BAKU_DISTRICTS.get(loc, [])
+                # Station, Settlement and District alias matches
+                aliases = BAKU_SETTLEMENTS.get(loc, []) + BAKU_METRO_STATIONS.get(loc, []) + BAKU_DISTRICTS.get(loc, [])
                 if any(alias in list_text_loc for alias in aliases):
                     matched_loc = True
                     break

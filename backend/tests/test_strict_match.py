@@ -417,3 +417,132 @@ def test_strict_match_historical_lookback():
         created_at=now - timedelta(days=10)
     )
     assert IngestionService.is_strict_match(search, fresh_listing) is False
+
+def test_strict_match_villa_and_office_types():
+    # 1. Villa Search
+    villa_search = SavedSearch(
+        tenant_id=1,
+        name="Villa Search",
+        raw_criteria_text="Mərdəkanda villa satılır",
+        seller_type="any",
+        offer_type="sale",
+        property_type="villa",
+        district="Mərdəkan"
+    )
+
+    villa_listing = Listing(
+        source_id=1,
+        external_id="601",
+        title="Mərdəkanda 5 otaqlı bağ evi / villa satılır",
+        listing_url="https://bina.az/items/601",
+        district="Xəzər",
+        address_raw="Mərdəkan qəsəbəsi",
+        rooms=5,
+        price=350000.0,
+        seller_type="owner",
+        offer_type="sale",
+        property_type="villa"
+    )
+    assert IngestionService.is_strict_match(villa_search, villa_listing) is True
+
+    apartment_in_merdekan = Listing(
+        source_id=1,
+        external_id="602",
+        title="Mərdəkanda 2 otaqlı bina evi mənzil",
+        listing_url="https://bina.az/items/602",
+        district="Xəzər",
+        address_raw="Mərdəkan",
+        rooms=2,
+        price=80000.0,
+        seller_type="owner",
+        offer_type="sale",
+        property_type="apartment"
+    )
+    assert IngestionService.is_strict_match(villa_search, apartment_in_merdekan) is False
+
+    # 2. Office Search
+    office_search = SavedSearch(
+        tenant_id=1,
+        name="Office Search",
+        raw_criteria_text="Nərimanovda ofis kirayə",
+        seller_type="any",
+        offer_type="rent",
+        property_type="office",
+        district="Nərimanov"
+    )
+
+    office_listing = Listing(
+        source_id=1,
+        external_id="603",
+        title="Nərimanovda plazada ofis icarəyə verilir",
+        description="Biznes mərkəzində təmirli ofis sahəsi",
+        listing_url="https://ofis.az/items/603",
+        district="Nərimanov",
+        rooms=4,
+        price=2000.0,
+        seller_type="agency",
+        offer_type="rent",
+        property_type="office"
+    )
+    assert IngestionService.is_strict_match(office_search, office_listing) is True
+
+    residence_listing = Listing(
+        source_id=1,
+        external_id="604",
+        title="Nərimanovda 3 otaqlı yaşayış mənzili kirayə",
+        listing_url="https://bina.az/items/604",
+        district="Nərimanov",
+        rooms=3,
+        price=900.0,
+        seller_type="owner",
+        offer_type="rent",
+        property_type="apartment"
+    )
+    assert IngestionService.is_strict_match(office_search, residence_listing) is False
+
+def test_strict_match_settlement_precision():
+    # Badamdar Search (Settlement in Səbail)
+    badamdar_search = SavedSearch(
+        tenant_id=1,
+        name="Badamdar Search",
+        raw_criteria_text="Badamdarda 4 otaqlı həyət evi",
+        seller_type="any",
+        offer_type="sale",
+        property_type="house",
+        district="Badamdar"
+    )
+
+    # 1. Listing in Badamdar -> MATCH
+    badamdar_listing = Listing(
+        source_id=1,
+        external_id="701",
+        title="Badamdarda 1-ci massivdə 4 otaqlı həyət evi",
+        description="Badamdar qəsəbəsi, gözəl həyəti var",
+        listing_url="https://bina.az/items/701",
+        district="Səbail",
+        address_raw="Badamdar",
+        rooms=4,
+        price=280000.0,
+        seller_type="owner",
+        offer_type="sale",
+        property_type="house"
+    )
+    assert IngestionService.is_strict_match(badamdar_search, badamdar_listing) is True
+
+    # 2. Listing in Bayıl (Same Səbail district, but NOT Badamdar!) -> MUST REJECT!
+    bayil_listing = Listing(
+        source_id=1,
+        external_id="702",
+        title="Bayılda 4 otaqlı həyət evi",
+        description="Bayıl qəsəbəsi, dəniz mənzərəli",
+        listing_url="https://bina.az/items/702",
+        district="Səbail",
+        address_raw="Bayıl",
+        rooms=4,
+        price=290000.0,
+        seller_type="owner",
+        offer_type="sale",
+        property_type="house"
+    )
+    assert IngestionService.is_strict_match(badamdar_search, bayil_listing) is False
+

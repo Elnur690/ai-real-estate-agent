@@ -430,17 +430,18 @@ class BotCommandHandler:
         deal_tr = "İcarə / Kirayə" if offer == "rent" else "Satış"
         prop_tr = {
             "apartment": "Mənzil",
-            "house": "Həyət evi / Villa",
-            "office": "Ofis",
-            "commercial": "Obyekt",
-            "land": "Torpaq"
+            "villa": "Həyət evi / Villa / Bağ evi",
+            "house": "Həyət evi / Villa / Bağ evi",
+            "office": "Ofis / Biznes mərkəzi",
+            "commercial": "Obyekt / Qeyri-yaşayış",
+            "land": "Torpaq sahəsi"
         }.get(prop, "Mənzil")
         set_fields.append(f"• 🏷️ *Növ / Əməliyyat:* {prop_tr} ({deal_tr})")
 
         if district:
-            set_fields.append(f"• 📍 *Rayon(lar):* {district}")
+            set_fields.append(f"• 📍 *Məkan (Rayon/Qəsəbə):* {district}")
         else:
-            missing_fields.append("📍 *Rayon* (məsələn: Yasamal, Nəsimi)")
+            missing_fields.append("📍 *Məkan* (məsələn: Badamdar, Yasamal, Əhmədli)")
 
         if metro_station:
             set_fields.append(f"• 🚇 *Metro Stansiyaları:* {metro_station} m/st")

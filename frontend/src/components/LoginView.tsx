@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Building, Lock, Mail, ArrowRight, ShieldCheck, AlertCircle } from 'lucide-react';
+import { Building, Lock, Mail, ArrowRight, ShieldCheck, AlertCircle, Globe } from 'lucide-react';
 import api from '../api';
+import { useTranslation, Language } from '../i18n';
 
 interface LoginViewProps {
-  onLoginSuccess: (token: string, userName: string, role: string) => void;
+  onLoginSuccess: (token: string, userName: string, role?: string) => void;
   appName: string;
 }
 
@@ -12,6 +13,7 @@ export function LoginView({ onLoginSuccess, appName }: LoginViewProps) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const { t, lang, setLanguage } = useTranslation();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,7 +40,7 @@ export function LoginView({ onLoginSuccess, appName }: LoginViewProps) {
       if (err.response && err.response.data && err.response.data.detail) {
         setError(err.response.data.detail);
       } else {
-        setError('Invalid credentials or server unavailable.');
+        setError('Daxil edilən məlumatlar yanlışdır və ya server əlçatan deyil.');
       }
     } finally {
       setLoading(false);
@@ -52,6 +54,29 @@ export function LoginView({ onLoginSuccess, appName }: LoginViewProps) {
       <div className="absolute bottom-1/4 left-1/3 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
       <div className="w-full max-w-md bg-dark-800/90 border border-slate-800/80 rounded-2xl p-8 shadow-2xl backdrop-blur-xl relative z-10 space-y-6">
+        {/* Language Switcher in Login */}
+        <div className="flex justify-end">
+          <div className="flex items-center gap-1 bg-dark-900/80 border border-slate-800/80 p-1 rounded-xl text-xs">
+            <Globe className="w-3.5 h-3.5 text-emerald-400 ml-1 mr-0.5" />
+            <button
+              onClick={() => setLanguage('az')}
+              className={`px-2 py-0.5 rounded-lg font-semibold transition-all ${
+                lang === 'az' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              🇦🇿 AZ
+            </button>
+            <button
+              onClick={() => setLanguage('en')}
+              className={`px-2 py-0.5 rounded-lg font-semibold transition-all ${
+                lang === 'en' ? 'bg-emerald-500 text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              🇬🇧 EN
+            </button>
+          </div>
+        </div>
+
         {/* Header Branding */}
         <div className="text-center space-y-3">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-indigo-600 shadow-xl shadow-emerald-500/20 mb-1">
@@ -59,7 +84,9 @@ export function LoginView({ onLoginSuccess, appName }: LoginViewProps) {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-white tracking-tight">{appName}</h1>
-            <p className="text-xs text-slate-400 font-medium mt-1">Sign in to access SaaS Admin Control Panel</p>
+            <p className="text-xs text-slate-400 font-medium mt-1">
+              {lang === 'az' ? 'SaaS Admin Panelinə daxil olun' : 'Sign in to access SaaS Admin Control Panel'}
+            </p>
           </div>
         </div>
 
@@ -74,7 +101,9 @@ export function LoginView({ onLoginSuccess, appName }: LoginViewProps) {
         {/* Login Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-300">Admin Email</label>
+            <label className="text-xs font-semibold text-slate-300">
+              {lang === 'az' ? 'Admin E-poçt Ünvanı' : 'Admin Email'}
+            </label>
             <div className="relative">
               <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
@@ -89,7 +118,9 @@ export function LoginView({ onLoginSuccess, appName }: LoginViewProps) {
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-300">Password</label>
+            <label className="text-xs font-semibold text-slate-300">
+              {lang === 'az' ? 'Şifrə' : 'Password'}
+            </label>
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
@@ -109,10 +140,10 @@ export function LoginView({ onLoginSuccess, appName }: LoginViewProps) {
             className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-semibold py-3 px-4 rounded-xl text-sm transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50 mt-2"
           >
             {loading ? (
-              <span className="inline-block animate-pulse">Authenticating...</span>
+              <span className="inline-block animate-pulse">{t.loading}</span>
             ) : (
               <>
-                <span>Sign In to Admin Dashboard</span>
+                <span>{lang === 'az' ? 'Admin Panelinə Daxil Ol' : 'Sign In to Admin Dashboard'}</span>
                 <ArrowRight className="w-4 h-4" />
               </>
             )}
@@ -122,7 +153,7 @@ export function LoginView({ onLoginSuccess, appName }: LoginViewProps) {
         {/* Footer Security Badge */}
         <div className="pt-4 border-t border-slate-800/80 flex items-center justify-center gap-2 text-[11px] text-slate-500">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Protected by AES-256 JWT Authentication</span>
+          <span>{lang === 'az' ? 'AES-256 JWT Təhlükəsiz Giriş Sistemi' : 'Protected by AES-256 JWT Authentication'}</span>
         </div>
       </div>
     </div>
