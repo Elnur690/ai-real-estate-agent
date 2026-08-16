@@ -81,7 +81,31 @@ class WhatsAppAdapter:
                     logger.info(f"[WhatsAppAdapter] No registered tenant found for instance '{instance_name}' / remote '{remote_jid}'. Ignoring.")
                     return None
 
-                # Extract message text or audio
+                # STRICT SENDER PRIVACY CHECK (Step 1: Check authorization before downloading/transcribing any data)
+                allowed_groups = list(tenant.allowed_group_jids or [])
+                remote_digits = re.sub(r'\D', '', remote_jid.split("@")[0])
+                tenant_digits = [
+                    re.sub(r'\D', '', t.whatsapp_number or "") for t in [tenant] if t.whatsapp_number
+                ] + [
+                    re.sub(r'\D', '', t.phone or "") for t in [tenant] if t.phone
+                ]
+                tenant_digits = [d for d in tenant_digits if d]
+                is_self_chat = any(td and (td in remote_digits or remote_digits in td) for td in tenant_digits)
+
+                # Case A: 1-on-1 Direct Chat -> MUST ONLY BE AGENT'S OWN NUMBER (Self-chat)
+                if not is_group:
+                    if not is_self_chat:
+                        # Private conversation between agent and a 3rd party (client, friend, family). SILENTLY DROP!
+                        return None
+                    sender_id = remote_digits
+                    sender_name = data.get("pushName") or tenant.name or "Agent"
+
+                # Case B: WhatsApp Group Chat (@g.us)
+                else:
+                    sender_id = remote_jid
+                    sender_name = group_subject or "WhatsApp Group"
+
+                # Extract message text
                 message = data.get("message", {})
                 if not isinstance(message, dict):
                     message = {}
@@ -93,8 +117,17 @@ class WhatsAppAdapter:
                     message.get("videoMessage", {}).get("caption") or
                     ""
                 )
+                text_lower = raw_text.strip().lower()
 
-                # Check for voice note / audio message
+                # Group Pairing Filter
+                if is_group and remote_jid not in allowed_groups:
+                    is_pair_cmd = any(cmd in text_lower for cmd in ["/pair_group", "/set_group", "/bot_here", "/group_pair", "pair group", "bot qoş", "bot qos"])
+                    is_unpair_cmd = any(cmd in text_lower for cmd in ["/unpair_group", "/remove_group", "bot ayır", "bot ayir"])
+                    if not is_pair_cmd and not is_unpair_cmd:
+                        # Un-paired group and not a pairing command -> SILENTLY DROP without downloading media!
+                        return None
+
+                # Check for voice note / audio message (Only for authorized self-chat or paired group!)
                 audio_msg = message.get("audioMessage") or message.get("pttMessage")
                 if not raw_text and audio_msg and isinstance(audio_msg, dict):
                     audio_url = audio_msg.get("url")
@@ -104,51 +137,13 @@ class WhatsAppAdapter:
                         if settings.EVOLUTION_API_KEY:
                             headers["apikey"] = str(settings.EVOLUTION_API_KEY)
                         audio_mime = audio_msg.get("mimetype") or "audio/ogg"
-                        logger.info(f"[WhatsAppAdapter] Voice note received ({audio_mime}). Transcribing audio...")
+                        logger.info(f"[WhatsAppAdapter] Authorized voice note received ({audio_mime}). Transcribing audio...")
                         transcribed = await AudioTranscriberService.transcribe_audio_url(audio_url, headers=headers, mime_type=audio_mime)
                         if transcribed:
                             raw_text = transcribed
 
                 if not raw_text:
                     return None
-
-                text_lower = raw_text.strip().lower()
-
-                # STRICT FILTERING:
-                # Case 1: WhatsApp Group Chat (@g.us)
-                if is_group:
-                    allowed_groups = list(tenant.allowed_group_jids or [])
-                    is_pair_cmd = any(cmd in text_lower for cmd in ["/pair_group", "/set_group", "/bot_here", "/group_pair", "pair group", "bot qoş", "bot qos"])
-                    is_unpair_cmd = any(cmd in text_lower for cmd in ["/unpair_group", "/remove_group", "bot ayır", "bot ayir"])
-
-                    # If group is not paired and not a pairing command, SILENTLY DROP!
-                    if remote_jid not in allowed_groups and not is_pair_cmd and not is_unpair_cmd:
-                        logger.info(f"[WhatsAppAdapter] Ignoring un-paired WhatsApp group ({remote_jid}).")
-                        return None
-
-                    sender_id = remote_jid
-                    sender_name = group_subject or "WhatsApp Group"
-
-                # Case 2: 1-on-1 Direct Chat
-                else:
-                    # In a 1-on-1 chat, the bot MUST ONLY respond if it is the AGENT'S OWN CHAT (Self-chat / Message Yourself)
-                    remote_digits = re.sub(r'\D', '', remote_jid.split("@")[0])
-                    tenant_digits = [
-                        re.sub(r'\D', '', t.whatsapp_number or "") for t in [tenant] if t.whatsapp_number
-                    ] + [
-                        re.sub(r'\D', '', t.phone or "") for t in [tenant] if t.phone
-                    ]
-                    tenant_digits = [d for d in tenant_digits if d]
-
-                    is_self_chat = any(td and (td in remote_digits or remote_digits in td) for td in tenant_digits)
-
-                    if not is_self_chat:
-                        # Private conversation between agent and a 3rd party (client, friend, family). SILENTLY DROP!
-                        logger.info(f"[WhatsAppAdapter] Ignoring 1-on-1 conversation with third-party contact ({remote_jid}).")
-                        return None
-
-                    sender_id = remote_digits
-                    sender_name = data.get("pushName") or tenant.name or "Agent"
 
                 logger.info(f"[WhatsAppAdapter] Processing valid agent message from {sender_name} ({sender_id}): '{raw_text}'")
 
