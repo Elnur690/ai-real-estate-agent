@@ -6,18 +6,17 @@ from app.ai.base import AIProvider, StructuredCriteria, StructuredListing
 from app.core.baku_locations import extract_metro_station, extract_all_metro_stations, extract_all_baku_districts
 
 class GeminiProvider(AIProvider):
-    def __init__(self, api_key: str | None = None, model_name: str = "gemini-2.0-flash"):
+    def __init__(self, api_key: str | None = None, model_name: str = "gemini-3.5-flash"):
         self.api_key = api_key
-        self.model_name = model_name or "gemini-2.0-flash"
+        self.model_name = model_name or "gemini-3.5-flash"
 
     async def parse_search_criteria(self, raw_text: str) -> StructuredCriteria:
-        """Parse raw user criteria text into structured JSON."""
+        # If API key is available, attempt call via official google-genai SDK
         if self.api_key:
             try:
                 from google import genai
                 client = genai.Client(api_key=self.api_key)
                 prompt = f"""
-Extract real estate search criteria from this user input (in Azerbaijani or Russian or English):
 You are an expert real estate AI parsing user requests for Baku, Azerbaijan.
 Analyze the following natural language search criteria:
 "{raw_text}"
@@ -43,7 +42,7 @@ Extract structured JSON strictly with these exact keys:
   "summary_az": "Friendly confirmation sentence in Azerbaijani language summarizing criteria"
 }}
 """
-                models_to_try = [self.model_name, "gemini-2.0-flash", "gemini-1.5-flash"]
+                models_to_try = [self.model_name, "gemini-3.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
                 models_to_try = list(dict.fromkeys([m for m in models_to_try if m]))
                 response = None
 

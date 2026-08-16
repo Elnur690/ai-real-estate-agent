@@ -11,7 +11,7 @@ interface TaskType {
 }
 
 const modelOptions: Record<string, string[]> = {
-  gemini: ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash'],
+  gemini: ['gemini-3.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'],
   claude: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
   gpt: ['gpt-4o', 'gpt-4o-mini']
 };
@@ -25,12 +25,12 @@ interface AITaskCardProps {
 
 const AITaskCard: React.FC<AITaskCardProps> = ({ task, cfg, onSave, onTest }) => {
   const [selectedProvider, setSelectedProvider] = useState<string>(cfg.provider || 'gemini');
-  const [selectedModel, setSelectedModel] = useState<string>(cfg.model_name || 'gemini-1.5-flash');
+  const [selectedModel, setSelectedModel] = useState<string>(cfg.model_name || 'gemini-3.5-flash');
   const [apiKeyInput, setApiKeyInput] = useState('');
 
   useEffect(() => {
     setSelectedProvider(cfg.provider || 'gemini');
-    setSelectedModel(cfg.model_name || 'gemini-1.5-flash');
+    setSelectedModel(cfg.model_name || 'gemini-3.5-flash');
   }, [cfg]);
 
   return (
