@@ -350,15 +350,18 @@ class IngestionService:
             if listing.building_type and listing.building_type in ["new", "yeni"]:
                 return False
 
-        # 8. Historical Lookback / Months on Market Filter
-        min_months = getattr(search, 'min_months_on_market', None)
-        if min_months and min_months > 0:
+        # 8. Historical Lookback / Maximum Archive Window Check
+        # If min_months is set (e.g. '3 aydan bəri'), it sets the archive search window (up to 3 months back).
+        # It must NEVER reject fresh incoming listings.
+        max_months_window = getattr(search, 'min_months_on_market', None)
+        if max_months_window and max_months_window > 0:
             now_utc = datetime.now(timezone.utc)
             list_created = listing.created_at or now_utc
             if list_created.tzinfo is None:
                 list_created = list_created.replace(tzinfo=timezone.utc)
             days_on_market = (now_utc - list_created).days
-            if days_on_market < (min_months * 30):
+            # Reject only if the listing is older than the max requested lookback window (e.g. > 12 months)
+            if days_on_market > (max_months_window * 30 * 4):
                 return False
 
         return True

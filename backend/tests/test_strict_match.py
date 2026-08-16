@@ -386,8 +386,8 @@ def test_strict_match_historical_lookback():
         min_months_on_market=3
     )
 
-    # 1. Listing posted 100 days ago (~3.3 months) -> MATCH
-    old_listing = Listing(
+    # 1. Listing within lookback window (e.g. posted 60 days ago) -> MATCH
+    valid_lookback_listing = Listing(
         source_id=1,
         external_id="501",
         title="Nəsimidə 3 otaqlı mənzil",
@@ -398,11 +398,11 @@ def test_strict_match_historical_lookback():
         seller_type="owner",
         offer_type="sale",
         property_type="apartment",
-        created_at=now - timedelta(days=100)
+        created_at=now - timedelta(days=60)
     )
-    assert IngestionService.is_strict_match(search, old_listing) is True
+    assert IngestionService.is_strict_match(search, valid_lookback_listing) is True
 
-    # 2. Fresh listing posted 10 days ago -> REJECT (only 10 days on market < 90 days required)
+    # 2. Fresh listing posted today -> ALSO MATCHES (fresh active listing)
     fresh_listing = Listing(
         source_id=1,
         external_id="502",
@@ -414,9 +414,9 @@ def test_strict_match_historical_lookback():
         seller_type="owner",
         offer_type="sale",
         property_type="apartment",
-        created_at=now - timedelta(days=10)
+        created_at=now - timedelta(days=1)
     )
-    assert IngestionService.is_strict_match(search, fresh_listing) is False
+    assert IngestionService.is_strict_match(search, fresh_listing) is True
 
 def test_strict_match_villa_and_office_types():
     # 1. Villa Search
