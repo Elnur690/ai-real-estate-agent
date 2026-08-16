@@ -44,8 +44,24 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE saved_searches ADD COLUMN IF NOT EXISTS channel VARCHAR(50) DEFAULT 'whatsapp';"))
         await conn.execute(text("ALTER TABLE saved_searches ADD COLUMN IF NOT EXISTS destination_chat_id VARCHAR(255);"))
         await conn.execute(text("ALTER TABLE saved_searches ADD COLUMN IF NOT EXISTS instance_name VARCHAR(100);"))
-        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(50);"))
         await conn.execute(text("DELETE FROM listings WHERE external_id LIKE '%sample%';"))
+        await conn.execute(text("""
+            UPDATE listings 
+            SET seller_type = 'agency', is_makler = TRUE, makler_score = 1.0 
+            WHERE seller_type = 'owner' 
+            AND NOT (
+                LOWER(description) LIKE '%sahibindən%' 
+                OR LOWER(description) LIKE '%sahibinden%' 
+                OR LOWER(description) LIKE '%mülkiyyətçi%' 
+                OR LOWER(description) LIKE '%mulkiyyetci%'
+                OR LOWER(description) LIKE '%öz evimdir%'
+                OR LOWER(description) LIKE '%oz evimdir%'
+                OR LOWER(description) LIKE '%öz mənzilimdir%'
+                OR LOWER(description) LIKE '%oz menzilimdir%'
+                OR LOWER(description) LIKE '%vasitəçisiz%'
+                OR LOWER(description) LIKE '%vasitecisiz%'
+            );
+        """))
     logger.info("[Startup] Database tables and columns verified.")
 
     # Auto-seed default admin user if none exists

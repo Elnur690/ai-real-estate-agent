@@ -4,12 +4,14 @@ from typing import Tuple, Optional
 # Agency / Broker Detection Keywords
 AGENCY_KEYWORDS = [
     "agentlik", "agentliyi", "daşınmaz əmlak", "dasinmaz emlak",
+    "əmlak şirkəti", "emlak sirketi", "əmlak ofisi", "emlak ofisi",
+    "şirkət", "sirket", "şirkəti", "sirketi", "agent", "vasitəçi (agent)", "vasiteci (agent)",
+    "vasitəçi", "vasiteci", "vasitəçilik", "vasitecilik",
     "ofis haqqı", "ofis haqqi", "ofis haqq", "ofis faizi",
     "xidmət haqqı", "xidmet haqqi", "xidmət haqq", "xidmet haqq",
     "komissiya", "komissiyası", "komisiya", "makler", "makler haqqı",
-    "vasitəçi", "vasiteci", "vasitəçilik", "vasitecilik",
-    "rieltor", "realtor", "əmlakçı", "emlakci", "əmlak ofisi", "emlak ofisi",
-    "şirkət", "sirket", "şirkətimiz", "filialımız", "elanlarımız",
+    "rieltor", "realtor", "əmlakçı", "emlakci",
+    "şirkətimiz", "filialımız", "elanlarımız",
     "1% ofis", "1% xidmət", "1% xidmet", "2% ofis", "2% xidmət", "2% xidmet",
     "faizlə", "faizle", "depozit tələb", "1-ci ay", "aylıq komissiya"
 ]
