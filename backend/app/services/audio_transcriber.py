@@ -46,9 +46,10 @@ class AudioTranscriberService:
             clean_mime = "audio/ogg"
 
         prompt = (
-            "Transcribe this real estate agent's voice message accurately. "
-            "The spoken language is Azerbaijani, Russian, or English. "
-            "Return ONLY the verbatim transcript text without commentary or quotation marks."
+            "You are a speech-to-text transcriber for Azerbaijani real estate voice notes. "
+            "Transcribe this voice message accurately into plain text in Azerbaijani (or Russian/English if spoken). "
+            "If the audio contains only silence, background noise, static, or unintelligible sounds, respond ONLY with 'NO_SPEECH'. "
+            "Return ONLY the spoken words, without any explanations, formatting, markdown bullets, or quotation marks."
         )
 
         from google import genai
@@ -60,6 +61,18 @@ class AudioTranscriberService:
         gen_config = types.GenerateContentConfig(
             temperature=0.0,
         )
+
+        def _is_valid_transcript(text: Optional[str]) -> bool:
+            if not text:
+                return False
+            clean = text.strip().strip('"').strip("'")
+            if not clean or clean.upper() == "NO_SPEECH":
+                return False
+            # Ensure it contains actual words/letters and not just random symbols or markdown bullets
+            alpha_chars = sum(1 for c in clean if c.isalnum())
+            if alpha_chars < 3 or (alpha_chars / max(len(clean), 1)) < 0.35:
+                return False
+            return True
 
         # Method 1: Inline binary part (Fastest, zero temp files, no upload delay)
         for model_name in candidate_models:
@@ -76,9 +89,12 @@ class AudioTranscriberService:
                 )
 
                 transcript = response.text.strip() if response and response.text else None
-                if transcript:
-                    logger.info(f"[AudioTranscriber] Audio transcribed successfully with {model_name} via inline bytes: '{transcript}'")
-                    return transcript
+                if _is_valid_transcript(transcript):
+                    clean_t = transcript.strip().strip('"').strip("'")
+                    logger.info(f"[AudioTranscriber] Audio transcribed successfully with {model_name} via inline bytes: '{clean_t}'")
+                    return clean_t
+                elif transcript:
+                    logger.info(f"[AudioTranscriber] Filtered out noise/unintelligible transcript from {model_name}: '{transcript[:60]}...'")
             except Exception as e:
                 logger.warning(f"[AudioTranscriber] Inline audio transcription attempt with {model_name} failed ({e}).")
 
@@ -118,9 +134,10 @@ class AudioTranscriberService:
                     )
 
                     transcript = response.text.strip() if response and response.text else None
-                    if transcript:
-                        logger.info(f"[AudioTranscriber] Audio transcribed successfully with {model_name} via File API: '{transcript}'")
-                        return transcript
+                    if _is_valid_transcript(transcript):
+                        clean_t = transcript.strip().strip('"').strip("'")
+                        logger.info(f"[AudioTranscriber] Audio transcribed successfully with {model_name} via File API: '{clean_t}'")
+                        return clean_t
                 except Exception as e:
                     logger.warning(f"[AudioTranscriber] File API transcription attempt with {model_name} failed ({e}).")
             return None
