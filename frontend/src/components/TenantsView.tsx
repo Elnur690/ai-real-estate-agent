@@ -415,10 +415,11 @@ export const TenantsView: React.FC = () => {
       </div>
 
       {/* Tenants Table */}
-      <div className="glass-card rounded-2xl border border-slate-800 overflow-hidden">
-        <table className="w-full text-left text-sm text-slate-300">
+      <div className="glass-card rounded-2xl border border-slate-800 overflow-x-auto">
+        <table className="w-full text-left text-sm text-slate-300 min-w-[760px]">
           <thead className="bg-dark-800/80 text-slate-400 font-medium text-xs uppercase tracking-wider border-b border-slate-800">
             <tr>
+              <th className="p-4 w-24">ID / Instance</th>
               <th className="p-4">Agent / Agency</th>
               <th className="p-4">Account Type</th>
               <th className="p-4">Channel</th>
@@ -436,6 +437,14 @@ export const TenantsView: React.FC = () => {
 
               return (
                 <tr key={t.id} className="hover:bg-dark-700/30 transition-colors">
+                  <td className="p-4 whitespace-nowrap">
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2 py-0.5 rounded-md bg-dark-900 border border-slate-700 text-emerald-400 font-mono font-bold text-xs shadow-sm">
+                        #{t.id}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-mono mt-0.5">tenant_{t.id}</div>
+                  </td>
                   <td className="p-4">
                     <div className="flex items-center gap-2">
                       <div className="font-semibold text-white">{t.name}</div>
@@ -1208,10 +1217,15 @@ export const TenantsView: React.FC = () => {
           <div className="glass-card w-full max-w-lg p-6 rounded-2xl border border-slate-800 space-y-4 max-h-[85vh] overflow-y-auto">
             <div className="flex justify-between items-center">
               <div>
-                <h3 className="text-lg font-bold text-white">{selectedTenant.tenant.name}</h3>
-                <span className="text-xs text-purple-400 font-mono capitalize">{selectedTenant.tenant.type.replace('_', ' ')}</span>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-md bg-dark-900 border border-emerald-500/30 text-emerald-400 font-mono font-bold text-xs">
+                    #{selectedTenant.tenant.id} (tenant_{selectedTenant.tenant.id})
+                  </span>
+                  <h3 className="text-lg font-bold text-white">{selectedTenant.tenant.name}</h3>
+                </div>
+                <span className="text-xs text-purple-400 font-mono capitalize block mt-1">{selectedTenant.tenant.type.replace('_', ' ')}</span>
               </div>
-              <button onClick={() => setSelectedTenant(null)} className="text-slate-400 hover:text-white">&times;</button>
+              <button onClick={() => setSelectedTenant(null)} className="text-slate-400 hover:text-white text-xl font-bold">&times;</button>
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-xs bg-dark-700/40 p-3 rounded-xl">
