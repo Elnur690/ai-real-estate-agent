@@ -42,13 +42,14 @@ Extract structured JSON strictly with these exact keys:
   "summary_az": "Friendly confirmation sentence in Azerbaijani language summarizing criteria"
 }}
 """
-                models_to_try = [self.model_name, "gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash"]
+                models_to_try = [self.model_name, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
                 models_to_try = list(dict.fromkeys([m for m in models_to_try if m]))
                 response = None
 
                 from google.genai import types
                 gen_config = types.GenerateContentConfig(
                     temperature=0.1,
+                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True) if hasattr(types, 'AutomaticFunctionCallingConfig') else None
                 )
 
                 for m in models_to_try:
