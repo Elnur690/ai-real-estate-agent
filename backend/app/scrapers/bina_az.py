@@ -18,8 +18,10 @@ class BinaAzScraper(BaseScraper):
         items: List[RawListingItem] = []
         seen = set()
 
-        # URLs to scrape to cover sales, rentals, villas, offices, and latest listings across Baku
+        # URLs to scrape to cover sales, rentals, villas, offices, direct Mülkiyyətçi (owners), and latest listings across Baku
         urls_to_fetch = [
+            "https://bina.az/items?owner_type=owner&city_id=1",
+            "https://bina.az/items?owner_type=owner&leased=true&city_id=1",
             "https://bina.az/items?category_id=2&city_id=1",
             "https://bina.az/items?category_id=1&city_id=1",
             "https://bina.az/items?category_id=4&city_id=1",
