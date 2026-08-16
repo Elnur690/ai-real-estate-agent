@@ -173,7 +173,7 @@ class WhatsAppAdapter:
 
     @staticmethod
     async def resolve_active_instance(instance_name: Optional[str] = None, base_url: str = "http://evolution:8080", headers: dict = {}) -> str:
-        if instance_name and instance_name != settings.EVOLUTION_INSTANCE_NAME:
+        if instance_name:
             return instance_name
 
         try:
