@@ -19,9 +19,10 @@ class TapAzScraper(BaseScraper):
         seen = set()
 
         urls_to_fetch = [
-            "https://tap.az/elanlar/dasinmaz-emlak/heyet-evleri-baglar-villalar",
+            "https://tap.az/elanlar/dasinmaz-emlak/villalar-bag-evleri",
             "https://tap.az/elanlar/dasinmaz-emlak/menziller",
             "https://tap.az/elanlar/dasinmaz-emlak/ofisler",
+            "https://tap.az/elanlar/dasinmaz-emlak"
         ] if ("tap.az/elanlar/dasinmaz-emlak" in url_or_handle) else [url_or_handle]
 
         headers = get_random_headers(referer="https://tap.az/")
