@@ -3,11 +3,23 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 
-# Async Engine for FastAPI
+# Async Engine for FastAPI with robust connection pooling
+engine_kwargs = {
+    "echo": False,
+    "future": True,
+}
+if "sqlite" not in settings.DATABASE_URL:
+    engine_kwargs.update({
+        "pool_size": 25,
+        "max_overflow": 25,
+        "pool_timeout": 60,
+        "pool_pre_ping": True,
+        "pool_recycle": 1800
+    })
+
 async_engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=False,
-    future=True
+    **engine_kwargs
 )
 
 AsyncSessionLocal = async_sessionmaker(
