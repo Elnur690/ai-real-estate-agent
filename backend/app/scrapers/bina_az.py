@@ -13,7 +13,7 @@ from app.core.baku_locations import (
 logger = logging.getLogger(__name__)
 
 class BinaAzScraper(BaseScraper):
-    async def scrape_source(self, url_or_handle: str = "https://bina.az/items") -> List[RawListingItem]:
+    async def scrape_source(self, url_or_handle: str = "https://bina.az/items?city_id=1") -> List[RawListingItem]:
         logger.info(f"[BinaAzScraper] Starting comprehensive scrape from {url_or_handle}")
         items: List[RawListingItem] = []
         seen = set()
@@ -25,8 +25,8 @@ class BinaAzScraper(BaseScraper):
             "https://bina.az/items?category_id=4&city_id=1",
             "https://bina.az/items?leased=false&city_id=1",
             "https://bina.az/items?leased=true&city_id=1",
-            "https://bina.az/items"
-        ] if (url_or_handle.endswith("bina.az/") or url_or_handle == "https://bina.az/items") else [url_or_handle]
+            "https://bina.az/items?city_id=1"
+        ] if (url_or_handle.endswith("bina.az/") or "bina.az/items" in url_or_handle) else [url_or_handle]
 
         headers = get_random_headers(referer="https://bina.az/")
         headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
