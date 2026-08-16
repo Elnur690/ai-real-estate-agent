@@ -388,51 +388,28 @@ Return JSON ONLY:
                 return 0.0
             score -= 0.45
 
-        # 2. Strict Metro Station Check with Proximity Intelligence
-        if criteria.metro_station:
-            from app.core.baku_locations import BAKU_METRO_STATIONS, extract_metro_station, is_adjacent_metro
-            target_metro = criteria.metro_station
-            target_metro_lower = target_metro.lower()
-            listing_metro = (listing.get("metro_station") or "").lower()
-            listing_full_text = f"{listing.get('title') or ''} {listing.get('address_raw') or ''} {listing.get('description') or ''} {listing_metro}".lower()
-            
-            aliases = [target_metro_lower] + [a.lower() for a in BAKU_METRO_STATIONS.get(target_metro, [])]
-            metro_matched = any(alias in listing_full_text for alias in aliases)
-            
-            if metro_matched:
-                score += 0.1
-            else:
-                extracted_other_metro = extract_metro_station(listing_full_text)
-                if extracted_other_metro:
-                    if is_adjacent_metro(target_metro, extracted_other_metro):
-                        score -= 0.15 # Close proximity neighbor (1 stop away)
-                    else:
-                        return 0.0 # Distant metro station -> HARD REJECTION
-                else:
-                    score -= 0.55
-
-        # 3. Strict District Check with Neighboring Proximity Intelligence
+        # 2. Strict Location (District, Settlement, Metro) Check
+        target_locs = []
         if criteria.district:
-            from app.core.baku_locations import BAKU_DISTRICTS, extract_baku_district, is_adjacent_district
-            target_district = criteria.district
-            target_district_lower = target_district.lower()
+            target_locs.extend([d.strip() for d in criteria.district.split(",") if d.strip()])
+        if criteria.metro_station:
+            target_locs.extend([m.strip() for m in criteria.metro_station.split(",") if m.strip()])
+
+        if target_locs:
+            from app.core.baku_locations import get_all_aliases_for_location
+            listing_metro = (listing.get("metro_station") or "").lower()
             listing_district = (listing.get("district") or "").lower()
-            listing_full_text = f"{listing.get('title') or ''} {listing.get('address_raw') or ''} {listing.get('description') or ''} {listing_district}".lower()
-            
-            district_aliases = [target_district_lower] + [a.lower() for a in BAKU_DISTRICTS.get(target_district, [])]
-            district_matched = any(alias in listing_full_text for alias in district_aliases)
-            
-            if district_matched:
-                pass
-            else:
-                extracted_other_district = extract_baku_district(listing_full_text)
-                if extracted_other_district:
-                    if is_adjacent_district(target_district, extracted_other_district):
-                        score -= 0.20 # Adjacent neighboring district
-                    else:
-                        return 0.0 # Distant district -> HARD REJECTION
-                else:
-                    score -= 0.50
+            listing_full_text = f"{listing.get('title') or ''} {listing.get('address_raw') or ''} {listing.get('description') or ''} {listing_district} {listing_metro}".lower()
+
+            loc_matched = False
+            for target_loc in target_locs:
+                aliases = get_all_aliases_for_location(target_loc)
+                if any(alias in listing_full_text for alias in aliases):
+                    loc_matched = True
+                    break
+
+            if not loc_matched:
+                score -= 0.50
 
         # 4. Rooms check
         rooms = listing.get("rooms")
