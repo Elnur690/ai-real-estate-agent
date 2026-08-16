@@ -44,22 +44,25 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE saved_searches ADD COLUMN IF NOT EXISTS channel VARCHAR(50) DEFAULT 'whatsapp';"))
         await conn.execute(text("ALTER TABLE saved_searches ADD COLUMN IF NOT EXISTS destination_chat_id VARCHAR(255);"))
         await conn.execute(text("ALTER TABLE saved_searches ADD COLUMN IF NOT EXISTS instance_name VARCHAR(100);"))
+        await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS is_makler BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS makler_score FLOAT DEFAULT 0.0;"))
+        await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS is_first_posting BOOLEAN DEFAULT TRUE;"))
         await conn.execute(text("DELETE FROM listings WHERE external_id LIKE '%sample%';"))
         await conn.execute(text("""
             UPDATE listings 
-            SET seller_type = 'agency', is_makler = TRUE, makler_score = 1.0 
+            SET seller_type = 'agency', makler_score = 1.0 
             WHERE seller_type = 'owner' 
             AND NOT (
-                LOWER(description) LIKE '%sahibindən%' 
-                OR LOWER(description) LIKE '%sahibinden%' 
-                OR LOWER(description) LIKE '%mülkiyyətçi%' 
-                OR LOWER(description) LIKE '%mulkiyyetci%'
-                OR LOWER(description) LIKE '%öz evimdir%'
-                OR LOWER(description) LIKE '%oz evimdir%'
-                OR LOWER(description) LIKE '%öz mənzilimdir%'
-                OR LOWER(description) LIKE '%oz menzilimdir%'
-                OR LOWER(description) LIKE '%vasitəçisiz%'
-                OR LOWER(description) LIKE '%vasitecisiz%'
+                LOWER(COALESCE(description, '')) LIKE '%sahibindən%' 
+                OR LOWER(COALESCE(description, '')) LIKE '%sahibinden%' 
+                OR LOWER(COALESCE(description, '')) LIKE '%mülkiyyətçi%' 
+                OR LOWER(COALESCE(description, '')) LIKE '%mulkiyyetci%'
+                OR LOWER(COALESCE(description, '')) LIKE '%öz evimdir%'
+                OR LOWER(COALESCE(description, '')) LIKE '%oz evimdir%'
+                OR LOWER(COALESCE(description, '')) LIKE '%öz mənzilimdir%'
+                OR LOWER(COALESCE(description, '')) LIKE '%oz menzilimdir%'
+                OR LOWER(COALESCE(description, '')) LIKE '%vasitəçisiz%'
+                OR LOWER(COALESCE(description, '')) LIKE '%vasitecisiz%'
             );
         """))
     logger.info("[Startup] Database tables and columns verified.")

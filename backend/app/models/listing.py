@@ -53,6 +53,7 @@ class Listing(Base):
 
     # 🚀 Killer Feature Analytics Fields
     is_first_posting: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_makler: Mapped[bool] = mapped_column(Boolean, default=False)
     earlier_posting_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     makler_score: Mapped[float] = mapped_column(Float, default=0.0) # 0.0 (genuine owner) to 1.0 (masked agency)
     
