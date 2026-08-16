@@ -1,7 +1,8 @@
 import asyncio
 import random
 import logging
-from typing import Dict, Optional
+import re
+from typing import Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
 
@@ -60,3 +61,31 @@ async def polite_delay(min_seconds: float = 1.0, max_seconds: float = 2.5) -> No
     delay = random.uniform(min_seconds, max_seconds)
     logger.debug(f"[ScraperUtils] Applying polite delay of {delay:.2f}s...")
     await asyncio.sleep(delay)
+
+
+def safe_float(val: Any, default: float = 0.0) -> float:
+    """Safely parse float from string or regex match without throwing ValueError on empty/whitespace."""
+    if val is None:
+        return default
+    if isinstance(val, (int, float)):
+        return float(val)
+    val_str = str(val).replace('\xa0', ' ').strip()
+    digits_only = re.sub(r'[^\d.]', '', val_str.replace(',', '.'))
+    try:
+        return float(digits_only) if digits_only else default
+    except (ValueError, TypeError):
+        return default
+
+
+def safe_optional_float(val: Any) -> Optional[float]:
+    """Safely parse optional float (e.g. area_sqm) returning None on empty/invalid."""
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    val_str = str(val).replace('\xa0', ' ').strip()
+    digits_only = re.sub(r'[^\d.]', '', val_str.replace(',', '.'))
+    try:
+        return float(digits_only) if digits_only else None
+    except (ValueError, TypeError):
+        return None

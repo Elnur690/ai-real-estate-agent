@@ -4,8 +4,11 @@ import httpx
 from bs4 import BeautifulSoup
 from typing import List
 from app.scrapers.base import BaseScraper, RawListingItem
-from app.scrapers.utils import get_random_headers
-from app.core.baku_locations import extract_baku_district, extract_metro_station
+from app.scrapers.utils import get_random_headers, safe_float, safe_optional_float
+from app.core.baku_locations import (
+    extract_baku_district, extract_metro_station, extract_baku_settlement,
+    SETTLEMENT_TO_DISTRICT, METRO_TO_DISTRICT
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +30,7 @@ class BinamAzScraper(BaseScraper):
                     seen = set()
 
                     for a in links:
-                        href = a['href']
+                        href = a.get('href', '')
                         m = re.search(r'/items/(\d+)', href)
                         if not m:
                             continue
@@ -37,21 +40,44 @@ class BinamAzScraper(BaseScraper):
                         seen.add(ext_id)
 
                         parent = a.find_parent("div", class_=re.compile(r'item|card|col', re.I)) or a
-                        raw_text = parent.get_text(separator=" | ", strip=True)
+                        raw_text = parent.get_text(separator=" | ", strip=True).replace('\xa0', ' ')
+                        raw_lower = raw_text.lower()
 
-                        price_m = re.search(r'([\d\s]+)\s*AZN', raw_text) or re.search(r'([\d\s]+)\s*₼', raw_text)
-                        price = float(price_m.group(1).replace(" ", "")) if price_m else 0.0
+                        price_m = re.search(r'([\d\s]+)\s*(?:AZN|₼|manat)', raw_text) or re.search(r'([\d\s]+)\s*\|\s*AZN', raw_text)
+                        price = safe_float(price_m.group(1) if price_m else None, default=0.0)
 
                         rooms_m = re.search(r'(\d+)\s*otaq', raw_text)
                         rooms = int(rooms_m.group(1)) if rooms_m else None
 
                         area_m = re.search(r'([\d.]+)\s*m²', raw_text) or re.search(r'([\d.]+)\s*sot', raw_text) or re.search(r'([\d.]+)\s*kv', raw_text)
-                        area = float(area_m.group(1)) if area_m else None
+                        area = safe_optional_float(area_m.group(1) if area_m else None)
 
                         district = extract_baku_district(raw_text) or extract_baku_district(href) 
+                        settlement = extract_baku_settlement(raw_text) or extract_baku_settlement(href)
                         metro = extract_metro_station(raw_text) or extract_metro_station(href)
 
-                        title = f"{rooms or ''} otaqlı mənzil {int(price)} AZN ({district})" if rooms else f"Əmlak {int(price)} AZN ({district})"
+                        if not district:
+                            if settlement and settlement in SETTLEMENT_TO_DISTRICT:
+                                district = SETTLEMENT_TO_DISTRICT[settlement]
+                            elif metro and metro in METRO_TO_DISTRICT:
+                                district = METRO_TO_DISTRICT[metro]
+
+                        is_rent = "kirayə" in raw_lower or "icarə" in raw_lower
+                        offer_type = "rent" if is_rent else "sale"
+
+                        if any(k in raw_lower for k in ["villa", "həyət", "bağ"]):
+                            prop_type = "villa"
+                        elif "ofis" in raw_lower:
+                            prop_type = "office"
+                        elif "obyekt" in raw_lower:
+                            prop_type = "commercial"
+                        elif "torpaq" in raw_lower:
+                            prop_type = "land"
+                        else:
+                            prop_type = "apartment"
+
+                        loc_label = settlement or metro or district or 'Bakı'
+                        title = f"{rooms or ''} otaqlı {prop_type.capitalize()} {int(price)} AZN ({loc_label})" if rooms else f"{prop_type.capitalize()} {int(price)} AZN ({loc_label})"
 
                         items.append(RawListingItem(
                             external_id=f"binam_{ext_id}",
@@ -65,13 +91,15 @@ class BinamAzScraper(BaseScraper):
                             area_sqm=area,
                             building_type="new",
                             seller_type="owner",
+                            offer_type=offer_type,
+                            property_type=prop_type,
                             listing_url=f"{self.BASE_URL}{href}" if href.startswith('/') else href
                         ))
                         if len(items) >= 28:
                             break
 
         except Exception as e:
-            logger.error(f"[BinamAzScraper] Error scraping: {e}")
+            logger.warning(f"[BinamAzScraper] Error scraping: {e}")
 
         logger.info(f"[BinamAzScraper] Extracted {len(items)} listings.")
         return items
