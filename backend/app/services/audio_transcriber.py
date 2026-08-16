@@ -56,10 +56,11 @@ class AudioTranscriberService:
         from google.genai import types
 
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        candidate_models = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash"]
+        candidate_models = ["gemini-3.5-flash"]
 
         gen_config = types.GenerateContentConfig(
             temperature=0.0,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True) if hasattr(types, 'AutomaticFunctionCallingConfig') else None
         )
 
         def _is_valid_transcript(text: Optional[str]) -> bool:

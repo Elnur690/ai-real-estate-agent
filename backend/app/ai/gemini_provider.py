@@ -42,30 +42,21 @@ Extract structured JSON strictly with these exact keys:
   "summary_az": "Friendly confirmation sentence in Azerbaijani language summarizing criteria"
 }}
 """
-                models_to_try = [self.model_name, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
-                models_to_try = list(dict.fromkeys([m for m in models_to_try if m]))
-                response = None
-
                 from google.genai import types
                 gen_config = types.GenerateContentConfig(
                     temperature=0.1,
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True) if hasattr(types, 'AutomaticFunctionCallingConfig') else None
                 )
 
-                for m in models_to_try:
-                    try:
-                        response = client.models.generate_content(
-                            model=m,
-                            contents=prompt,
-                            config=gen_config
-                        )
-                        if response and response.text:
-                            break
-                    except Exception as me:
-                        continue
+                target_model = self.model_name or "gemini-3.5-flash"
+                response = client.models.generate_content(
+                    model=target_model,
+                    contents=prompt,
+                    config=gen_config
+                )
 
                 if not response or not response.text:
-                    raise ValueError("Empty response from Gemini models")
+                    raise ValueError(f"Empty response from model {target_model}")
 
                 text = response.text.strip()
                 if text.startswith("```json"):
