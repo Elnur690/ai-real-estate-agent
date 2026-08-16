@@ -256,11 +256,17 @@ class BotCommandHandler:
                     "📌 Lütfən axtarmaq istədiyiniz mənzil parametrlərini yazın.\n\n"
                     "*Nümunə:* `Yasamalda 3 otaqlı 100-150 min AZN yeni tikili`"
                 )
-            return await BotCommandHandler._process_search_wizard(db, tenant, criteria_text)
+            return await BotCommandHandler._process_search_wizard(
+                db, tenant, criteria_text,
+                channel=channel, sender_id=sender_id, instance_name=instance_name
+            )
 
         # 7. Fallback Search Wizard for Arbitrary Natural Language Text
         if len(raw_text_trimmed) >= 3:
-            return await BotCommandHandler._process_search_wizard(db, tenant, raw_text_trimmed)
+            return await BotCommandHandler._process_search_wizard(
+                db, tenant, raw_text_trimmed,
+                channel=channel, sender_id=sender_id, instance_name=instance_name
+            )
 
         return BotCommandHandler._get_start_message(app_name)
 
@@ -289,7 +295,14 @@ class BotCommandHandler:
         )
 
     @staticmethod
-    async def _process_search_wizard(db: AsyncSession, tenant: Tenant, new_input_text: str) -> str:
+    async def _process_search_wizard(
+        db: AsyncSession,
+        tenant: Tenant,
+        new_input_text: str,
+        channel: str = "whatsapp",
+        sender_id: str = "",
+        instance_name: Optional[str] = None
+    ) -> str:
         """
         Interactive Search Wizard:
         Parses criteria, merges with existing draft (if present), highlights missing fields,
@@ -305,6 +318,13 @@ class BotCommandHandler:
                 draft = json.loads(tenant.draft_search_json)
             except Exception:
                 draft = {}
+
+        # Capture origin routing destination
+        draft["channel"] = channel
+        if sender_id:
+            draft["destination_chat_id"] = sender_id
+        if instance_name:
+            draft["instance_name"] = instance_name
 
         # Update draft dictionary with non-null parsed values
         # Multi-Location Plan Entitlement Check
@@ -357,6 +377,12 @@ class BotCommandHandler:
             draft["seller_type"] = new_parsed.seller_type
         if new_parsed.building_type and new_parsed.building_type != "any":
             draft["building_type"] = new_parsed.building_type
+        if new_parsed.offer_type:
+            draft["offer_type"] = new_parsed.offer_type
+        if new_parsed.property_type:
+            draft["property_type"] = new_parsed.property_type
+        if new_parsed.min_months_on_market:
+            draft["min_months_on_market"] = new_parsed.min_months_on_market
 
         # Save draft back to tenant
         tenant.draft_search_json = json.dumps(draft, ensure_ascii=False)
@@ -510,6 +536,11 @@ class BotCommandHandler:
         prop = draft.get("property_type", "apartment")
         min_months = draft.get("min_months_on_market")
 
+        # Routing destination
+        channel = draft.get("channel") or tenant.preferred_channel or "whatsapp"
+        destination_chat_id = draft.get("destination_chat_id") or (tenant.whatsapp_number if channel == "whatsapp" else tenant.telegram_chat_id)
+        instance_name = draft.get("instance_name") or f"tenant_{tenant.id}"
+
         name_loc = district or metro_station or 'Ümumi'
         new_search = SavedSearch(
             tenant_id=tenant.id,
@@ -526,6 +557,9 @@ class BotCommandHandler:
             offer_type=offer,
             property_type=prop,
             min_months_on_market=min_months,
+            channel=channel,
+            destination_chat_id=destination_chat_id,
+            instance_name=instance_name,
             is_active=True
         )
         db.add(new_search)

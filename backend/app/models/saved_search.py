@@ -28,6 +28,11 @@ class SavedSearch(Base):
     property_type: Mapped[str] = mapped_column(String(50), default="apartment")  # apartment | house | office | commercial | land | any
     min_months_on_market: Mapped[int | None] = mapped_column(Integer, nullable=True) # Historical lookback parameter (e.g. 3 for "3 aydan bəri")
 
+    # Delivery Routing
+    channel: Mapped[str] = mapped_column(String(50), default="whatsapp") # whatsapp | telegram
+    destination_chat_id: Mapped[str | None] = mapped_column(String(255), nullable=True) # WhatsApp Group JID (@g.us) or private phone or Telegram Chat ID
+    instance_name: Mapped[str | None] = mapped_column(String(100), nullable=True) # Evolution API instance name (e.g. tenant_1)
+
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 

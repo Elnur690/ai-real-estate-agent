@@ -476,21 +476,18 @@ class IngestionService:
                     f"`Maraqlanıram {new_match.id}` | `Keç {new_match.id}` | `Satılıb {new_match.id}`"
                 )
 
-                # Check Multi-Agent Team Routing
-                target_tenant = tenant
-                stmt_sub = select(Tenant).where(Tenant.parent_tenant_id == tenant.id, Tenant.status == "active")
-                res_sub = await db.execute(stmt_sub)
-                sub_agents = res_sub.scalars().all()
+                # Direct delivery strictly to the creator's exact destination (group or 1-on-1 chat)
+                dest_channel = getattr(search, 'channel', None) or tenant.preferred_channel or "whatsapp"
+                dest_chat_id = getattr(search, 'destination_chat_id', None) or (tenant.whatsapp_number if dest_channel == "whatsapp" else tenant.telegram_chat_id)
+                inst_name = getattr(search, 'instance_name', None) or f"tenant_{tenant.id}"
 
-                if sub_agents and listing.district:
-                    for sa in sub_agents:
-                        if sa.assigned_districts and any(d.lower() in listing.district.lower() for d in sa.assigned_districts):
-                            target_tenant = sa
-                            break
-
-                if target_tenant.preferred_channel == "telegram" and target_tenant.telegram_chat_id:
-                    await send_telegram_notification(target_tenant.telegram_chat_id, msg_text)
-                elif target_tenant.preferred_channel == "whatsapp" and target_tenant.whatsapp_number:
-                    await WhatsAppAdapter.send_message(target_tenant.whatsapp_number, msg_text)
+                if dest_channel == "telegram" and dest_chat_id:
+                    await send_telegram_notification(dest_chat_id, msg_text)
+                elif dest_channel == "whatsapp" and dest_chat_id:
+                    await WhatsAppAdapter.send_message(
+                        phone_number=dest_chat_id,
+                        text=msg_text,
+                        instance_name=inst_name
+                    )
 
         return matches_count
