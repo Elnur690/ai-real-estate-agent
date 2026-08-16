@@ -51,7 +51,13 @@ class WhatsAppAdapter:
                 return None
 
             is_group = "@g.us" in remote_jid
-            group_subject = payload.get("data", {}).get("groupMetadata", {}).get("subject") or data.get("pushName") or ""
+            group_metadata = payload.get("data", {}).get("groupMetadata", {})
+            group_subject = (
+                group_metadata.get("subject")
+                or payload.get("data", {}).get("groupName")
+                or (data.get("pushName") if not is_group else "")
+                or "İşçi WhatsApp Qrupu"
+            )
 
             # Resolve tenant for this WhatsApp instance
             async with AsyncSessionLocal() as db:
