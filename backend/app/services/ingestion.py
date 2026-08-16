@@ -308,7 +308,7 @@ class IngestionService:
                 return False
 
         # 6. Multi-Location (Settlements, District and Metro Stations) Check
-        from app.core.baku_locations import BAKU_METRO_STATIONS, BAKU_DISTRICTS, BAKU_SETTLEMENTS
+        from app.core.baku_locations import get_all_aliases_for_location
 
         target_districts = []
         if search.district and search.district.strip():
@@ -327,13 +327,13 @@ class IngestionService:
             
             matched_loc = False
             for loc in all_target_locations:
-                loc_lower = loc.lower()
+                loc_lower = loc.lower().strip()
                 # Direct string match
                 if loc_lower in list_text_loc:
                     matched_loc = True
                     break
-                # Station, Settlement and District alias matches
-                aliases = BAKU_SETTLEMENTS.get(loc, []) + BAKU_METRO_STATIONS.get(loc, []) + BAKU_DISTRICTS.get(loc, [])
+                # Comprehensive Station, Settlement and District alias & sub-location matches
+                aliases = get_all_aliases_for_location(loc)
                 if any(alias in list_text_loc for alias in aliases):
                     matched_loc = True
                     break
@@ -371,14 +371,24 @@ class IngestionService:
 
         matches_count = 0
         app_name = await get_app_name(db)
+        now_utc = datetime.now(timezone.utc)
 
         for search in saved_searches:
             stmt_t = select(Tenant).where(Tenant.id == search.tenant_id)
             res_t = await db.execute(stmt_t)
             tenant = res_t.scalars().first()
 
-            if not tenant or tenant.status != "active":
+            if not tenant:
                 continue
+            # Check tenant suspension or expiration
+            if tenant.status in ["suspended", "expired"]:
+                continue
+            if tenant.plan_expires_at:
+                expires_at = tenant.plan_expires_at
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                if expires_at < now_utc:
+                    continue
 
             # Deterministic Strict Filter Check
             if not IngestionService.is_strict_match(search, listing):

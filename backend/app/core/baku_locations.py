@@ -177,6 +177,62 @@ def extract_all_metro_stations(text: str) -> List[str]:
 def extract_baku_settlement(text: str) -> Optional[str]:
     """Extract specific Baku settlement or micro-district name."""
     settlements = extract_all_baku_settlements(text)
+# Mapping of Settlements/Quarters to Parent Baku Administrative Districts
+SETTLEMENT_TO_DISTRICT: Dict[str, str] = {
+    "Badamdar": "Səbail", "Bayıl": "Səbail", "Şıxov": "Səbail",
+    "Bakıxanov": "Sabunçu", "Zabrat": "Sabunçu", "Maştağa": "Sabunçu", "Nardaran": "Sabunçu", "Bilgəh": "Sabunçu", "Pirşağı": "Sabunçu", "Kürdəxanı": "Sabunçu", "Balaxanı": "Sabunçu", "Ramana": "Sabunçu",
+    "Qaraçuxur": "Suraxanı", "Yeni Günəşli": "Suraxanı", "Köhnə Günəşli": "Suraxanı", "Hövsan": "Suraxanı", "Əmircan": "Suraxanı", "Bülbülə": "Suraxanı", "Zığ": "Suraxanı",
+    "Biləcəri": "Binəqədi", "Sulutəpə": "Binəqədi", "Rəsulzadə": "Binəqədi", "6-cı mikrorayon": "Binəqədi", "7-ci mikrorayon": "Binəqədi", "8-ci mikrorayon": "Binəqədi", "9-cu mikrorayon": "Binəqədi", "Binəqədi qəs.": "Binəqədi",
+    "1-ci mikrorayon": "Nəsimi", "2-ci mikrorayon": "Nəsimi", "3-cü mikrorayon": "Nəsimi", "4-cü mikrorayon": "Nəsimi", "5-ci mikrorayon": "Nəsimi", "Papanin": "Nəsimi", "Kubinka": "Nəsimi",
+    "Mərdəkan": "Xəzər", "Şüvəlan": "Xəzər", "Buzovna": "Xəzər", "Binə": "Xəzər", "Qala": "Xəzər", "Zirə": "Xəzər", "Türkan": "Xəzər", "Şaqan": "Xəzər",
+    "Xırdalan": "Abşeron", "Masazır": "Abşeron", "Saray": "Abşeron", "Novxanı": "Abşeron", "Mehdiabad": "Abşeron", "Fatmayı": "Abşeron", "Digah": "Abşeron", "Məmmədli": "Abşeron", "Qobu": "Abşeron", "Hökməli": "Abşeron",
+    "Ağ Şəhər": "Xətai", "Əhmədli": "Xətai", "Həzi Aslanov": "Xətai", "NZS": "Xətai",
+    "Montin": "Nərimanov", "Böyükşor": "Nərimanov",
+    "Yeni Yasamal": "Yasamal",
+    "Lökbatan": "Qaradağ", "Sahil qəs.": "Qaradağ", "Qobustan": "Qaradağ", "Səngəçal": "Qaradağ",
+    "Pirallahi": "Pirallahi", "Gürgən": "Pirallahi"
+}
+
+# Mapping of Baku Metro Stations to Parent Administrative Districts
+METRO_TO_DISTRICT: Dict[str, str] = {
+    "Elmlər Akademiyası": "Yasamal", "İnşaatçılar": "Yasamal", "20 Yanvar": "Yasamal",
+    "28 May": "Nəsimi", "Memar Əcəmi": "Nəsimi", "Nəsimi": "Nəsimi", "8 Noyabr": "Nəsimi", "Cəfər Cabbarlı": "Nəsimi",
+    "Gənclik": "Nərimanov", "Nəriman Nərimanov": "Nərimanov",
+    "Xətai": "Xətai", "Əhmədli": "Xətai", "Həzi Aslanov": "Xətai",
+    "Qara Qarayev": "Nizami", "Neftçilər": "Nizami", "Xalqlar Dostluğu": "Nizami",
+    "İçərişəhər": "Səbail", "Sahil": "Səbail",
+    "Azadlıq prospekti": "Binəqədi", "Dərnəgül": "Binəqədi", "Avtovağzal": "Binəqədi", "Xocəsən": "Binəqədi",
+    "Ulduz": "Nərimanov", "Koroğlu": "Nizami", "Nizami": "Yasamal"
+}
+
+def get_all_aliases_for_location(loc_name: str) -> List[str]:
+    """
+    Returns comprehensive keywords & aliases for a search location.
+    If loc_name is a district, includes all metro stations, settlements, and micro-locations situated within that district.
+    """
+    if not loc_name:
+        return []
+    
+    loc_clean = loc_name.strip()
+    aliases = list(BAKU_SETTLEMENTS.get(loc_clean, [])) + list(BAKU_METRO_STATIONS.get(loc_clean, [])) + list(BAKU_DISTRICTS.get(loc_clean, []))
+    
+    # If loc_clean is a District (e.g. Yasamal, Nəsimi), also pull all child settlements and metros
+    for s_name, parent_dist in SETTLEMENT_TO_DISTRICT.items():
+        if parent_dist.lower() == loc_clean.lower() or loc_clean.lower() in parent_dist.lower():
+            aliases.extend(BAKU_SETTLEMENTS.get(s_name, []))
+            aliases.append(s_name.lower())
+            
+    for m_name, parent_dist in METRO_TO_DISTRICT.items():
+        if parent_dist.lower() == loc_clean.lower() or loc_clean.lower() in parent_dist.lower():
+            aliases.extend(BAKU_METRO_STATIONS.get(m_name, []))
+            aliases.append(m_name.lower())
+            
+    aliases.append(loc_clean.lower())
+    return list(dict.fromkeys(aliases))
+
+def extract_baku_settlement(text: str) -> Optional[str]:
+    """Extract primary Baku settlement or micro-district from text."""
+    settlements = extract_all_baku_settlements(text)
     return settlements[0] if settlements else None
 
 def extract_all_baku_settlements(text: str) -> List[str]:

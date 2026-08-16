@@ -546,3 +546,61 @@ def test_strict_match_settlement_precision():
     )
     assert IngestionService.is_strict_match(badamdar_search, bayil_listing) is False
 
+def test_strict_match_district_hierarchy_and_sublocations():
+    # 1. District search for "Nəsimi"
+    nesimi_search = SavedSearch(
+        tenant_id=1,
+        name="Nəsimi Search",
+        raw_criteria_text="Nəsimi rayonunda 3 otaqlı",
+        district="Nəsimi",
+        min_rooms=3,
+        max_rooms=3
+    )
+
+    # Scraped card from bina.az only says "Memar Əcəmi m." or "28 May m." (district is None) -> MUST MATCH!
+    ecemi_listing = Listing(
+        source_id=1,
+        external_id="801",
+        title="3 otaqlı mənzil 175000 AZN (Memar Əcəmi)",
+        description="Bina.az: Memar Əcəmi m. | 3 otaqlı | 85 m² | 4/5 mərtəbə",
+        listing_url="https://bina.az/items/801",
+        metro_station="Memar Əcəmi",
+        district=None,
+        rooms=3,
+        price=175000.0,
+        building_type="new",
+        seller_type="owner",
+        offer_type="sale",
+        property_type="apartment"
+    )
+    assert IngestionService.is_strict_match(nesimi_search, ecemi_listing) is True
+
+    # 2. District search for "Yasamal"
+    yasamal_search = SavedSearch(
+        tenant_id=1,
+        name="Yasamal Search",
+        raw_criteria_text="Yasamalda 2 otaqlı",
+        district="Yasamal",
+        min_rooms=2,
+        max_rooms=2
+    )
+
+    # Scraped card says "Elmlər Akademiyası m." (district is None) -> MUST MATCH!
+    elmler_listing = Listing(
+        source_id=1,
+        external_id="802",
+        title="2 otaqlı mənzil 140000 AZN (Elmlər)",
+        description="Bina.az: Elmlər Akademiyası m. | 2 otaqlı | 60 m²",
+        listing_url="https://bina.az/items/802",
+        metro_station="Elmlər Akademiyası",
+        district=None,
+        rooms=2,
+        price=140000.0,
+        building_type="new",
+        seller_type="owner",
+        offer_type="sale",
+        property_type="apartment"
+    )
+    assert IngestionService.is_strict_match(yasamal_search, elmler_listing) is True
+
+
