@@ -46,11 +46,17 @@ Extract structured JSON strictly with these exact keys:
                 models_to_try = list(dict.fromkeys([m for m in models_to_try if m]))
                 response = None
 
+                from google.genai import types
+                gen_config = types.GenerateContentConfig(
+                    temperature=0.1,
+                )
+
                 for m in models_to_try:
                     try:
                         response = client.models.generate_content(
                             model=m,
                             contents=prompt,
+                            config=gen_config
                         )
                         if response and response.text:
                             break

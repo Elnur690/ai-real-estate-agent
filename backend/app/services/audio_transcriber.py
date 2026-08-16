@@ -57,6 +57,10 @@ class AudioTranscriberService:
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
         candidate_models = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.7-flash"]
 
+        gen_config = types.GenerateContentConfig(
+            temperature=0.0,
+        )
+
         # Method 1: Inline binary part (Fastest, zero temp files, no upload delay)
         for model_name in candidate_models:
             try:
@@ -67,7 +71,8 @@ class AudioTranscriberService:
 
                 response = client.models.generate_content(
                     model=model_name,
-                    contents=[part, prompt]
+                    contents=[part, prompt],
+                    config=gen_config
                 )
 
                 transcript = response.text.strip() if response and response.text else None
@@ -108,7 +113,8 @@ class AudioTranscriberService:
                 try:
                     response = client.models.generate_content(
                         model=model_name,
-                        contents=[audio_file, prompt]
+                        contents=[audio_file, prompt],
+                        config=gen_config
                     )
 
                     transcript = response.text.strip() if response and response.text else None
