@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, Users, DollarSign, Package, Database, Sliders, Building, LogOut, ShieldCheck, Globe } from 'lucide-react';
+import { LayoutDashboard, Users, DollarSign, Package, Database, Sliders, Building, LogOut, ShieldCheck, Globe, Menu, X, MapPin } from 'lucide-react';
 import api from './api';
 import { LoginView } from './components/LoginView';
 import { DashboardView } from './components/DashboardView';
@@ -10,8 +10,7 @@ import { AppSettingsView } from './components/AppSettingsView';
 import { ScrapersView } from './components/ScrapersView';
 import { BakuPropertyMap } from './components/BakuPropertyMap';
 import { AdminProfileModal } from './components/AdminProfileModal';
-import { MapPin } from 'lucide-react';
-import { useTranslation, Language } from './i18n';
+import { useTranslation } from './i18n';
 
 export function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => !!localStorage.getItem('token'));
@@ -19,6 +18,7 @@ export function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'tenants' | 'payments' | 'plans' | 'scrapers' | 'map' | 'settings'>('dashboard');
   const [appName, setAppName] = useState('RealEstate AI Agent');
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const { t, lang, setLanguage } = useTranslation();
   const [, setRenderTrigger] = useState(0);
 
@@ -60,6 +60,11 @@ export function App() {
     setIsAuthenticated(false);
   };
 
+  const handleSelectTab = (tab: typeof activeTab) => {
+    setActiveTab(tab);
+    setMobileMenuOpen(false);
+  };
+
   if (!isAuthenticated) {
     return <LoginView onLoginSuccess={handleLoginSuccess} appName={appName} />;
   }
@@ -76,8 +81,53 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-dark-900 text-slate-100 flex flex-col md:flex-row">
-      {/* Sidebar */}
-      <aside className="w-full md:w-64 bg-dark-800/90 border-r border-slate-800 p-5 flex flex-col justify-between shrink-0">
+      {/* Mobile Top Navigation Bar */}
+      <header className="md:hidden flex items-center justify-between px-4 py-3 bg-dark-800/95 border-b border-slate-800 sticky top-0 z-30 backdrop-blur-md">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-emerald-500 to-indigo-600 flex items-center justify-center shrink-0 shadow-md shadow-emerald-500/20">
+            <Building className="w-4 h-4 text-white" />
+          </div>
+          <div className="truncate">
+            <h1 className="font-bold text-white text-sm leading-tight truncate">{appName}</h1>
+            <span className="text-[9px] font-semibold text-emerald-400 tracking-wider uppercase block">{t.saasAdmin}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Quick Language Toggle */}
+          <button
+            onClick={() => setLanguage(lang === 'az' ? 'en' : 'az')}
+            className="px-2 py-1 rounded-lg bg-dark-900 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-white transition-colors"
+            title="Dili dəyiş / Switch language"
+          >
+            {lang === 'az' ? '🇦🇿 AZ' : '🇬🇧 EN'}
+          </button>
+
+          {/* Hamburger Menu Toggle */}
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="p-2 rounded-xl bg-dark-900 border border-slate-800 text-slate-300 hover:text-white hover:border-slate-700 transition-colors"
+            aria-label="Toggle navigation menu"
+          >
+            {mobileMenuOpen ? <X className="w-5 h-5 text-emerald-400" /> : <Menu className="w-5 h-5" />}
+          </button>
+        </div>
+      </header>
+
+      {/* Mobile Drawer Backdrop Overlay */}
+      {mobileMenuOpen && (
+        <div
+          onClick={() => setMobileMenuOpen(false)}
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 md:hidden transition-opacity"
+        />
+      )}
+
+      {/* Sidebar Navigation (Desktop Fixed & Mobile Slide-over Drawer) */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-dark-800/95 border-r border-slate-800 p-5 flex flex-col justify-between shrink-0 transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 md:w-64 md:z-auto ${
+          mobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
+        }`}
+      >
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -89,6 +139,13 @@ export function App() {
                 <span className="text-[10px] font-semibold text-emerald-400 tracking-wider uppercase">{t.saasAdmin}</span>
               </div>
             </div>
+            {/* Close button inside mobile drawer */}
+            <button
+              onClick={() => setMobileMenuOpen(false)}
+              className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-dark-700"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
 
           {/* Language Switcher */}
@@ -121,6 +178,7 @@ export function App() {
             </div>
           </div>
 
+          {/* Navigation Links */}
           <nav className="space-y-1.5">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -128,25 +186,29 @@ export function App() {
               return (
                 <button
                   key={item.key}
-                  onClick={() => setActiveTab(item.key as any)}
+                  onClick={() => handleSelectTab(item.key as any)}
                   className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
                     isActive
-                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 shadow-sm'
+                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 shadow-sm font-semibold'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-dark-700/50'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
-                  {item.label}
+                  <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
+                  <span className="truncate">{item.label}</span>
                 </button>
               );
             })}
           </nav>
         </div>
 
+        {/* User Account & Logout Footer */}
         <div className="pt-4 border-t border-slate-800 space-y-3">
           <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-dark-900/80 border border-slate-800/80 hover:border-emerald-500/30 transition-all">
             <button
-              onClick={() => setShowProfileModal(true)}
+              onClick={() => {
+                setShowProfileModal(true);
+                setMobileMenuOpen(false);
+              }}
               className="flex items-center gap-2.5 text-left flex-1 min-w-0 group"
               title="Click to edit your admin profile & password"
             >
@@ -181,8 +243,8 @@ export function App() {
       </aside>
 
       {/* Main Workspace */}
-      <main className="flex-1 p-6 md:p-8 max-w-7xl mx-auto w-full overflow-y-auto">
-        {activeTab === 'dashboard' && <DashboardView onNavigate={(tab) => setActiveTab(tab as any)} />}
+      <main className="flex-1 p-4 sm:p-6 md:p-8 max-w-7xl mx-auto w-full overflow-y-auto min-w-0">
+        {activeTab === 'dashboard' && <DashboardView onNavigate={(tab) => handleSelectTab(tab as any)} />}
         {activeTab === 'tenants' && <TenantsView />}
         {activeTab === 'payments' && <PaymentsView />}
         {activeTab === 'plans' && <PlansView />}
