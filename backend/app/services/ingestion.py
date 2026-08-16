@@ -495,7 +495,14 @@ class IngestionService:
 
                 # Direct delivery strictly to the creator's exact destination (group or 1-on-1 chat)
                 dest_channel = getattr(search, 'channel', None) or tenant.preferred_channel or "whatsapp"
-                dest_chat_id = getattr(search, 'destination_chat_id', None) or (tenant.whatsapp_number if dest_channel == "whatsapp" else tenant.telegram_chat_id)
+                dest_chat_id = getattr(search, 'destination_chat_id', None)
+                if not dest_chat_id:
+                    allowed = list(tenant.allowed_group_jids or [])
+                    if allowed and dest_channel == "whatsapp":
+                        dest_chat_id = allowed[0]
+                    else:
+                        dest_chat_id = tenant.whatsapp_number if dest_channel == "whatsapp" else tenant.telegram_chat_id
+
                 inst_name = getattr(search, 'instance_name', None) or f"tenant_{tenant.id}"
 
                 if dest_channel == "telegram" and dest_chat_id:

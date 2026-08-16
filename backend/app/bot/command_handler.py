@@ -224,7 +224,9 @@ class BotCommandHandler:
 
         # 4. Handle Pending Draft Confirmation
         if tenant.draft_search_json and text_lower in ALL_CONFIRM_KEYWORDS:
-            return await BotCommandHandler._confirm_and_save_draft(db, tenant)
+            return await BotCommandHandler._confirm_and_save_draft(
+                db, tenant, sender_id=sender_id, channel=channel, instance_name=instance_name
+            )
 
         # Reaction commands (Maraqlanıram / Keç / Satılıb)
         reaction_match = re.search(r'^(maraqlanıram|maraqlaniram|keç|kec|satılıb|satilib)\s*(\d+)?', text_lower)
@@ -514,7 +516,13 @@ class BotCommandHandler:
         return "\n".join(lines)
 
     @staticmethod
-    async def _confirm_and_save_draft(db: AsyncSession, tenant: Tenant) -> str:
+    async def _confirm_and_save_draft(
+        db: AsyncSession,
+        tenant: Tenant,
+        sender_id: str = "",
+        channel: str = "whatsapp",
+        instance_name: Optional[str] = None
+    ) -> str:
         """Confirms draft and commits SavedSearch to DB."""
         if not tenant.draft_search_json:
             return "Heç bir aktiv axtarış qaralaması tapılmadı."
@@ -537,10 +545,22 @@ class BotCommandHandler:
         prop = draft.get("property_type", "apartment")
         min_months = draft.get("min_months_on_market")
 
-        # Routing destination
-        channel = draft.get("channel") or tenant.preferred_channel or "whatsapp"
-        destination_chat_id = draft.get("destination_chat_id") or (tenant.whatsapp_number if channel == "whatsapp" else tenant.telegram_chat_id)
-        instance_name = draft.get("instance_name") or f"tenant_{tenant.id}"
+        # Routing destination - Strict preservation of WhatsApp group vs personal chat
+        channel = channel or draft.get("channel") or tenant.preferred_channel or "whatsapp"
+        
+        destination_chat_id = None
+        if sender_id and "@g.us" in sender_id:
+            destination_chat_id = sender_id
+        elif draft.get("destination_chat_id") and "@g.us" in draft.get("destination_chat_id"):
+            destination_chat_id = draft.get("destination_chat_id")
+        elif sender_id:
+            destination_chat_id = sender_id
+        elif draft.get("destination_chat_id"):
+            destination_chat_id = draft.get("destination_chat_id")
+        else:
+            destination_chat_id = tenant.whatsapp_number if channel == "whatsapp" else tenant.telegram_chat_id
+
+        instance_name = instance_name or draft.get("instance_name") or f"tenant_{tenant.id}"
 
         name_loc = district or metro_station or 'Ümumi'
         new_search = SavedSearch(
