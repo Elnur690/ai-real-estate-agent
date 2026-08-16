@@ -100,7 +100,7 @@ def classify_property_and_offer(
 
     # 3. Classify Seller Type (Agency vs Owner)
     has_agency_kw = any(kw in full_text for kw in AGENCY_KEYWORDS) or bool(COMMISSION_REGEX.search(full_text))
-    has_owner_kw = any(kw in full_text for kw in OWNER_KEYWORDS)
+    has_owner_kw = any(kw in full_text for kw in OWNER_KEYWORDS) or ("mülkiyyətçi" in full_text) or ("mulkiyyetci" in full_text)
 
     # Agency keywords always strictly override owner claims (prevent false "sahibindən" makler postings)
     if has_agency_kw:
@@ -108,7 +108,7 @@ def classify_property_and_offer(
     elif has_owner_kw:
         seller_type = "owner"
     else:
-        # Default based on source or heuristic
-        seller_type = "owner"
+        # In Baku real estate portals, unmarked listings without owner verification are agencies/brokers
+        seller_type = "agency"
 
     return offer_type, property_type, seller_type

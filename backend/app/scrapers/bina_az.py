@@ -122,8 +122,24 @@ class BinaAzScraper(BaseScraper):
                             else:
                                 bld_type = "new"
 
-                        # 7. Seller Type
-                        seller_type = "agency" if ("agentlik" in raw_lower or "vasitəçi" in raw_lower or "makler" in raw_lower) else "owner"
+                        # 7. Seller Type (Strict Verification)
+                        has_agency_badge = bool(
+                            c.find("a", href=re.compile(r'/agentlikler|/complexes|/companies|/shops')) 
+                            or c.find(class_=re.compile(r'agency|shop|complex|developer|broker|company|rieltor|items-i-agency', re.I))
+                            or c.find("img", src=re.compile(r'agency|logo|shop', re.I))
+                        )
+                        has_owner_badge = bool(
+                            c.find(class_=re.compile(r'owner|mulkiyyetci', re.I))
+                            or any(kw in raw_lower for kw in ["mülkiyyətçi", "mulkiyyetci", "sahibindən", "sahibinden", "öz evimdir", "oz evimdir", "öz mənzilimdir", "vasitəçisiz", "maklersiz"])
+                        )
+
+                        if has_agency_badge or any(kw in raw_lower for kw in ["agentlik", "vasitəçi", "makler", "şirkət", "komissiya", "ofis haqqı"]):
+                            seller_type = "agency"
+                        elif has_owner_badge:
+                            seller_type = "owner"
+                        else:
+                            # Portal listings without verified owner badge are agencies/brokers
+                            seller_type = "agency"
 
                         # 8. Title
                         loc_label = settlement or metro or district or "Bakı"
