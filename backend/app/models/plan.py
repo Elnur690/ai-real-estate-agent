@@ -18,6 +18,7 @@ class Plan(Base):
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     max_agents: Mapped[int] = mapped_column(Integer, default=1)
+    max_saved_searches: Mapped[int] = mapped_column(Integer, default=10)
 
     # Feature Toggles & Add-ons
     feature_makler_detector: Mapped[bool] = mapped_column(Boolean, default=True)

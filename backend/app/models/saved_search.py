@@ -28,6 +28,14 @@ class SavedSearch(Base):
     property_type: Mapped[str] = mapped_column(String(50), default="apartment")  # apartment | house | office | commercial | land | any
     min_months_on_market: Mapped[int | None] = mapped_column(Integer, nullable=True) # Historical lookback parameter (e.g. 3 for "3 aydan bəri")
 
+    # Advanced Criteria Filters
+    not_first_last_floor: Mapped[bool] = mapped_column(Boolean, default=False)
+    min_floor: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_floor: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    has_kupcha: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    is_mortgageable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    is_repaired: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
     # Delivery Routing
     channel: Mapped[str] = mapped_column(String(50), default="whatsapp") # whatsapp | telegram
     destination_chat_id: Mapped[str | None] = mapped_column(String(255), nullable=True) # WhatsApp Group JID (@g.us) or private phone or Telegram Chat ID

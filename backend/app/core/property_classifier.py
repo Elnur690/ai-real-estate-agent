@@ -1,6 +1,12 @@
 import re
 from typing import Tuple, Optional
 
+def normalize_az_text(text: Optional[str]) -> str:
+    """Safely normalizes Azerbaijani text to lowercase without Unicode combining dot artifacts."""
+    if not text:
+        return ""
+    return text.replace("İ", "i").replace("I", "ı").lower().replace("\u0307", "")
+
 # Agency / Broker Detection Keywords
 AGENCY_KEYWORDS = [
     "agentlik", "agentliyi", "daşınmaz əmlak", "dasinmaz emlak",

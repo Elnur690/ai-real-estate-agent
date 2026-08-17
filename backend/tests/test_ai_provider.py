@@ -70,6 +70,23 @@ async def test_historical_lookback_in_search_criteria():
     assert criteria.property_type == "apartment"
     assert criteria.min_months_on_market == 3
 
+@pytest.mark.asyncio
+async def test_floor_exclusion_and_lookback_criteria_parsing():
+    provider = GeminiProvider(model_name="gemini-3.5-flash")
+    raw_text = "Yasamalda, elmlər akademiyası metro, 3 və ya 4 otaqlı. Yeni tikili. 400k - 500k. Sahibindən, 5 aydan bəri, 1ci və sonuncu mərtəbə olmasın"
+    criteria = await provider.parse_search_criteria(raw_text)
+
+    assert "Yasamal" in criteria.locations or criteria.district == "Yasamal"
+    assert "Elmlər Akademiyası" in criteria.locations or criteria.metro_station == "Elmlər Akademiyası"
+    assert criteria.min_rooms == 3
+    assert criteria.max_rooms == 4
+    assert criteria.min_price == 400000.0
+    assert criteria.max_price == 500000.0
+    assert criteria.building_type == "new"
+    assert criteria.seller_type == "owner"
+    assert criteria.min_months_on_market == 5
+    assert criteria.not_first_last_floor is True
+
 def test_fernet_key_encryption():
     plain = "sk-test-secret-key-12345"
     encrypted = encrypt_key(plain)

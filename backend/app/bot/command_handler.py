@@ -138,7 +138,7 @@ class BotCommandHandler:
             return await BotCommandHandler._list_saved_searches(db, tenant)
 
         if text_lower in ["/status", "/plan", "status", "planım nə vaxt bitir?", "planim ne vaxt bitir?", "4"]:
-            return BotCommandHandler._get_account_status(tenant, app_name)
+            return await BotCommandHandler._get_account_status(db, tenant, app_name)
 
         if text_lower in ["/channel", "/kanal", "kanalı dəyiş", "kanali deyis", "3"]:
             new_channel = "whatsapp" if tenant.preferred_channel == "telegram" else "telegram"
@@ -392,6 +392,20 @@ class BotCommandHandler:
         if new_parsed.min_months_on_market:
             draft["min_months_on_market"] = new_parsed.min_months_on_market
 
+        # Advanced filters (floor, deed, mortgage, repair)
+        if new_parsed.not_first_last_floor:
+            draft["not_first_last_floor"] = True
+        if new_parsed.has_kupcha is not None:
+            draft["has_kupcha"] = new_parsed.has_kupcha
+        if new_parsed.is_mortgageable is not None:
+            draft["is_mortgageable"] = new_parsed.is_mortgageable
+        if new_parsed.is_repaired is not None:
+            draft["is_repaired"] = new_parsed.is_repaired
+        if new_parsed.min_floor is not None:
+            draft["min_floor"] = new_parsed.min_floor
+        if new_parsed.max_floor is not None:
+            draft["max_floor"] = new_parsed.max_floor
+
         # Save draft back to tenant
         tenant.draft_search_json = json.dumps(draft, ensure_ascii=False)
         await db.commit()
@@ -409,6 +423,12 @@ class BotCommandHandler:
         offer = draft.get("offer_type", "sale")
         prop = draft.get("property_type", "apartment")
         min_months = draft.get("min_months_on_market")
+        not_fl_floor = draft.get("not_first_last_floor")
+        has_kupcha = draft.get("has_kupcha")
+        is_mortgageable = draft.get("is_mortgageable")
+        is_repaired = draft.get("is_repaired")
+        min_fl = draft.get("min_floor")
+        max_fl = draft.get("max_floor")
 
         # Aged listings addon verification
         has_aged_addon = tenant.feature_aged_listings
@@ -435,7 +455,7 @@ class BotCommandHandler:
         missing_fields = []
 
         # Deal / Property Type
-        deal_tr = "İcarə / Kirayə" if offer == "rent" else "Satış"
+        deal_tr = "İcarə / Kirayə" if offer == "rent" else ("Günlük Kirayə" if offer == "daily_rent" else "Satış")
         prop_tr = {
             "apartment": "Mənzil",
             "villa": "Həyət evi / Villa / Bağ evi",
@@ -483,6 +503,20 @@ class BotCommandHandler:
             set_fields.append("• 🏢 *Bina növü:* Yalnız Köhnə tikili")
         else:
             set_fields.append("• 🏢 *Bina növü:* Hər ikisi (Yeni və Köhnə tikili)")
+
+        if not_fl_floor:
+            set_fields.append("• 🏢 *Mərtəbə tələbi:* 1-ci və sonuncu mərtəbələr istisna")
+        elif min_fl or max_fl:
+            set_fields.append(f"• 🏢 *Mərtəbə aralığı:* {min_fl or 1} - {max_fl or 30}-cu mərtəbə")
+
+        if has_kupcha:
+            set_fields.append("• 📄 *Sənəd / Çıxarış:* Yalnız Çıxarışlı (Kupçalı)")
+        if is_mortgageable:
+            set_fields.append("• 🏦 *İpoteka:* Yalnız İpotekaya yararlı")
+        if is_repaired is True:
+            set_fields.append("• 🛠️ *Təmir:* Yalnız Təmirli")
+        elif is_repaired is False:
+            set_fields.append("• 🛠️ *Təmir:* Təmirsiz (Podmayak)")
 
         if seller != "any":
             seller_tr = "Yalnız Ev Sahibindən (Maklersiz)" if seller == "owner" else "Agentlik/Makler"
@@ -550,6 +584,12 @@ class BotCommandHandler:
         offer = draft.get("offer_type", "sale")
         prop = draft.get("property_type", "apartment")
         min_months = draft.get("min_months_on_market")
+        not_fl_floor = draft.get("not_first_last_floor", False)
+        has_kupcha = draft.get("has_kupcha")
+        is_mortgageable = draft.get("is_mortgageable")
+        is_repaired = draft.get("is_repaired")
+        min_fl = draft.get("min_floor")
+        max_fl = draft.get("max_floor")
 
         # Routing destination - Strict preservation of WhatsApp group vs personal chat
         channel = channel or draft.get("channel") or tenant.preferred_channel or "whatsapp"
@@ -584,6 +624,12 @@ class BotCommandHandler:
             offer_type=offer,
             property_type=prop,
             min_months_on_market=min_months,
+            not_first_last_floor=not_fl_floor,
+            min_floor=min_fl,
+            max_floor=max_fl,
+            has_kupcha=has_kupcha,
+            is_mortgageable=is_mortgageable,
+            is_repaired=is_repaired,
             channel=channel,
             destination_chat_id=destination_chat_id,
             instance_name=instance_name,
@@ -603,6 +649,14 @@ class BotCommandHandler:
             summary_parts.append(f"Otaq: {min_r}-{max_r} otaqlı")
         if min_p or max_p: summary_parts.append(f"Qiymət: {int(min_p or 0):,}-{int(max_p or 0):,} AZN")
         summary_parts.append(f"Bina: {'Yalnız Yeni' if bld == 'new' else ('Yalnız Köhnə' if bld == 'old' else 'Yeni və Köhnə')}")
+        if not_fl_floor:
+            summary_parts.append("Mərtəbə: 1-ci və sonuncu istisna")
+        if has_kupcha:
+            summary_parts.append("Sənəd: Kupçalı")
+        if is_mortgageable:
+            summary_parts.append("İpoteka: Yararlı")
+        if is_repaired is True:
+            summary_parts.append("Təmir: Təmirli")
         if min_months:
             summary_parts.append(f"Bazarda qalma: Ən azı {min_months} aydan bəri")
         summary_str = " | ".join(summary_parts) if summary_parts else raw_text
@@ -645,7 +699,29 @@ class BotCommandHandler:
         return "\n".join(msg)
 
     @staticmethod
-    def _get_account_status(tenant: Tenant, app_name: str) -> str:
+    async def _get_account_status(db: AsyncSession, tenant: Tenant, app_name: str) -> str:
+        from app.models.saved_search import SavedSearch
+        from app.models.plan import Plan
+
+        stmt_count = select(func.count(SavedSearch.id)).where(SavedSearch.tenant_id == tenant.id, SavedSearch.is_active == True)
+        res_count = await db.execute(stmt_count)
+        active_searches = res_count.scalar() or 0
+
+        # Plan limit lookup
+        stmt_plan = select(Plan).where(Plan.code == tenant.plan)
+        res_plan = await db.execute(stmt_plan)
+        plan_obj = res_plan.scalars().first()
+
+        max_limit = getattr(plan_obj, 'max_saved_searches', 10) if plan_obj else {
+            "free": 3,
+            "starter": 10,
+            "pro": 30,
+            "agency": 100,
+            "enterprise": 500
+        }.get(tenant.plan, 10)
+
+        remaining = max(0, max_limit - active_searches)
+
         expires = tenant.plan_expires_at.strftime("%Y-%m-%d") if tenant.plan_expires_at else "Təyin edilməyib"
         status_tr = {"active": "Aktiv ✅", "pending": "Aktivasiya gözlənilir ⏳", "expired": "Müddəti bitib ❌", "suspended": "Dayandırılıb ⚠️"}
         status_text = status_tr.get(tenant.status, tenant.status)
@@ -656,7 +732,8 @@ class BotCommandHandler:
             f"▪️ *Tarif:* {tenant.plan.capitalize()}\n"
             f"▪️ *Status:* {status_text}\n"
             f"▪️ *Bitmə tarixi:* {expires}\n"
-            f"▪️ *Bildiriş kanalı:* {tenant.preferred_channel.capitalize()}"
+            f"▪️ *Bildiriş kanalı:* {tenant.preferred_channel.capitalize()}\n"
+            f"▪️ *Axtarış limiti:* {active_searches} / {max_limit} istifadə edilib ({remaining} qalıb) 📊"
         )
 
     @staticmethod

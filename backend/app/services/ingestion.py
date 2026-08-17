@@ -222,10 +222,10 @@ class IngestionService:
         """
         from app.core.property_classifier import (
             AGENCY_KEYWORDS, OWNER_KEYWORDS, COMMISSION_REGEX,
-            RENTAL_KEYWORDS, SALE_KEYWORDS
+            RENTAL_KEYWORDS, SALE_KEYWORDS, normalize_az_text
         )
 
-        listing_text = f"{listing.title or ''} {listing.description or ''} {listing.address_raw or ''}".lower()
+        listing_text = normalize_az_text(f"{listing.title or ''} {listing.description or ''} {listing.address_raw or ''}")
 
         # 1. Offer / Deal Type Check (Sale vs Rent)
         search_offer = (getattr(search, 'offer_type', 'sale') or 'sale').lower().strip()
@@ -360,8 +360,31 @@ class IngestionService:
             if list_created.tzinfo is None:
                 list_created = list_created.replace(tzinfo=timezone.utc)
             days_on_market = (now_utc - list_created).days
-            # Reject only if the listing is older than the max requested lookback window (e.g. > 12 months)
             if days_on_market > (max_months_window * 30 * 4):
+                return False
+
+        # 9. Floor Exclusion Check (e.g. 1st and top floors excluded)
+        desc_lower = normalize_az_text(f"{listing.title} {listing.description or ''}")
+        if getattr(search, 'not_first_last_floor', False) and listing.floor:
+            if listing.floor == 1:
+                return False
+            if listing.total_floors and listing.floor == listing.total_floors:
+                return False
+
+        if getattr(search, 'min_floor', None) and listing.floor:
+            if listing.floor < search.min_floor:
+                return False
+        if getattr(search, 'max_floor', None) and listing.floor:
+            if listing.floor > search.max_floor:
+                return False
+
+        # 10. Deed (Kupça) & Mortgage Strict Requirements
+        if getattr(search, 'has_kupcha', False):
+            if not any(k in desc_lower for k in ["çıxarış", "cixaris", "kupça", "kupca"]):
+                return False
+
+        if getattr(search, 'is_mortgageable', False):
+            if not any(k in desc_lower for k in ["ipoteka", "ipotekalı"]):
                 return False
 
         return True
@@ -404,37 +427,43 @@ class IngestionService:
                 max_price=search.max_price,
                 min_rooms=search.min_rooms,
                 max_rooms=search.max_rooms,
-                seller_type=search.seller_type or "any",
-                building_type=search.building_type or "any",
-                offer_type=getattr(search, 'offer_type', 'sale') or 'sale',
-                property_type=getattr(search, 'property_type', 'apartment') or 'apartment',
-                min_months_on_market=getattr(search, 'min_months_on_market', None)
+                min_area=search.min_area,
+                max_area=search.max_area,
+                seller_type=search.seller_type,
+                building_type=search.building_type,
+                offer_type=search.offer_type or "sale",
+                property_type=search.property_type or "apartment",
+                not_first_last_floor=getattr(search, 'not_first_last_floor', False),
+                has_kupcha=getattr(search, 'has_kupcha', None),
+                is_mortgageable=getattr(search, 'is_mortgageable', None)
             )
 
+            # AI Provider Match Score & Evaluation
             ai_provider = await ProviderFactory.get_provider(db, task_type="match_scoring", tenant_id=tenant.id)
-            listing_dict = {
+            score = await ai_provider.score_match(criteria, {
                 "title": listing.title,
                 "price": listing.price,
                 "district": listing.district,
                 "metro_station": listing.metro_station,
-                "address_raw": listing.address_raw,
-                "description": listing.description,
                 "rooms": listing.rooms,
+                "area_sqm": listing.area_sqm,
+                "floor": listing.floor,
+                "total_floors": listing.total_floors,
+                "building_type": listing.building_type,
                 "seller_type": listing.seller_type,
-                "offer_type": getattr(listing, 'offer_type', 'sale') or 'sale',
-                "property_type": getattr(listing, 'property_type', 'apartment') or 'apartment'
-            }
-            score = await ai_provider.score_match(listing_dict, criteria)
+                "offer_type": getattr(listing, 'offer_type', 'sale'),
+                "property_type": getattr(listing, 'property_type', 'apartment')
+            })
 
-            if score >= 0.60:
-                stmt_m = select(Match).where(Match.listing_id == listing.id, Match.saved_search_id == search.id)
-                res_m = await db.execute(stmt_m)
-                if res_m.scalars().first():
-                    continue
+            # Check if match already recorded
+            stmt_m = select(Match).where(Match.saved_search_id == search.id, Match.listing_id == listing.id)
+            res_m = await db.execute(stmt_m)
+            existing_match = res_m.scalars().first()
 
+            if not existing_match and score >= 0.70:
                 new_match = Match(
-                    listing_id=listing.id,
                     saved_search_id=search.id,
+                    listing_id=listing.id,
                     tenant_id=tenant.id,
                     score=score,
                     delivered_at=datetime.now(timezone.utc),
@@ -449,7 +478,7 @@ class IngestionService:
                 seller_str = "Ev Sahibindən" if listing.seller_type == "owner" else "Vasitəçidən/Agentlikdən"
                 bld_str = "Yeni tikili" if listing.building_type == "new" else ("Köhnə tikili" if listing.building_type == "old" else "")
 
-                deal_label = "İcarə / Kirayə" if getattr(listing, 'offer_type', 'sale') == 'rent' else "Satış"
+                deal_label = "İcarə / Kirayə" if getattr(listing, 'offer_type', 'sale') == 'rent' else ("Günlük Kirayə" if getattr(listing, 'offer_type', 'sale') == 'daily_rent' else "Satış")
                 prop_map = {
                     "apartment": "Mənzil",
                     "house": "Həyət evi / Villa",
@@ -460,7 +489,7 @@ class IngestionService:
                 prop_label = prop_map.get(getattr(listing, 'property_type', 'apartment'), "Mənzil")
 
                 # Clean Title to prevent duplicate price display
-                clean_title = re.sub(r'\s*\d+\s*(?:AZN|₼|USD|\$|\/\s*ay)', '', listing.title or '').strip()
+                clean_title = re.sub(r'\s*\d+\s*(?:AZN|₼|USD|\$|\/\s*ay|\/\s*gün)', '', listing.title or '').strip()
                 clean_title = re.sub(r'\s*\(?\s*satılır\s*\)?', '', clean_title, flags=re.I)
                 clean_title = re.sub(r'\s*\(?\s*icarə\s*\)?', '', clean_title, flags=re.I).strip()
                 if not clean_title:
@@ -477,7 +506,28 @@ class IngestionService:
 
                 # Search identifier context
                 search_title = search.name or search.raw_criteria_text or search.district or f"Axtarış #{search.id}"
-                search_header = f"🔎 *Axtarış:* #{search.id} - _{search_title[:45]}_\n"
+                search_header = f"🔎 *Axtarış:* #{search.id} - _{search_title[:55]}_\n"
+
+                # Floor & Document Tags
+                desc_text_lower = normalize_az_text(f"{listing.title} {listing.description or ''}")
+                floor_str = f"{listing.floor}/{listing.total_floors}" if (listing.floor and listing.total_floors) else (f"{listing.floor}-ci mərtəbə" if listing.floor else "")
+                has_kupcha_tag = "Çıxarış (Kupça) var" if any(k in desc_text_lower for k in ["çıxarış: var", "cixaris: var", "kupçalı", "kupcali", "çıxarışlı", "cixarisli", "kupça: var"]) else None
+                has_ipoteka_tag = "İpotekaya yararlıdır" if any(k in desc_text_lower for k in ["ipoteka: var", "ipotekaya yararlı", "ipotekaya yararli", "ipoteka var"]) else None
+                has_temir_tag = "Təmirli" if any(k in desc_text_lower for k in ["təmir: var", "temir: var", "təmirli", "temirli", "əla təmirli"]) else None
+
+                extra_details = []
+                if floor_str:
+                    extra_details.append(f"🏢 *Mərtəbə:* {floor_str}")
+                if bld_str:
+                    extra_details.append(f"🏗️ *Bina:* {bld_str}")
+                if has_kupcha_tag:
+                    extra_details.append(f"📄 *Sənəd:* {has_kupcha_tag}")
+                if has_ipoteka_tag:
+                    extra_details.append(f"🏦 *İpoteka:* {has_ipoteka_tag}")
+                if has_temir_tag:
+                    extra_details.append(f"🛠️ *Təmir:* {has_temir_tag}")
+
+                details_block = "\n".join(extra_details) + "\n\n" if extra_details else "\n"
 
                 # Phone extraction
                 from app.core.baku_locations import extract_az_phone
@@ -500,8 +550,8 @@ class IngestionService:
                     f"💰 *Qiymət:* {int(listing.price)} {listing.currency}" + (f" ({int(listing.price_per_sqm)} AZN/m²)" if listing.price_per_sqm else "") + "\n"
                     f"📍 *Məkan:* {listing.district or listing.address_raw or 'Bakı'}\n"
                     f"📐 *Otaq / Sahə:* {listing.rooms or '-'} otaqlı | {listing.area_sqm or '-'} m²\n"
-                    f"👤 *Satıcı:* {seller_str}\n" +
-                    (f"🏢 *Bina:* {bld_str}\n\n" if bld_str else "\n") +
+                    f"👤 *Satıcı:* {seller_str}\n"
+                    f"{details_block}"
                     f"{contact_line}\n"
                     f"🔗 [Elana keçid et]({listing.listing_url})\n\n"
                     f"💬 *Reaksiya bildirin:*\n"

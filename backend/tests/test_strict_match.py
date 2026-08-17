@@ -603,4 +603,61 @@ def test_strict_match_district_hierarchy_and_sublocations():
     )
     assert IngestionService.is_strict_match(yasamal_search, elmler_listing) is True
 
+def test_strict_match_floor_exclusion():
+    search = SavedSearch(
+        tenant_id=1,
+        name="No 1st/Last Floor Search",
+        raw_criteria_text="Yasamal 3 otaq 1ci ve sonuncu mertebe olmasin",
+        district="Yasamal",
+        min_rooms=3,
+        max_rooms=3,
+        not_first_last_floor=True
+    )
+
+    # 1. First floor -> REJECT
+    first_fl = Listing(
+        source_id=1, external_id="901", title="Yasamal 3 otaq", listing_url="https://bina.az/items/901",
+        district="Yasamal", rooms=3, price=200000.0, floor=1, total_floors=16, seller_type="owner", offer_type="sale", property_type="apartment"
+    )
+    assert IngestionService.is_strict_match(search, first_fl) is False
+
+    # 2. Last floor -> REJECT
+    last_fl = Listing(
+        source_id=1, external_id="902", title="Yasamal 3 otaq", listing_url="https://bina.az/items/902",
+        district="Yasamal", rooms=3, price=200000.0, floor=16, total_floors=16, seller_type="owner", offer_type="sale", property_type="apartment"
+    )
+    assert IngestionService.is_strict_match(search, last_fl) is False
+
+    # 3. Middle floor (e.g. 5/16) -> MATCH
+    mid_fl = Listing(
+        source_id=1, external_id="903", title="Yasamal 3 otaq", listing_url="https://bina.az/items/903",
+        district="Yasamal", rooms=3, price=200000.0, floor=5, total_floors=16, seller_type="owner", offer_type="sale", property_type="apartment"
+    )
+    assert IngestionService.is_strict_match(search, mid_fl) is True
+
+def test_strict_match_kupcha_and_mortgage():
+    search = SavedSearch(
+        tenant_id=1,
+        name="Kupcha & Mortgage Search",
+        raw_criteria_text="Kupçalı və ipotekaya yararlı mənzil",
+        district="Nəsimi",
+        has_kupcha=True,
+        is_mortgageable=True
+    )
+
+    # Without kupcha -> REJECT
+    no_kupcha = Listing(
+        source_id=1, external_id="904", title="Nəsimidə mənzil", description="Müqavilə ilə satılır",
+        listing_url="https://bina.az/items/904", district="Nəsimi", price=150000.0, seller_type="owner", offer_type="sale", property_type="apartment"
+    )
+    assert IngestionService.is_strict_match(search, no_kupcha) is False
+
+    # With kupcha and mortgage -> MATCH
+    with_kupcha = Listing(
+        source_id=1, external_id="905", title="Nəsimidə mənzil", description="Çıxarış (Kupça) var. İpotekaya yararlıdır.",
+        listing_url="https://bina.az/items/905", district="Nəsimi", price=150000.0, seller_type="owner", offer_type="sale", property_type="apartment"
+    )
+    assert IngestionService.is_strict_match(search, with_kupcha) is True
+
+
 

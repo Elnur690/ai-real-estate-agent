@@ -19,6 +19,15 @@ class StructuredCriteria(BaseModel):
     offer_type: str = Field("sale", description="sale | rent | any")
     property_type: str = Field("apartment", description="apartment | house | office | commercial | land | any")
     min_months_on_market: Optional[int] = Field(None, description="Minimum months property on market / lookback (e.g. 3 for '3 aydan bəri')")
+    
+    # Advanced criteria filters
+    not_first_last_floor: bool = Field(False, description="True if 1st and top floors should be excluded")
+    min_floor: Optional[int] = Field(None, description="Minimum floor")
+    max_floor: Optional[int] = Field(None, description="Maximum floor")
+    has_kupcha: Optional[bool] = Field(None, description="True if only deed/kupcha properties requested")
+    is_mortgageable: Optional[bool] = Field(None, description="True if only mortgage-eligible properties requested")
+    is_repaired: Optional[bool] = Field(None, description="True if only repaired properties requested")
+
     summary_az: str = Field("", description="Azerbaijani summary of criteria for confirmation message")
 
 
@@ -47,9 +56,5 @@ class AIProvider(ABC):
         pass
 
     @abstractmethod
-    async def parse_telegram_listing(self, raw_text: str, photos: List[str] = []) -> StructuredListing:
-        pass
-
-    @abstractmethod
-    async def score_match(self, listing: Dict[str, Any], criteria: StructuredCriteria) -> float:
+    async def score_match(self, criteria: StructuredCriteria, listing: Dict[str, Any]) -> float:
         pass

@@ -39,6 +39,12 @@ Extract structured JSON strictly with these exact keys:
   "seller_type": "owner" | "agency" | "any",
   "building_type": "new" | "old" | "any",
   "min_months_on_market": integer or null,
+  "not_first_last_floor": boolean,
+  "min_floor": integer or null,
+  "max_floor": integer or null,
+  "has_kupcha": boolean or null,
+  "is_mortgageable": boolean or null,
+  "is_repaired": boolean or null,
   "summary_az": "Friendly confirmation sentence in Azerbaijani language summarizing criteria"
 }}
 """
@@ -268,6 +274,23 @@ Extract structured JSON strictly with these exact keys:
         if min_months_on_market:
             summary_parts.append(f"ən azı {min_months_on_market} aydan bəri bazarda olan")
 
+        # Advanced criteria filters (floor exclusion, deed, mortgage, repairs)
+        not_first_last_floor = bool(re.search(r'(?:1-?c?i?\s*(?:və|ve|ya)?\s*sonuncu|1-?c?i?\s*(?:və|ve|ya)?\s*axırıncı|birinci\s*(?:və|ve|ya)?\s*sonuncu)\s*mərtəbə\s*(?:olmasın|istisna|yox)', text_lower))
+        has_kupcha = True if any(k in text_lower for k in ["kupçalı", "kupcali", "çıxarışlı", "cixarisli", "kupça var", "çıxarış var", "kupça olsun", "çıxarış olsun"]) else None
+        is_mortgageable = True if any(k in text_lower for k in ["ipoteka", "ipotekalı", "ipotekali", "ipotekaya yararlı", "ipotekaya yararli"]) else None
+        is_repaired = True if any(k in text_lower for k in ["təmirli", "temirli", "əla təmirli", "yaxşı təmirli", "tam təmirli"]) and not any(k in text_lower for k in ["təmirsiz", "temirsiz", "təmirsizdir"]) else (False if any(k in text_lower for k in ["təmirsiz", "temirsiz", "podmayak", "təmirsizdir"]) else None)
+
+        if not_first_last_floor:
+            summary_parts.append("1-ci və sonuncu mərtəbələr istisna")
+        if has_kupcha:
+            summary_parts.append("çıxarışlı (kupçalı)")
+        if is_mortgageable:
+            summary_parts.append("ipotekaya yararlı")
+        if is_repaired is True:
+            summary_parts.append("təmirli")
+        elif is_repaired is False:
+            summary_parts.append("təmirsiz")
+
         summary_az = ", ".join(summary_parts) if summary_parts else "Daxil etdiyiniz parametrlərə uyğun"
         summary_az = f"{summary_az} əmlak axtarırsınız, düzdür?"
 
@@ -286,6 +309,10 @@ Extract structured JSON strictly with these exact keys:
             seller_type=seller_type,
             building_type=building_type,
             min_months_on_market=min_months_on_market,
+            not_first_last_floor=not_first_last_floor,
+            has_kupcha=has_kupcha,
+            is_mortgageable=is_mortgageable,
+            is_repaired=is_repaired,
             summary_az=summary_az
         )
 
