@@ -390,19 +390,26 @@ Return JSON ONLY:
             photos=photos
         )
 
-    async def score_match(self, listing: Dict[str, Any], criteria: StructuredCriteria) -> float:
+    async def score_match(self, listing: Any, criteria: Any) -> float:
         """
         Calculate match relevance score (0.0 - 1.0) with strict location and criteria enforcement.
+        Supports both (listing, criteria) and (criteria, listing) argument order.
         """
+        if isinstance(listing, StructuredCriteria) or (isinstance(criteria, dict) and not isinstance(listing, dict)):
+            listing, criteria = criteria, listing
+
+        if hasattr(listing, '__dict__') and not isinstance(listing, dict):
+            listing = listing.__dict__
+
         score = 1.0
 
         # 1. Price check (Hard penalty for major out-of-budget)
-        price = listing.get("price", 0)
-        if criteria.min_price and price < criteria.min_price:
+        price = listing.get("price", 0) if isinstance(listing, dict) else getattr(listing, 'price', 0)
+        if criteria and getattr(criteria, 'min_price', None) and price < criteria.min_price:
             if price < criteria.min_price * 0.8:
                 return 0.0
             score -= 0.35
-        if criteria.max_price and price > criteria.max_price:
+        if criteria and getattr(criteria, 'max_price', None) and price > criteria.max_price:
             if price > criteria.max_price * 1.15:
                 return 0.0
             score -= 0.45

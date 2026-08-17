@@ -74,17 +74,17 @@ class IngestionService:
     async def run_ingestion_cycle(db: AsyncSession) -> dict:
         await IngestionService.seed_default_sources(db)
         
-        stmt = select(ListingSource).where(ListingSource.status == "active")
+        stmt = select(ListingSource.id, ListingSource.name, ListingSource.type, ListingSource.url_or_handle).where(ListingSource.status == "active")
         res = await db.execute(stmt)
-        sources = res.scalars().all()
+        source_rows = res.all()
 
         total_scraped = 0
         total_matched = 0
 
-        for source in sources:
-            logger.info(f"[IngestionService] Scraping source: {source.name} ({source.type})")
-            url = source.url_or_handle.lower()
-            name = source.name.lower()
+        for s_id, s_name, s_type, s_url in source_rows:
+            logger.info(f"[IngestionService] Scraping source: {s_name} ({s_type})")
+            url = s_url.lower()
+            name = s_name.lower()
             scraper = None
 
             if "bina.az" in url or "bina.az" in name:
@@ -121,15 +121,17 @@ class IngestionService:
                 scraper = MulkAzScraper()
             elif "villa.az" in url or "villa.az" in name:
                 scraper = VillaAzScraper()
-            elif source.type == "telegram_channel":
+            elif s_type == "telegram_channel":
                 scraper = TelegramChannelScraper()
             else:
                 scraper = BinaAzScraper()
 
             try:
                 await polite_delay(1.0, 2.5)
-                items = await scraper.scrape_source(source.url_or_handle)
-                source.last_scraped_at = datetime.now(timezone.utc)
+                items = await scraper.scrape_source(s_url)
+                await db.execute(
+                    update(ListingSource).where(ListingSource.id == s_id).values(last_scraped_at=datetime.now(timezone.utc))
+                )
                 await db.commit()
 
                 for item in items:
@@ -156,7 +158,7 @@ class IngestionService:
                         extracted_phone = phone_res[0] if phone_res else None
 
                         db_listing = Listing(
-                            source_id=source.id,
+                            source_id=s_id,
                             external_id=item.external_id,
                             title=item.title,
                             description=item.description,
@@ -196,11 +198,10 @@ class IngestionService:
                     total_matched += matches_created
 
             except Exception as e:
-                logger.error(f"[IngestionService] Error processing source {source.name}: {e}")
+                logger.error(f"[IngestionService] Error processing source {s_name}: {e}")
                 await db.rollback()
                 try:
-                    from sqlalchemy import update
-                    await db.execute(update(ListingSource).where(ListingSource.id == source.id).values(status="error"))
+                    await db.execute(update(ListingSource).where(ListingSource.id == s_id).values(status="error"))
                     await db.commit()
                 except Exception:
                     pass
@@ -440,7 +441,7 @@ class IngestionService:
 
             # AI Provider Match Score & Evaluation
             ai_provider = await ProviderFactory.get_provider(db, task_type="match_scoring", tenant_id=tenant.id)
-            score = await ai_provider.score_match(criteria, {
+            score = await ai_provider.score_match(listing={
                 "title": listing.title,
                 "price": listing.price,
                 "district": listing.district,
