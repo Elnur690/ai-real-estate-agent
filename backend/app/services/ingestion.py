@@ -284,9 +284,13 @@ class IngestionService:
                 return False
             if (listing.makler_score or 0.0) >= 0.30:
                 return False
+            if getattr(listing, 'is_first_posting', True) is False and getattr(listing, 'earlier_posting_url', None):
+                # If property was already posted on major portal or earlier by agency, reject for owner-only search
+                return False
             if listing.seller_type != "owner":
                 return False
-            if any(kw in listing_text for kw in AGENCY_KEYWORDS) or bool(COMMISSION_REGEX.search(listing_text)):
+            text_agency_check = re.sub(r'\b(?:vasitəçisiz|vasitecisiz|maklersiz|vasitəçi yoxdur|makler deyiləm)\b', ' [GENUINE_OWNER_FLAG] ', listing_text)
+            if any(kw in text_agency_check for kw in AGENCY_KEYWORDS) or bool(COMMISSION_REGEX.search(text_agency_check)):
                 return False
         elif search_seller in ["agent", "agency", "makler"]:
             if listing.seller_type == "owner" and not getattr(listing, 'is_makler', False):

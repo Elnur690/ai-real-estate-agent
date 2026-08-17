@@ -107,7 +107,9 @@ def classify_property_and_offer(
         property_type = "apartment"
 
     # 3. Classify Seller Type (Agency vs Owner)
-    has_agency_kw = any(kw in full_text for kw in AGENCY_KEYWORDS) or bool(COMMISSION_REGEX.search(full_text))
+    # Mask genuine owner negations (e.g. 'vasitəçisiz', 'maklersiz') to prevent substring matches on 'vasitəçi'/'makler'
+    text_for_agency_check = re.sub(r'\b(?:vasitəçisiz|vasitecisiz|maklersiz|vasitəçi yoxdur|makler deyiləm)\b', ' [GENUINE_OWNER_FLAG] ', full_text)
+    has_agency_kw = any(kw in text_for_agency_check for kw in AGENCY_KEYWORDS) or bool(COMMISSION_REGEX.search(text_for_agency_check))
     has_owner_kw = any(kw in full_text for kw in OWNER_KEYWORDS)
 
     # Agency keywords always strictly override owner claims (prevent false "sahibindən" makler postings)

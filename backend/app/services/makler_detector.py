@@ -78,11 +78,25 @@ class MaklerDetectorService:
             if earlier_listing:
                 listing.is_first_posting = False
                 listing.earlier_posting_url = earlier_listing.listing_url
-                score = max(score, 0.6)
-                if not has_owner_kw:
+                
+                # If earlier listing was from an agency, or if it was posted on major portal bina.az:
+                # Any secondary aggregator re-post claiming "Sahibindən" is a makler disguise
+                if (
+                    earlier_listing.seller_type == "agency" or
+                    earlier_listing.is_makler or
+                    (earlier_listing.makler_score or 0.0) >= 0.30 or
+                    "bina.az" in (earlier_listing.listing_url or "").lower()
+                ):
+                    score = 1.0
                     listing.seller_type = "agency"
                     listing.is_makler = True
-                logger.info(f"[MaklerDetector] Listing #{listing.id} was ALREADY posted earlier at {earlier_listing.listing_url}")
+                    listing.makler_score = 1.0
+                    logger.info(f"[MaklerDetector] Listing #{listing.id} was ALREADY posted by agency/bina.az at {earlier_listing.listing_url}. Strictly overriding seller_type to AGENCY.")
+                else:
+                    score = max(score, 0.7)
+                    listing.seller_type = "agency"
+                    listing.is_makler = True
+                    listing.makler_score = 1.0
             else:
                 listing.is_first_posting = True
                 listing.earlier_posting_url = None
