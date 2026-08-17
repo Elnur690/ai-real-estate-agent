@@ -390,7 +390,7 @@ Return JSON ONLY:
             photos=photos
         )
 
-    async def score_match(self, listing: Any, criteria: Any) -> float:
+    async def score_match(self, listing: Any, criteria: Any = None) -> float:
         """
         Calculate match relevance score (0.0 - 1.0) with strict location and criteria enforcement.
         Supports both (listing, criteria) and (criteria, listing) argument order.

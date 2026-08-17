@@ -457,7 +457,7 @@ class IngestionService:
                 "seller_type": listing.seller_type,
                 "offer_type": getattr(listing, 'offer_type', 'sale'),
                 "property_type": getattr(listing, 'property_type', 'apartment')
-            })
+            }, criteria=criteria)
 
             # Check if match already recorded
             stmt_m = select(Match).where(Match.saved_search_id == search.id, Match.listing_id == listing.id)
