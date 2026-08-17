@@ -25,9 +25,20 @@ BAKU_DISTRICT_COORDINATES: Dict[str, Dict[str, float]] = {
 }
 
 @router.get("/map")
-async def get_property_heatmap(db: AsyncSession = Depends(get_db), current_user = Depends(get_current_user)):
+async def get_property_heatmap(
+    limit: int = 1000,
+    db: AsyncSession = Depends(get_db), 
+    current_user = Depends(get_current_user)
+):
     """Returns price/m² heatmap and property pins for Baku interactive map view."""
-    stmt = select(Listing).where(Listing.is_active == True).order_by(Listing.id.desc()).limit(200)
+    from sqlalchemy import func
+    count_stmt = select(func.count(Listing.id)).where(Listing.is_active == True)
+    count_res = await db.execute(count_stmt)
+    total_active = count_res.scalar() or 0
+
+    stmt = select(Listing).where(Listing.is_active == True).order_by(Listing.id.desc())
+    if limit and limit > 0:
+        stmt = stmt.limit(limit)
     res = await db.execute(stmt)
     listings = res.scalars().all()
 
@@ -145,6 +156,7 @@ async def get_property_heatmap(db: AsyncSession = Depends(get_db), current_user 
         })
 
     return {
+        "total_active_listings": total_active,
         "districts_heatmap": district_heatmap,
         "property_pins": pins
     }
