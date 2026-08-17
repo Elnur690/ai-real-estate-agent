@@ -50,7 +50,26 @@ class Ev10AzScraper(BaseScraper):
                         district = extract_baku_district(raw_text) or extract_baku_district(href)
                         metro = extract_metro_station(raw_text) or extract_metro_station(href)
 
-                        title = f"{rooms or ''} otaqlı mənzil {int(price)} AZN ({district or 'Bakı'})" if rooms else f"Mənzil {int(price)} AZN ({district or 'Bakı'})"
+                        from app.core.property_classifier import classify_property_and_offer
+                        detected_offer, detected_prop, detected_seller = classify_property_and_offer(
+                            title="",
+                            description=raw_text,
+                            url=href,
+                            raw_text=raw_text
+                        )
+
+                        prop_label_map = {
+                            "apartment": "Mənzil",
+                            "house": "Həyət evi / Villa",
+                            "office": "Ofis",
+                            "commercial": "Obyekt",
+                            "land": "Torpaq sahəsi"
+                        }
+                        prop_name = prop_label_map.get(detected_prop, "Əmlak")
+                        loc_label = metro or district or 'Bakı'
+                        title = f"{rooms} otaqlı {prop_name} ({loc_label})" if rooms else f"{prop_name} ({loc_label})"
+
+                        bld_type = "old" if "köhnə" in raw_text.lower() else "new"
 
                         items.append(RawListingItem(
                             external_id=f"ev10_{ext_id}",
@@ -62,8 +81,10 @@ class Ev10AzScraper(BaseScraper):
                             metro_station=metro,
                             rooms=rooms,
                             area_sqm=area,
-                            building_type="new",
-                            seller_type="owner",
+                            building_type=bld_type,
+                            seller_type=detected_seller,
+                            offer_type=detected_offer,
+                            property_type=detected_prop,
                             listing_url=f"https://ev10.az{href}"
                         ))
                         if len(items) >= 25:

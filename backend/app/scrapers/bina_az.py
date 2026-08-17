@@ -146,8 +146,7 @@ class BinaAzScraper(BaseScraper):
                         # 8. Title
                         loc_label = settlement or metro or district or "Bakı"
                         prop_label = "Mənzil" if prop_type == "apartment" else prop_type.capitalize()
-                        action_label = "icarə" if offer_type == "rent" else "satılır"
-                        title = f"{rooms or ''} otaqlı {prop_label} {int(price)} {currency} ({loc_label}) {action_label}" if rooms else f"{prop_label} {int(price)} {currency} ({loc_label}) {action_label}"
+                        title = f"{rooms} otaqlı {prop_label} ({loc_label})" if rooms else f"{prop_label} ({loc_label})"
 
                         items.append(RawListingItem(
                             external_id=f"bina_{ext_id}",

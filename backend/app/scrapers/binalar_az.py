@@ -9,6 +9,7 @@ from app.core.baku_locations import (
     extract_baku_district, extract_metro_station, extract_baku_settlement,
     SETTLEMENT_TO_DISTRICT, METRO_TO_DISTRICT
 )
+from app.core.property_classifier import classify_property_and_offer
 
 logger = logging.getLogger(__name__)
 
@@ -60,22 +61,25 @@ class BinalarAzScraper(BaseScraper):
                             elif metro and metro in METRO_TO_DISTRICT:
                                 district = METRO_TO_DISTRICT[metro]
 
-                        is_rent = "kirayə" in raw_lower or "icarə" in raw_lower
-                        offer_type = "rent" if is_rent else "sale"
+                        detected_offer, detected_prop, detected_seller = classify_property_and_offer(
+                            title="",
+                            description=raw_text,
+                            url=href,
+                            raw_text=raw_text
+                        )
 
-                        if any(k in raw_lower for k in ["villa", "həyət", "bağ"]):
-                            prop_type = "villa"
-                        elif "ofis" in raw_lower:
-                            prop_type = "office"
-                        elif "obyekt" in raw_lower:
-                            prop_type = "commercial"
-                        elif "torpaq" in raw_lower:
-                            prop_type = "land"
-                        else:
-                            prop_type = "apartment"
-
+                        prop_label_map = {
+                            "apartment": "Mənzil",
+                            "house": "Həyət evi / Villa",
+                            "office": "Ofis",
+                            "commercial": "Obyekt",
+                            "land": "Torpaq sahəsi"
+                        }
+                        prop_name = prop_label_map.get(detected_prop, "Əmlak")
                         loc_label = settlement or metro or district or 'Bakı'
-                        title = f"{rooms or ''} otaqlı {prop_type.capitalize()} {int(price)} AZN ({loc_label})" if rooms else f"{prop_type.capitalize()} {int(price)} AZN ({loc_label})"
+                        title = f"{rooms} otaqlı {prop_name} ({loc_label})" if rooms else f"{prop_name} ({loc_label})"
+
+                        bld_type = "old" if "köhnə" in raw_lower else "new"
 
                         items.append(RawListingItem(
                             external_id=f"binalar_{ext_id}",
@@ -87,10 +91,10 @@ class BinalarAzScraper(BaseScraper):
                             metro_station=metro,
                             rooms=rooms,
                             area_sqm=area,
-                            building_type="new",
-                            seller_type="owner",
-                            offer_type=offer_type,
-                            property_type=prop_type,
+                            building_type=bld_type,
+                            seller_type=detected_seller,
+                            offer_type=detected_offer,
+                            property_type=detected_prop,
                             listing_url=f"https://binalar.az{href}" if href.startswith('/') else href
                         ))
                         if len(items) >= 25:

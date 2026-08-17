@@ -64,7 +64,7 @@ class OfisAzScraper(BaseScraper):
                         offer_type = "rent" if is_rent else "sale"
 
                         loc_label = settlement or metro or district or 'Bakı'
-                        title = f"{rooms or ''} otaqlı Ofis {int(price)} AZN ({loc_label})" if rooms else f"Ofis {int(price)} AZN ({loc_label})"
+                        title = f"{rooms} otaqlı Ofis ({loc_label})" if rooms else f"Ofis ({loc_label})"
 
                         items.append(RawListingItem(
                             external_id=f"ofis_{ext_id}",

@@ -65,6 +65,21 @@ async def lifespan(app: FastAPI):
                 OR LOWER(COALESCE(description, '')) LIKE '%vasitecisiz%'
             );
         """))
+        await conn.execute(text("""
+            UPDATE listings 
+            SET offer_type = 'rent' 
+            WHERE listing_url LIKE '%kiraye%' OR listing_url LIKE '%icare%' OR listing_url LIKE '%ayliq%';
+        """))
+        await conn.execute(text("""
+            UPDATE listings 
+            SET property_type = 'office' 
+            WHERE listing_url LIKE '%ofis%' OR listing_url LIKE '%office%';
+        """))
+        await conn.execute(text("""
+            UPDATE listings 
+            SET property_type = 'commercial' 
+            WHERE listing_url LIKE '%obyekt%' OR listing_url LIKE '%magaza%';
+        """))
     logger.info("[Startup] Database tables and columns verified.")
 
     # Auto-seed default admin user if none exists

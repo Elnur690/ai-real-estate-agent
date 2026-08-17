@@ -52,7 +52,7 @@ class IpotekaAzScraper(BaseScraper):
                         area = safe_optional_float(area_m.group(1) if area_m else None)
 
                         loc_label = settlement or metro or district or 'Bakı'
-                        title = f"{rooms or ''} otaqlı ipotekalı mənzil ({loc_label})" if rooms else f"İpotekalı mənzil ({loc_label})"
+                        title = f"{rooms} otaqlı İpotekalı mənzil ({loc_label})" if rooms else f"İpotekalı mənzil ({loc_label})"
 
                         items.append(RawListingItem(
                             external_id=f"ipoteka_{ext_id}",
@@ -65,7 +65,7 @@ class IpotekaAzScraper(BaseScraper):
                             rooms=rooms,
                             area_sqm=area,
                             building_type="new",
-                            seller_type="owner",
+                            seller_type="agency",
                             offer_type="sale",
                             property_type="apartment",
                             listing_url=f"{self.BASE_URL}{link}"

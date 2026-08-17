@@ -74,7 +74,7 @@ class HomDomAzScraper(BaseScraper):
                             prop_type = "apartment"
 
                         loc_label = settlement or metro or district or 'Bakı'
-                        title = f"{rooms} otaqlı {prop_type.capitalize()} {int(price)} AZN ({loc_label})"
+                        title = f"{rooms} otaqlı {prop_type.capitalize()} ({loc_label})"
 
                         items.append(RawListingItem(
                             external_id=f"homdom_{ext_id}",

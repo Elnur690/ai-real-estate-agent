@@ -459,6 +459,13 @@ class IngestionService:
                 }
                 prop_label = prop_map.get(getattr(listing, 'property_type', 'apartment'), "Mənzil")
 
+                # Clean Title to prevent duplicate price display
+                clean_title = re.sub(r'\s*\d+\s*(?:AZN|₼|USD|\$|\/\s*ay)', '', listing.title or '').strip()
+                clean_title = re.sub(r'\s*\(?\s*satılır\s*\)?', '', clean_title, flags=re.I)
+                clean_title = re.sub(r'\s*\(?\s*icarə\s*\)?', '', clean_title, flags=re.I).strip()
+                if not clean_title:
+                    clean_title = f"{listing.rooms or ''} otaqlı {prop_label} ({listing.district or 'Bakı'})"
+
                 # Killer Feature Notification Tags
                 bargain_tag = f"\n🔥 *TƏCİLİ FÜRSƏT ELAN! ({abs(listing.bargain_percentage)}% Bazar Qiymətindən Aşağı)*" if (listing.bargain_percentage and listing.bargain_percentage <= -10.0) else ""
                 
@@ -468,19 +475,27 @@ class IngestionService:
 
                 makler_tag = "\n⚠️ *Makler Şübhəsi:* Böyük ehtimalla agentlik elanıdır." if (listing.makler_score and listing.makler_score >= 0.5) else ""
 
+                # Search identifier context
+                search_title = search.name or search.raw_criteria_text or search.district or f"Axtarış #{search.id}"
+                search_header = f"🔎 *Axtarış:* #{search.id} - _{search_title[:45]}_\n"
+
+                # Phone extraction
                 from app.core.baku_locations import extract_az_phone
                 phone_info = extract_az_phone(listing.phone_number or f"{listing.title} {listing.description or ''} {listing.address_raw or ''}")
 
                 if phone_info:
                     formatted_phone, raw_phone = phone_info
-                    contact_line = f"📞 *Zəng / Əlaqə:* [{formatted_phone}](tel:{raw_phone}) (`{formatted_phone}`)"
+                    contact_line = f"📞 *Əlaqə:* [{formatted_phone}](tel:{raw_phone}) (`{formatted_phone}`)"
+                elif listing.phone_number:
+                    contact_line = f"📞 *Əlaqə:* [{listing.phone_number}](tel:{listing.phone_number}) (`{listing.phone_number}`)"
                 else:
-                    contact_line = f"📞 [ZƏNG ET / ƏLAQƏ SAXLAYIN]({listing.listing_url})"
+                    contact_line = f"📞 *Əlaqə:* [Elana baxaraq əlaqə saxlayın]({listing.listing_url})"
 
                 msg_text = (
                     f"🔥 *YENİ UYĞUN ELAN! ({app_name})*\n"
+                    f"{search_header}"
                     f"🎯 *Uyğunluq:* %{int(score * 100)}{bargain_tag}{first_post_tag}{makler_tag}\n\n"
-                    f"🏠 *{listing.title}*\n"
+                    f"🏠 *{clean_title}*\n"
                     f"🏷️ *Növ / Əməliyyat:* {prop_label} ({deal_label})\n"
                     f"💰 *Qiymət:* {int(listing.price)} {listing.currency}" + (f" ({int(listing.price_per_sqm)} AZN/m²)" if listing.price_per_sqm else "") + "\n"
                     f"📍 *Məkan:* {listing.district or listing.address_raw or 'Bakı'}\n"

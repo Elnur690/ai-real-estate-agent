@@ -64,25 +64,26 @@ class YeniEmlakAzScraper(BaseScraper):
                             elif metro and metro in METRO_TO_DISTRICT:
                                 district = METRO_TO_DISTRICT[metro]
 
-                        is_rent = "kiraye" in href or "kirayə" in raw_lower or "icarə" in raw_lower
-                        offer_type = "rent" if is_rent else "sale"
+                        from app.core.property_classifier import classify_property_and_offer
+                        detected_offer, detected_prop, detected_seller = classify_property_and_offer(
+                            title="",
+                            description=raw_text,
+                            url=href,
+                            raw_text=raw_text
+                        )
 
-                        if any(k in raw_lower for k in ["villa", "həyət evi", "heyet evi", "bağ evi", "bag evi"]):
-                            prop_type = "villa"
-                        elif any(k in raw_lower for k in ["ofis", "plaza"]):
-                            prop_type = "office"
-                        elif any(k in raw_lower for k in ["obyekt", "mağaza"]):
-                            prop_type = "commercial"
-                        elif "torpaq" in raw_lower or "sot" in raw_lower:
-                            prop_type = "land"
-                        else:
-                            prop_type = "apartment"
-
-                        bld_type = "new" if "yeni tikili" in raw_lower else ("old" if "köhnə tikili" in raw_lower else "new")
-                        seller_type = "agency" if any(w in raw_lower for w in ["agentlik", "vasitəçi", "makler"]) else "owner"
-
+                        prop_label_map = {
+                            "apartment": "Mənzil",
+                            "house": "Həyət evi / Villa",
+                            "office": "Ofis",
+                            "commercial": "Obyekt",
+                            "land": "Torpaq sahəsi"
+                        }
+                        prop_name = prop_label_map.get(detected_prop, "Əmlak")
                         loc_label = settlement or metro or district or 'Bakı'
-                        title = f"{rooms or ''} otaqlı {prop_type.capitalize()} {int(price)} AZN ({loc_label})" if rooms else f"{prop_type.capitalize()} {int(price)} AZN ({loc_label})"
+                        title = f"{rooms} otaqlı {prop_name} ({loc_label})" if rooms else f"{prop_name} ({loc_label})"
+
+                        bld_type = "old" if "köhnə" in raw_lower else "new"
 
                         items.append(RawListingItem(
                             external_id=f"yeniemlak_{ext_id}",
@@ -95,9 +96,9 @@ class YeniEmlakAzScraper(BaseScraper):
                             rooms=rooms,
                             area_sqm=area,
                             building_type=bld_type,
-                            seller_type=seller_type,
-                            offer_type=offer_type,
-                            property_type=prop_type,
+                            seller_type=detected_seller,
+                            offer_type=detected_offer,
+                            property_type=detected_prop,
                             listing_url=f"https://yeniemlak.az{href}"
                         ))
                         if len(items) >= 28:

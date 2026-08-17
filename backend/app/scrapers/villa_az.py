@@ -63,11 +63,16 @@ class VillaAzScraper(BaseScraper):
                             elif metro and metro in METRO_TO_DISTRICT:
                                 district = METRO_TO_DISTRICT[metro]
 
-                        is_rent = "kirayə" in raw_lower or "icarə" in raw_lower or "gunluk" in raw_lower
-                        offer_type = "rent" if is_rent else "sale"
+                        from app.core.property_classifier import classify_property_and_offer
+                        detected_offer, detected_prop, detected_seller = classify_property_and_offer(
+                            title="",
+                            description=raw_text,
+                            url=href,
+                            raw_text=raw_text
+                        )
 
                         loc_label = settlement or metro or district or 'Bakı'
-                        title = f"{rooms or ''} otaqlı villa/bağ evi {int(price)} AZN ({loc_label})" if rooms else f"Villa/Bağ evi {int(price)} AZN ({loc_label})"
+                        title = f"{rooms} otaqlı Villa/Bağ evi ({loc_label})" if rooms else f"Villa/Bağ evi ({loc_label})"
 
                         items.append(RawListingItem(
                             external_id=f"villa_{ext_id}",
@@ -80,9 +85,9 @@ class VillaAzScraper(BaseScraper):
                             rooms=rooms,
                             area_sqm=area,
                             building_type="new",
-                            seller_type="owner",
-                            offer_type=offer_type,
-                            property_type="villa",
+                            seller_type=detected_seller,
+                            offer_type=detected_offer,
+                            property_type="house",
                             listing_url=f"{self.BASE_URL}{href}" if href.startswith('/') else href
                         ))
                         if len(items) >= 20:
