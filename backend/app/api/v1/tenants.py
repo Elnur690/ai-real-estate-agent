@@ -32,6 +32,8 @@ class CreateTenantRequest(BaseModel):
     max_locations_per_search: int = 5
     feature_aged_listings: bool = False
     addon_aged_max_months: int = 12
+    addon_saved_searches: int = 0
+    addon_saved_searches_price: float = 0.0
 
 class UpdateTenantRequest(BaseModel):
     name: Optional[str] = None
@@ -52,6 +54,8 @@ class UpdateTenantRequest(BaseModel):
     max_locations_per_search: Optional[int] = None
     feature_aged_listings: Optional[bool] = None
     addon_aged_max_months: Optional[int] = None
+    addon_saved_searches: Optional[int] = None
+    addon_saved_searches_price: Optional[float] = None
 
 class TenantResponse(BaseModel):
     id: int

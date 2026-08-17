@@ -29,7 +29,8 @@ export const TenantsView: React.FC = () => {
     backup_enabled: false,
     backup_frequency_days: 7,
     feature_aged_listings: false,
-    addon_aged_max_months: 12
+    addon_aged_max_months: 12,
+    addon_saved_searches: 0
   });
 
   const [availablePlans, setAvailablePlans] = useState<any[]>([]);
@@ -60,7 +61,8 @@ export const TenantsView: React.FC = () => {
     backup_enabled: false,
     backup_frequency_days: 7,
     feature_aged_listings: false,
-    addon_aged_max_months: 12
+    addon_aged_max_months: 12,
+    addon_saved_searches: 0
   });
 
   // Delete Confirmation Modal State
@@ -135,7 +137,8 @@ export const TenantsView: React.FC = () => {
       backup_enabled: t.backup_enabled || false,
       backup_frequency_days: t.backup_frequency_days || 7,
       feature_aged_listings: t.feature_aged_listings || false,
-      addon_aged_max_months: t.addon_aged_max_months || 12
+      addon_aged_max_months: t.addon_aged_max_months || 12,
+      addon_saved_searches: t.addon_saved_searches || 0
     });
   };
 
@@ -187,7 +190,8 @@ export const TenantsView: React.FC = () => {
         backup_enabled: false,
         backup_frequency_days: 7,
         feature_aged_listings: false,
-        addon_aged_max_months: 12
+        addon_aged_max_months: 12,
+        addon_saved_searches: 0
       });
       loadTenants();
     } catch (e: any) {
@@ -813,6 +817,27 @@ export const TenantsView: React.FC = () => {
                 </label>
               </div>
 
+              {/* Extra Search Limit Addon */}
+              <div className="pt-2 border-t border-slate-800">
+                <div className="flex items-center justify-between p-2.5 bg-dark-800/80 rounded-xl border border-slate-700/60 text-xs">
+                  <span className="font-semibold text-slate-200 flex items-center gap-1.5">
+                    <Search className="w-3.5 h-3.5 text-cyan-400" />
+                    Extra Search Slots (Add-on)
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min="0"
+                      max="500"
+                      value={editFormData.addon_saved_searches || 0}
+                      onChange={(e) => setEditFormData({ ...editFormData, addon_saved_searches: parseInt(e.target.value) || 0 })}
+                      className="w-16 bg-dark-900 border border-slate-700 text-cyan-300 rounded-lg px-2 py-1 text-xs font-bold text-center"
+                    />
+                    <span className="text-slate-400 text-[11px]">slots</span>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex justify-end gap-3 pt-3">
                 <button
                   type="button"
@@ -995,6 +1020,27 @@ export const TenantsView: React.FC = () => {
                     )}
                   </div>
                 </label>
+              </div>
+
+              {/* Extra Search Limit Addon */}
+              <div className="pt-2 border-t border-slate-800">
+                <div className="flex items-center justify-between p-2.5 bg-dark-800/80 rounded-xl border border-slate-700/60 text-xs">
+                  <span className="font-semibold text-slate-200 flex items-center gap-1.5">
+                    <Search className="w-3.5 h-3.5 text-cyan-400" />
+                    Extra Search Slots (Add-on)
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min="0"
+                      max="500"
+                      value={newTenant.addon_saved_searches || 0}
+                      onChange={(e) => setNewTenant({ ...newTenant, addon_saved_searches: parseInt(e.target.value) || 0 })}
+                      className="w-16 bg-dark-900 border border-slate-700 text-cyan-300 rounded-lg px-2 py-1 text-xs font-bold text-center"
+                    />
+                    <span className="text-slate-400 text-[11px]">slots</span>
+                  </div>
+                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-3">
@@ -1256,6 +1302,22 @@ export const TenantsView: React.FC = () => {
                 ) : (
                   <span className="text-slate-500 font-normal">Add-on Not Active</span>
                 )}
+              </div>
+            </div>
+
+            {/* Saved Search Limits & Top-Up Add-on Box */}
+            <div className="p-3 bg-dark-900 border border-cyan-500/30 rounded-xl space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-cyan-300 flex items-center gap-1.5">
+                  <Search className="w-4 h-4" /> Saved Search Limits & Add-ons
+                </span>
+                <span className="font-mono text-cyan-400 font-bold bg-cyan-500/10 px-2 py-0.5 rounded-lg border border-cyan-500/20">
+                  {selectedTenant.saved_searches?.filter(s => s.is_active).length || 0} / {selectedTenant.tenant.max_saved_searches || 10} Active
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-slate-300 text-[11px] pt-1">
+                <div>Base Plan Limit: <strong className="text-white font-mono">{(selectedTenant.tenant.max_saved_searches || 10) - (selectedTenant.tenant.addon_saved_searches || 0)}</strong></div>
+                <div>Extra Add-on Slots: <strong className="text-teal-400 font-mono">+{selectedTenant.tenant.addon_saved_searches || 0} Slots</strong></div>
               </div>
             </div>
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Package, Plus, Check, X, Edit3, ShieldAlert, Sparkles, Users, RefreshCw, Layers } from 'lucide-react';
+import { Package, Plus, Check, X, Edit3, ShieldAlert, Sparkles, Users, RefreshCw, Layers, Search } from 'lucide-react';
 import api from '../api';
 
 export interface PlanItem {
@@ -13,6 +13,8 @@ export interface PlanItem {
   trial_days?: number;
   is_active: boolean;
   max_agents: number;
+  max_saved_searches?: number;
+  addon_saved_searches_price?: number;
   feature_makler_detector: boolean;
   feature_avm_bargain_finder: boolean;
   feature_social_brochure: boolean;
@@ -40,6 +42,8 @@ export function PlansView() {
   const [formBillingPeriod, setFormBillingPeriod] = useState('monthly');
   const [formTrialDays, setFormTrialDays] = useState<number>(7);
   const [formMaxAgents, setFormMaxAgents] = useState<number>(1);
+  const [formMaxSavedSearches, setFormMaxSavedSearches] = useState<number>(10);
+  const [formAddonSearchPrice, setFormAddonSearchPrice] = useState<number>(10);
   const [formMakler, setFormMakler] = useState(true);
   const [formAvm, setFormAvm] = useState(true);
   const [formBrochure, setFormBrochure] = useState(true);
@@ -74,6 +78,8 @@ export function PlansView() {
     setFormBillingPeriod('monthly');
     setFormTrialDays(7);
     setFormMaxAgents(1);
+    setFormMaxSavedSearches(10);
+    setFormAddonSearchPrice(10);
     setFormMakler(true);
     setFormAvm(true);
     setFormBrochure(true);
@@ -97,6 +103,8 @@ export function PlansView() {
     setFormBillingPeriod(plan.billing_period);
     setFormTrialDays(plan.trial_days || 7);
     setFormMaxAgents(plan.max_agents);
+    setFormMaxSavedSearches(plan.max_saved_searches || 10);
+    setFormAddonSearchPrice(plan.addon_saved_searches_price || 10);
     setFormMakler(plan.feature_makler_detector);
     setFormAvm(plan.feature_avm_bargain_finder);
     setFormBrochure(plan.feature_social_brochure);
@@ -124,6 +132,8 @@ export function PlansView() {
           billing_period: formBillingPeriod,
           trial_days: formTrialDays,
           max_agents: formMaxAgents,
+          max_saved_searches: formMaxSavedSearches,
+          addon_saved_searches_price: formAddonSearchPrice,
           feature_makler_detector: formMakler,
           feature_avm_bargain_finder: formAvm,
           feature_social_brochure: formBrochure,
@@ -145,6 +155,8 @@ export function PlansView() {
           billing_period: formBillingPeriod,
           trial_days: formTrialDays,
           max_agents: formMaxAgents,
+          max_saved_searches: formMaxSavedSearches,
+          addon_saved_searches_price: formAddonSearchPrice,
           feature_makler_detector: formMakler,
           feature_avm_bargain_finder: formAvm,
           feature_social_brochure: formBrochure,
@@ -320,6 +332,26 @@ export function PlansView() {
 
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
+                      <Search className="w-4 h-4 text-cyan-400 shrink-0" />
+                      <span className="text-slate-200">Max Saved Searches</span>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 font-semibold">
+                      {plan.max_saved_searches || 10} Searches
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Plus className="w-4 h-4 text-teal-400 shrink-0" />
+                      <span className="text-slate-200">Search Top-Up (+5 Pack)</span>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-teal-500/15 text-teal-300 font-semibold">
+                      +{plan.addon_saved_searches_price || 10} AZN
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
                       {plan.feature_aged_listings ? (
                         <Check className="w-4 h-4 text-emerald-400 shrink-0" />
                       ) : (
@@ -475,16 +507,42 @@ export function PlansView() {
                 </div>
               )}
 
-              <div className="space-y-1">
-                <label className="font-semibold text-slate-300">Max Agents Seats</label>
-                <input
-                  type="number"
-                  min="1"
-                  required
-                  value={formMaxAgents}
-                  onChange={(e) => setFormMaxAgents(parseInt(e.target.value) || 1)}
-                  className="w-full bg-dark-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-100"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-300 text-xs">Max Agents Seats</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={formMaxAgents}
+                    onChange={(e) => setFormMaxAgents(parseInt(e.target.value) || 1)}
+                    className="w-full bg-dark-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-100 text-sm font-semibold"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-300 text-xs">Max Saved Searches</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={formMaxSavedSearches}
+                    onChange={(e) => setFormMaxSavedSearches(parseInt(e.target.value) || 1)}
+                    className="w-full bg-dark-900 border border-slate-700 rounded-xl px-3 py-2 text-cyan-300 text-sm font-semibold"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-300 text-xs">+5 Pack Add-on (AZN)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    required
+                    value={formAddonSearchPrice}
+                    onChange={(e) => setFormAddonSearchPrice(parseFloat(e.target.value) || 0)}
+                    className="w-full bg-dark-900 border border-slate-700 rounded-xl px-3 py-2 text-teal-300 text-sm font-semibold"
+                  />
+                </div>
               </div>
 
               {/* Feature Toggles */}

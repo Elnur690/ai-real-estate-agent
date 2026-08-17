@@ -30,6 +30,7 @@ class Plan(Base):
     max_locations_per_search: Mapped[int] = mapped_column(Integer, default=5)
     feature_aged_listings: Mapped[bool] = mapped_column(Boolean, default=False)
     addon_aged_listings_price: Mapped[float] = mapped_column(Float, default=0.0) # Optional add-on price in AZN
+    addon_saved_searches_price: Mapped[float] = mapped_column(Float, default=10.0) # Price per +5 searches add-on pack in AZN
     backup_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
