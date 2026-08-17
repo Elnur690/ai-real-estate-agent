@@ -38,7 +38,7 @@ class BinalarAzScraper(BaseScraper):
                             continue
                         seen.add(ext_id)
 
-                        parent = a.find_parent("div") or a.find_parent("tr")
+                        parent = a.find_parent("div", class_=lambda c: c and any(x in str(c) for x in ['prop_over', 'product_item', 'item', 'card'])) or a.find_parent("tr") or a.find_parent("div")
                         raw_text = parent.get_text(separator=" | ", strip=True).replace('\xa0', ' ') if parent else a.get_text(strip=True).replace('\xa0', ' ')
                         raw_lower = raw_text.lower()
 
@@ -51,14 +51,14 @@ class BinalarAzScraper(BaseScraper):
                         area_m = re.search(r'([\d.]+)\s*m²', raw_text) or re.search(r'([\d.]+)\s*kv', raw_text)
                         area = safe_optional_float(area_m.group(1) if area_m else None)
 
-                        district = extract_baku_district(raw_text) or extract_baku_district(href) 
                         settlement = extract_baku_settlement(raw_text) or extract_baku_settlement(href)
+                        district = extract_baku_district(raw_text) or extract_baku_district(href) 
                         metro = extract_metro_station(raw_text) or extract_metro_station(href)
 
-                        if not district:
-                            if settlement and settlement in SETTLEMENT_TO_DISTRICT:
-                                district = SETTLEMENT_TO_DISTRICT[settlement]
-                            elif metro and metro in METRO_TO_DISTRICT:
+                        if settlement and settlement in SETTLEMENT_TO_DISTRICT:
+                            district = SETTLEMENT_TO_DISTRICT[settlement]
+                        elif not district:
+                            if metro and metro in METRO_TO_DISTRICT:
                                 district = METRO_TO_DISTRICT[metro]
 
                         detected_offer, detected_prop, detected_seller = classify_property_and_offer(
