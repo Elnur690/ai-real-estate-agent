@@ -1,7 +1,7 @@
 import re
 import logging
 from datetime import datetime, timezone
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.tenant import Tenant
