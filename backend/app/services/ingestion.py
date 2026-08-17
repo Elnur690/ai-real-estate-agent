@@ -33,6 +33,10 @@ from app.ai.base import StructuredCriteria
 from app.bot.telegram_adapter import send_telegram_notification
 from app.bot.whatsapp_adapter import WhatsAppAdapter
 from app.bot.command_handler import get_app_name
+from app.core.property_classifier import (
+    normalize_az_text, AGENCY_KEYWORDS, OWNER_KEYWORDS, COMMISSION_REGEX,
+    RENTAL_KEYWORDS, SALE_KEYWORDS
+)
 
 logger = logging.getLogger(__name__)
 
