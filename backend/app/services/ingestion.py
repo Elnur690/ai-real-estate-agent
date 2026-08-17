@@ -392,6 +392,9 @@ class IngestionService:
 
     @staticmethod
     async def _evaluate_and_deliver_matches(db: AsyncSession, listing: Listing) -> int:
+        if not getattr(listing, 'is_active', True):
+            return 0
+
         stmt = select(SavedSearch).where(SavedSearch.is_active == True)
         res = await db.execute(stmt)
         saved_searches = res.scalars().all()

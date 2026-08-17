@@ -313,7 +313,18 @@ class BotCommandHandler:
                 new_status = status_map.get(action, "sent")
                 stmt = update(Match).where(Match.id == match_id, Match.tenant_id == tenant.id).values(status=new_status)
                 await db.execute(stmt)
+
+                if action in ["satılıb", "satilib"]:
+                    stmt_m = select(Match.listing_id).where(Match.id == match_id)
+                    res_m = await db.execute(stmt_m)
+                    lid = res_m.scalar_one_or_none()
+                    if lid:
+                        from app.models.listing import Listing
+                        await db.execute(update(Listing).where(Listing.id == lid).values(is_active=False))
+
                 await db.commit()
+                if action in ["satılıb", "satilib"]:
+                    return "Elan satılmış/deaktiv olaraq qeyd edildi və bazadan çıxarıldı. ❌"
                 return f"Elan statusu yeniləndi: *{new_status.capitalize()}* ✅"
 
         # 5. Fast-path Explicit Add Search Command (/yeni, /add, /new)
