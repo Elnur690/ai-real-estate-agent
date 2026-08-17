@@ -83,6 +83,7 @@ export const TenantsView: React.FC = () => {
   const [cashDays, setCashDays] = useState<number>(30);
   const [cashIncludeAgedListings, setCashIncludeAgedListings] = useState<boolean>(false);
   const [cashAgedMaxMonths, setCashAgedMaxMonths] = useState<number>(12);
+  const [cashExtraSearches, setCashExtraSearches] = useState<number>(0);
   const [cashNotes, setCashNotes] = useState<string>('');
 
   const loadTenants = async () => {
@@ -297,18 +298,28 @@ export const TenantsView: React.FC = () => {
     }
   };
 
-  const calculateCashTotal = (planCode: string, days: number, includeAged: boolean, category: string = paymentCategory) => {
+  const calculateCashTotal = (
+    planCode: string, 
+    days: number, 
+    includeAged: boolean, 
+    extraSearches: number = cashExtraSearches,
+    category: string = paymentCategory
+  ) => {
     const planObj = availablePlans.find(p => p.code === planCode);
     const basePrice = planObj ? planObj.price : 29.0;
     const addonPrice = planObj?.addon_aged_listings_price !== undefined ? planObj.addon_aged_listings_price : 15.0;
+    const searchPackPrice = planObj?.addon_saved_searches_price !== undefined ? planObj.addon_saved_searches_price : 10.0;
     const multiplier = days === 365 ? 10 : (days === 180 ? 5 : (days === 90 ? 2.7 : (days === 60 ? 2.0 : 1)));
 
+    const agedFee = includeAged ? (addonPrice * multiplier) : 0;
+    const searchFee = extraSearches > 0 ? ((extraSearches / 5.0) * searchPackPrice * multiplier) : 0;
+
     if (category === 'addon_only') {
-      return Math.round(addonPrice * multiplier);
+      return Math.round(agedFee + searchFee);
     } else if (category === 'plan_only') {
       return Math.round(basePrice * multiplier);
     } else {
-      return Math.round((basePrice * multiplier) + (includeAged ? (addonPrice * multiplier) : 0));
+      return Math.round((basePrice * multiplier) + agedFee + searchFee);
     }
   };
 
@@ -318,29 +329,40 @@ export const TenantsView: React.FC = () => {
     const initialPlan = planObj ? planObj.code : 'starter';
     const isAgedActive = defaultCategory === 'addon_only' ? true : !!t.feature_aged_listings;
     const maxMonths = t.addon_aged_max_months || 12;
+    const extraSearches = t.addon_saved_searches || 0;
     
     setPaymentCategory(defaultCategory);
     setPaymentPlan(initialPlan);
     setCashDays(30);
     setCashIncludeAgedListings(isAgedActive);
     setCashAgedMaxMonths(maxMonths);
+    setCashExtraSearches(extraSearches);
 
-    const initialAmount = calculateCashTotal(initialPlan, 30, isAgedActive, defaultCategory);
+    const initialAmount = calculateCashTotal(initialPlan, 30, isAgedActive, extraSearches, defaultCategory);
     setCashAmount(initialAmount);
     const notePrefix = defaultCategory === 'addon_only' 
-      ? `Cash payment for Aged Listings Addon ONLY - ${t.name}`
+      ? `Cash payment for Addons ONLY - ${t.name}`
       : `Cash payment received for ${t.name} (${t.plan.toUpperCase()} Plan)`;
     setCashNotes(notePrefix);
   };
 
-  const handlePlanOrPeriodChange = (planCode: string, days: number, includeAged: boolean = cashIncludeAgedListings, category: 'full' | 'addon_only' | 'plan_only' = paymentCategory) => {
+  const handlePlanOrPeriodChange = (
+    planCode: string, 
+    days: number, 
+    includeAged: boolean = cashIncludeAgedListings, 
+    category: 'full' | 'addon_only' | 'plan_only' = paymentCategory,
+    extraSearches: number = cashExtraSearches
+  ) => {
     setPaymentPlan(planCode);
     setCashDays(days);
+    setCashIncludeAgedListings(includeAged);
     setPaymentCategory(category);
-    const calculatedAmount = calculateCashTotal(planCode, days, includeAged, category);
+    setCashExtraSearches(extraSearches);
+    const calculatedAmount = calculateCashTotal(planCode, days, includeAged, extraSearches, category);
     setCashAmount(calculatedAmount);
-    const label = category === 'addon_only' ? 'Aged Listings Addon' : `${planCode.toUpperCase()} Plan`;
-    setCashNotes(`Cash payment for ${label} (${days} days)`);
+    const label = category === 'addon_only' ? 'Addons Only' : `${planCode.toUpperCase()} Plan`;
+    const searchTag = extraSearches > 0 ? ` + ${extraSearches} Searches` : '';
+    setCashNotes(`Cash payment for ${label}${searchTag} (${days} days)`);
   };
 
   const handleRecordCashPayment = async (e: React.FormEvent) => {
@@ -354,6 +376,7 @@ export const TenantsView: React.FC = () => {
         payment_category: paymentCategory,
         include_aged_listings: paymentCategory === 'addon_only' ? true : (paymentCategory === 'plan_only' ? false : cashIncludeAgedListings),
         addon_aged_max_months: cashAgedMaxMonths,
+        addon_saved_searches: cashExtraSearches,
         notes: cashNotes
       });
       setPaymentModalTenant(null);
@@ -361,7 +384,7 @@ export const TenantsView: React.FC = () => {
       if (selectedTenant && selectedTenant.tenant.id === paymentModalTenant.id) {
         handleSelectTenant(paymentModalTenant.id);
       }
-      alert('Cash payment confirmed! Tenant subscription and features activated.');
+      alert('Cash payment confirmed! Tenant subscription, limits and features activated.');
     } catch (e: any) {
       console.error(e);
       alert(e.response?.data?.detail || 'Failed to record cash payment');
@@ -817,27 +840,6 @@ export const TenantsView: React.FC = () => {
                 </label>
               </div>
 
-              {/* Extra Search Limit Addon */}
-              <div className="pt-2 border-t border-slate-800">
-                <div className="flex items-center justify-between p-2.5 bg-dark-800/80 rounded-xl border border-slate-700/60 text-xs">
-                  <span className="font-semibold text-slate-200 flex items-center gap-1.5">
-                    <Search className="w-3.5 h-3.5 text-cyan-400" />
-                    Extra Search Slots (Add-on)
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="number"
-                      min="0"
-                      max="500"
-                      value={editFormData.addon_saved_searches || 0}
-                      onChange={(e) => setEditFormData({ ...editFormData, addon_saved_searches: parseInt(e.target.value) || 0 })}
-                      className="w-16 bg-dark-900 border border-slate-700 text-cyan-300 rounded-lg px-2 py-1 text-xs font-bold text-center"
-                    />
-                    <span className="text-slate-400 text-[11px]">slots</span>
-                  </div>
-                </div>
-              </div>
-
               <div className="flex justify-end gap-3 pt-3">
                 <button
                   type="button"
@@ -1020,27 +1022,6 @@ export const TenantsView: React.FC = () => {
                     )}
                   </div>
                 </label>
-              </div>
-
-              {/* Extra Search Limit Addon */}
-              <div className="pt-2 border-t border-slate-800">
-                <div className="flex items-center justify-between p-2.5 bg-dark-800/80 rounded-xl border border-slate-700/60 text-xs">
-                  <span className="font-semibold text-slate-200 flex items-center gap-1.5">
-                    <Search className="w-3.5 h-3.5 text-cyan-400" />
-                    Extra Search Slots (Add-on)
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="number"
-                      min="0"
-                      max="500"
-                      value={newTenant.addon_saved_searches || 0}
-                      onChange={(e) => setNewTenant({ ...newTenant, addon_saved_searches: parseInt(e.target.value) || 0 })}
-                      className="w-16 bg-dark-900 border border-slate-700 text-cyan-300 rounded-lg px-2 py-1 text-xs font-bold text-center"
-                    />
-                    <span className="text-slate-400 text-[11px]">slots</span>
-                  </div>
-                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-3">
@@ -1226,6 +1207,37 @@ export const TenantsView: React.FC = () => {
                       <option value={12}>12 Months (1 Year)</option>
                       <option value={24}>24 Months (2 Years)</option>
                     </select>
+                  </div>
+                </div>
+              )}
+
+              {/* Extra Search Slots Add-on Option */}
+              {(paymentCategory === 'full' || paymentCategory === 'addon_only') && (
+                <div className="p-3 bg-dark-900/80 rounded-xl border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-cyan-300 flex items-center gap-1.5">
+                      <Search className="w-3.5 h-3.5" />
+                      Extra Search Slots Add-on
+                    </span>
+                    <span className="text-[11px] text-teal-400 font-mono font-semibold">
+                      +{((availablePlans.find(p => p.code === paymentPlan)?.addon_saved_searches_price) ?? 10)} AZN / +5 slots
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5 pt-1 text-xs">
+                    {[0, 5, 10, 25].map((slots) => (
+                      <button
+                        type="button"
+                        key={slots}
+                        onClick={() => handlePlanOrPeriodChange(paymentPlan, cashDays, cashIncludeAgedListings, paymentCategory, slots)}
+                        className={`py-1.5 rounded-lg font-mono text-center transition-all ${
+                          cashExtraSearches === slots
+                            ? 'bg-cyan-500 text-dark-950 font-bold shadow-md'
+                            : 'bg-dark-800 text-slate-300 hover:bg-dark-700 border border-slate-700/60'
+                        }`}
+                      >
+                        {slots === 0 ? '0 Slots' : `+${slots} Slots`}
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}

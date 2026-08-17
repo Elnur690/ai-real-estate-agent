@@ -56,6 +56,7 @@ async def process_tenant_cash_payment(
     payment_category: Optional[str] = "full",
     include_aged_listings: Optional[bool] = None,
     addon_aged_max_months: Optional[int] = 12,
+    addon_saved_searches: Optional[int] = None,
     use_referral_balance: bool = True,
     notes: Optional[str] = None
 ) -> Payment:
@@ -103,7 +104,20 @@ async def process_tenant_cash_payment(
     if addon_price_per_month is None or addon_price_per_month <= 0:
         addon_price_per_month = 15.0
 
+    search_addon_price_per_pack = getattr(db_plan, 'addon_saved_searches_price', 10.0) if db_plan else 10.0
+    if search_addon_price_per_pack is None or search_addon_price_per_pack <= 0:
+        search_addon_price_per_pack = 10.0
+
     category = (payment_category or "full").lower().strip()
+
+    search_addon_fee = 0.0
+    if addon_saved_searches is not None:
+        tenant.addon_saved_searches = int(addon_saved_searches)
+        if addon_saved_searches > 0:
+            search_addon_fee = round((addon_saved_searches / 5.0) * search_addon_price_per_pack * multiplier, 2)
+            tenant.addon_saved_searches_price = search_addon_fee
+        else:
+            tenant.addon_saved_searches_price = 0.0
 
     if category == "addon_only":
         # Addon only payment
@@ -130,9 +144,10 @@ async def process_tenant_cash_payment(
             if addon_aged_max_months:
                 tenant.addon_aged_max_months = int(addon_aged_max_months)
         addon_label = f" + Aged Listings Addon ({tenant.addon_aged_max_months or 12} mo.)" if tenant.feature_aged_listings else ""
-        default_notes = f"Cash payment received for {plan_code.upper()} plan{addon_label} ({days_covered} days coverage)"
+        search_label = f" + Extra {tenant.addon_saved_searches} Searches" if (tenant.addon_saved_searches and tenant.addon_saved_searches > 0) else ""
+        default_notes = f"Cash payment received for {plan_code.upper()} plan{addon_label}{search_label} ({days_covered} days coverage)"
 
-    final_amount = amount if (amount is not None and amount > 0) else round(base_price + addon_fee, 2)
+    final_amount = amount if (amount is not None and amount > 0) else round(base_price + addon_fee + search_addon_fee, 2)
     pay_currency = currency or (db_plan.currency if db_plan else "AZN")
 
     # Referral bonus discount
