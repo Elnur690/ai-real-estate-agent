@@ -78,7 +78,8 @@ class IngestionService:
     async def run_ingestion_cycle(db: AsyncSession) -> dict:
         await IngestionService.seed_default_sources(db)
         
-        stmt = select(ListingSource.id, ListingSource.name, ListingSource.type, ListingSource.url_or_handle).where(ListingSource.status == "active")
+        # Select all active sources (and auto-retry any transient errors, excluding only explicitly paused sources)
+        stmt = select(ListingSource.id, ListingSource.name, ListingSource.type, ListingSource.url_or_handle).where(ListingSource.status != "paused")
         res = await db.execute(stmt)
         source_rows = res.all()
 
@@ -204,11 +205,6 @@ class IngestionService:
             except Exception as e:
                 logger.error(f"[IngestionService] Error processing source {s_name}: {e}")
                 await db.rollback()
-                try:
-                    await db.execute(update(ListingSource).where(ListingSource.id == s_id).values(status="error"))
-                    await db.commit()
-                except Exception:
-                    pass
 
         return {"scraped_count": total_scraped, "matched_count": total_matched}
 

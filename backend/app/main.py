@@ -58,6 +58,7 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS makler_score FLOAT DEFAULT 0.0;"))
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS is_first_posting BOOLEAN DEFAULT TRUE;"))
         await conn.execute(text("DELETE FROM listings WHERE external_id LIKE '%sample%';"))
+        await conn.execute(text("UPDATE listing_sources SET status = 'active' WHERE status = 'error';"))
         await conn.execute(text("""
             UPDATE listings 
             SET seller_type = 'agency', makler_score = 1.0 

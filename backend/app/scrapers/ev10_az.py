@@ -22,20 +22,25 @@ class Ev10AzScraper(BaseScraper):
                 if res.status_code == 200:
                     soup = BeautifulSoup(res.text, "html.parser")
                     links = soup.find_all("a", href=re.compile(r'/posting/(\d+)'))
-                    seen = set()
+                    seen = {}
 
                     for a in links:
-                        href = a['href']
+                        href = a.get('href', '')
                         m = re.search(r'/posting/(\d+)', href)
                         if not m:
                             continue
                         ext_id = m.group(1)
-                        if ext_id in seen:
-                            continue
-                        seen.add(ext_id)
+                        text = a.get_text(separator=" | ", strip=True)
+                        if not text:
+                            parent = a.find_parent("div", class_=lambda c: c and any(x in str(c) for x in ['MuiGrid-item', 'postingCard', 'item', 'card'])) or a.find_parent("div")
+                            if parent:
+                                text = parent.get_text(separator=" | ", strip=True)
+                        if ext_id not in seen or len(text) > len(seen[ext_id].get('text', '')):
+                            seen[ext_id] = {'href': href, 'text': text}
 
-                        parent = a.find_parent("div", class_=re.compile(r'item|card|col|post', re.I)) or a.find_parent("tr") or a
-                        raw_text = parent.get_text(separator=" | ", strip=True) if parent else a.get_text(strip=True)
+                    for ext_id, data in seen.items():
+                        href = data['href']
+                        raw_text = data['text']
 
                         price_m = re.search(r'([\d,.\s]+)\s*(?:AZN|₼|manat)', raw_text, re.IGNORECASE)
                         clean_pr_str = price_m.group(1).replace(" ", "").replace(",", "").replace("\xa0", "") if price_m else ""
@@ -46,6 +51,10 @@ class Ev10AzScraper(BaseScraper):
 
                         area_m = re.search(r'([\d.]+)\s*m²', raw_text) or re.search(r'([\d.]+)\s*kv', raw_text)
                         area = float(area_m.group(1)) if area_m else None
+
+                        floor_m = re.search(r'(\d+)\s*/\s*(\d+)', raw_text)
+                        floor = int(floor_m.group(1)) if floor_m else None
+                        total_floors = int(floor_m.group(2)) if floor_m else None
 
                         district = extract_baku_district(raw_text) or extract_baku_district(href)
                         metro = extract_metro_station(raw_text) or extract_metro_station(href)
@@ -70,6 +79,7 @@ class Ev10AzScraper(BaseScraper):
                         title = f"{rooms} otaqlı {prop_name} ({loc_label})" if rooms else f"{prop_name} ({loc_label})"
 
                         bld_type = "old" if "köhnə" in raw_text.lower() else "new"
+                        clean_url = href if href.startswith("http") else f"https://ev10.az{href if href.startswith('/') else '/' + href}"
 
                         items.append(RawListingItem(
                             external_id=f"ev10_{ext_id}",
@@ -81,11 +91,13 @@ class Ev10AzScraper(BaseScraper):
                             metro_station=metro,
                             rooms=rooms,
                             area_sqm=area,
+                            floor=floor,
+                            total_floors=total_floors,
                             building_type=bld_type,
                             seller_type=detected_seller,
                             offer_type=detected_offer,
                             property_type=detected_prop,
-                            listing_url=f"https://ev10.az{href}"
+                            listing_url=clean_url
                         ))
                         if len(items) >= 25:
                             break
