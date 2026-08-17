@@ -65,14 +65,14 @@ class IngestionService:
                 ListingSource(type="website", name="Binam.az", url_or_handle="https://binam.az/", status="active"),
                 ListingSource(type="website", name="Binalar.az", url_or_handle="https://binalar.az/", status="active"),
                 ListingSource(type="website", name="Mulk.az", url_or_handle="https://mulk.az/", status="active"),
-                ListingSource(type="website", name="Villa.az", url_or_handle="https://villa.az/", status="active"),
-                ListingSource(type="telegram_channel", name="Bakı Əmlak Elanları", url_or_handle="@baki_emlak_elanlari", status="active")
+                ListingSource(type="telegram_channel", name="Bakı Əmlak Elanları", url_or_handle="@baki_emlak_elanlari", status="active"),
+                ListingSource(type="telegram_channel", name="Emlak Tap Telegram", url_or_handle="@emlaktap", status="active")
             ]
             for s in default_sources:
                 if s.url_or_handle not in existing_handles:
                     db.add(s)
             await db.commit()
-            logger.info("[IngestionService] Seeded 17 comprehensive real estate sources.")
+            logger.info("[IngestionService] Seeded 18 comprehensive real estate sources.")
 
     @staticmethod
     async def run_ingestion_cycle(db: AsyncSession) -> dict:

@@ -57,8 +57,14 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS is_makler BOOLEAN DEFAULT FALSE;"))
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS makler_score FLOAT DEFAULT 0.0;"))
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS is_first_posting BOOLEAN DEFAULT TRUE;"))
-        await conn.execute(text("DELETE FROM listings WHERE external_id LIKE '%sample%';"))
         await conn.execute(text("UPDATE listing_sources SET status = 'active' WHERE status = 'error';"))
+        await conn.execute(text("""
+            INSERT INTO listing_sources (type, name, url_or_handle, status, created_at)
+            SELECT 'telegram_channel', 'Emlak Tap Telegram', '@emlaktap', 'active', NOW()
+            WHERE NOT EXISTS (
+                SELECT 1 FROM listing_sources WHERE url_or_handle = '@emlaktap'
+            );
+        """))
         await conn.execute(text("""
             UPDATE listings 
             SET seller_type = 'agency', makler_score = 1.0 
