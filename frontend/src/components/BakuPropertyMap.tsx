@@ -17,7 +17,7 @@ interface PropertyPin {
   source_name?: string;
   price: number;
   currency: string;
-  district: string;
+  district?: string;
   metro_station?: string;
   rooms?: number;
   area_sqm?: number;
@@ -115,12 +115,19 @@ export const BakuPropertyMap: React.FC = () => {
   };
 
   const filteredPins = pins.filter(p => {
-    const matchesDistrict = selectedDistrict === 'all' || p.district.toLowerCase() === selectedDistrict.toLowerCase();
+    const pDistrict = (p.district || '').toLowerCase();
+    const pTitle = (p.title || '').toLowerCase();
+    const pMetro = (p.metro_station || '').toLowerCase();
+    const pSource = (p.source_name || '').toLowerCase();
+    const q = (searchQuery || '').toLowerCase().trim();
+
+    const matchesDistrict = selectedDistrict === 'all' || pDistrict === selectedDistrict.toLowerCase();
     const matchesBargain = !filterBargainOnly || p.is_bargain;
-    const matchesSearch = !searchQuery.trim() || (
-      p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (p.metro_station && p.metro_station.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (p.source_name && p.source_name.toLowerCase().includes(searchQuery.toLowerCase()))
+    const matchesSearch = !q || (
+      pTitle.includes(q) ||
+      pMetro.includes(q) ||
+      pSource.includes(q) ||
+      pDistrict.includes(q)
     );
     return matchesDistrict && matchesBargain && matchesSearch;
   });
@@ -296,7 +303,7 @@ export const BakuPropertyMap: React.FC = () => {
 
               <div className="flex items-center gap-2 text-[11px] text-slate-400 pt-1 border-t border-slate-800/60">
                 <span className="flex items-center gap-1 text-slate-300">
-                  <MapPin className="w-3 h-3 text-emerald-400" /> {p.district}
+                  <MapPin className="w-3 h-3 text-emerald-400" /> {p.district || 'Bakı'}
                 </span>
                 {p.metro_station && (
                   <span className="text-amber-400 font-medium">🚇 {p.metro_station}</span>
@@ -402,7 +409,7 @@ export const BakuPropertyMap: React.FC = () => {
                     🌐 {selectedPin.source_name || 'Bina.az'}
                   </span>
                   <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-                    {selectedPin.district} District {selectedPin.metro_station ? `• ${selectedPin.metro_station} Metro` : ''}
+                    {selectedPin.district ? `${selectedPin.district} District` : 'Baku'} {selectedPin.metro_station ? `• ${selectedPin.metro_station} Metro` : ''}
                   </span>
                 </div>
                 <h3 className="text-base font-bold text-white mt-1.5">{selectedPin.title}</h3>
