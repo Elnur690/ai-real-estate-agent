@@ -584,17 +584,25 @@ class IngestionService:
 
                 details_block = "\n".join(extra_details) + "\n\n" if extra_details else "\n"
 
-                # Phone extraction
+                # Phone extraction - omit line completely if no phone is found
                 from app.core.baku_locations import extract_az_phone
                 phone_info = extract_az_phone(listing.phone_number or f"{listing.title} {listing.description or ''} {listing.address_raw or ''}")
 
+                contact_line = ""
                 if phone_info:
                     formatted_phone, raw_phone = phone_info
-                    contact_line = f"📞 *Əlaqə:* [{formatted_phone}](tel:{raw_phone}) (`{formatted_phone}`)"
+                    contact_line = f"📞 *Əlaqə:* [{formatted_phone}](tel:{raw_phone}) (`{formatted_phone}`)\n"
                 elif listing.phone_number:
-                    contact_line = f"📞 *Əlaqə:* [{listing.phone_number}](tel:{listing.phone_number}) (`{listing.phone_number}`)"
+                    contact_line = f"📞 *Əlaqə:* [{listing.phone_number}](tel:{listing.phone_number}) (`{listing.phone_number}`)\n"
+
+                # Price display formatting with period indication (daily vs monthly vs sale)
+                offer_val = getattr(listing, 'offer_type', 'sale') or 'sale'
+                if offer_val == 'daily_rent' or 'gunluk' in (listing.listing_url or '').lower():
+                    price_line = f"💰 *Qiymət:* {int(listing.price)} {listing.currency} / gün (günlük)"
+                elif offer_val in ['rent', 'kiraye', 'icare'] or 'kiraye' in (listing.listing_url or '').lower():
+                    price_line = f"💰 *Qiymət:* {int(listing.price)} {listing.currency} / ay (aylıq)" + (f" ({int(listing.price_per_sqm)} AZN/m²)" if listing.price_per_sqm else "")
                 else:
-                    contact_line = f"📞 *Əlaqə:* [Elana baxaraq əlaqə saxlayın]({listing.listing_url})"
+                    price_line = f"💰 *Qiymət:* {int(listing.price)} {listing.currency}" + (f" ({int(listing.price_per_sqm)} AZN/m²)" if listing.price_per_sqm else "")
 
                 msg_text = (
                     f"🔥 *YENİ UYĞUN ELAN! ({app_name})*\n"
@@ -602,12 +610,12 @@ class IngestionService:
                     f"🎯 *Uyğunluq:* %{int(score * 100)}{bargain_tag}{first_post_tag}{makler_tag}\n\n"
                     f"🏠 *{clean_title}*\n"
                     f"🏷️ *Növ / Əməliyyat:* {prop_label} ({deal_label})\n"
-                    f"💰 *Qiymət:* {int(listing.price)} {listing.currency}" + (f" ({int(listing.price_per_sqm)} AZN/m²)" if listing.price_per_sqm else "") + "\n"
+                    f"{price_line}\n"
                     f"📍 *Məkan:* {listing.district or listing.address_raw or 'Bakı'}\n"
                     f"📐 *Otaq / Sahə:* {listing.rooms or '-'} otaqlı | {listing.area_sqm or '-'} m²\n"
                     f"👤 *Satıcı:* {seller_str}\n"
                     f"{details_block}"
-                    f"{contact_line}\n"
+                    f"{contact_line}"
                     f"🔗 [Elana keçid et]({listing.listing_url})\n\n"
                     f"💬 *Reaksiya bildirin:*\n"
                     f"`Maraqlanıram {new_match.id}` | `Keç {new_match.id}` | `Satılıb {new_match.id}`"

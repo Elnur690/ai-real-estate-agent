@@ -12,6 +12,14 @@ class AVMEngineService:
         Calculates listing price per sqm and compares against dynamic district average.
         Flags listings priced <= -10% below market average as Bargain Deals.
         """
+        offer_type = getattr(listing, 'offer_type', 'sale') or 'sale'
+
+        # Daily rentals are priced per day (not per sqm or monthly), so skip AVM sqm comparison
+        if offer_type == 'daily_rent' or (listing.price and listing.price <= 200 and 'gunluk' in (listing.listing_url or '').lower()):
+            listing.price_per_sqm = None
+            listing.bargain_percentage = 0.0
+            return listing
+
         if not listing.price or not listing.area_sqm or listing.area_sqm <= 0:
             return listing
 
@@ -22,21 +30,22 @@ class AVMEngineService:
         if not listing.district:
             return listing
 
-        is_rental = listing.price < 10000
-
-        # 2. Dynamic District Average Price per SQM (Separated by Sale vs Rental)
-        if is_rental:
+        # 2. Dynamic District Average Price per SQM (Separated strictly by Sale vs Monthly Rental)
+        if offer_type in ['rent', 'kiraye', 'icare']:
             stmt = select(func.avg(Listing.price_per_sqm)).where(
                 Listing.district == listing.district,
+                Listing.offer_type == 'rent',
                 Listing.price_per_sqm > 0,
-                Listing.price < 10000,
+                Listing.price >= 100,
+                Listing.price < 20000,
                 Listing.is_active == True
             )
         else:
             stmt = select(func.avg(Listing.price_per_sqm)).where(
                 Listing.district == listing.district,
+                Listing.offer_type == 'sale',
                 Listing.price_per_sqm > 0,
-                Listing.price >= 10000,
+                Listing.price >= 15000,
                 Listing.is_active == True
             )
         res = await db.execute(stmt)
