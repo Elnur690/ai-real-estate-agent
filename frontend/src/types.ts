@@ -25,6 +25,9 @@ export interface Tenant {
   max_locations_per_search?: number;
   feature_aged_listings?: boolean;
   addon_aged_max_months?: number;
+  addon_saved_searches?: number;
+  active_searches_count?: number;
+  max_saved_searches?: number;
   referral_code?: string;
   referral_balance?: number;
   parent_tenant_id?: number;

@@ -39,6 +39,8 @@ class Tenant(Base):
     max_locations_per_search: Mapped[int] = mapped_column(default=5)
     feature_aged_listings: Mapped[bool] = mapped_column(default=False)
     addon_aged_max_months: Mapped[int] = mapped_column(default=12) # Max historical lookback limit in months (1-24)
+    addon_saved_searches: Mapped[int] = mapped_column(default=0) # Extra search slots purchased by agent
+    addon_saved_searches_price: Mapped[float] = mapped_column(default=0.0) # Monthly price for search top-up add-on
 
     # 🎁 Referral System & Promo Code Reward Options
     referral_code: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True)

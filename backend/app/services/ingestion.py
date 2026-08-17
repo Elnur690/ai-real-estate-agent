@@ -515,6 +515,22 @@ class IngestionService:
                 has_ipoteka_tag = "İpotekaya yararlıdır" if any(k in desc_text_lower for k in ["ipoteka: var", "ipotekaya yararlı", "ipotekaya yararli", "ipoteka var"]) else None
                 has_temir_tag = "Təmirli" if any(k in desc_text_lower for k in ["təmir: var", "temir: var", "təmirli", "temirli", "əla təmirli"]) else None
 
+                # Published Date Formatting
+                pub_date = listing.created_at or now_utc
+                if pub_date.tzinfo is None:
+                    pub_date = pub_date.replace(tzinfo=timezone.utc)
+                delta_days = (now_utc.date() - pub_date.date()).days
+
+                if delta_days == 0:
+                    date_str = f"Bugün ({pub_date.strftime('%H:%M')})"
+                elif delta_days == 1:
+                    date_str = f"Dünən ({pub_date.strftime('%H:%M')})"
+                elif delta_days < 30:
+                    date_str = f"{delta_days} gün əvvəl ({pub_date.strftime('%d.%m.%Y')})"
+                else:
+                    months = delta_days // 30
+                    date_str = f"~{months} ay əvvəl ({pub_date.strftime('%d.%m.%Y')})"
+
                 extra_details = []
                 if floor_str:
                     extra_details.append(f"🏢 *Mərtəbə:* {floor_str}")
@@ -526,6 +542,7 @@ class IngestionService:
                     extra_details.append(f"🏦 *İpoteka:* {has_ipoteka_tag}")
                 if has_temir_tag:
                     extra_details.append(f"🛠️ *Təmir:* {has_temir_tag}")
+                extra_details.append(f"🗓️ *Paylaşılma tarixi:* {date_str}")
 
                 details_block = "\n".join(extra_details) + "\n\n" if extra_details else "\n"
 

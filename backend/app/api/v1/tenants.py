@@ -79,6 +79,9 @@ class TenantResponse(BaseModel):
     max_locations_per_search: int = 5
     feature_aged_listings: bool = False
     addon_aged_max_months: int = 12
+    addon_saved_searches: int = 0
+    active_searches_count: int = 0
+    max_saved_searches: int = 10
     referral_code: Optional[str] = None
     referral_balance: float
     created_at: Optional[datetime] = None
@@ -88,10 +91,34 @@ class TenantResponse(BaseModel):
 
 @router.get("", response_model=List[TenantResponse])
 async def list_tenants(db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
+    from app.models.saved_search import SavedSearch
+    from app.models.plan import Plan
+    from sqlalchemy import func
+
+    # Fetch plans
+    stmt_p = select(Plan)
+    res_p = await db.execute(stmt_p)
+    plans = {p.code: getattr(p, 'max_saved_searches', 10) for p in res_p.scalars().all()}
+
+    # Fetch active search counts
+    stmt_c = select(SavedSearch.tenant_id, func.count(SavedSearch.id)).where(SavedSearch.is_active == True).group_by(SavedSearch.tenant_id)
+    res_c = await db.execute(stmt_c)
+    counts = dict(res_c.all())
+
     stmt = select(Tenant).order_by(Tenant.id.desc())
     res = await db.execute(stmt)
     tenants = res.scalars().all()
-    return tenants
+
+    resp = []
+    for t in tenants:
+        base_lim = plans.get(t.plan, 10)
+        total_lim = base_lim + (t.addon_saved_searches or 0)
+        t_resp = TenantResponse.model_validate(t)
+        t_resp.active_searches_count = counts.get(t.id, 0)
+        t_resp.max_saved_searches = total_lim
+        resp.append(t_resp)
+
+    return resp
 
 @router.post("", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
 async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):

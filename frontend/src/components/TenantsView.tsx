@@ -472,6 +472,10 @@ export const TenantsView: React.FC = () => {
                   </td>
                   <td className="p-4">
                     <div className="capitalize font-medium text-slate-200">{t.plan}</div>
+                    <div className="text-[11px] text-cyan-400 font-mono flex items-center gap-1 mt-0.5">
+                      <Search className="w-3 h-3" />
+                      {t.active_searches_count || 0} / {t.max_saved_searches || 10} Searches
+                    </div>
                     {t.type === 'agency' || maxSeats > 1 ? (
                       <div className="text-[11px] text-purple-400 flex items-center gap-1 mt-0.5">
                         <Users className="w-3 h-3" />

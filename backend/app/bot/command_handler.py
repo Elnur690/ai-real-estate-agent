@@ -1,7 +1,7 @@
 import re
 import json
 from typing import Optional, Dict, Any, Tuple
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.tenant import Tenant
@@ -187,8 +187,8 @@ class BotCommandHandler:
                 return f"Axtarış #{search_id} aktiv edildi. ▶️"
             return f"⚠️ Axtarış #{search_id} sizin hesabınızda tapılmadı."
 
-        # Brochure & Social Kit Generation Command (/brochure <id>, /broşur <id>)
-        brochure_match = re.search(r'^(?:/brochure|brochure|/broşur|broşur|/broshur|broshur)\s*#?\s*(\d+)', text_lower)
+        # Brochure & Social Kit Generation Command (/brochure <id>, /buklet <id>, /broşur <id>)
+        brochure_match = re.search(r'^(?:/brochure|brochure|/buklet|buklet|/broşur|broşur|/broshur|broshur)\s*#?\s*(\d+)', text_lower)
         if brochure_match:
             listing_id = int(brochure_match.group(1))
             from app.services.brochure_generator import BrochureGeneratorService
@@ -196,9 +196,73 @@ class BotCommandHandler:
             if res_b.get("success"):
                 return (
                     f"🏠 *Elan #{listing_id} üçün Sosial / PDF Buklet hazırdır!*\n\n"
-                    f"📎 [Bukleti Yüklə / Aç]({res_b['brochure_url']})"
+                    f"📎 [Bukleti Yüklə / Aç]({res_b['brochure_url']})\n\n"
+                    f"Bu bukleti birbaşa müştəriyə göndərə və ya çap edib təqdim edə bilərsiniz."
                 )
             return f"Xəta: Elan #{listing_id} tapılmadı."
+
+        # Client Intake Bot Link (/intake, /link, /klient, /lead)
+        if text_lower in ["/intake", "intake", "/link", "link", "/klient", "klient", "/lead", "lead"]:
+            base_url = "https://app.realestate.az"
+            intake_url = f"{base_url}/intake/{tenant.id}"
+            return (
+                f"🤖 *Brendləşdirilmiş Müştəri Qəbul Linkiniz ({app_name}):*\n\n"
+                f"🔗 `{intake_url}`\n\n"
+                f"📌 *Necə istifadə etməli:*\n"
+                f"1. Bu linki Instagram Bio, TikTok və ya WhatsApp Business profilinizə qoyun.\n"
+                f"2. Müştərilər bura daxil olub büdcə və əmlak tələblərini yazdıqda, AI həmin kriteriyanı avtomatik sizin adınıza axtarışa salacaq!\n"
+                f"3. Uyğun elan çıxan kimi sizə dərhal bildiriş gələcək. 🎯"
+            )
+
+        # Search Limit & Aged Archive Top-Up Add-on Commands (/paket, /topup, /al)
+        if text_lower in ["/paket", "paket", "/topup", "topup", "/limit", "limit"]:
+            return (
+                f"📦 *ƏLAVƏ ADD-ON VƏ LİMİT PAKETLƏRİ ({app_name})*\n\n"
+                f"🔹 *Axtarış Limiti Top-Up:*\n"
+                f"• *+5 Axtarış:* 10 AZN / ay (Sifariş üçün: `/al limit 5`)\n"
+                f"• *+10 Axtarış:* 18 AZN / ay (Sifariş üçün: `/al limit 10`)\n"
+                f"• *+25 Axtarış:* 40 AZN / ay (Sifariş üçün: `/al limit 25`)\n\n"
+                f"🔹 *Bazar Arxivi (Aged Inventory Add-on):*\n"
+                f"• *3 aylıq arxiv:* 15 AZN / ay (Sifariş üçün: `/al arxiv 3`)\n"
+                f"• *6 aylıq arxiv:* 25 AZN / ay (Sifariş üçün: `/al arxiv 6`)\n"
+                f"• *12 aylıq arxiv:* 40 AZN / ay (Sifariş üçün: `/al arxiv 12`)\n\n"
+                f"💳 *Qeyd:* Sifariş verdikdən sonra ödəniş təsdiqlənən kimi xidmət dərhal aktivləşir."
+            )
+
+        buy_match = re.search(r'^(?:/al|al)\s+(limit|arxiv)\s+(\d+)', text_lower)
+        if buy_match:
+            item_type, val_str = buy_match.group(1), int(buy_match.group(2))
+            from app.models.payment import Payment
+            from datetime import timedelta
+            
+            if item_type == "limit":
+                pricing = {5: 10.0, 10: 18.0, 25: 40.0}
+                amount = pricing.get(val_str, float(val_str * 2.0))
+                desc = f"+{val_str} Əlavə Axtarış Limiti Add-on"
+            else:
+                pricing = {3: 15.0, 6: 25.0, 12: 40.0, 24: 60.0}
+                amount = pricing.get(val_str, float(val_str * 4.0))
+                desc = f"{val_str} Aylıq Bazar Arxivi (Aged Inventory) Add-on"
+
+            now_time = datetime.now(timezone.utc)
+            new_payment = Payment(
+                tenant_id=tenant.id,
+                amount=amount,
+                currency="AZN",
+                period_covered_start=now_time,
+                period_covered_end=now_time + timedelta(days=30),
+                notes=f"Pending Add-on: {desc}"
+            )
+            db.add(new_payment)
+            await db.commit()
+            await db.refresh(new_payment)
+
+            return (
+                f"💳 *SİFARİŞİNİZ QƏBUL EDİLDİ!* (Faktura #{new_payment.id})\n\n"
+                f"📦 *Xidmət:* {desc}\n"
+                f"💰 *Məbləğ:* {int(amount)} AZN / aylıq\n\n"
+                f"Ödəniş qəbzini təsdiq etdikdən sonra paket profilinizə dərhal aktiv ediləcək! 🚀"
+            )
 
         # Referral Code & Program Info Command (/referral, /dəvət)
         if text_lower in ["dostunu dəvət et", "dostunu devet et", "referral", "/referral", "dəvət", "/dəvət", "devet", "/devet"]:
@@ -590,6 +654,33 @@ class BotCommandHandler:
         is_repaired = draft.get("is_repaired")
         min_fl = draft.get("min_floor")
         max_fl = draft.get("max_floor")
+
+        # Check active search limit
+        from app.models.plan import Plan
+        stmt_cnt = select(func.count(SavedSearch.id)).where(SavedSearch.tenant_id == tenant.id, SavedSearch.is_active == True)
+        res_cnt = await db.execute(stmt_cnt)
+        active_count = res_cnt.scalar() or 0
+
+        stmt_pl = select(Plan).where(Plan.code == tenant.plan)
+        res_pl = await db.execute(stmt_pl)
+        plan_obj = res_pl.scalars().first()
+
+        base_limit = getattr(plan_obj, 'max_saved_searches', 10) if plan_obj else {
+            "free": 3, "starter": 10, "pro": 30, "agency": 100, "enterprise": 500
+        }.get(tenant.plan, 10)
+
+        total_limit = base_limit + (tenant.addon_saved_searches or 0)
+
+        if active_count >= total_limit:
+            return (
+                f"⚠️ *Axtarış Limiti Dolub!* ({active_count}/{total_limit} aktiv axtarış istifadə edilib)\n\n"
+                f"Yeni axtarış əlavə etmək üçün köhnə axtarışlardan birini silə (`/sil <id>`) və ya əlavə limit paketi ala bilərsiniz:\n\n"
+                f"📦 *Əlavə Axtarış Limit Paketləri:*\n"
+                f"• *+5 Axtarış:* 10 AZN / ay (`/al limit 5`)\n"
+                f"• *+10 Axtarış:* 18 AZN / ay (`/al limit 10`)\n"
+                f"• *+25 Axtarış:* 40 AZN / ay (`/al limit 25`)\n\n"
+                f"💳 Sifariş verdikdən sonra ödəniş təsdiqlənən kimi limitiniz dərhal artırılır."
+            )
 
         # Routing destination - Strict preservation of WhatsApp group vs personal chat
         channel = channel or draft.get("channel") or tenant.preferred_channel or "whatsapp"
