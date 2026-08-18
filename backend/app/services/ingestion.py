@@ -123,7 +123,7 @@ class IngestionService:
     @staticmethod
     def build_targeted_search_urls(search: SavedSearch) -> List[Tuple[str, Any, str]]:
         """
-        Builds direct targeted query URLs for Bina.az and Tap.az matching the exact SavedSearch criteria.
+        Builds direct targeted query URLs for Bina.az (primary) and Tap.az matching exact criteria.
         Returns list of (source_name, scraper_instance, target_url).
         """
         targets = []
@@ -164,6 +164,13 @@ class IngestionService:
         bina_url = f"https://bina.az/items?{'&'.join(bina_params)}"
         targets.append(("Bina.az Targeted", BinaAzScraper(), bina_url))
 
+        # Also add general category feed for this room count on Bina.az
+        if seller in ["owner", "sahibinden", "sahibindən"] and (search.min_rooms or search.max_rooms):
+            gen_params = [f"leased={leased_str}", f"category_id={cat_id}"]
+            if search.min_rooms:
+                gen_params.append(f"rooms[]={search.min_rooms}")
+            targets.append(("Bina.az Targeted Multi-Feed", BinaAzScraper(), f"https://bina.az/items?{'&'.join(gen_params)}"))
+
         # 2. Tap.az Keyword Target
         loc_kw = search.district or search.metro_station or ""
         if loc_kw:
@@ -177,11 +184,14 @@ class IngestionService:
 
     @staticmethod
     async def _ingest_single_raw_item(db: AsyncSession, item: RawListingItem, source_id: int = 1) -> Optional[Listing]:
-        """Ingests, deduplicates, and runs Makler + AVM analysis on a single scraped RawListingItem."""
+        """Ingests, deduplicates with In-Memory Cache, and runs Makler + AVM analysis."""
         try:
             stmt_exist = select(Listing).where(Listing.external_id == item.external_id)
             res_exist = await db.execute(stmt_exist)
             existing_listing = res_exist.scalars().first()
+
+            # Mark external ID seen in RAM/Redis cache
+            await CacheManager.mark_external_id_seen(item.external_id)
 
             if existing_listing:
                 if item.price < existing_listing.price:

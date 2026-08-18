@@ -676,8 +676,8 @@ def test_build_targeted_search_urls():
     )
 
     targets = IngestionService.build_targeted_search_urls(search)
-    assert len(targets) == 2
-    bina_target = [t for t in targets if "Bina.az" in t[0]][0]
+    assert len(targets) >= 2
+    bina_target = [t for t in targets if "Bina.az Targeted" == t[0]][0]
     tap_target = [t for t in targets if "Tap.az" in t[0]][0]
 
     assert "leased=false" in bina_target[2]

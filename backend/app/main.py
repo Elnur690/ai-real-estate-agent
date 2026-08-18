@@ -57,6 +57,11 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS is_makler BOOLEAN DEFAULT FALSE;"))
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS makler_score FLOAT DEFAULT 0.0;"))
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS is_first_posting BOOLEAN DEFAULT TRUE;"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_listings_search_perf ON listings (is_active, district, offer_type, property_type, seller_type, rooms, price);"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_listings_makler_perf ON listings (district, rooms, area_sqm, price, created_at);"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_listings_phone_perf ON listings (phone_number);"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_matches_tenant_search ON matches (tenant_id, saved_search_id, listing_id);"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_saved_searches_active ON saved_searches (is_active, tenant_id);"))
         await conn.execute(text("UPDATE listing_sources SET status = 'active' WHERE status = 'error';"))
         await conn.execute(text("""
             INSERT INTO listing_sources (type, name, url_or_handle, status, created_at)
