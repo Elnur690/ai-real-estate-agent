@@ -40,6 +40,7 @@ from app.core.property_classifier import (
     normalize_az_text, AGENCY_KEYWORDS, OWNER_KEYWORDS, COMMISSION_REGEX,
     RENTAL_KEYWORDS, SALE_KEYWORDS
 )
+from app.core.cache import CacheManager
 
 logger = logging.getLogger(__name__)
 
