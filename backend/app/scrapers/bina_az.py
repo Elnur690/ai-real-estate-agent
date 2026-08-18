@@ -1,5 +1,6 @@
 import re
 import logging
+import asyncio
 import httpx
 from bs4 import BeautifulSoup
 from typing import List
@@ -19,14 +20,18 @@ class BinaAzScraper(BaseScraper):
         items: List[RawListingItem] = []
         seen = {}
 
-        # If a custom/targeted URL with search parameters is provided, scrape it directly
-        if "?" in url_or_handle and not url_or_handle.endswith("bina.az/alqi-satqi"):
+        # Check if this is a targeted criteria query or generic source
+        is_targeted_search = any(k in url_or_handle for k in ['owner_type=', 'rooms[]=', 'price_min=', 'price_max=', 'location_ids[]=', 'q='])
+
+        if is_targeted_search:
             urls_to_fetch = [url_or_handle]
         else:
-            # Primary active feeds for sales, owner postings, rentals, and houses
+            # Primary comprehensive active feeds for Bina.az (Sales, Owners, Rentals, New/Old bld, Houses)
             urls_to_fetch = [
+                "https://bina.az/items?leased=false&owner_type=owner",
                 "https://bina.az/items?leased=false&category_id=1&city_id=1",
-                "https://bina.az/items?leased=false&category_id=2&owner_type=owner",
+                "https://bina.az/items?leased=false&category_id=2",
+                "https://bina.az/items?leased=true&owner_type=owner",
                 "https://bina.az/items?leased=true&category_id=1&city_id=1",
                 "https://bina.az/items?leased=false&category_id=5"
             ]
@@ -36,12 +41,12 @@ class BinaAzScraper(BaseScraper):
         headers["Accept-Language"] = "az,ru;q=0.9,en-US;q=0.8,en;q=0.7"
 
         async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-            for target_url in urls_to_fetch:
+            async def fetch_target(target_url):
                 try:
                     res = await client.get(target_url, headers=headers)
                     if res.status_code != 200:
                         logger.warning(f"[BinaAzScraper] GET {target_url} returned status {res.status_code}")
-                        continue
+                        return
 
                     soup = BeautifulSoup(res.text, "html.parser")
                     links = soup.find_all("a", href=re.compile(r'/items/(\d+)'))
@@ -59,6 +64,8 @@ class BinaAzScraper(BaseScraper):
 
                 except Exception as e:
                     logger.error(f"[BinaAzScraper] Error fetching from {target_url}: {e}")
+
+            await asyncio.gather(*[fetch_target(u) for u in urls_to_fetch])
 
         for ext_id, data in seen.items():
             href = data['href']
