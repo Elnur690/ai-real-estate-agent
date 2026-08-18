@@ -680,9 +680,9 @@ def test_build_targeted_search_urls():
     bina_target = [t for t in targets if "Bina.az Targeted" == t[0]][0]
     tap_target = [t for t in targets if "Tap.az" in t[0]][0]
 
+    assert "city_id=1" in bina_target[2]
     assert "leased=false" in bina_target[2]
     assert "category_id=2" in bina_target[2]
-    assert "owner_type=owner" in bina_target[2]
     assert "rooms[]=2" in bina_target[2]
     assert "price_min=100000" in bina_target[2]
     assert "price_max=150000" in bina_target[2]

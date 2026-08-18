@@ -150,9 +150,7 @@ class IngestionService:
         else:
             cat_id = "1"
 
-        bina_params = [f"leased={leased_str}", f"category_id={cat_id}"]
-        if seller in ["owner", "sahibinden", "sahibindən"]:
-            bina_params.append("owner_type=owner")
+        bina_params = [f"city_id=1", f"leased={leased_str}", f"category_id={cat_id}"]
         if search.min_rooms:
             bina_params.append(f"rooms[]={search.min_rooms}")
         if search.max_rooms and search.max_rooms != search.min_rooms:
@@ -164,13 +162,6 @@ class IngestionService:
 
         bina_url = f"https://bina.az/items?{'&'.join(bina_params)}"
         targets.append(("Bina.az Targeted", BinaAzScraper(), bina_url))
-
-        # Also add general category feed for this room count on Bina.az
-        if seller in ["owner", "sahibinden", "sahibindən"] and (search.min_rooms or search.max_rooms):
-            gen_params = [f"leased={leased_str}", f"category_id={cat_id}"]
-            if search.min_rooms:
-                gen_params.append(f"rooms[]={search.min_rooms}")
-            targets.append(("Bina.az Targeted Multi-Feed", BinaAzScraper(), f"https://bina.az/items?{'&'.join(gen_params)}"))
 
         # 2. Tap.az Keyword Target
         loc_kw = search.district or search.metro_station or ""

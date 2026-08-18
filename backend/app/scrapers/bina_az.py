@@ -14,26 +14,68 @@ from app.core.property_classifier import classify_property_and_offer
 
 logger = logging.getLogger(__name__)
 
+def normalize_bina_url(url: str) -> str:
+    """Converts user-facing slug URLs (e.g. /baki/alqi-satqi/heyet-evleri) to internal items query URLs."""
+    u = url.lower().strip()
+    if "category_id=" in u:
+        return url
+
+    leased = "true" if ("/kiraye" in u or "leased=true" in u) else "false"
+    city = "1" if ("/baki" in u or "city_id=1" in u) else "1"
+
+    if any(k in u for k in ["heyet-evleri", "villa", "bag-evleri", "villalar"]):
+        cat = "5"
+    elif "yeni-tikili" in u:
+        cat = "2"
+    elif "kohne-tikili" in u:
+        cat = "3"
+    elif "ofis" in u:
+        cat = "7"
+    elif "obyekt" in u:
+        cat = "10"
+    elif "torpaq" in u:
+        cat = "9"
+    elif "qarac" in u or "qaraj" in u:
+        cat = "8"
+    else:
+        cat = "1"
+
+    params = [f"city_id={city}", f"category_id={cat}", f"leased={leased}"]
+    if "gunluk" in u or "daily" in u:
+        params.append("leased_type=daily")
+    if "owner_type=owner" in u or "sahibinden" in u:
+        params.append("owner_type=owner")
+
+    return f"https://bina.az/items?{'&'.join(params)}"
+
+
 class BinaAzScraper(BaseScraper):
-    async def scrape_source(self, url_or_handle: str = "https://bina.az/items?leased=false&category_id=1&city_id=1") -> List[RawListingItem]:
+    async def scrape_source(self, url_or_handle: str = "https://bina.az/items?city_id=1&category_id=1&leased=false") -> List[RawListingItem]:
         logger.info(f"[BinaAzScraper] Starting scrape from {url_or_handle}")
         items: List[RawListingItem] = []
         seen = {}
 
+        # Normalize slug URLs to items query URLs
+        normalized_url = normalize_bina_url(url_or_handle)
+
         # Check if this is a targeted criteria query or generic source
-        is_targeted_search = any(k in url_or_handle for k in ['owner_type=', 'rooms[]=', 'price_min=', 'price_max=', 'location_ids[]=', 'q='])
+        is_targeted_search = any(k in normalized_url for k in ['owner_type=', 'rooms[]=', 'price_min=', 'price_max=', 'location_ids[]=', 'q='])
 
         if is_targeted_search:
-            urls_to_fetch = [url_or_handle]
+            urls_to_fetch = [normalized_url]
         else:
-            # Primary comprehensive active feeds for Bina.az (Sales, Owners, Rentals, New/Old bld, Houses)
+            # Primary comprehensive active feeds for Bina.az (Sales, Owners, Rentals, New/Old bld, Houses, Offices, Commercial)
             urls_to_fetch = [
-                "https://bina.az/items?leased=false&owner_type=owner",
-                "https://bina.az/items?leased=false&category_id=1&city_id=1",
-                "https://bina.az/items?leased=false&category_id=2",
-                "https://bina.az/items?leased=true&owner_type=owner",
-                "https://bina.az/items?leased=true&category_id=1&city_id=1",
-                "https://bina.az/items?leased=false&category_id=5"
+                "https://bina.az/items?city_id=1&category_id=1&leased=false&owner_type=owner",
+                "https://bina.az/items?city_id=1&category_id=2&leased=false&owner_type=owner",
+                "https://bina.az/items?city_id=1&category_id=5&leased=false&owner_type=owner",
+                "https://bina.az/items?city_id=1&category_id=1&leased=false",
+                "https://bina.az/items?city_id=1&category_id=2&leased=false",
+                "https://bina.az/items?city_id=1&category_id=5&leased=false",
+                "https://bina.az/items?city_id=1&category_id=1&leased=true&owner_type=owner",
+                "https://bina.az/items?city_id=1&category_id=1&leased=true",
+                "https://bina.az/items?city_id=1&category_id=7&leased=false",
+                "https://bina.az/items?city_id=1&category_id=10&leased=false"
             ]
 
         headers = get_random_headers(referer="https://bina.az/")
@@ -91,9 +133,9 @@ class BinaAzScraper(BaseScraper):
                 currency = "USD"
 
             # 2. Offer Type (Sale, Monthly Rent, Daily Rent)
-            if "gunluk" in target_url or "/ gün" in raw_text or "/gun" in raw_lower or "günlük" in raw_lower:
+            if "gunluk" in target_url or "daily" in target_url or "/ gün" in raw_text or "/gun" in raw_lower or "günlük" in raw_lower:
                 offer_type = "daily_rent"
-            elif "/kiraye" in target_url or "kiraye" in target_url or "/ ay" in raw_text or "aylıq" in raw_lower or "icarə" in raw_lower:
+            elif "/kiraye" in target_url or "leased=true" in target_url or "kiraye" in target_url or "/ ay" in raw_text or "aylıq" in raw_lower or "icarə" in raw_lower:
                 offer_type = "rent"
             else:
                 offer_type = "sale"
@@ -126,20 +168,32 @@ class BinaAzScraper(BaseScraper):
                 elif metro and metro in METRO_TO_DISTRICT:
                     district = METRO_TO_DISTRICT[metro]
 
-            # 5. Property Category Classification
-            detected_offer, detected_prop, detected_seller = classify_property_and_offer(
-                title="",
-                description=raw_text,
-                url=href,
-                raw_text=raw_text
-            )
-            if offer_type == "daily_rent":
-                detected_offer = "daily_rent"
+            # 5. Property Category Classification based on card content & category_id
+            if "sot" in raw_lower and "otaqlı" not in raw_lower and "mərtəbə" not in raw_lower:
+                detected_prop = "land"
+            elif any(k in raw_lower for k in ["həyət evi", "heyet evi", "bağ evi", "bag evi", "villa"]):
+                detected_prop = "house"
+            elif "ofis" in raw_lower:
+                detected_prop = "office"
+            elif "obyekt" in raw_lower:
+                detected_prop = "commercial"
+            elif "category_id=5" in target_url or "heyet-evleri" in target_url or "villa" in target_url:
+                detected_prop = "house"
+            elif "category_id=7" in target_url:
+                detected_prop = "office"
+            elif "category_id=10" in target_url or "obyekt" in target_url:
+                detected_prop = "commercial"
+            elif "category_id=9" in target_url or "torpaq" in target_url:
+                detected_prop = "land"
+            else:
+                detected_prop = "apartment"
+
+            detected_offer = offer_type
 
             # 6. Building Type (Yeni tikili vs Köhnə tikili)
-            if "yeni tikili" in raw_lower or "yeni-tikili" in target_url:
+            if "category_id=2" in target_url or "yeni tikili" in raw_lower or "yeni-tikili" in target_url:
                 bld_type = "new"
-            elif "köhnə tikili" in raw_lower or "kohne tikili" in raw_lower or "kohne-tikili" in target_url:
+            elif "category_id=3" in target_url or "köhnə tikili" in raw_lower or "kohne tikili" in raw_lower or "kohne-tikili" in target_url:
                 bld_type = "old"
             elif detected_prop == "apartment":
                 if total_floors and total_floors >= 10:
@@ -151,7 +205,7 @@ class BinaAzScraper(BaseScraper):
             else:
                 bld_type = None
 
-            # 7. Seller Type (Strict Mülkiyyətçi Verification)
+            # 7. Seller Type (Bina.az Agency Tag Detection)
             has_agency_badge = bool(
                 c and (
                     c.find("a", href=re.compile(r'/agentlikler|/complexes|/companies|/shops')) 
@@ -159,18 +213,12 @@ class BinaAzScraper(BaseScraper):
                     or c.find("img", src=re.compile(r'agency|logo|shop', re.I))
                 )
             )
-            has_owner_badge = bool(
-                "owner_type=owner" in target_url
-                or (c and c.find(class_=re.compile(r'owner|mulkiyyetci|badge-owner', re.I)))
-                or any(kw in raw_lower for kw in ["mülkiyyətçi", "mulkiyyetci", "sahibindən", "sahibinden", "öz evimdir", "oz evimdir", "öz mənzilimdir", "vasitəçisiz", "maklersiz"])
-            )
 
-            if has_agency_badge or any(kw in raw_lower for kw in ["agentlik", "vasitəçi", "makler", "şirkət", "komissiya", "ofis haqqı"]):
+            if has_agency_badge or any(kw in raw_lower for kw in ["agentlik", "kompleks", "vasitəçi", "makler", "şirkət", "komissiya", "ofis haqqı"]):
                 seller_type = "agency"
-            elif has_owner_badge:
-                seller_type = "owner"
             else:
-                seller_type = "agency"
+                # Genuine individual / owner on Bina.az
+                seller_type = "owner"
 
             # 8. Title construction without repeating price
             prop_label_map = {
