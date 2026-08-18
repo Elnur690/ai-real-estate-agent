@@ -659,5 +659,35 @@ def test_strict_match_kupcha_and_mortgage():
     )
     assert IngestionService.is_strict_match(search, with_kupcha) is True
 
+def test_build_targeted_search_urls():
+    search = SavedSearch(
+        tenant_id=1,
+        name="Targeted Search Nizami",
+        raw_criteria_text="Nizami rayonu, 2 otaqlı yeni tikili sahibindən 100-150 min",
+        district="Nizami",
+        building_type="new",
+        seller_type="owner",
+        min_rooms=2,
+        max_rooms=2,
+        min_price=100000,
+        max_price=150000,
+        offer_type="sale",
+        property_type="apartment"
+    )
+
+    targets = IngestionService.build_targeted_search_urls(search)
+    assert len(targets) == 2
+    bina_target = [t for t in targets if "Bina.az" in t[0]][0]
+    tap_target = [t for t in targets if "Tap.az" in t[0]][0]
+
+    assert "leased=false" in bina_target[2]
+    assert "category_id=2" in bina_target[2]
+    assert "owner_type=owner" in bina_target[2]
+    assert "rooms[]=2" in bina_target[2]
+    assert "price_min=100000" in bina_target[2]
+    assert "price_max=150000" in bina_target[2]
+
+    assert "keywords=Nizami" in tap_target[2]
+
 
 

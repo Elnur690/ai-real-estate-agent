@@ -18,10 +18,10 @@ class TapAzScraper(BaseScraper):
         items: List[RawListingItem] = []
         seen = set()
 
-        urls_to_fetch = [
+        urls_to_fetch = [url_or_handle] if ("?" in url_or_handle or not url_or_handle.endswith("tap.az/elanlar/dasinmaz-emlak")) else [
             "https://tap.az/elanlar/dasinmaz-emlak",
             "https://tap.az/elanlar/dasinmaz-emlak/menziller"
-        ] if ("tap.az/elanlar/dasinmaz-emlak" in url_or_handle) else [url_or_handle]
+        ]
 
         headers = get_random_headers(referer="https://tap.az/")
         headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"

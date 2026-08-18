@@ -763,24 +763,19 @@ class BotCommandHandler:
             summary_parts.append(f"Bazarda qalma: Ən azı {min_months} aydan bəri")
         summary_str = " | ".join(summary_parts) if summary_parts else raw_text
 
-        # Evaluate recent / historical listings for instant match delivery
+        # Run instant live targeted portal scrape and historical DB backfill
+        delivered_count = 0
         try:
-            from datetime import datetime, timedelta, timezone
-            from app.models.listing import Listing
             from app.services.ingestion import IngestionService
-            
-            stmt_rec = select(Listing).where(Listing.is_active == True).order_by(Listing.id.desc()).limit(50)
-            res_rec = await db.execute(stmt_rec)
-            recent_listings = res_rec.scalars().all()
-            for l in recent_listings:
-                await IngestionService._evaluate_and_deliver_matches(db, l)
+            delivered_count = await IngestionService.run_targeted_instant_backfill(db, new_search)
         except Exception as e:
-            logger.error(f"[CommandHandler] Error during instant match evaluation: {e}")
+            logger.error(f"[CommandHandler] Error during instant targeted backfill: {e}")
+
+        backfill_note = f"\n\n🎯 *Hazırda bazarda və arxivdə olan {delivered_count} uyğun elan dərhal sizə göndərildi!*" if delivered_count > 0 else "\n\n🎯 *Bazarda və portallarda yeni uyğun elan çıxan kimi dərhal sizə göndəriləcək.*"
 
         return (
             f"✅ *Axtarışınız uğurla təsdiqləndi və yadda saxlanıldı!* (#{new_search.id})\n\n"
-            f"📋 *Parametrlər:* {summary_str}\n\n"
-            f"Bu məkanlara və parametrlərə uyğun yeni elan tapılan kimi dərhal bildiriş göndərəcəyik. 🚀"
+            f"📋 *Parametrlər:* {summary_str}{backfill_note} 🚀"
         )
 
     @staticmethod

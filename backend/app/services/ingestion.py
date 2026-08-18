@@ -1,5 +1,7 @@
 import re
 import logging
+import asyncio
+from typing import List, Tuple, Any, Optional
 from datetime import datetime, timezone
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +28,7 @@ from app.scrapers.binalar_az import BinalarAzScraper
 from app.scrapers.mulk_az import MulkAzScraper
 from app.scrapers.villa_az import VillaAzScraper
 from app.scrapers.telegram_scraper import TelegramChannelScraper
+from app.scrapers.base import BaseScraper, RawListingItem
 from app.scrapers.utils import polite_delay
 
 from app.ai.factory import ProviderFactory
@@ -75,137 +78,268 @@ class IngestionService:
             logger.info("[IngestionService] Seeded 18 comprehensive real estate sources.")
 
     @staticmethod
+    def _get_scraper_for_source(s_type: str, s_url: str, s_name: str):
+        url = s_url.lower()
+        name = s_name.lower()
+        if "bina.az" in url or "bina.az" in name:
+            return BinaAzScraper()
+        elif "tap.az" in url or "tap.az" in name:
+            return TapAzScraper()
+        elif "yeniemlak.az" in url or "yeniemlak.az" in name:
+            return YeniEmlakAzScraper()
+        elif "evonline.az" in url or "evonline.az" in name:
+            return EvOnlineAzScraper()
+        elif "ev10.az" in url or "ev10.az" in name:
+            return Ev10AzScraper()
+        elif "vipemlak.az" in url or "vipemlak.az" in name:
+            return VipEmlakAzScraper()
+        elif "ofis.az" in url or "ofis.az" in name:
+            return OfisAzScraper()
+        elif "kub.az" in url or "kub.az" in name:
+            return KubAzScraper()
+        elif "lalafo.az" in url or "lalafo.az" in name:
+            return LalafoAzScraper()
+        elif "homdom.az" in url or "homdom.az" in name:
+            return HomDomAzScraper()
+        elif "rahatemlak.az" in url or "rahatemlak.az" in name:
+            return RahatEmlakAzScraper()
+        elif "unvan.az" in url or "unvan.az" in name:
+            return UnvanAzScraper()
+        elif "ipoteka.az" in url or "ipoteka.az" in name:
+            return IpotekaAzScraper()
+        elif "binam.az" in url or "binam.az" in name:
+            return BinamAzScraper()
+        elif "binalar.az" in url or "binalar.az" in name:
+            return BinalarAzScraper()
+        elif "mulk.az" in url or "mulk.az" in name:
+            return MulkAzScraper()
+        elif "villa.az" in url or "villa.az" in name:
+            return VillaAzScraper()
+        elif s_type == "telegram_channel":
+            return TelegramChannelScraper()
+        else:
+            return BinaAzScraper()
+
+    @staticmethod
+    def build_targeted_search_urls(search: SavedSearch) -> List[Tuple[str, Any, str]]:
+        """
+        Builds direct targeted query URLs for Bina.az and Tap.az matching the exact SavedSearch criteria.
+        Returns list of (source_name, scraper_instance, target_url).
+        """
+        targets = []
+        offer = (getattr(search, 'offer_type', 'sale') or 'sale').lower()
+        leased_str = "true" if offer in ['rent', 'daily_rent'] else "false"
+        bld = (getattr(search, 'building_type', 'any') or 'any').lower()
+        prop = (getattr(search, 'property_type', 'apartment') or 'apartment').lower()
+        seller = (getattr(search, 'seller_type', 'any') or 'any').lower()
+
+        # 1. Bina.az Category Mapping
+        if prop == "house":
+            cat_id = "5"
+        elif prop == "office":
+            cat_id = "7"
+        elif prop == "commercial":
+            cat_id = "10"
+        elif prop == "land":
+            cat_id = "9"
+        elif bld == "new":
+            cat_id = "2"
+        elif bld == "old":
+            cat_id = "3"
+        else:
+            cat_id = "1"
+
+        bina_params = [f"leased={leased_str}", f"category_id={cat_id}"]
+        if seller in ["owner", "sahibinden", "sahibindən"]:
+            bina_params.append("owner_type=owner")
+        if search.min_rooms:
+            bina_params.append(f"rooms[]={search.min_rooms}")
+        if search.max_rooms and search.max_rooms != search.min_rooms:
+            bina_params.append(f"rooms[]={search.max_rooms}")
+        if search.min_price and search.min_price > 0:
+            bina_params.append(f"price_min={int(search.min_price)}")
+        if search.max_price and search.max_price > 0:
+            bina_params.append(f"price_max={int(search.max_price)}")
+
+        bina_url = f"https://bina.az/items?{'&'.join(bina_params)}"
+        targets.append(("Bina.az Targeted", BinaAzScraper(), bina_url))
+
+        # 2. Tap.az Keyword Target
+        loc_kw = search.district or search.metro_station or ""
+        if loc_kw:
+            import urllib.parse
+            loc_encoded = urllib.parse.quote(loc_kw)
+            tap_cat = "menziller" if prop == "apartment" else ("heyet-evleri-baglar-villalar" if prop == "house" else "ofisler" if prop == "office" else "torpaq" if prop == "land" else "")
+            tap_url = f"https://tap.az/elanlar/dasinmaz-emlak/{tap_cat}?keywords={loc_encoded}" if tap_cat else f"https://tap.az/elanlar/dasinmaz-emlak?keywords={loc_encoded}"
+            targets.append(("Tap.az Targeted", TapAzScraper(), tap_url))
+
+        return targets
+
+    @staticmethod
+    async def _ingest_single_raw_item(db: AsyncSession, item: RawListingItem, source_id: int = 1) -> Optional[Listing]:
+        """Ingests, deduplicates, and runs Makler + AVM analysis on a single scraped RawListingItem."""
+        try:
+            stmt_exist = select(Listing).where(Listing.external_id == item.external_id)
+            res_exist = await db.execute(stmt_exist)
+            existing_listing = res_exist.scalars().first()
+
+            if existing_listing:
+                if item.price < existing_listing.price:
+                    history = existing_listing.price_history or []
+                    history.append({
+                        "old_price": existing_listing.price,
+                        "new_price": item.price,
+                        "date": datetime.now(timezone.utc).isoformat()
+                    })
+                    existing_listing.price_history = history
+                    existing_listing.price = item.price
+                existing_listing.last_seen_at = datetime.now(timezone.utc)
+                await db.commit()
+                return existing_listing
+            else:
+                from app.core.baku_locations import extract_az_phone
+                phone_res = extract_az_phone(item.phone_number or f"{item.title} {item.description or ''} {item.address_raw or ''}")
+                extracted_phone = phone_res[0] if phone_res else None
+
+                db_listing = Listing(
+                    source_id=source_id,
+                    external_id=item.external_id,
+                    title=item.title,
+                    description=item.description,
+                    price=item.price,
+                    currency=item.currency,
+                    district=item.district,
+                    metro_station=item.metro_station,
+                    address_raw=item.address_raw,
+                    phone_number=item.phone_number or extracted_phone,
+                    rooms=item.rooms,
+                    area_sqm=item.area_sqm,
+                    floor=item.floor,
+                    total_floors=item.total_floors,
+                    building_type=item.building_type,
+                    seller_type=item.seller_type,
+                    offer_type=getattr(item, 'offer_type', 'sale') or 'sale',
+                    property_type=getattr(item, 'property_type', 'apartment') or 'apartment',
+                    photos=item.photos,
+                    listing_url=item.listing_url,
+                    is_active=True
+                )
+                db.add(db_listing)
+                await db.commit()
+                await db.refresh(db_listing)
+
+                # Run Makler Detector & AVM valuation
+                from app.services.makler_detector import MaklerDetectorService
+                from app.services.avm_engine import AVMEngineService
+
+                db_listing = await MaklerDetectorService.analyze_listing(db, db_listing)
+                db_listing = await AVMEngineService.evaluate_listing_valuation(db, db_listing)
+                await db.commit()
+                return db_listing
+        except Exception as e:
+            logger.error(f"[IngestionService] Error ingesting item {item.external_id}: {e}")
+            await db.rollback()
+            return None
+
+    @staticmethod
+    async def run_targeted_instant_backfill(db: AsyncSession, search: SavedSearch) -> int:
+        """
+        Runs instant live scrape of targeted portal URLs and evaluates historical DB listings
+        delivering real-time matching listings within seconds of search creation.
+        """
+        logger.info(f"[IngestionService] Running instant targeted backfill for Search #{search.id} ({search.name or search.district})")
+        delivered = 0
+
+        # Step 1: Scan all active listings in DB for this search
+        stmt_active = select(Listing).where(Listing.is_active == True).order_by(Listing.id.desc()).limit(300)
+        res_active = await db.execute(stmt_active)
+        active_listings = res_active.scalars().all()
+
+        for l in active_listings:
+            try:
+                delivered += await IngestionService._evaluate_and_deliver_matches(db, l)
+            except Exception as e:
+                logger.error(f"[IngestionService] Error evaluating listing #{l.id} in backfill: {e}")
+
+        # Step 2: On-demand targeted scrape of Bina.az and Tap.az for this specific criteria
+        targets = IngestionService.build_targeted_search_urls(search)
+        for s_name, scraper, target_url in targets:
+            try:
+                items = await scraper.scrape_source(target_url)
+                logger.info(f"[IngestionService] Targeted scrape {s_name} ({target_url}) found {len(items)} items")
+                for item in items:
+                    db_listing = await IngestionService._ingest_single_raw_item(db, item, source_id=1)
+                    if db_listing:
+                        delivered += await IngestionService._evaluate_and_deliver_matches(db, db_listing)
+            except Exception as e:
+                logger.error(f"[IngestionService] Error scraping targeted URL {target_url}: {e}")
+
+        return delivered
+
+    @staticmethod
     async def run_ingestion_cycle(db: AsyncSession) -> dict:
         await IngestionService.seed_default_sources(db)
         
-        # Select all active sources (and auto-retry any transient errors, excluding only explicitly paused sources)
+        # 1. Select all active default sources
         stmt = select(ListingSource.id, ListingSource.name, ListingSource.type, ListingSource.url_or_handle).where(ListingSource.status != "paused")
         res = await db.execute(stmt)
         source_rows = res.all()
 
+        # 2. Select active SavedSearch criteria for dynamic targeted scraping
+        stmt_s = select(SavedSearch).where(SavedSearch.is_active == True)
+        res_s = await db.execute(stmt_s)
+        active_searches = res_s.scalars().all()
+
+        targeted_tasks = []
+        for s in active_searches:
+            for s_name, scraper_inst, t_url in IngestionService.build_targeted_search_urls(s):
+                targeted_tasks.append((s_name, scraper_inst, t_url, 1))
+
         total_scraped = 0
         total_matched = 0
 
-        for s_id, s_name, s_type, s_url in source_rows:
-            logger.info(f"[IngestionService] Scraping source: {s_name} ({s_type})")
-            url = s_url.lower()
-            name = s_name.lower()
-            scraper = None
+        # 3. High-Speed Concurrent Scrape with Bounded Concurrency Pool
+        sem = asyncio.Semaphore(6)
 
-            if "bina.az" in url or "bina.az" in name:
-                scraper = BinaAzScraper()
-            elif "tap.az" in url or "tap.az" in name:
-                scraper = TapAzScraper()
-            elif "yeniemlak.az" in url or "yeniemlak.az" in name:
-                scraper = YeniEmlakAzScraper()
-            elif "evonline.az" in url or "evonline.az" in name:
-                scraper = EvOnlineAzScraper()
-            elif "ev10.az" in url or "ev10.az" in name:
-                scraper = Ev10AzScraper()
-            elif "vipemlak.az" in url or "vipemlak.az" in name:
-                scraper = VipEmlakAzScraper()
-            elif "ofis.az" in url or "ofis.az" in name:
-                scraper = OfisAzScraper()
-            elif "kub.az" in url or "kub.az" in name:
-                scraper = KubAzScraper()
-            elif "lalafo.az" in url or "lalafo.az" in name:
-                scraper = LalafoAzScraper()
-            elif "homdom.az" in url or "homdom.az" in name:
-                scraper = HomDomAzScraper()
-            elif "rahatemlak.az" in url or "rahatemlak.az" in name:
-                scraper = RahatEmlakAzScraper()
-            elif "unvan.az" in url or "unvan.az" in name:
-                scraper = UnvanAzScraper()
-            elif "ipoteka.az" in url or "ipoteka.az" in name:
-                scraper = IpotekaAzScraper()
-            elif "binam.az" in url or "binam.az" in name:
-                scraper = BinamAzScraper()
-            elif "binalar.az" in url or "binalar.az" in name:
-                scraper = BinalarAzScraper()
-            elif "mulk.az" in url or "mulk.az" in name:
-                scraper = MulkAzScraper()
-            elif "villa.az" in url or "villa.az" in name:
-                scraper = VillaAzScraper()
-            elif s_type == "telegram_channel":
-                scraper = TelegramChannelScraper()
-            else:
-                scraper = BinaAzScraper()
+        async def fetch_source(s_id, s_name, scraper, url):
+            async with sem:
+                try:
+                    await polite_delay(0.1, 0.4)
+                    items = await scraper.scrape_source(url)
+                    return (s_id, s_name, items)
+                except Exception as e:
+                    logger.error(f"[IngestionService] Error scraping {s_name} ({url}): {e}")
+                    return (s_id, s_name, [])
 
-            try:
-                await polite_delay(1.0, 2.5)
-                items = await scraper.scrape_source(s_url)
-                await db.execute(
-                    update(ListingSource).where(ListingSource.id == s_id).values(last_scraped_at=datetime.now(timezone.utc))
-                )
-                await db.commit()
+        scrape_jobs = [
+            fetch_source(s_id, s_name, IngestionService._get_scraper_for_source(s_type, s_url, s_name), s_url)
+            for s_id, s_name, s_type, s_url in source_rows
+        ] + [
+            fetch_source(s_id, s_name, scraper_inst, t_url)
+            for s_name, scraper_inst, t_url, s_id in targeted_tasks
+        ]
 
-                for item in items:
-                    stmt_exist = select(Listing).where(Listing.external_id == item.external_id)
-                    res_exist = await db.execute(stmt_exist)
-                    existing_listing = res_exist.scalars().first()
+        scrape_results = await asyncio.gather(*scrape_jobs, return_exceptions=True)
 
-                    if existing_listing:
-                        if item.price < existing_listing.price:
-                            history = existing_listing.price_history or []
-                            history.append({
-                                "old_price": existing_listing.price,
-                                "new_price": item.price,
-                                "date": datetime.now(timezone.utc).isoformat()
-                            })
-                            existing_listing.price_history = history
-                            existing_listing.price = item.price
-                        existing_listing.last_seen_at = datetime.now(timezone.utc)
-                        await db.commit()
-                        db_listing = existing_listing
-                    else:
-                        from app.core.baku_locations import extract_az_phone
-                        phone_res = extract_az_phone(item.phone_number or f"{item.title} {item.description or ''} {item.address_raw or ''}")
-                        extracted_phone = phone_res[0] if phone_res else None
+        # 4. Ingest and Match all scraped items
+        for res_entry in scrape_results:
+            if isinstance(res_entry, Exception) or not res_entry:
+                continue
+            s_id, s_name, items = res_entry
+            if not items:
+                continue
 
-                        db_listing = Listing(
-                            source_id=s_id,
-                            external_id=item.external_id,
-                            title=item.title,
-                            description=item.description,
-                            price=item.price,
-                            currency=item.currency,
-                            district=item.district,
-                            metro_station=item.metro_station,
-                            address_raw=item.address_raw,
-                            phone_number=item.phone_number or extracted_phone,
-                            rooms=item.rooms,
-                            area_sqm=item.area_sqm,
-                            floor=item.floor,
-                            total_floors=item.total_floors,
-                            building_type=item.building_type,
-                            seller_type=item.seller_type,
-                            offer_type=getattr(item, 'offer_type', 'sale') or 'sale',
-                            property_type=getattr(item, 'property_type', 'apartment') or 'apartment',
-                            photos=item.photos,
-                            listing_url=item.listing_url,
-                            is_active=True
-                        )
-                        db.add(db_listing)
-                        await db.commit()
-                        await db.refresh(db_listing)
-
-                        # Run Makler Detector (First-posting & makler scoring & classifier)
-                        from app.services.makler_detector import MaklerDetectorService
-                        from app.services.avm_engine import AVMEngineService
-
-                        db_listing = await MaklerDetectorService.analyze_listing(db, db_listing)
-                        db_listing = await AVMEngineService.evaluate_listing_valuation(db, db_listing)
-                        await db.commit()
-
+            for item in items:
+                try:
+                    db_listing = await IngestionService._ingest_single_raw_item(db, item, source_id=s_id)
+                    if db_listing:
                         total_scraped += 1
+                        matches_created = await IngestionService._evaluate_and_deliver_matches(db, db_listing)
+                        total_matched += matches_created
+                except Exception as e:
+                    logger.error(f"[IngestionService] Error processing item in {s_name}: {e}")
 
-                    matches_created = await IngestionService._evaluate_and_deliver_matches(db, db_listing)
-                    total_matched += matches_created
-
-            except Exception as e:
-                logger.error(f"[IngestionService] Error processing source {s_name}: {e}")
-                await db.rollback()
-
+        logger.info(f"[IngestionService] Parallel cycle completed: {total_scraped} scraped, {total_matched} matches delivered.")
         return {"scraped_count": total_scraped, "matched_count": total_matched}
 
     @staticmethod

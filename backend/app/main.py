@@ -166,7 +166,7 @@ async def lifespan(app: FastAPI):
                     logger.info(f"[BackgroundIngestion] Scraping & matching cycle completed: {res}")
             except Exception as e:
                 logger.error(f"[BackgroundIngestion] Error during ingestion cycle: {e}")
-            await asyncio.sleep(90) # Real-time: Every 90 seconds
+            await asyncio.sleep(25) # Real-time: Fast 25s parallel cycle
 
     asyncio.create_task(_background_ingestion_loop())
 
