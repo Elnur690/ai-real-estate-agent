@@ -123,9 +123,10 @@ def classify_property_and_offer(
         seller_type = "agency"
     elif has_owner_kw:
         seller_type = "owner"
-    elif existing_seller_type:
-        seller_type = existing_seller_type
-    else:
+    elif existing_seller_type == "owner":
         seller_type = "owner"
+    else:
+        # In Azerbaijani real estate portals, unmarked listings without verified owner claims are agencies
+        seller_type = "agency"
 
     return offer_type, property_type, seller_type

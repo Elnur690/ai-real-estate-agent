@@ -483,10 +483,18 @@ class IngestionService:
         all_target_locations = list(dict.fromkeys(target_districts + target_metros))
 
         if all_target_locations:
-            list_text_loc = f"{listing.district or ''} {listing.metro_station or ''} {listing.address_raw or ''} {listing.title or ''} {listing.description or ''}".lower()
+            # Determine effective district of the listing
+            effective_listing_dist = (listing.district or '').strip().lower()
+            list_settl = extract_baku_settlement(f"{listing.title or ''} {listing.description or ''} {listing.address_raw or ''}")
+            list_metro = listing.metro_station or extract_metro_station(f"{listing.title or ''} {listing.description or ''} {listing.address_raw or ''}")
             
-            # 6.1 Explicit District Protection: If user searched specific district(s), and listing has a known district in a completely different area
-            if target_districts and not target_metros:
+            if not effective_listing_dist and list_settl and list_settl in SETTLEMENT_TO_DISTRICT:
+                effective_listing_dist = SETTLEMENT_TO_DISTRICT[list_settl].lower()
+            if not effective_listing_dist and list_metro and list_metro in METRO_TO_DISTRICT:
+                effective_listing_dist = METRO_TO_DISTRICT[list_metro].lower()
+
+            # 6.1 Strict District Enforcement: If user searched specific district(s)
+            if target_districts:
                 valid_districts = set()
                 for td in target_districts:
                     td_clean = td.strip().lower()
@@ -498,30 +506,25 @@ class IngestionService:
                         if m_name.lower() == td_clean:
                             valid_districts.add(parent.lower())
 
-                effective_listing_dist = (listing.district or '').strip().lower()
-                list_settl = extract_baku_settlement(f"{listing.title or ''} {listing.description or ''} {listing.address_raw or ''}")
-                list_metro = listing.metro_station or extract_metro_station(f"{listing.title or ''} {listing.description or ''} {listing.address_raw or ''}")
-                
-                if not effective_listing_dist and list_settl and list_settl in SETTLEMENT_TO_DISTRICT:
-                    effective_listing_dist = SETTLEMENT_TO_DISTRICT[list_settl].lower()
-                
-                # If listing district is known and does NOT match any target district or settlement parent
+                # If the listing's district is known and does NOT match target districts, strictly reject
                 if effective_listing_dist and not any(vd == effective_listing_dist or vd in effective_listing_dist or effective_listing_dist in vd for vd in valid_districts):
                     settl_parent = SETTLEMENT_TO_DISTRICT.get(list_settl, '').lower() if list_settl else ''
                     metro_parent = METRO_TO_DISTRICT.get(list_metro, '').lower() if list_metro else ''
                     if not any(vd == settl_parent or vd == metro_parent for vd in valid_districts):
                         return False # Strict District Mismatch Rejection
 
+            # 6.2 Location Verification against verified fields & known aliases
             matched_loc = False
+            list_loc_text = f"{listing.district or ''} {listing.metro_station or ''} {list_settl or ''} {list_metro or ''} {listing.address_raw or ''}".lower()
             for loc in all_target_locations:
                 loc_lower = loc.lower().strip()
-                # Direct string match
-                if loc_lower in list_text_loc:
+                # Direct match on location fields
+                if loc_lower in list_loc_text:
                     matched_loc = True
                     break
-                # Comprehensive Station, Settlement and District alias & sub-location matches
+                # Station, Settlement and District alias matches
                 aliases = get_all_aliases_for_location(loc)
-                if any(alias in list_text_loc for alias in aliases):
+                if any(alias in list_loc_text for alias in aliases):
                     matched_loc = True
                     break
 

@@ -690,4 +690,54 @@ def test_build_targeted_search_urls():
     assert "keywords=Nizami" in tap_target[2]
 
 
+def test_strict_match_nizami_district_does_not_match_sabuncu_ramana():
+    search = SavedSearch(
+        tenant_id=1,
+        name="Axtarış: Nizami",
+        raw_criteria_text="Axtarış: Nizami",
+        district="Nizami",
+        seller_type="owner",
+        offer_type="sale",
+        property_type="apartment"
+    )
+
+    # Property in Sabunçu (Ramana) with description mentioning a school named Nizami
+    sabuncu_listing = Listing(
+        source_id=1,
+        external_id="yeniemlak_172874",
+        title="4 otaqlı Mənzil (Ramana)",
+        description="Sabunçu rayonu, Yeni Ramana, 90 saylı Nizami Gəncəvi məktəbin yanı",
+        listing_url="https://yeniemlak.az/elan/172874",
+        district="Sabunçu",
+        rooms=4,
+        price=190000.0,
+        seller_type="owner",
+        makler_score=0.0,
+        building_type="new",
+        property_type="apartment"
+    )
+
+    # Must be strictly REJECTED because Sabunçu is not Nizami district
+    assert IngestionService.is_strict_match(search, sabuncu_listing) is False
+
+    # Genuine Nizami listing (e.g. Neftçilər, Qara Qarayev) -> MATCH
+    nizami_listing = Listing(
+        source_id=1,
+        external_id="101",
+        title="3 otaqlı Mənzil (Neftçilər)",
+        description="Nizami rayonu, Neftçilər metrosu yaxınlığı",
+        listing_url="https://bina.az/items/101",
+        district="Nizami",
+        metro_station="Neftçilər",
+        rooms=3,
+        price=150000.0,
+        seller_type="owner",
+        makler_score=0.0,
+        building_type="new",
+        property_type="apartment"
+    )
+    assert IngestionService.is_strict_match(search, nizami_listing) is True
+
+
+
 
