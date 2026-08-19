@@ -29,3 +29,41 @@ async def whatsapp_webhook(request: Request):
 
     response_text = await WhatsAppAdapter.process_webhook_payload(payload)
     return {"status": "ok", "response_sent": response_text is not None}
+
+
+@router.post("/facebook")
+async def facebook_webhook(request: Request):
+    """
+    Real-time webhook ingestion for Facebook Groups & Pages.
+    Receives incoming Facebook real estate post payloads and immediately evaluates criteria & dispatches alerts.
+    """
+    from app.db.session import AsyncSessionLocal
+    from app.scrapers.facebook_scraper import FacebookScraper
+    from app.services.ingestion import IngestionService
+
+    payload: Dict[str, Any] = await request.json()
+
+    text = payload.get("text") or payload.get("message") or payload.get("content") or ""
+    post_url = payload.get("post_url") or payload.get("url") or payload.get("permalink_url") or "https://facebook.com"
+    post_id = str(payload.get("post_id") or payload.get("id") or hash(text[:100]))
+    group_name = payload.get("group_name") or payload.get("page_name") or "Facebook"
+    photos = payload.get("photos") or payload.get("images") or []
+
+    parsed_item = FacebookScraper.parse_facebook_post_text(
+        text=text,
+        post_url=post_url,
+        post_id=f"fb_{post_id}",
+        source_name=f"Facebook ({group_name})",
+        photos=photos if isinstance(photos, list) else []
+    )
+
+    if not parsed_item:
+        return {"status": "ignored", "reason": "Text too short or not real estate content"}
+
+    async with AsyncSessionLocal() as db:
+        db_listing = await IngestionService._ingest_single_raw_item(db, parsed_item, source_id=1)
+        if db_listing:
+            delivered_count = await IngestionService._evaluate_and_deliver_matches(db, db_listing)
+            return {"status": "success", "listing_id": db_listing.id, "matches_delivered": delivered_count}
+
+    return {"status": "success", "matches_delivered": 0}

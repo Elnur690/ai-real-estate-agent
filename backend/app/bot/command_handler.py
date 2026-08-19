@@ -1,8 +1,11 @@
 import re
 import json
+import logging
 from typing import Optional, Dict, Any, Tuple
 from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from app.models.tenant import Tenant
 from app.models.saved_search import SavedSearch

@@ -1,3 +1,4 @@
+import re
 from typing import Optional, List, Dict
 
 BAKU_METRO_STATIONS: Dict[str, List[str]] = {
@@ -204,6 +205,101 @@ METRO_TO_DISTRICT: Dict[str, str] = {
     "Azadlıq prospekti": "Binəqədi", "Dərnəgül": "Binəqədi", "Avtovağzal": "Binəqədi", "Xocəsən": "Binəqədi",
     "Ulduz": "Nərimanov", "Koroğlu": "Nizami", "Nizami": "Yasamal"
 }
+
+# Mapping of Baku Locations to Official Bina.az URL Slugs for Targeted Ingestion
+BINA_DISTRICT_SLUGS: Dict[str, str] = {
+    "Nizami": "nizami-r",
+    "Yasamal": "yasamal-r",
+    "Nəsimi": "nasimi-r",
+    "Nərimanov": "narimanov-r",
+    "Xətai": "khatai-r",
+    "Binəqədi": "binaqadi-r",
+    "Sabunçu": "sabunchu-r",
+    "Səbail": "sabayil-r",
+    "Suraxanı": "surakhani-r",
+    "Xəzər": "khazar-r",
+    "Qaradağ": "qaradaq-r",
+    "Abşeron": "absheron-r",
+    "Sumqayıt": "sumqayit"
+}
+
+BINA_METRO_SLUGS: Dict[str, str] = {
+    "28 May": "28-may-m",
+    "Gənclik": "ganjlik-m",
+    "Nəriman Nərimanov": "nariman-narimanov-m",
+    "Elmlər Akademiyası": "elmlar-akademiyasi-m",
+    "İnşaatçılar": "inshaatchilar-m",
+    "20 Yanvar": "20-yanvar-m",
+    "Memar Əcəmi": "memar-ajami-m",
+    "Nəsimi": "nasimi-m",
+    "Azadlıq prospekti": "azadliq-prospekti-m",
+    "Dərnəgül": "dernegul-m",
+    "İçərişəhər": "icherisheher-m",
+    "Sahil": "sahil-m",
+    "Nizami": "nizami-m",
+    "Xətai": "khatai-m",
+    "Qara Qarayev": "qara-qarayev-m",
+    "Neftçilər": "neftchilar-m",
+    "Xalqlar Dostluğu": "xalqlar-dostluqu-m",
+    "Əhmədli": "ahmadli-m",
+    "Həzi Aslanov": "hazi-aslanov-m",
+    "Avtovağzal": "avtovagzal-m",
+    "8 Noyabr": "8-noyabr-m",
+    "Koroğlu": "koroglu-m",
+    "Ulduz": "ulduz-m"
+}
+
+BINA_SETTLEMENT_SLUGS: Dict[str, str] = {
+    "Xırdalan": "khirdalan",
+    "Masazır": "masazir-q",
+    "Badamdar": "badamdar-q",
+    "Yeni Günəşli": "yeni-gunashli-q",
+    "Bakıxanov": "bakikhanov-q",
+    "Biləcəri": "bilajari-q",
+    "Mərdəkan": "mardakan-q",
+    "Şüvəlan": "shuvelan-q",
+    "Buzovna": "buzovna-q",
+    "Binə": "bina-q",
+    "Qaraçuxur": "qarachukhur-q",
+    "Hövsan": "hovsan-q",
+    "Ağ Şəhər": "ag-sheher-q",
+    "Montin": "montin-q",
+    "8-ci mikrorayon": "8-ci-mikrorayon-q",
+    "7-ci mikrorayon": "7-ci-mikrorayon-q",
+    "9-cu mikrorayon": "9-cu-mikrorayon-q",
+    "6-cı mikrorayon": "6-ci-mikrorayon-q",
+    "5-ci mikrorayon": "5-ci-mikrorayon-q",
+    "4-cü mikrorayon": "4-cu-mikrorayon-q",
+    "3-cü mikrorayon": "3-cu-mikrorayon-q",
+    "2-ci mikrorayon": "2-ci-mikrorayon-q",
+    "1-ci mikrorayon": "1-ci-mikrorayon-q",
+    "Yeni Yasamal": "yeni-yasamal-q",
+    "Bayıl": "bayil-q"
+}
+
+def get_bina_location_slug(district: Optional[str] = None, metro: Optional[str] = None) -> List[str]:
+    """Resolves specific Bina.az URL location slugs according to district, metro, and settlement criteria."""
+    slugs = []
+    if district:
+        for p in re.split(r'[,;/|\+]', district):
+            clean_p = p.strip().lower()
+            if not clean_p:
+                continue
+            for d_name, slug in BINA_DISTRICT_SLUGS.items():
+                if clean_p == d_name.lower() or clean_p in d_name.lower():
+                    slugs.append(slug)
+            for s_name, slug in BINA_SETTLEMENT_SLUGS.items():
+                if clean_p == s_name.lower() or clean_p in s_name.lower():
+                    slugs.append(slug)
+    if metro:
+        for p in re.split(r'[,;/|\+]', metro):
+            clean_p = p.strip().lower()
+            if not clean_p:
+                continue
+            for m_name, slug in BINA_METRO_SLUGS.items():
+                if clean_p == m_name.lower() or clean_p in m_name.lower():
+                    slugs.append(slug)
+    return list(dict.fromkeys(slugs))
 
 def get_all_aliases_for_location(loc_name: str) -> List[str]:
     """

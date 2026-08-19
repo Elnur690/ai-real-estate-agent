@@ -141,4 +141,37 @@ async def test_commercial_classification_and_owner_landline():
     assert seller3 == "agency"
 
 
+@pytest.mark.asyncio
+async def test_facebook_scraper_post_parsing():
+    from app.scrapers.facebook_scraper import FacebookScraper
+
+    sample_post = (
+        "Nizami rayonu, Neftçilər metrosu yaxınlığında 3 otaqlı yeni tikili mənzil satılır! "
+        "Sahəsi 110 m², 12/16 mərtəbə, super təmirli, kupçalı. "
+        "Qiymət: 175 000 AZN. Əlaqə: +994 50 765 43 21. Öz evimdir, sahibindən."
+    )
+
+    item = FacebookScraper.parse_facebook_post_text(
+        text=sample_post,
+        post_url="https://facebook.com/groups/baki.emlak/posts/123456789",
+        post_id="fb_baki.emlak_123456789",
+        source_name="Facebook (Baki Emlak)"
+    )
+
+    assert item is not None
+    assert item.district == "Nizami"
+    assert item.metro_station == "Neftçilər"
+    assert item.rooms == 3
+    assert item.area_sqm == 110.0
+    assert item.floor == 12
+    assert item.total_floors == 16
+    assert item.price == 175000.0
+    assert item.currency == "AZN"
+    assert item.phone_number == "+994 50 765 43 21"
+    assert item.seller_type == "owner"
+    assert item.property_type == "apartment"
+    assert item.offer_type == "sale"
+
+
+
 

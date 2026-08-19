@@ -14,9 +14,9 @@ celery_app.conf.update(
     timezone="Asia/Baku",
     enable_utc=True,
     beat_schedule={
-        "scrape-and-match-every-15-min": {
+        "scrape-and-match-continuous-30s": {
             "task": "app.tasks.jobs.run_scheduled_ingestion",
-            "schedule": 900.0,  # 15 minutes
+            "schedule": 30.0,  # Real-time: 30 seconds
         },
         "check-plan-expirations-daily": {
             "task": "app.tasks.jobs.check_plan_expirations",

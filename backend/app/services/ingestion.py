@@ -28,6 +28,7 @@ from app.scrapers.binalar_az import BinalarAzScraper
 from app.scrapers.mulk_az import MulkAzScraper
 from app.scrapers.villa_az import VillaAzScraper
 from app.scrapers.telegram_scraper import TelegramChannelScraper
+from app.scrapers.facebook_scraper import FacebookScraper
 from app.scrapers.base import BaseScraper, RawListingItem
 from app.scrapers.utils import polite_delay
 
@@ -40,6 +41,7 @@ from app.core.property_classifier import (
     normalize_az_text, AGENCY_KEYWORDS, OWNER_KEYWORDS, COMMISSION_REGEX,
     RENTAL_KEYWORDS, SALE_KEYWORDS
 )
+from app.core.baku_locations import get_bina_location_slug
 from app.core.cache import CacheManager
 
 logger = logging.getLogger(__name__)
@@ -50,7 +52,7 @@ class IngestionService:
         stmt = select(ListingSource)
         res = await db.execute(stmt)
         sources = res.scalars().all()
-        if not sources or len(sources) < 17:
+        if not sources or len(sources) < 19:
             existing_handles = {s.url_or_handle for s in sources}
             default_sources = [
                 ListingSource(type="website", name="Bina.az", url_or_handle="https://bina.az/items?leased=false&category_id=1&city_id=1", status="active"),
@@ -70,13 +72,14 @@ class IngestionService:
                 ListingSource(type="website", name="Binalar.az", url_or_handle="https://binalar.az/", status="active"),
                 ListingSource(type="website", name="Mulk.az", url_or_handle="https://mulk.az/", status="active"),
                 ListingSource(type="telegram_channel", name="Bakı Əmlak Elanları", url_or_handle="@baki_emlak_elanlari", status="active"),
-                ListingSource(type="telegram_channel", name="Emlak Tap Telegram", url_or_handle="@emlaktap", status="active")
+                ListingSource(type="telegram_channel", name="Emlak Tap Telegram", url_or_handle="@emlaktap", status="active"),
+                ListingSource(type="facebook_group", name="Bakı Daşınmaz Əmlak FB", url_or_handle="https://facebook.com/groups/baki.dasinmaz.emlak", status="active")
             ]
             for s in default_sources:
                 if s.url_or_handle not in existing_handles:
                     db.add(s)
             await db.commit()
-            logger.info("[IngestionService] Seeded 18 comprehensive real estate sources.")
+            logger.info("[IngestionService] Seeded 19 comprehensive real estate sources.")
 
     @staticmethod
     def _get_scraper_for_source(s_type: str, s_url: str, s_name: str):
@@ -116,6 +119,8 @@ class IngestionService:
             return MulkAzScraper()
         elif "villa.az" in url or "villa.az" in name:
             return VillaAzScraper()
+        elif "facebook" in url or s_type in ["facebook_group", "facebook_page"]:
+            return FacebookScraper()
         elif s_type == "telegram_channel":
             return TelegramChannelScraper()
         else:
@@ -124,12 +129,14 @@ class IngestionService:
     @staticmethod
     def build_targeted_search_urls(search: SavedSearch) -> List[Tuple[str, Any, str]]:
         """
-        Builds direct targeted query URLs for Bina.az (primary) and Tap.az matching exact criteria.
+        Builds direct targeted query URLs for Bina.az (primary location slugs) and Tap.az matching exact criteria.
         Returns list of (source_name, scraper_instance, target_url).
         """
+        import urllib.parse
         targets = []
         offer = (getattr(search, 'offer_type', 'sale') or 'sale').lower()
         leased_str = "true" if offer in ['rent', 'daily_rent'] else "false"
+        deal_slug = "kiraye" if offer in ['rent', 'daily_rent'] else "alqi-satqi"
         bld = (getattr(search, 'building_type', 'any') or 'any').lower()
         prop = (getattr(search, 'property_type', 'apartment') or 'apartment').lower()
         seller = (getattr(search, 'seller_type', 'any') or 'any').lower()
@@ -137,20 +144,26 @@ class IngestionService:
 
         # 1. Bina.az Category Mapping
         categories_to_query = []
+        prop_slug = "menziller"
         if prop == "house":
             categories_to_query.append("5")
+            prop_slug = "heyet-evleri"
         elif prop == "office":
             categories_to_query.append("7")
+            prop_slug = "ofisler"
         elif prop == "commercial":
             categories_to_query.append("10")
+            prop_slug = "obyektler"
         elif prop == "land":
             categories_to_query.append("9")
+            prop_slug = "torpaq"
         elif bld == "new":
             categories_to_query.append("2")
+            prop_slug = "yeni-tikililer"
         elif bld == "old":
             categories_to_query.append("3")
+            prop_slug = "kohne-tikililer"
         else:
-            # All relevant apartment categories (All, New build, Old build)
             categories_to_query.extend(["1", "2", "3"])
 
         # Construct full rooms sequence (e.g. min 2, max 4 -> rooms[]=2, rooms[]=3, rooms[]=4)
@@ -169,10 +182,27 @@ class IngestionService:
         if search.max_price and search.max_price > 0:
             price_params.append(f"price_max={int(search.max_price)}")
 
+        # Location extraction & slug lookup for instantaneous location-specific Bina.az feed
+        found_slugs = get_bina_location_slug(district=search.district, metro=search.metro_station)
+        loc_names = []
+        if search.district:
+            loc_names.extend([p.strip() for p in re.split(r'[,;/|\+]', search.district) if p.strip()])
+        if search.metro_station:
+            loc_names.extend([p.strip() for p in re.split(r'[,;/|\+]', search.metro_station) if p.strip()])
+
+        # A. Location Slug Targeted Bina.az Feeds (Fastest real-time arrival)
+        for slug in found_slugs:
+            owner_query = "?owner_type=owner" if is_owner else ""
+            bina_slug_url = f"https://bina.az/baki/{deal_slug}/{prop_slug}/{slug}{owner_query}"
+            targets.append((f"Bina.az Slug ({slug})", BinaAzScraper(), bina_slug_url))
+
+        # B. Parameterized Query Feeds on Bina.az
         for cat_id in categories_to_query:
             bina_params = [f"city_id=1", f"leased={leased_str}", f"category_id={cat_id}"]
             if is_owner:
                 bina_params.append("owner_type=owner")
+            if loc_names:
+                bina_params.append(f"q={urllib.parse.quote(loc_names[0])}")
             bina_params.extend(rooms_params)
             bina_params.extend(price_params)
 
@@ -182,7 +212,6 @@ class IngestionService:
         # 2. Tap.az Keyword Target
         loc_kw = search.district or search.metro_station or ""
         if loc_kw:
-            import urllib.parse
             loc_encoded = urllib.parse.quote(loc_kw)
             tap_cat = "menziller" if prop == "apartment" else ("heyet-evleri-baglar-villalar" if prop == "house" else "ofisler" if prop == "office" else "torpaq" if prop == "land" else "")
             tap_url = f"https://tap.az/elanlar/dasinmaz-emlak/{tap_cat}?keywords={loc_encoded}" if tap_cat else f"https://tap.az/elanlar/dasinmaz-emlak?keywords={loc_encoded}"

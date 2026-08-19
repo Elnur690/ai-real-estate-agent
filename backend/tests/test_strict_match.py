@@ -676,8 +676,9 @@ def test_build_targeted_search_urls():
     )
 
     targets = IngestionService.build_targeted_search_urls(search)
-    assert len(targets) >= 2
+    assert len(targets) >= 3
     bina_target = [t for t in targets if "Bina.az Targeted" == t[0]][0]
+    slug_target = [t for t in targets if "Bina.az Slug" in t[0]][0]
     tap_target = [t for t in targets if "Tap.az" in t[0]][0]
 
     assert "city_id=1" in bina_target[2]
@@ -686,6 +687,11 @@ def test_build_targeted_search_urls():
     assert "rooms[]=2" in bina_target[2]
     assert "price_min=100000" in bina_target[2]
     assert "price_max=150000" in bina_target[2]
+    assert "q=Nizami" in bina_target[2]
+
+    assert "nizami-r" in slug_target[2]
+    assert "yeni-tikililer" in slug_target[2]
+    assert "owner_type=owner" in slug_target[2]
 
     assert "keywords=Nizami" in tap_target[2]
 
