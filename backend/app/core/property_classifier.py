@@ -116,14 +116,10 @@ def classify_property_and_offer(
     # Mask genuine owner negations (e.g. 'vasitəçisiz', 'maklersiz') to prevent substring matches on 'vasitəçi'/'makler'
     text_for_agency_check = re.sub(r'\b(?:vasitəçisiz|vasitecisiz|maklersiz|vasitəçi yoxdur|makler deyiləm)\b', ' [GENUINE_OWNER_FLAG] ', full_text)
     has_agency_kw = any(kw in text_for_agency_check for kw in AGENCY_KEYWORDS) or bool(COMMISSION_REGEX.search(text_for_agency_check))
-    
-    # Check for corporate landline (012 prefix - always an agency/company office desk)
-    has_landline = bool(re.search(r'(?:\+?994|0)?\s*12\s*\d{3}\s*\d{2}\s*\d{2}', full_text) or re.search(r'99412\d{7}', full_text))
-    
     has_owner_kw = any(kw in full_text for kw in OWNER_KEYWORDS) or "owner_type=owner" in url_lower or "sahibinden" in url_lower
 
-    # Agency keywords or corporate landline strictly override owner claims
-    if has_agency_kw or has_landline:
+    # Agency keywords strictly override owner claims
+    if has_agency_kw:
         seller_type = "agency"
     elif has_owner_kw:
         seller_type = "owner"

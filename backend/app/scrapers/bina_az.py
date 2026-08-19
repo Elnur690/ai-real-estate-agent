@@ -122,14 +122,14 @@ class BinaAzScraper(BaseScraper):
                     soup.find(class_=re.compile(r'agency|shop|company|author-agency', re.I))
                 )
                 
-                is_landline = bool(phone and re.search(r'(?:994|0)?12\d{7}', re.sub(r'\D', '', phone)))
                 has_commission = any(k in page_text_lower for k in ["ofis haqqı", "ofis haqqi", "xidmət haqqı", "xidmet haqqi", "komissiya", "vasitəçi (agent)", "vasiteci (agent)", "rieltor"])
+                has_owner_claim = any(k in page_text_lower for k in ["mülkiyyətçi (ev sahibi)", "öz evimdir", "sahibindən", "vasitəçisiz"])
 
-                if has_agency_link or is_landline or has_commission:
+                if has_agency_link or has_commission:
                     seller_type = "agency"
                     is_makler = True
                     makler_score = 1.0
-                elif any(k in page_text_lower for k in ["mülkiyyətçi (ev sahibi)", "öz evimdir", "sahibindən", "vasitəçisiz"]) and not is_landline:
+                elif has_owner_claim:
                     seller_type = "owner"
                     is_makler = False
                     makler_score = 0.0
