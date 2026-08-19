@@ -25,17 +25,18 @@ class MaklerDetectorService:
             title=listing.title or "",
             description=listing.description or "",
             url=listing.listing_url or "",
-            raw_text=text_lower
+            raw_text=text_lower,
+            existing_seller_type=listing.seller_type
         )
 
         listing.offer_type = detected_offer
         listing.property_type = detected_prop
 
         has_agency_kw = any(kw in text_lower for kw in AGENCY_KEYWORDS) or bool(COMMISSION_REGEX.search(text_lower))
-        has_owner_kw = any(kw in text_lower for kw in OWNER_KEYWORDS)
+        has_owner_kw = any(kw in text_lower for kw in OWNER_KEYWORDS) or "owner_type=owner" in (listing.listing_url or "").lower() or (listing.seller_type == "owner")
 
         # Agency / Broker signals strictly take precedence over "sahibindən"
-        if has_agency_kw or detected_seller == "agency":
+        if has_agency_kw:
             score = 1.0
             listing.seller_type = "agency"
             listing.is_makler = True
@@ -46,16 +47,16 @@ class MaklerDetectorService:
             listing.is_makler = False
             listing.makler_score = 0.0
         else:
-            listing.seller_type = detected_seller
-            listing.is_makler = (detected_seller == "agency")
-            listing.makler_score = 1.0 if (detected_seller == "agency") else 0.0
+            listing.seller_type = detected_seller or listing.seller_type or "owner"
+            listing.is_makler = (listing.seller_type == "agency")
+            listing.makler_score = 1.0 if (listing.seller_type == "agency") else 0.0
 
-        # First-Posting History Analysis
-        if listing.district and listing.rooms and listing.area_sqm:
-            min_area = listing.area_sqm - 3.0
-            max_area = listing.area_sqm + 3.0
-            min_price = listing.price * 0.95
-            max_price = listing.price * 1.05
+        # First-Posting History Analysis (Requires high precision matching: floor + total_floors + strict area & price)
+        if listing.district and listing.rooms and listing.area_sqm and listing.floor and listing.total_floors:
+            min_area = listing.area_sqm - 1.0
+            max_area = listing.area_sqm + 1.0
+            min_price = listing.price * 0.97
+            max_price = listing.price * 1.03
 
             created_time = listing.created_at or datetime.now(timezone.utc)
             if created_time.tzinfo is None:
@@ -65,6 +66,8 @@ class MaklerDetectorService:
                 Listing.id != listing.id,
                 Listing.district == listing.district,
                 Listing.rooms == listing.rooms,
+                Listing.floor == listing.floor,
+                Listing.total_floors == listing.total_floors,
                 Listing.area_sqm >= min_area,
                 Listing.area_sqm <= max_area,
                 Listing.price >= min_price,
@@ -79,24 +82,17 @@ class MaklerDetectorService:
                 listing.is_first_posting = False
                 listing.earlier_posting_url = earlier_listing.listing_url
                 
-                # If earlier listing was from an agency, or if it was posted on major portal bina.az:
-                # Any secondary aggregator re-post claiming "Sahibindən" is a makler disguise
+                # If earlier listing was explicitly from an agency, flag as makler repost
                 if (
                     earlier_listing.seller_type == "agency" or
                     earlier_listing.is_makler or
-                    (earlier_listing.makler_score or 0.0) >= 0.30 or
-                    "bina.az" in (earlier_listing.listing_url or "").lower()
+                    (earlier_listing.makler_score or 0.0) >= 0.70
                 ):
                     score = 1.0
                     listing.seller_type = "agency"
                     listing.is_makler = True
                     listing.makler_score = 1.0
-                    logger.info(f"[MaklerDetector] Listing #{listing.id} was ALREADY posted by agency/bina.az at {earlier_listing.listing_url}. Strictly overriding seller_type to AGENCY.")
-                else:
-                    score = max(score, 0.7)
-                    listing.seller_type = "agency"
-                    listing.is_makler = True
-                    listing.makler_score = 1.0
+                    logger.info(f"[MaklerDetector] Listing #{listing.id} was ALREADY posted by agency at {earlier_listing.listing_url}. Setting seller_type to AGENCY.")
             else:
                 listing.is_first_posting = True
                 listing.earlier_posting_url = None

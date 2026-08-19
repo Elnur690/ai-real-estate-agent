@@ -58,7 +58,8 @@ def classify_property_and_offer(
     title: str = "",
     description: str = "",
     url: str = "",
-    raw_text: str = ""
+    raw_text: str = "",
+    existing_seller_type: Optional[str] = None
 ) -> Tuple[str, str, str]:
     """
     Classifies property deal type, category, and seller legitimacy:
@@ -115,15 +116,14 @@ def classify_property_and_offer(
     # Mask genuine owner negations (e.g. 'vasitəçisiz', 'maklersiz') to prevent substring matches on 'vasitəçi'/'makler'
     text_for_agency_check = re.sub(r'\b(?:vasitəçisiz|vasitecisiz|maklersiz|vasitəçi yoxdur|makler deyiləm)\b', ' [GENUINE_OWNER_FLAG] ', full_text)
     has_agency_kw = any(kw in text_for_agency_check for kw in AGENCY_KEYWORDS) or bool(COMMISSION_REGEX.search(text_for_agency_check))
-    has_owner_kw = any(kw in full_text for kw in OWNER_KEYWORDS)
+    has_owner_kw = any(kw in full_text for kw in OWNER_KEYWORDS) or "owner_type=owner" in url_lower or "sahibinden" in url_lower or existing_seller_type == "owner"
 
     # Agency keywords always strictly override owner claims (prevent false "sahibindən" makler postings)
     if has_agency_kw:
         seller_type = "agency"
-    elif has_owner_kw:
+    elif has_owner_kw or existing_seller_type == "owner":
         seller_type = "owner"
     else:
-        # In Baku real estate portals, unmarked listings without verified owner badge are agencies/brokers
-        seller_type = "agency"
+        seller_type = existing_seller_type or "owner"
 
     return offer_type, property_type, seller_type

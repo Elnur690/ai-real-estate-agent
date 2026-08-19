@@ -67,3 +67,47 @@ async def test_scraper_utils_rotation_and_delays():
     elapsed = time.time() - start
     assert elapsed >= 0.09
 
+
+@pytest.mark.asyncio
+async def test_speed_dial_phone_formatting_and_links():
+    from app.core.baku_locations import extract_az_phone
+    import re
+
+    # Test Azerbaijani phone extraction from description
+    sample_text = "Təcili satılır. Əlaqə: 050-234-56-78. Sahibindən."
+    phone_res = extract_az_phone(sample_text)
+    assert phone_res is not None
+    formatted, raw = phone_res
+    assert formatted == "+994 50 234 56 78"
+    assert raw == "+994502345678"
+
+    clean_digits = re.sub(r'\D', '', raw)
+    assert clean_digits == "994502345678"
+
+    # Verify 1-Tap Speed-Dial and WhatsApp link construction
+    tg_contact_line = f"📞 *Əlaqə (1-Tap Zəng):* [{formatted}](tel:{raw})\n💬 *WhatsApp:* [Çat Aç (wa.me)](https://wa.me/{clean_digits})\n"
+    wa_contact_line = f"📞 *Zəng et (1-Tap):* {raw}\n💬 *WhatsApp:* https://wa.me/{clean_digits}\n"
+
+    assert "tel:+994502345678" in tg_contact_line
+    assert "https://wa.me/994502345678" in tg_contact_line
+    assert "+994502345678" in wa_contact_line
+    assert "https://wa.me/994502345678" in wa_contact_line
+
+
+@pytest.mark.asyncio
+async def test_bina_az_owner_classification_preservation():
+    from app.core.property_classifier import classify_property_and_offer
+
+    # Listing from owner URL without explicit 'sahibinden' keyword in preview
+    offer, prop, seller = classify_property_and_offer(
+        title="2 otaqlı mənzil 65 m²",
+        description="Nizami rayonu, Neftçilər metrosu yaxınlığında təmirli ev",
+        url="https://bina.az/items/123456?owner_type=owner",
+        existing_seller_type="owner"
+    )
+
+    assert offer == "sale"
+    assert prop == "apartment"
+    assert seller == "owner"
+
+

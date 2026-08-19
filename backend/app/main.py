@@ -72,23 +72,6 @@ async def lifespan(app: FastAPI):
         """))
         await conn.execute(text("""
             UPDATE listings 
-            SET seller_type = 'agency', makler_score = 1.0 
-            WHERE seller_type = 'owner' 
-            AND NOT (
-                LOWER(COALESCE(description, '')) LIKE '%sahibindən%' 
-                OR LOWER(COALESCE(description, '')) LIKE '%sahibinden%' 
-                OR LOWER(COALESCE(description, '')) LIKE '%mülkiyyətçi%' 
-                OR LOWER(COALESCE(description, '')) LIKE '%mulkiyyetci%'
-                OR LOWER(COALESCE(description, '')) LIKE '%öz evimdir%'
-                OR LOWER(COALESCE(description, '')) LIKE '%oz evimdir%'
-                OR LOWER(COALESCE(description, '')) LIKE '%öz mənzilimdir%'
-                OR LOWER(COALESCE(description, '')) LIKE '%oz menzilimdir%'
-                OR LOWER(COALESCE(description, '')) LIKE '%vasitəçisiz%'
-                OR LOWER(COALESCE(description, '')) LIKE '%vasitecisiz%'
-            );
-        """))
-        await conn.execute(text("""
-            UPDATE listings 
             SET offer_type = 'rent' 
             WHERE listing_url LIKE '%kiraye%' OR listing_url LIKE '%icare%' OR listing_url LIKE '%ayliq%';
         """))

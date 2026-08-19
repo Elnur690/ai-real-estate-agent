@@ -50,6 +50,59 @@ def normalize_bina_url(url: str) -> str:
 
 
 class BinaAzScraper(BaseScraper):
+    @staticmethod
+    async def fetch_item_details(item_id_or_url: str) -> dict:
+        """Fetches full item details including contact phone numbers from Bina.az listing page."""
+        m = re.search(r'(\d+)', str(item_id_or_url))
+        if not m:
+            return {}
+        ext_id = m.group(1)
+        url = f"https://bina.az/items/{ext_id}"
+        headers = get_random_headers(referer="https://bina.az/items")
+
+        try:
+            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+                res = await client.get(url, headers=headers)
+                if res.status_code != 200:
+                    return {}
+
+                soup = BeautifulSoup(res.text, "html.parser")
+                
+                # 1. Extract Phone Numbers from tel links, phone classes, or script JSON
+                phone = None
+                tel_links = soup.find_all("a", href=re.compile(r'tel:([+\d\s-]+)'))
+                if tel_links:
+                    phone_match = re.search(r'tel:([+\d\s-]+)', tel_links[0]['href'])
+                    if phone_match:
+                        phone = phone_match.group(1).strip()
+
+                if not phone:
+                    phone_el = soup.find(class_=re.compile(r'phone|contact|author-phone|seller-phone', re.I))
+                    if phone_el:
+                        from app.core.baku_locations import extract_az_phone
+                        res_p = extract_az_phone(phone_el.get_text())
+                        if res_p:
+                            phone = res_p[1]
+
+                if not phone:
+                    # Look in page scripts or full text
+                    from app.core.baku_locations import extract_az_phone
+                    res_p = extract_az_phone(res.text)
+                    if res_p:
+                        phone = res_p[1]
+
+                # 2. Extract full description
+                desc_el = soup.find("article") or soup.find(class_=re.compile(r'description|article_body|item_description', re.I))
+                full_desc = desc_el.get_text(separator=" ", strip=True) if desc_el else ""
+
+                return {
+                    "phone_number": phone,
+                    "full_description": full_desc
+                }
+        except Exception as e:
+            logger.debug(f"[BinaAzScraper] Error fetching detail for item {ext_id}: {e}")
+            return {}
+
     async def scrape_source(self, url_or_handle: str = "https://bina.az/items?city_id=1&category_id=1&leased=false") -> List[RawListingItem]:
         logger.info(f"[BinaAzScraper] Starting scrape from {url_or_handle}")
         items: List[RawListingItem] = []
@@ -62,20 +115,34 @@ class BinaAzScraper(BaseScraper):
         is_targeted_search = any(k in normalized_url for k in ['owner_type=', 'rooms[]=', 'price_min=', 'price_max=', 'location_ids[]=', 'q='])
 
         if is_targeted_search:
+            # For targeted search, fetch page 1 and page 2 to capture past VIP promotions
             urls_to_fetch = [normalized_url]
+            if "page=" not in normalized_url:
+                urls_to_fetch.append(f"{normalized_url}&page=2")
         else:
-            # Primary comprehensive active feeds for Bina.az (Sales, Owners, Rentals, New/Old bld, Houses, Offices, Commercial)
+            # Primary comprehensive active feeds for Bina.az covering all categories & chronological stream
             urls_to_fetch = [
+                # 1. Master Chronological Real-Time Streams (all newest items)
+                "https://bina.az/items",
+                "https://bina.az/items?city_id=1&leased=false",
+                "https://bina.az/items?city_id=1&leased=true",
+                # 2. Direct Owner Feeds (Ev Sahibindən)
                 "https://bina.az/items?city_id=1&category_id=1&leased=false&owner_type=owner",
                 "https://bina.az/items?city_id=1&category_id=2&leased=false&owner_type=owner",
+                "https://bina.az/items?city_id=1&category_id=3&leased=false&owner_type=owner",
                 "https://bina.az/items?city_id=1&category_id=5&leased=false&owner_type=owner",
+                "https://bina.az/items?city_id=1&category_id=1&leased=true&owner_type=owner",
+                "https://bina.az/items?city_id=1&category_id=2&leased=true&owner_type=owner",
+                "https://bina.az/items?city_id=1&category_id=3&leased=true&owner_type=owner",
+                # 3. All Category Feeds (New build, Old build, Houses, Offices, Commercial, Land)
                 "https://bina.az/items?city_id=1&category_id=1&leased=false",
                 "https://bina.az/items?city_id=1&category_id=2&leased=false",
+                "https://bina.az/items?city_id=1&category_id=3&leased=false",
                 "https://bina.az/items?city_id=1&category_id=5&leased=false",
-                "https://bina.az/items?city_id=1&category_id=1&leased=true&owner_type=owner",
-                "https://bina.az/items?city_id=1&category_id=1&leased=true",
                 "https://bina.az/items?city_id=1&category_id=7&leased=false",
-                "https://bina.az/items?city_id=1&category_id=10&leased=false"
+                "https://bina.az/items?city_id=1&category_id=10&leased=false",
+                "https://bina.az/items?city_id=1&category_id=9&leased=false",
+                "https://bina.az/items?city_id=1&category_id=1&leased=true"
             ]
 
         headers = get_random_headers(referer="https://bina.az/")
@@ -214,7 +281,9 @@ class BinaAzScraper(BaseScraper):
                 )
             )
 
-            if has_agency_badge or any(kw in raw_lower for kw in ["agentlik", "kompleks", "vasitəçi", "makler", "şirkət", "komissiya", "ofis haqqı"]):
+            if "owner_type=owner" in target_url:
+                seller_type = "owner"
+            elif has_agency_badge or any(kw in raw_lower for kw in ["agentlik", "kompleks", "vasitəçi", "makler", "şirkət", "komissiya", "ofis haqqı"]):
                 seller_type = "agency"
             else:
                 # Genuine individual / owner on Bina.az
@@ -250,6 +319,11 @@ class BinaAzScraper(BaseScraper):
 
             full_desc = f"Bina.az: {raw_text}" + (f" | {' | '.join(desc_extra)}" if desc_extra else "")
 
+            # Check if any phone is already mentioned in raw_text
+            from app.core.baku_locations import extract_az_phone
+            phone_found = extract_az_phone(raw_text)
+            extracted_phone = phone_found[1] if phone_found else None
+
             clean_url = href if href.startswith("http") else f"https://bina.az{href}"
             items.append(RawListingItem(
                 external_id=f"bina_{ext_id}",
@@ -259,6 +333,7 @@ class BinaAzScraper(BaseScraper):
                 currency=currency,
                 district=district,
                 metro_station=metro,
+                phone_number=extracted_phone,
                 rooms=rooms,
                 area_sqm=area,
                 floor=floor,

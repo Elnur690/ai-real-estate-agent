@@ -133,35 +133,51 @@ class IngestionService:
         bld = (getattr(search, 'building_type', 'any') or 'any').lower()
         prop = (getattr(search, 'property_type', 'apartment') or 'apartment').lower()
         seller = (getattr(search, 'seller_type', 'any') or 'any').lower()
+        is_owner = seller in ["owner", "sahibinden", "sahibindən"]
 
         # 1. Bina.az Category Mapping
+        categories_to_query = []
         if prop == "house":
-            cat_id = "5"
+            categories_to_query.append("5")
         elif prop == "office":
-            cat_id = "7"
+            categories_to_query.append("7")
         elif prop == "commercial":
-            cat_id = "10"
+            categories_to_query.append("10")
         elif prop == "land":
-            cat_id = "9"
+            categories_to_query.append("9")
         elif bld == "new":
-            cat_id = "2"
+            categories_to_query.append("2")
         elif bld == "old":
-            cat_id = "3"
+            categories_to_query.append("3")
         else:
-            cat_id = "1"
+            # All relevant apartment categories (All, New build, Old build)
+            categories_to_query.extend(["1", "2", "3"])
 
-        bina_params = [f"city_id=1", f"leased={leased_str}", f"category_id={cat_id}"]
-        if search.min_rooms:
-            bina_params.append(f"rooms[]={search.min_rooms}")
-        if search.max_rooms and search.max_rooms != search.min_rooms:
-            bina_params.append(f"rooms[]={search.max_rooms}")
+        # Construct full rooms sequence (e.g. min 2, max 4 -> rooms[]=2, rooms[]=3, rooms[]=4)
+        rooms_params = []
+        if search.min_rooms and search.max_rooms:
+            for r_num in range(search.min_rooms, search.max_rooms + 1):
+                rooms_params.append(f"rooms[]={r_num}")
+        elif search.min_rooms:
+            rooms_params.append(f"rooms[]={search.min_rooms}")
+        elif search.max_rooms:
+            rooms_params.append(f"rooms[]={search.max_rooms}")
+
+        price_params = []
         if search.min_price and search.min_price > 0:
-            bina_params.append(f"price_min={int(search.min_price)}")
+            price_params.append(f"price_min={int(search.min_price)}")
         if search.max_price and search.max_price > 0:
-            bina_params.append(f"price_max={int(search.max_price)}")
+            price_params.append(f"price_max={int(search.max_price)}")
 
-        bina_url = f"https://bina.az/items?{'&'.join(bina_params)}"
-        targets.append(("Bina.az Targeted", BinaAzScraper(), bina_url))
+        for cat_id in categories_to_query:
+            bina_params = [f"city_id=1", f"leased={leased_str}", f"category_id={cat_id}"]
+            if is_owner:
+                bina_params.append("owner_type=owner")
+            bina_params.extend(rooms_params)
+            bina_params.extend(price_params)
+
+            bina_url = f"https://bina.az/items?{'&'.join(bina_params)}"
+            targets.append(("Bina.az Targeted", BinaAzScraper(), bina_url))
 
         # 2. Tap.az Keyword Target
         loc_kw = search.district or search.metro_station or ""
@@ -649,6 +665,18 @@ class IngestionService:
                 await db.refresh(new_match)
                 matches_count += 1
 
+                # Enrich phone number from Bina.az detail page if not present
+                if not listing.phone_number and listing.external_id and "bina_" in listing.external_id:
+                    try:
+                        details = await BinaAzScraper.fetch_item_details(listing.external_id)
+                        if details.get("phone_number"):
+                            listing.phone_number = details["phone_number"]
+                            if details.get("full_description") and len(details["full_description"]) > len(listing.description or ""):
+                                listing.description = details["full_description"]
+                            await db.commit()
+                    except Exception as e:
+                        logger.debug(f"[IngestionService] Error fetching detail phone for listing #{listing.id}: {e}")
+
                 seller_str = "Ev Sahibindən" if listing.seller_type == "owner" else "Vasitəçidən/Agentlikdən"
                 bld_str = "Yeni tikili" if listing.building_type == "new" else ("Köhnə tikili" if listing.building_type == "old" else "")
 
@@ -720,16 +748,50 @@ class IngestionService:
 
                 details_block = "\n".join(extra_details) + "\n\n" if extra_details else "\n"
 
-                # Phone extraction - omit line completely if no phone is found
+                # Direct delivery strictly to the creator's exact destination (group or 1-on-1 chat)
+                dest_channel = getattr(search, 'channel', None) or tenant.preferred_channel or "whatsapp"
+                dest_chat_id = getattr(search, 'destination_chat_id', None)
+                if not dest_chat_id:
+                    allowed = list(tenant.allowed_group_jids or [])
+                    if allowed and dest_channel == "whatsapp":
+                        dest_chat_id = allowed[0]
+                    else:
+                        dest_chat_id = tenant.whatsapp_number if dest_channel == "whatsapp" else tenant.telegram_chat_id
+
+                inst_name = getattr(search, 'instance_name', None) or f"tenant_{tenant.id}"
+
+                # 1-Tap Speed-Dial and WhatsApp Direct Chat formatting
                 from app.core.baku_locations import extract_az_phone
                 phone_info = extract_az_phone(listing.phone_number or f"{listing.title} {listing.description or ''} {listing.address_raw or ''}")
 
                 contact_line = ""
                 if phone_info:
                     formatted_phone, raw_phone = phone_info
-                    contact_line = f"📞 *Əlaqə:* [{formatted_phone}](tel:{raw_phone}) (`{formatted_phone}`)\n"
+                    clean_digits = re.sub(r'\D', '', raw_phone)
+                    if dest_channel == "telegram":
+                        contact_line = (
+                            f"📞 *Əlaqə (1-Tap Zəng):* [{formatted_phone}](tel:{raw_phone}) (`{formatted_phone}`)\n"
+                            f"💬 *WhatsApp:* [Çat Aç (wa.me)](https://wa.me/{clean_digits})\n"
+                        )
+                    else:
+                        contact_line = (
+                            f"📞 *Zəng et (1-Tap):* {raw_phone}\n"
+                            f"💬 *WhatsApp:* https://wa.me/{clean_digits}\n"
+                        )
                 elif listing.phone_number:
-                    contact_line = f"📞 *Əlaqə:* [{listing.phone_number}](tel:{listing.phone_number}) (`{listing.phone_number}`)\n"
+                    clean_p = listing.phone_number.strip()
+                    clean_digits = re.sub(r'\D', '', clean_p)
+                    wa_digits = clean_digits if clean_digits.startswith("994") else f"994{clean_digits.lstrip('0')}"
+                    if dest_channel == "telegram":
+                        contact_line = (
+                            f"📞 *Əlaqə (1-Tap Zəng):* [{clean_p}](tel:{clean_p})\n"
+                            f"💬 *WhatsApp:* [Çat Aç (wa.me)](https://wa.me/{wa_digits})\n"
+                        )
+                    else:
+                        contact_line = (
+                            f"📞 *Zəng et (1-Tap):* {clean_p}\n"
+                            f"💬 *WhatsApp:* https://wa.me/{wa_digits}\n"
+                        )
 
                 # Price display formatting with period indication (daily vs monthly vs sale)
                 offer_val = getattr(listing, 'offer_type', 'sale') or 'sale'
@@ -756,18 +818,6 @@ class IngestionService:
                     f"💬 *Reaksiya bildirin:*\n"
                     f"`Maraqlanıram {new_match.id}` | `Keç {new_match.id}` | `Satılıb {new_match.id}`"
                 )
-
-                # Direct delivery strictly to the creator's exact destination (group or 1-on-1 chat)
-                dest_channel = getattr(search, 'channel', None) or tenant.preferred_channel or "whatsapp"
-                dest_chat_id = getattr(search, 'destination_chat_id', None)
-                if not dest_chat_id:
-                    allowed = list(tenant.allowed_group_jids or [])
-                    if allowed and dest_channel == "whatsapp":
-                        dest_chat_id = allowed[0]
-                    else:
-                        dest_chat_id = tenant.whatsapp_number if dest_channel == "whatsapp" else tenant.telegram_chat_id
-
-                inst_name = getattr(search, 'instance_name', None) or f"tenant_{tenant.id}"
 
                 if dest_channel == "telegram" and dest_chat_id:
                     await send_telegram_notification(dest_chat_id, msg_text)
