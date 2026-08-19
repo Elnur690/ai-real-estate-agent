@@ -88,10 +88,10 @@ export interface AICallLogItem {
 
 export interface ScraperSource {
   id: number;
-  type: 'website' | 'telegram_channel';
+  type: 'website' | 'telegram_channel' | 'facebook_group' | 'facebook_page';
   name: string;
   url_or_handle: string;
-  status: 'active' | 'error' | 'blocked';
+  status: 'active' | 'paused' | 'error' | 'blocked';
   last_scraped_at?: string;
   created_at: string;
 }

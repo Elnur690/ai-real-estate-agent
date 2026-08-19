@@ -13,6 +13,11 @@ from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel
 
+class ListingSourceCreate(BaseModel):
+    name: str
+    type: str  # 'facebook_group', 'facebook_page', 'telegram_channel', 'website'
+    url_or_handle: str
+
 class ListingSourceResponse(BaseModel):
     id: int
     type: str
@@ -32,6 +37,49 @@ async def list_sources(db: AsyncSession = Depends(get_db), current_admin = Depen
     res = await db.execute(stmt)
     sources = res.scalars().all()
     return sources
+
+@router.post("/sources", response_model=ListingSourceResponse)
+async def create_source(payload: ListingSourceCreate, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
+    """Add a new Facebook Group, Facebook Page, Telegram channel, or real estate portal source."""
+    new_src = ListingSource(
+        name=payload.name.strip(),
+        type=payload.type.strip(),
+        url_or_handle=payload.url_or_handle.strip(),
+        status="active"
+    )
+    db.add(new_src)
+    await db.commit()
+    await db.refresh(new_src)
+    return new_src
+
+@router.patch("/sources/{source_id}/toggle", response_model=ListingSourceResponse)
+async def toggle_source(source_id: int, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
+    """Toggle source status between active and paused."""
+    from fastapi import HTTPException
+    stmt = select(ListingSource).where(ListingSource.id == source_id)
+    res = await db.execute(stmt)
+    source = res.scalars().first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Mənbə tapılmadı")
+
+    source.status = "paused" if source.status == "active" else "active"
+    await db.commit()
+    await db.refresh(source)
+    return source
+
+@router.delete("/sources/{source_id}")
+async def delete_source(source_id: int, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
+    """Delete a listing source."""
+    from fastapi import HTTPException
+    stmt = select(ListingSource).where(ListingSource.id == source_id)
+    res = await db.execute(stmt)
+    source = res.scalars().first()
+    if not source:
+        raise HTTPException(status_code=404, detail="Mənbə tapılmadı")
+
+    await db.delete(source)
+    await db.commit()
+    return {"status": "deleted", "id": source_id}
 
 @router.post("/trigger")
 async def trigger_ingestion(db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
