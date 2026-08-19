@@ -581,6 +581,31 @@ class IngestionService:
         if not getattr(listing, 'is_active', True):
             return 0
 
+        # If from Bina.az, enrich detail metadata (exact property type, seller type, phone, rooms) before matching
+        if listing.external_id and "bina_" in listing.external_id:
+            try:
+                details = await BinaAzScraper.fetch_item_details(listing.external_id)
+                if details:
+                    if details.get("phone_number") and not listing.phone_number:
+                        listing.phone_number = details["phone_number"]
+                    if details.get("property_type"):
+                        listing.property_type = details["property_type"]
+                    if details.get("seller_type"):
+                        listing.seller_type = details["seller_type"]
+                        listing.is_makler = details.get("is_makler", False)
+                        listing.makler_score = details.get("makler_score", 0.0)
+                    if details.get("rooms") and not listing.rooms:
+                        listing.rooms = details["rooms"]
+                    if details.get("full_description") and len(details["full_description"]) > len(listing.description or ""):
+                        listing.description = details["full_description"]
+
+                    # Re-evaluate makler & seller legitimacy with full page content and phone
+                    from app.services.makler_detector import MaklerDetectorService
+                    listing = await MaklerDetectorService.analyze_listing(db, listing)
+                    await db.commit()
+            except Exception as e:
+                logger.debug(f"[IngestionService] Detail enrichment exception for listing #{listing.id}: {e}")
+
         stmt = select(SavedSearch).where(SavedSearch.is_active == True)
         res = await db.execute(stmt)
         saved_searches = res.scalars().all()
@@ -664,18 +689,6 @@ class IngestionService:
                 await db.commit()
                 await db.refresh(new_match)
                 matches_count += 1
-
-                # Enrich phone number from Bina.az detail page if not present
-                if not listing.phone_number and listing.external_id and "bina_" in listing.external_id:
-                    try:
-                        details = await BinaAzScraper.fetch_item_details(listing.external_id)
-                        if details.get("phone_number"):
-                            listing.phone_number = details["phone_number"]
-                            if details.get("full_description") and len(details["full_description"]) > len(listing.description or ""):
-                                listing.description = details["full_description"]
-                            await db.commit()
-                    except Exception as e:
-                        logger.debug(f"[IngestionService] Error fetching detail phone for listing #{listing.id}: {e}")
 
                 seller_str = "Ev Sahibindən" if listing.seller_type == "owner" else "Vasitəçidən/Agentlikdən"
                 bld_str = "Yeni tikili" if listing.building_type == "new" else ("Köhnə tikili" if listing.building_type == "old" else "")
@@ -768,30 +781,44 @@ class IngestionService:
                 if phone_info:
                     formatted_phone, raw_phone = phone_info
                     clean_digits = re.sub(r'\D', '', raw_phone)
-                    if dest_channel == "telegram":
-                        contact_line = (
-                            f"📞 *Əlaqə (1-Tap Zəng):* [{formatted_phone}](tel:{raw_phone}) (`{formatted_phone}`)\n"
-                            f"💬 *WhatsApp:* [Çat Aç (wa.me)](https://wa.me/{clean_digits})\n"
-                        )
+                    is_landline = bool(clean_digits.startswith("99412") or clean_digits.startswith("12") or " 12 " in formatted_phone)
+                    if is_landline:
+                        if dest_channel == "telegram":
+                            contact_line = f"📞 *Əlaqə (Şəhər Nömrəsi):* [{formatted_phone}](tel:{raw_phone}) (`{formatted_phone}`)\n"
+                        else:
+                            contact_line = f"📞 *Zəng et (1-Tap):* {raw_phone}\n"
                     else:
-                        contact_line = (
-                            f"📞 *Zəng et (1-Tap):* {raw_phone}\n"
-                            f"💬 *WhatsApp:* https://wa.me/{clean_digits}\n"
-                        )
+                        if dest_channel == "telegram":
+                            contact_line = (
+                                f"📞 *Əlaqə (1-Tap Zəng):* [{formatted_phone}](tel:{raw_phone}) (`{formatted_phone}`)\n"
+                                f"💬 *WhatsApp:* [Çat Aç (wa.me)](https://wa.me/{clean_digits})\n"
+                            )
+                        else:
+                            contact_line = (
+                                f"📞 *Zəng et (1-Tap):* {raw_phone}\n"
+                                f"💬 *WhatsApp:* https://wa.me/{clean_digits}\n"
+                            )
                 elif listing.phone_number:
                     clean_p = listing.phone_number.strip()
                     clean_digits = re.sub(r'\D', '', clean_p)
+                    is_landline = bool(clean_digits.startswith("99412") or clean_digits.startswith("12"))
                     wa_digits = clean_digits if clean_digits.startswith("994") else f"994{clean_digits.lstrip('0')}"
-                    if dest_channel == "telegram":
-                        contact_line = (
-                            f"📞 *Əlaqə (1-Tap Zəng):* [{clean_p}](tel:{clean_p})\n"
-                            f"💬 *WhatsApp:* [Çat Aç (wa.me)](https://wa.me/{wa_digits})\n"
-                        )
+                    if is_landline:
+                        if dest_channel == "telegram":
+                            contact_line = f"📞 *Əlaqə (Şəhər Nömrəsi):* [{clean_p}](tel:{clean_p})\n"
+                        else:
+                            contact_line = f"📞 *Zəng et (1-Tap):* {clean_p}\n"
                     else:
-                        contact_line = (
-                            f"📞 *Zəng et (1-Tap):* {clean_p}\n"
-                            f"💬 *WhatsApp:* https://wa.me/{wa_digits}\n"
-                        )
+                        if dest_channel == "telegram":
+                            contact_line = (
+                                f"📞 *Əlaqə (1-Tap Zəng):* [{clean_p}](tel:{clean_p})\n"
+                                f"💬 *WhatsApp:* [Çat Aç (wa.me)](https://wa.me/{wa_digits})\n"
+                            )
+                        else:
+                            contact_line = (
+                                f"📞 *Zəng et (1-Tap):* {clean_p}\n"
+                                f"💬 *WhatsApp:* https://wa.me/{wa_digits}\n"
+                            )
 
                 # Price display formatting with period indication (daily vs monthly vs sale)
                 offer_val = getattr(listing, 'offer_type', 'sale') or 'sale'

@@ -97,22 +97,43 @@ class MaklerDetectorService:
                 listing.is_first_posting = True
                 listing.earlier_posting_url = None
 
-        # Phone Number Multi-Listing Frequency Analysis
-        phone_match = re.search(r'(\+?994|0)?\s*(50|51|55|70|77|99|10)\s*\d{3}\s*\d{2}\s*\d{2}', text_lower)
-        if phone_match:
-            raw_digits = re.sub(r'\D', '', phone_match.group())
-            phone_suffix = raw_digits[-7:] if len(raw_digits) >= 7 else raw_digits
-            stmt_count = select(func.count(Listing.id)).where(
-                (Listing.phone_number.like(f"%{phone_suffix}%")) |
-                (Listing.description.like(f"%{phone_suffix}%"))
-            )
-            res_count = await db.execute(stmt_count)
-            phone_listings_count = res_count.scalar() or 0
+        # Phone Number Multi-Listing Frequency & Landline Analysis
+        is_landline = bool(
+            re.search(r'(?:\+?994|0)?\s*12\s*\d{3}\s*\d{2}\s*\d{2}', text_lower)
+            or (listing.phone_number and bool(re.search(r'(?:994|0)?12\d{7}', re.sub(r'\D', '', listing.phone_number))))
+        )
 
-            if phone_listings_count >= 2:
-                score = 1.0
-                listing.seller_type = "agency"
-                listing.is_makler = True
+        if is_landline:
+            score = 1.0
+            listing.seller_type = "agency"
+            listing.is_makler = True
+            listing.makler_score = 1.0
+            logger.info(f"[MaklerDetector] Listing #{listing.id} has Baku corporate landline (012). Strictly classified as AGENCY.")
+        else:
+            raw_phone_str = listing.phone_number or ""
+            if not raw_phone_str:
+                phone_match = re.search(r'(\+?994|0)?\s*(50|51|55|70|77|99|10|12)\s*\d{3}\s*\d{2}\s*\d{2}', text_lower)
+                if phone_match:
+                    raw_phone_str = phone_match.group()
+
+            if raw_phone_str:
+                raw_digits = re.sub(r'\D', '', raw_phone_str)
+                phone_suffix = raw_digits[-7:] if len(raw_digits) >= 7 else raw_digits
+                if phone_suffix:
+                    stmt_count = select(func.count(Listing.id)).where(
+                        Listing.id != listing.id,
+                        (Listing.phone_number.like(f"%{phone_suffix}%")) |
+                        (Listing.description.like(f"%{phone_suffix}%"))
+                    )
+                    res_count = await db.execute(stmt_count)
+                    phone_listings_count = res_count.scalar() or 0
+
+                    if phone_listings_count >= 1:
+                        score = 1.0
+                        listing.seller_type = "agency"
+                        listing.is_makler = True
+                        listing.makler_score = 1.0
+                        logger.info(f"[MaklerDetector] Listing #{listing.id} shares phone {phone_suffix} with {phone_listings_count} other listings. Classified as AGENCY.")
 
         listing.makler_score = max(0.0, min(1.0, round(score, 2)))
         return listing

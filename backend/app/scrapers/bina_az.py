@@ -52,7 +52,7 @@ def normalize_bina_url(url: str) -> str:
 class BinaAzScraper(BaseScraper):
     @staticmethod
     async def fetch_item_details(item_id_or_url: str) -> dict:
-        """Fetches full item details including contact phone numbers from Bina.az listing page."""
+        """Fetches full item details including contact phone numbers, category, and seller type from Bina.az listing page."""
         m = re.search(r'(\d+)', str(item_id_or_url))
         if not m:
             return {}
@@ -67,6 +67,7 @@ class BinaAzScraper(BaseScraper):
                     return {}
 
                 soup = BeautifulSoup(res.text, "html.parser")
+                page_text_lower = soup.get_text().lower()
                 
                 # 1. Extract Phone Numbers from tel links, phone classes, or script JSON
                 phone = None
@@ -85,7 +86,6 @@ class BinaAzScraper(BaseScraper):
                             phone = res_p[1]
 
                 if not phone:
-                    # Look in page scripts or full text
                     from app.core.baku_locations import extract_az_phone
                     res_p = extract_az_phone(res.text)
                     if res_p:
@@ -95,9 +95,63 @@ class BinaAzScraper(BaseScraper):
                 desc_el = soup.find("article") or soup.find(class_=re.compile(r'description|article_body|item_description', re.I))
                 full_desc = desc_el.get_text(separator=" ", strip=True) if desc_el else ""
 
+                # 3. Extract Category / Property Type (Breadcrumbs, H1, Parameters)
+                breadcrumbs_el = soup.find(class_=re.compile(r'breadcrumb', re.I))
+                breadcrumbs_text = breadcrumbs_el.get_text(separator=" ", strip=True).lower() if breadcrumbs_el else ""
+                h1_el = soup.find("h1")
+                h1_text = h1_el.get_text(strip=True).lower() if h1_el else ""
+                
+                combined_cat_text = f"{breadcrumbs_text} {h1_text} {full_desc[:300].lower()}"
+
+                detected_prop = "apartment"
+                if any(k in combined_cat_text for k in ["obyekt", "qeyri-yaşayış", "qeyri yasayis", "anbar", "istehsalat", "magaza", "mağaza", "restoran", "kafe", "salon", "klinika"]):
+                    detected_prop = "commercial"
+                elif any(k in combined_cat_text for k in ["ofis", "ofislər", "biznes mərkəzi"]):
+                    detected_prop = "office"
+                elif any(k in combined_cat_text for k in ["torpaq", "sot"]) and "otaqlı" not in combined_cat_text:
+                    detected_prop = "land"
+                elif any(k in combined_cat_text for k in ["həyət evi", "heyet evi", "bağ evi", "bag evi", "villa", "villalar"]):
+                    detected_prop = "house"
+                else:
+                    detected_prop = "apartment"
+
+                # 4. Extract Seller Type & Agency Status from Page
+                has_agency_link = bool(
+                    soup.find("a", href=re.compile(r'/agentlikler|/shops|/companies|/complexes')) or
+                    soup.find("a", href=re.compile(r'user_id=')) or
+                    soup.find(class_=re.compile(r'agency|shop|company|author-agency', re.I))
+                )
+                
+                is_landline = bool(phone and re.search(r'(?:994|0)?12\d{7}', re.sub(r'\D', '', phone)))
+                has_commission = any(k in page_text_lower for k in ["ofis haqqı", "ofis haqqi", "xidmət haqqı", "xidmet haqqi", "komissiya", "vasitəçi (agent)", "vasiteci (agent)", "rieltor"])
+
+                if has_agency_link or is_landline or has_commission:
+                    seller_type = "agency"
+                    is_makler = True
+                    makler_score = 1.0
+                elif any(k in page_text_lower for k in ["mülkiyyətçi (ev sahibi)", "öz evimdir", "sahibindən", "vasitəçisiz"]) and not is_landline:
+                    seller_type = "owner"
+                    is_makler = False
+                    makler_score = 0.0
+                else:
+                    seller_type = "agency" if has_agency_link else "owner"
+                    is_makler = (seller_type == "agency")
+                    makler_score = 1.0 if is_makler else 0.0
+
+                # 5. Extract exact rooms if present
+                rooms = None
+                rooms_m = re.search(r'(\d+)\s*otaq', f"{h1_text} {full_desc[:200].lower()}")
+                if rooms_m:
+                    rooms = int(rooms_m.group(1))
+
                 return {
                     "phone_number": phone,
-                    "full_description": full_desc
+                    "full_description": full_desc,
+                    "property_type": detected_prop,
+                    "seller_type": seller_type,
+                    "is_makler": is_makler,
+                    "makler_score": makler_score,
+                    "rooms": rooms
                 }
         except Exception as e:
             logger.debug(f"[BinaAzScraper] Error fetching detail for item {ext_id}: {e}")

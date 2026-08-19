@@ -111,3 +111,19 @@ async def test_bina_az_owner_classification_preservation():
     assert seller == "owner"
 
 
+@pytest.mark.asyncio
+async def test_landline_and_commercial_classification():
+    from app.core.property_classifier import classify_property_and_offer
+
+    # Listing with corporate landline (012) must be strictly classified as agency
+    offer, prop, seller = classify_property_and_offer(
+        title="Obyekt satılır 290 m²",
+        description="Neftçilər metrosu yaxınlığında qeyri-yaşayış sahəsi. Əlaqə: +994125269494",
+        url="https://bina.az/items/6389661"
+    )
+
+    assert prop == "commercial"
+    assert seller == "agency"
+
+
+
