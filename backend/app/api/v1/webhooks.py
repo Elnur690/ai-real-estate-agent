@@ -67,3 +67,41 @@ async def facebook_webhook(request: Request):
             return {"status": "success", "listing_id": db_listing.id, "matches_delivered": delivered_count}
 
     return {"status": "success", "matches_delivered": 0}
+
+
+@router.post("/telegram")
+async def telegram_webhook(request: Request):
+    """
+    Real-time webhook ingestion for Telegram Channels & Groups.
+    Receives incoming Telegram post payloads, parses listing metadata, and delivers matches immediately.
+    """
+    from app.db.session import AsyncSessionLocal
+    from app.scrapers.telegram_scraper import TelegramChannelScraper
+    from app.services.ingestion import IngestionService
+
+    payload: Dict[str, Any] = await request.json()
+
+    text = payload.get("text") or payload.get("message") or payload.get("caption") or ""
+    post_url = payload.get("post_url") or payload.get("url") or payload.get("link") or "https://t.me"
+    post_id = str(payload.get("post_id") or payload.get("id") or hash(text[:100]))
+    channel_name = payload.get("channel_name") or payload.get("channel") or "Telegram"
+    photos = payload.get("photos") or payload.get("images") or []
+
+    parsed_item = TelegramChannelScraper.parse_telegram_message_text(
+        text=text,
+        msg_url=post_url,
+        msg_id=f"tg_{post_id}",
+        channel_handle=channel_name,
+        photos=photos if isinstance(photos, list) else []
+    )
+
+    if not parsed_item:
+        return {"status": "ignored", "reason": "Text too short or not real estate content"}
+
+    async with AsyncSessionLocal() as db:
+        db_listing = await IngestionService._ingest_single_raw_item(db, parsed_item, source_id=1)
+        if db_listing:
+            delivered_count = await IngestionService._evaluate_and_deliver_matches(db, db_listing)
+            return {"status": "success", "listing_id": db_listing.id, "matches_delivered": delivered_count}
+
+    return {"status": "success", "matches_delivered": 0}

@@ -34,7 +34,10 @@ OWNER_KEYWORDS = [
     "sahibindən", "sahibinden", "mülkiyyətçidən", "mulkiyyetciden",
     "mülkiyyətçi", "mulkiyyetci", "badge-owner", "owner-badge",
     "öz evimdir", "oz evimdir", "öz mənzilimdir", "oz menzilimdir",
+    "öz evim", "oz evim", "öz mənzilim", "oz menzilim",
     "öz əmlakımdır", "oz emlakimdir", "vasitəçisiz", "vasitecisiz",
+    "vasitəçi deyiləm", "vasiteci deyilem", "vasitəçi deyil", "vasiteci deyil",
+    "makler deyiləm", "makler deyilem", "makler deyil",
     "maklersiz", "maklerlər narahat etməsin", "maklerler narahat etmesin"
 ]
 
@@ -113,8 +116,12 @@ def classify_property_and_offer(
         property_type = "apartment"
 
     # 3. Classify Seller Type (Agency vs Owner)
-    # Mask genuine owner negations (e.g. 'vasitəçisiz', 'maklersiz') to prevent substring matches on 'vasitəçi'/'makler'
-    text_for_agency_check = re.sub(r'\b(?:vasitəçisiz|vasitecisiz|maklersiz|vasitəçi yoxdur|makler deyiləm)\b', ' [GENUINE_OWNER_FLAG] ', full_text)
+    # Mask genuine owner negations (e.g. 'vasitəçisiz', 'vasitəçi deyiləm', 'maklersiz') to prevent false positive matches on 'vasitəçi'/'makler'
+    text_for_agency_check = re.sub(
+        r'\b(?:vasitəçisiz|vasitecisiz|maklersiz|vasitəçi yoxdur|vasiteci yoxdur|vasitəçi deyiləm|vasiteci deyilem|vasitəçi deyil|vasiteci deyil|makler deyiləm|makler deyilem|makler deyil|maklerlər narahat etməsin|maklerler narahat etmesin)\b',
+        ' [GENUINE_OWNER_FLAG] ',
+        full_text
+    )
     has_agency_kw = any(kw in text_for_agency_check for kw in AGENCY_KEYWORDS) or bool(COMMISSION_REGEX.search(text_for_agency_check))
     has_owner_kw = any(kw in full_text for kw in OWNER_KEYWORDS) or "owner_type=owner" in url_lower or "sahibinden" in url_lower
 

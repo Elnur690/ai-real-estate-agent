@@ -173,5 +173,37 @@ async def test_facebook_scraper_post_parsing():
     assert item.offer_type == "sale"
 
 
+@pytest.mark.asyncio
+async def test_telegram_scraper_message_parsing():
+    from app.scrapers.telegram_scraper import TelegramChannelScraper
+
+    sample_tg_post = (
+        "Yasamal rayonu, Elmlər Akademiyası metrosuna yaxın 2 otaqlı mənzil kirayə verilir. "
+        "75 m², 4/9 mərtəbə, əla təmirli. "
+        "Qiymət: 700 AZN / ay. Əlaqə: 055-321-45-67. Vasitəçi deyiləm, öz mənzilimdir."
+    )
+
+    item = TelegramChannelScraper.parse_telegram_message_text(
+        text=sample_tg_post,
+        msg_url="https://t.me/emlaktap/123",
+        msg_id="tg_emlaktap_123",
+        channel_handle="emlaktap"
+    )
+
+    assert item is not None
+    assert item.district == "Yasamal"
+    assert item.metro_station == "Elmlər Akademiyası"
+    assert item.rooms == 2
+    assert item.area_sqm == 75.0
+    assert item.floor == 4
+    assert item.total_floors == 9
+    assert item.price == 700.0
+    assert item.currency == "AZN"
+    assert item.phone_number == "+994 55 321 45 67"
+    assert item.seller_type == "owner"
+    assert item.property_type == "apartment"
+    assert item.offer_type == "rent"
+
+
 
 
