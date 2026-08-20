@@ -389,19 +389,25 @@ def is_adjacent_district(target_district: str, candidate_district: str) -> bool:
     neighbors = DISTRICT_ADJACENCY.get(target_district, [])
     return candidate_district in neighbors
 
+PORTAL_HOTLINES = {
+    "+994125269494", "+994125261919", "+994125990805", "+994125990801", "+994124997700",
+    "0125269494", "0125261919", "0125990805", "0125990801", "0124997700"
+}
+
 def extract_az_phone(text: str) -> Optional[tuple[str, str]]:
     """
-    Extract Azerbaijani phone number from text.
+    Extract Azerbaijani phone number from text, ignoring portal customer service hotlines.
     Returns (formatted_display, raw_digits_for_tel_url) or None.
     Example: ('+994 50 123 45 67', '+994501234567')
     """
     import re
     if not text:
         return None
-    m = re.search(r'(?:\+?994\s*|0)?\s*\(?\s*(50|51|55|70|77|99|12|10)\s*\)?\s*[\s.-]?\s*(\d{3})\s*[\s.-]?\s*(\d{2})\s*[\s.-]?\s*(\d{2})', text)
-    if m:
+    matches = re.finditer(r'(?:\+?994\s*|0)?\s*\(?\s*(50|51|55|70|77|99|12|10)\s*\)?\s*[\s.-]?\s*(\d{3})\s*[\s.-]?\s*(\d{2})\s*[\s.-]?\s*(\d{2})', text)
+    for m in matches:
         prefix, p1, p2, p3 = m.group(1), m.group(2), m.group(3), m.group(4)
         formatted = f"+994 {prefix} {p1} {p2} {p3}"
         raw_digits = f"+994{prefix}{p1}{p2}{p3}"
-        return formatted, raw_digits
+        if raw_digits not in PORTAL_HOTLINES and f"0{prefix}{p1}{p2}{p3}" not in PORTAL_HOTLINES:
+            return formatted, raw_digits
     return None

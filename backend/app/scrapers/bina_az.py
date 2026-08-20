@@ -52,7 +52,7 @@ def normalize_bina_url(url: str) -> str:
 class BinaAzScraper(BaseScraper):
     @staticmethod
     async def fetch_item_details(item_id_or_url: str) -> dict:
-        """Fetches full item details including contact phone numbers, category, and seller type from Bina.az listing page."""
+        """Fetches full item details including real contact phone numbers from API, category, and exact seller type from Bina.az."""
         m = re.search(r'(\d+)', str(item_id_or_url))
         if not m:
             return {}
@@ -60,36 +60,32 @@ class BinaAzScraper(BaseScraper):
         url = f"https://bina.az/items/{ext_id}"
         headers = get_random_headers(referer="https://bina.az/items")
 
+        phone = None
+        # 1. Fetch real author phone number from Bina.az JSON endpoint
+        try:
+            phone_headers = dict(headers)
+            phone_headers["X-Requested-With"] = "XMLHttpRequest"
+            phone_headers["Accept"] = "application/json, text/javascript, */*; q=0.01"
+            async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
+                r_phone = await client.get(f"https://bina.az/items/{ext_id}/phones", headers=phone_headers)
+                if r_phone.status_code == 200:
+                    p_data = r_phone.json()
+                    if p_data.get("phones") and len(p_data["phones"]) > 0:
+                        from app.core.baku_locations import extract_az_phone
+                        p_res = extract_az_phone(p_data["phones"][0])
+                        if p_res:
+                            phone = p_res[0]
+        except Exception as e:
+            logger.debug(f"[BinaAzScraper] Error fetching phone JSON for #{ext_id}: {e}")
+
         try:
             async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
                 res = await client.get(url, headers=headers)
                 if res.status_code != 200:
-                    return {}
+                    return {"phone_number": phone} if phone else {}
 
                 soup = BeautifulSoup(res.text, "html.parser")
                 page_text_lower = soup.get_text().lower()
-                
-                # 1. Extract Phone Numbers from tel links, phone classes, or script JSON
-                phone = None
-                tel_links = soup.find_all("a", href=re.compile(r'tel:([+\d\s-]+)'))
-                if tel_links:
-                    phone_match = re.search(r'tel:([+\d\s-]+)', tel_links[0]['href'])
-                    if phone_match:
-                        phone = phone_match.group(1).strip()
-
-                if not phone:
-                    phone_el = soup.find(class_=re.compile(r'phone|contact|author-phone|seller-phone', re.I))
-                    if phone_el:
-                        from app.core.baku_locations import extract_az_phone
-                        res_p = extract_az_phone(phone_el.get_text())
-                        if res_p:
-                            phone = res_p[1]
-
-                if not phone:
-                    from app.core.baku_locations import extract_az_phone
-                    res_p = extract_az_phone(res.text)
-                    if res_p:
-                        phone = res_p[1]
 
                 # 2. Extract full description
                 desc_el = soup.find("article") or soup.find(class_=re.compile(r'description|article_body|item_description', re.I))
@@ -116,27 +112,32 @@ class BinaAzScraper(BaseScraper):
                     detected_prop = "apartment"
 
                 # 4. Extract Seller Type & Agency Status from Page
+                owner_region_el = soup.find(class_='product-owner__info-region') or soup.find(class_=re.compile(r'product-owner__info|seller_region|author-region', re.I))
+                owner_region_text = owner_region_el.get_text(strip=True).lower() if owner_region_el else ""
+
+                owner_name_el = soup.find(class_='product-owner__info-name')
+                owner_name = owner_name_el.get_text(strip=True) if owner_name_el else ""
+
                 has_agency_link = bool(
                     soup.find("a", href=re.compile(r'/agentlikler|/shops|/companies|/complexes')) or
-                    soup.find("a", href=re.compile(r'user_id=')) or
                     soup.find(class_=re.compile(r'agency|shop|company|author-agency', re.I))
                 )
                 
-                has_commission = any(k in page_text_lower for k in ["ofis haqqı", "ofis haqqi", "xidmət haqqı", "xidmet haqqi", "komissiya", "vasitəçi (agent)", "vasiteci (agent)", "rieltor"])
-                has_owner_claim = any(k in page_text_lower for k in ["mülkiyyətçi (ev sahibi)", "öz evimdir", "sahibindən", "vasitəçisiz"])
+                has_commission = any(k in page_text_lower for k in ["ofis haqqı", "ofis haqqi", "xidmət haqqı", "xidmet haqqi", "komissiya"])
+                has_owner_badge = "mülkiyyətçi" in owner_region_text or "sahib" in owner_region_text or "mülkiyyətçi (ev sahibi)" in page_text_lower
 
-                if has_agency_link or has_commission:
+                if has_agency_link or "vasitəçi" in owner_region_text or "agent" in owner_region_text or has_commission:
                     seller_type = "agency"
                     is_makler = True
                     makler_score = 1.0
-                elif has_owner_claim:
+                elif has_owner_badge or "mülkiyyətçi" in owner_region_text:
                     seller_type = "owner"
                     is_makler = False
                     makler_score = 0.0
                 else:
-                    seller_type = "agency" if has_agency_link else "owner"
-                    is_makler = (seller_type == "agency")
-                    makler_score = 1.0 if is_makler else 0.0
+                    seller_type = "owner"
+                    is_makler = False
+                    makler_score = 0.0
 
                 # 5. Extract exact rooms if present
                 rooms = None
@@ -151,11 +152,12 @@ class BinaAzScraper(BaseScraper):
                     "seller_type": seller_type,
                     "is_makler": is_makler,
                     "makler_score": makler_score,
-                    "rooms": rooms
+                    "rooms": rooms,
+                    "owner_name": owner_name
                 }
         except Exception as e:
             logger.debug(f"[BinaAzScraper] Error fetching detail for item {ext_id}: {e}")
-            return {}
+            return {"phone_number": phone} if phone else {}
 
     async def scrape_source(self, url_or_handle: str = "https://bina.az/items?city_id=1&category_id=1&leased=false") -> List[RawListingItem]:
         logger.info(f"[BinaAzScraper] Starting scrape from {url_or_handle}")

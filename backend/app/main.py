@@ -85,6 +85,11 @@ async def lifespan(app: FastAPI):
             SET property_type = 'commercial' 
             WHERE listing_url LIKE '%obyekt%' OR listing_url LIKE '%magaza%';
         """))
+        await conn.execute(text("""
+            UPDATE listings 
+            SET phone_number = NULL, is_makler = FALSE, makler_score = 0.0
+            WHERE phone_number IN ('+994125269494', '+994125261919', '+994125990805', '+994125990801', '+994124997700', '0125269494', '0125261919');
+        """))
     logger.info("[Startup] Database tables and columns verified.")
 
     # Auto-seed default admin user if none exists

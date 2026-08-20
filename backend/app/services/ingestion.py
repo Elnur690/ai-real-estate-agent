@@ -244,6 +244,23 @@ class IngestionService:
                 await db.commit()
                 return existing_listing
             else:
+                if item.external_id and "bina_" in item.external_id:
+                    try:
+                        details = await BinaAzScraper.fetch_item_details(item.external_id)
+                        if details:
+                            if details.get("phone_number"):
+                                item.phone_number = details["phone_number"]
+                            if details.get("seller_type"):
+                                item.seller_type = details["seller_type"]
+                            if details.get("property_type"):
+                                item.property_type = details["property_type"]
+                            if details.get("rooms") and not item.rooms:
+                                item.rooms = details["rooms"]
+                            if details.get("full_description") and len(details["full_description"]) > len(item.description or ""):
+                                item.description = details["full_description"]
+                    except Exception as e:
+                        logger.debug(f"[IngestionService] Detail fetch error for {item.external_id}: {e}")
+
                 from app.core.baku_locations import extract_az_phone
                 phone_res = extract_az_phone(item.phone_number or f"{item.title} {item.description or ''} {item.address_raw or ''}")
                 extracted_phone = phone_res[0] if phone_res else None
