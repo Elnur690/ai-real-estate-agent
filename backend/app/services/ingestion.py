@@ -190,19 +190,11 @@ class IngestionService:
         if search.metro_station:
             loc_names.extend([p.strip() for p in re.split(r'[,;/|\+]', search.metro_station) if p.strip()])
 
-        # A. Location Slug Targeted Bina.az Feeds (Fastest real-time arrival)
-        for slug in found_slugs:
-            owner_query = "?owner_type=owner" if is_owner else ""
-            bina_slug_url = f"https://bina.az/baki/{deal_slug}/{prop_slug}/{slug}{owner_query}"
-            targets.append((f"Bina.az Slug ({slug})", BinaAzScraper(), bina_slug_url))
-
-        # B. Parameterized Query Feeds on Bina.az
+        # Parameterized Targeted Query Feeds on Bina.az
         for cat_id in categories_to_query:
             bina_params = [f"city_id=1", f"leased={leased_str}", f"category_id={cat_id}"]
             if is_owner:
                 bina_params.append("owner_type=owner")
-            if loc_names:
-                bina_params.append(f"q={urllib.parse.quote(loc_names[0])}")
             bina_params.extend(rooms_params)
             bina_params.extend(price_params)
 
