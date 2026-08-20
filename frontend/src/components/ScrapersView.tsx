@@ -8,7 +8,9 @@ export const ScrapersView: React.FC = () => {
   const [sources, setSources] = useState<ScraperSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [triggering, setTriggering] = useState(false);
+  const [rechecking, setRechecking] = useState(false);
   const [cycleResult, setCycleResult] = useState<any>(null);
+  const [recheckResult, setRecheckResult] = useState<any>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const { t } = useTranslation();
@@ -46,6 +48,21 @@ export const ScrapersView: React.FC = () => {
       console.error(e);
     } finally {
       setTriggering(false);
+    }
+  };
+
+  const handleRecheckAll = async () => {
+    setRechecking(true);
+    setRecheckResult(null);
+    try {
+      const res = await api.post('/scrapers/recheck');
+      setRecheckResult(res.data.result);
+      await loadSources();
+    } catch (e: any) {
+      console.error(e);
+      alert('Köhnə elanlar yoxlanarkən xəta baş verdi');
+    } finally {
+      setRechecking(false);
     }
   };
 
@@ -140,6 +157,15 @@ export const ScrapersView: React.FC = () => {
         </div>
         <div className="flex items-center gap-3">
           <button
+            onClick={handleRecheckAll}
+            disabled={rechecking}
+            title="Köhnə elanlardakı telefon və satıcı məlumatlarını yenidən yoxlayıb uyğun elanları göndərir"
+            className="flex items-center gap-2 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 text-sm font-medium px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-amber-600/10 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${rechecking ? 'animate-spin' : ''}`} />
+            {rechecking ? 'Yoxlanılır...' : 'Köhnə Elanları Düzəlt & Yenidən Yoxla'}
+          </button>
+          <button
             onClick={() => setShowAddModal(true)}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2.5 rounded-xl transition-all shadow-lg shadow-blue-600/20"
           >
@@ -156,6 +182,15 @@ export const ScrapersView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {recheckResult && (
+        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between">
+          <span className="font-semibold flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-amber-400" /> Baza Elanları Yenidən Yoxlanıldı və Düzəldildi!
+          </span>
+          <span>Skan edilən: {recheckResult.total_scanned} | Düzəldilən: {recheckResult.healed_count} | Yeni Göndərilən Uyğunluqlar: {recheckResult.newly_matched_count}</span>
+        </div>
+      )}
 
       {/* Webhook & Realtime Ingestion Info Card */}
       <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-950/40 via-dark-800 to-indigo-950/40 border border-blue-500/20 flex flex-col md:flex-row md:items-center justify-between gap-4">

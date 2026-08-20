@@ -81,6 +81,15 @@ async def delete_source(source_id: int, db: AsyncSession = Depends(get_db), curr
     await db.commit()
     return {"status": "deleted", "id": source_id}
 
+@router.post("/recheck")
+async def recheck_historical_listings(db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
+    """Heals historical listings: purges hotlines, refetches real phones & seller classifications, and delivers matches."""
+    result = await IngestionService.recheck_and_heal_all_listings(db, limit=1000)
+    return {
+        "status": "completed",
+        "result": result
+    }
+
 @router.post("/trigger")
 async def trigger_ingestion(db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
     """Manually trigger scraping, parsing, and match delivery cycle."""

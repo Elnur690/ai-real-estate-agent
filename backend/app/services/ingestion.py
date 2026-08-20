@@ -905,3 +905,77 @@ class IngestionService:
                     )
 
         return matches_count
+
+    @staticmethod
+    async def recheck_and_heal_all_listings(db: AsyncSession, limit: int = 1000) -> dict:
+        """
+        Scans historical listings, purges portal hotline numbers, re-fetches live detail metadata,
+        re-evaluates seller/makler classification, and delivers any previously missed matches.
+        """
+        from sqlalchemy import text
+        from app.services.makler_detector import MaklerDetectorService
+        from app.services.avm_engine import AVMEngineService
+
+        logger.info("[IngestionService] Starting database healing and re-evaluation cycle...")
+
+        # 1. Purge portal customer service hotline numbers
+        await db.execute(text("""
+            UPDATE listings 
+            SET phone_number = NULL, is_makler = FALSE, makler_score = 0.0
+            WHERE phone_number IN ('+994125269494', '+994125261919', '+994125990805', '+994125990801', '+994124997700', '0125269494', '0125261919')
+               OR phone_number LIKE '%5269494%' OR phone_number LIKE '%5261919%';
+        """))
+        await db.commit()
+
+        # 2. Select recent active listings
+        stmt = select(Listing).where(Listing.is_active == True).order_by(Listing.id.desc()).limit(limit)
+        res = await db.execute(stmt)
+        listings = res.scalars().all()
+
+        healed_count = 0
+        newly_matched_count = 0
+
+        for listing in listings:
+            try:
+                modified = False
+                if listing.external_id and "bina_" in listing.external_id:
+                    details = await BinaAzScraper.fetch_item_details(listing.external_id)
+                    if details:
+                        if details.get("phone_number") and listing.phone_number != details["phone_number"]:
+                            listing.phone_number = details["phone_number"]
+                            modified = True
+                        if details.get("seller_type") and listing.seller_type != details["seller_type"]:
+                            listing.seller_type = details["seller_type"]
+                            listing.is_makler = details.get("is_makler", False)
+                            listing.makler_score = details.get("makler_score", 0.0)
+                            modified = True
+                        if details.get("property_type") and listing.property_type != details["property_type"]:
+                            listing.property_type = details["property_type"]
+                            modified = True
+                        if details.get("rooms") and not listing.rooms:
+                            listing.rooms = details["rooms"]
+                            modified = True
+                        if details.get("full_description") and len(details["full_description"]) > len(listing.description or ""):
+                            listing.description = details["full_description"]
+                            modified = True
+
+                listing = await MaklerDetectorService.analyze_listing(db, listing)
+                listing = await AVMEngineService.evaluate_listing_valuation(db, listing)
+                await db.commit()
+
+                if modified:
+                    healed_count += 1
+
+                # Re-evaluate against active searches
+                delivered = await IngestionService._evaluate_and_deliver_matches(db, listing)
+                newly_matched_count += delivered
+
+            except Exception as e:
+                logger.debug(f"[IngestionService] Error healing listing #{listing.id}: {e}")
+
+        logger.info(f"[IngestionService] Healing completed. Scanned: {len(listings)}, Healed: {healed_count}, Newly Matched: {newly_matched_count}")
+        return {
+            "total_scanned": len(listings),
+            "healed_count": healed_count,
+            "newly_matched_count": newly_matched_count
+        }
