@@ -42,10 +42,11 @@ export const ScrapersView: React.FC = () => {
     setCycleResult(null);
     try {
       const res = await api.post('/scrapers/trigger');
-      setCycleResult(res.data.result);
-      await loadSources();
+      setCycleResult(res.data);
+      setTimeout(() => loadSources(), 3000);
     } catch (e: any) {
       console.error(e);
+      alert('Skreyp başladılarkən xəta baş verdi');
     } finally {
       setTriggering(false);
     }
@@ -56,8 +57,8 @@ export const ScrapersView: React.FC = () => {
     setRecheckResult(null);
     try {
       const res = await api.post('/scrapers/recheck');
-      setRecheckResult(res.data.result);
-      await loadSources();
+      setRecheckResult(res.data);
+      setTimeout(() => loadSources(), 3000);
     } catch (e: any) {
       console.error(e);
       alert('Köhnə elanlar yoxlanarkən xəta baş verdi');
@@ -186,9 +187,9 @@ export const ScrapersView: React.FC = () => {
       {recheckResult && (
         <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between">
           <span className="font-semibold flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-amber-400" /> Baza Elanları Yenidən Yoxlanıldı və Düzəldildi!
+            <CheckCircle2 className="w-4 h-4 text-amber-400" /> {recheckResult.message || 'Baza elanları yenidən yoxlanılır...'}
           </span>
-          <span>Skan edilən: {recheckResult.total_scanned} | Düzəldilən: {recheckResult.healed_count} | Yeni Göndərilən Uyğunluqlar: {recheckResult.newly_matched_count}</span>
+          <span className="text-slate-400">Arxa planda icra olunur</span>
         </div>
       )}
 
@@ -215,9 +216,9 @@ export const ScrapersView: React.FC = () => {
       {cycleResult && (
         <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center justify-between">
           <span className="font-semibold flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4" /> {t.success}!
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" /> {cycleResult.message || 'Skreyp dövrü arxa planda başladıldı!'}
           </span>
-          <span>{t.totalListings}: {cycleResult.scraped_count} | {t.dailyMatches}: {cycleResult.matched_count}</span>
+          <span className="text-slate-400">Arxa planda icra olunur</span>
         </div>
       )}
 

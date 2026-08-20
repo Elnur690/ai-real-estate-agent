@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, BackgroundTasks
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -81,22 +81,32 @@ async def delete_source(source_id: int, db: AsyncSession = Depends(get_db), curr
     await db.commit()
     return {"status": "deleted", "id": source_id}
 
+async def _bg_run_ingestion():
+    from app.db.session import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        await IngestionService.run_ingestion_cycle(db)
+
+async def _bg_recheck_listings(limit: int = 1000):
+    from app.db.session import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        await IngestionService.recheck_and_heal_all_listings(db, limit=limit)
+
 @router.post("/recheck")
-async def recheck_historical_listings(db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
-    """Heals historical listings: purges hotlines, refetches real phones & seller classifications, and delivers matches."""
-    result = await IngestionService.recheck_and_heal_all_listings(db, limit=1000)
+async def recheck_historical_listings(background_tasks: BackgroundTasks, current_admin = Depends(get_current_admin)):
+    """Heals historical listings in background: purges hotlines, refetches real phones & seller classifications, and delivers matches."""
+    background_tasks.add_task(_bg_recheck_listings, 1000)
     return {
-        "status": "completed",
-        "result": result
+        "status": "started",
+        "message": "Baza elanlarının təmizlənməsi və yenidən yoxlanılması arxa planda uğurla başladıldı."
     }
 
 @router.post("/trigger")
-async def trigger_ingestion(db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
-    """Manually trigger scraping, parsing, and match delivery cycle."""
-    result = await IngestionService.run_ingestion_cycle(db)
+async def trigger_ingestion(background_tasks: BackgroundTasks, current_admin = Depends(get_current_admin)):
+    """Manually trigger scraping, parsing, and match delivery cycle in background."""
+    background_tasks.add_task(_bg_run_ingestion)
     return {
-        "status": "completed",
-        "result": result
+        "status": "started",
+        "message": "Skreyp və uyğunlaşdırma dövrü arxa planda uğurla başladıldı."
     }
 
 @router.get("/stats")
