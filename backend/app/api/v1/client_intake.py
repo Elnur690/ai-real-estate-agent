@@ -55,9 +55,19 @@ async def process_client_intake(
     await db.commit()
     await db.refresh(new_search)
 
+    # Run instant live targeted portal scrape and historical DB backfill
+    delivered_count = 0
+    try:
+        from app.services.ingestion import IngestionService
+        delivered_count = await IngestionService.run_targeted_instant_backfill(db, new_search)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"[ClientIntake] Error during instant targeted backfill: {e}")
+
     return {
         "status": "success",
         "saved_search_id": new_search.id,
+        "delivered_matches_count": delivered_count,
         "parsed_criteria": parsed.summary_az,
         "message": f"Təşəkkür edirik {body.client_name}! Axtarışınız agentə yönləndirildi."
     }

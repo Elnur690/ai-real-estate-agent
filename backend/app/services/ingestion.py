@@ -300,20 +300,81 @@ class IngestionService:
     @staticmethod
     async def run_targeted_instant_backfill(db: AsyncSession, search: SavedSearch) -> int:
         """
-        Runs instant live scrape of targeted portal URLs and evaluates historical DB listings
+        Runs targeted SQL evaluation across historical DB listings and live targeted scrape of portal URLs,
         delivering real-time matching listings within seconds of search creation.
         """
         logger.info(f"[IngestionService] Running instant targeted backfill for Search #{search.id} ({search.name or search.district})")
         delivered = 0
 
-        # Step 1: Scan all active listings in DB for this search
-        stmt_active = select(Listing).where(Listing.is_active == True).order_by(Listing.id.desc()).limit(300)
+        # Step 1: Scan all matching candidate listings in DB for this search
+        from sqlalchemy import or_, and_
+        from app.core.baku_locations import get_all_aliases_for_location
+
+        conditions = [Listing.is_active == True]
+
+        # Price range conditions
+        if search.min_price and search.min_price > 0:
+            conditions.append(or_(Listing.price >= (search.min_price * 0.8), Listing.price.is_(None)))
+        if search.max_price and search.max_price > 0:
+            conditions.append(or_(Listing.price <= (search.max_price * 1.2), Listing.price.is_(None)))
+
+        # Rooms conditions
+        if search.min_rooms and search.min_rooms > 0:
+            conditions.append(or_(Listing.rooms >= search.min_rooms, Listing.rooms.is_(None)))
+        if search.max_rooms and search.max_rooms > 0:
+            conditions.append(or_(Listing.rooms <= search.max_rooms, Listing.rooms.is_(None)))
+
+        # Offer type conditions
+        search_offer = (getattr(search, 'offer_type', 'sale') or 'sale').lower().strip()
+        if search_offer == "sale":
+            conditions.append(or_(Listing.offer_type != "rent", Listing.offer_type.is_(None)))
+        elif search_offer in ["rent", "daily_rent", "kiraye", "kirayə", "icarə", "icare"]:
+            conditions.append(Listing.offer_type.in_(["rent", "daily_rent"]))
+
+        # Property type conditions
+        search_prop = (getattr(search, 'property_type', 'apartment') or 'apartment').lower().strip()
+        if search_prop in ["apartment", "menzil", "mənzil"]:
+            conditions.append(or_(Listing.property_type.in_(["apartment", "mənzil"]), Listing.property_type.is_(None)))
+        elif search_prop in ["house", "villa", "həyət evi", "heyet evi", "bağ evi", "bag evi"]:
+            conditions.append(or_(Listing.property_type.in_(["house", "villa"]), Listing.property_type.is_(None)))
+        elif search_prop in ["office", "ofis"]:
+            conditions.append(or_(Listing.property_type.in_(["office", "commercial"]), Listing.property_type.is_(None)))
+        elif search_prop in ["commercial", "obyekt"]:
+            conditions.append(or_(Listing.property_type.in_(["commercial", "office"]), Listing.property_type.is_(None)))
+        elif search_prop in ["land", "torpaq"]:
+            conditions.append(or_(Listing.property_type == "land", Listing.property_type.is_(None)))
+
+        # Location conditions
+        loc_parts = []
+        if search.district:
+            loc_parts.extend([p.strip() for p in re.split(r'[,;/|\+]|\bvə\b|\bve\b|\bya da\b|\bor\b', search.district, flags=re.I) if p.strip()])
+        if search.metro_station:
+            loc_parts.extend([p.strip() for p in re.split(r'[,;/|\+]|\bvə\b|\bve\b|\bya da\b|\bor\b', search.metro_station, flags=re.I) if p.strip()])
+
+        if loc_parts:
+            loc_likes = []
+            for lp in loc_parts:
+                loc_likes.append(Listing.district.ilike(f"%{lp}%"))
+                loc_likes.append(Listing.metro_station.ilike(f"%{lp}%"))
+                loc_likes.append(Listing.address_raw.ilike(f"%{lp}%"))
+                loc_likes.append(Listing.title.ilike(f"%{lp}%"))
+                for alias in get_all_aliases_for_location(lp):
+                    loc_likes.append(Listing.district.ilike(f"%{alias}%"))
+                    loc_likes.append(Listing.metro_station.ilike(f"%{alias}%"))
+                    loc_likes.append(Listing.address_raw.ilike(f"%{alias}%"))
+                    loc_likes.append(Listing.title.ilike(f"%{alias}%"))
+                    loc_likes.append(Listing.description.ilike(f"%{alias}%"))
+            conditions.append(or_(*loc_likes))
+
+        stmt_active = select(Listing).where(and_(*conditions)).order_by(Listing.id.desc()).limit(200)
         res_active = await db.execute(stmt_active)
         active_listings = res_active.scalars().all()
 
         for l in active_listings:
             try:
-                delivered += await IngestionService._evaluate_and_deliver_matches(db, l)
+                delivered += await IngestionService._evaluate_and_deliver_matches(
+                    db, l, target_search_id=search.id, enrich_live=False
+                )
             except Exception as e:
                 logger.error(f"[IngestionService] Error evaluating listing #{l.id} in backfill: {e}")
 
@@ -326,7 +387,9 @@ class IngestionService:
                 for item in items:
                     db_listing = await IngestionService._ingest_single_raw_item(db, item, source_id=1)
                     if db_listing:
-                        delivered += await IngestionService._evaluate_and_deliver_matches(db, db_listing)
+                        delivered += await IngestionService._evaluate_and_deliver_matches(
+                            db, db_listing, target_search_id=search.id, enrich_live=True
+                        )
             except Exception as e:
                 logger.error(f"[IngestionService] Error scraping targeted URL {target_url}: {e}")
 
@@ -618,12 +681,17 @@ class IngestionService:
         return True
 
     @staticmethod
-    async def _evaluate_and_deliver_matches(db: AsyncSession, listing: Listing) -> int:
+    async def _evaluate_and_deliver_matches(
+        db: AsyncSession,
+        listing: Listing,
+        target_search_id: Optional[int] = None,
+        enrich_live: bool = True
+    ) -> int:
         if not getattr(listing, 'is_active', True):
             return 0
 
-        # If from Bina.az, enrich detail metadata (exact property type, seller type, phone, rooms) before matching
-        if listing.external_id and "bina_" in listing.external_id:
+        # If live scraping from Bina.az, enrich detail metadata (exact property type, seller type, phone, rooms) before matching
+        if enrich_live and listing.external_id and "bina_" in listing.external_id:
             try:
                 details = await BinaAzScraper.fetch_item_details(listing.external_id)
                 if details:
@@ -647,7 +715,11 @@ class IngestionService:
             except Exception as e:
                 logger.debug(f"[IngestionService] Detail enrichment exception for listing #{listing.id}: {e}")
 
-        stmt = select(SavedSearch).where(SavedSearch.is_active == True)
+        if target_search_id is not None:
+            stmt = select(SavedSearch).where(SavedSearch.id == target_search_id, SavedSearch.is_active == True)
+        else:
+            stmt = select(SavedSearch).where(SavedSearch.is_active == True)
+
         res = await db.execute(stmt)
         saved_searches = res.scalars().all()
 
