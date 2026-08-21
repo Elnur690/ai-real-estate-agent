@@ -115,18 +115,20 @@ class BinaAzScraper(BaseScraper):
                 owner_region_el = soup.find(class_='product-owner__info-region') or soup.find(class_=re.compile(r'product-owner__info|seller_region|author-region', re.I))
                 owner_region_text = owner_region_el.get_text(strip=True).lower() if owner_region_el else ""
 
-                owner_name_el = soup.find(class_='product-owner__info-name')
+                owner_name_el = soup.find(class_='product-owner__info-name') or soup.find(class_=re.compile(r'owner__info-name|author-name', re.I))
                 owner_name = owner_name_el.get_text(strip=True) if owner_name_el else ""
 
-                has_agency_link = bool(
-                    soup.find("a", href=re.compile(r'/agentlikler|/shops|/companies|/complexes')) or
-                    soup.find(class_=re.compile(r'agency|shop|company|author-agency', re.I))
+                # Distinguish specific profile links (e.g. /agentlikler/123) from the site navbar link (/agentlikler)
+                has_specific_agency_link = bool(
+                    soup.find("a", href=re.compile(r'/agentlikler/\d+|/shops/\w+|/companies/\d+|/complexes/\d+'))
+                    or soup.find(class_=re.compile(r'author-agency|items-i-agency', re.I))
                 )
                 
-                has_commission = any(k in page_text_lower for k in ["ofis haqqı", "ofis haqqi", "xidmət haqqı", "xidmet haqqi", "komissiya"])
-                has_owner_badge = "mülkiyyətçi" in owner_region_text or "sahib" in owner_region_text or "mülkiyyətçi (ev sahibi)" in page_text_lower
+                has_commission = any(k in page_text_lower for k in ["ofis haqqı", "ofis haqqi", "xidmət haqqı", "xidmet haqqi", "komissiya:"])
+                has_owner_badge = "mülkiyyətçi" in page_text_lower or "sahibindən" in page_text_lower
+                has_agent_badge = ("vasitəçi" in page_text_lower or "agentlik" in page_text_lower) and not any(k in page_text_lower for k in ["vasitəçilər zəng vurmasın", "vasiteciler narahat etmesin", "vasitəçi yoxdur", "makler narahat etməsin", "maklersiz"])
 
-                if has_agency_link or "vasitəçi" in owner_region_text or "agent" in owner_region_text or has_commission:
+                if has_specific_agency_link or has_commission:
                     seller_type = "agency"
                     is_makler = True
                     makler_score = 1.0
@@ -134,6 +136,10 @@ class BinaAzScraper(BaseScraper):
                     seller_type = "owner"
                     is_makler = False
                     makler_score = 0.0
+                elif has_agent_badge or "vasitəçi" in owner_region_text:
+                    seller_type = "agency"
+                    is_makler = True
+                    makler_score = 0.8
                 else:
                     seller_type = "owner"
                     is_makler = False
