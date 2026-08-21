@@ -77,6 +77,15 @@ async def lifespan(app: FastAPI):
         """))
         await conn.execute(text("""
             UPDATE listings 
+            SET offer_type = 'daily_rent' 
+            WHERE (price <= 400 AND offer_type = 'sale') 
+               OR listing_url LIKE '%gunluk%' 
+               OR listing_url LIKE '%daily%'
+               OR title LIKE '%günlük%'
+               OR description LIKE '%günlük%';
+        """))
+        await conn.execute(text("""
+            UPDATE listings 
             SET property_type = 'office' 
             WHERE listing_url LIKE '%ofis%' OR listing_url LIKE '%office%';
         """))

@@ -145,7 +145,16 @@ class BinaAzScraper(BaseScraper):
                     is_makler = False
                     makler_score = 0.0
 
-                # 5. Extract exact rooms if present
+                # 5. Extract Offer Type (sale vs rent vs daily_rent)
+                detected_offer = "sale"
+                if any(k in h1_text or k in page_text_lower for k in ["günlük", "gunluk", "/ gün", "/gun", "sutkalıq", "sutkaliq"]):
+                    detected_offer = "daily_rent"
+                elif any(k in h1_text for k in ["icarə", "icare", "kirayə", "kiraye"]) or any(k in page_text_lower for k in ["icarəyə verilir", "kirayəyə verilir", "aylıq kirayə", "ayliq kiraye", "arendaya verilir", "kirayə verilir"]):
+                    detected_offer = "rent"
+                elif "satılır" in h1_text:
+                    detected_offer = "sale"
+
+                # 6. Extract exact rooms if present
                 rooms = None
                 rooms_m = re.search(r'(\d+)\s*otaq', f"{h1_text} {full_desc[:200].lower()}")
                 if rooms_m:
@@ -155,6 +164,7 @@ class BinaAzScraper(BaseScraper):
                     "phone_number": phone,
                     "full_description": full_desc,
                     "property_type": detected_prop,
+                    "offer_type": detected_offer,
                     "seller_type": seller_type,
                     "is_makler": is_makler,
                     "makler_score": makler_score,
@@ -262,10 +272,13 @@ class BinaAzScraper(BaseScraper):
                 currency = "USD"
 
             # 2. Offer Type (Sale, Monthly Rent, Daily Rent)
-            if "gunluk" in target_url or "daily" in target_url or "/ gün" in raw_text or "/gun" in raw_lower or "günlük" in raw_lower:
+            if "gunluk" in target_url or "daily" in target_url or "/ gün" in raw_text or "/gun" in raw_lower or "günlük" in raw_lower or "sutkalıq" in raw_lower or "günlük kirayə" in raw_lower:
                 offer_type = "daily_rent"
-            elif "/kiraye" in target_url or "leased=true" in target_url or "kiraye" in target_url or "/ ay" in raw_text or "aylıq" in raw_lower or "icarə" in raw_lower:
+            elif "/kiraye" in target_url or "leased=true" in target_url or "kiraye" in target_url or "/ ay" in raw_text or "aylıq" in raw_lower or "icarə" in raw_lower or "kirayə" in raw_lower:
                 offer_type = "rent"
+            elif price > 0 and price <= 350:
+                # Real estate in Baku is never sold for <= 350 AZN. If <= 350 AZN, it is daily/monthly rental.
+                offer_type = "daily_rent"
             else:
                 offer_type = "sale"
 

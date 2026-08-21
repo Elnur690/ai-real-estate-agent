@@ -246,12 +246,18 @@ class IngestionService:
                                 item.seller_type = details["seller_type"]
                             if details.get("property_type"):
                                 item.property_type = details["property_type"]
+                            if details.get("offer_type"):
+                                item.offer_type = details["offer_type"]
                             if details.get("rooms") and not item.rooms:
                                 item.rooms = details["rooms"]
                             if details.get("full_description") and len(details["full_description"]) > len(item.description or ""):
                                 item.description = details["full_description"]
                     except Exception as e:
                         logger.debug(f"[IngestionService] Detail fetch error for {item.external_id}: {e}")
+
+                # Sanity check: Baku apartments/houses with price <= 400 are daily or monthly rentals, not sale
+                if getattr(item, 'price', 0) and item.price <= 400 and getattr(item, 'offer_type', 'sale') == 'sale':
+                    item.offer_type = 'daily_rent'
 
                 from app.core.baku_locations import extract_az_phone
                 phone_res = extract_az_phone(item.phone_number or f"{item.title} {item.description or ''} {item.address_raw or ''}")
@@ -481,20 +487,28 @@ class IngestionService:
 
         listing_text = normalize_az_text(f"{listing.title or ''} {listing.description or ''} {listing.address_raw or ''}")
 
-        # 1. Offer / Deal Type Check (Sale vs Rent)
+        # 1. Offer / Deal Type Check (Sale vs Rent vs Daily Rent)
         search_offer = (getattr(search, 'offer_type', 'sale') or 'sale').lower().strip()
         list_offer = (getattr(listing, 'offer_type', 'sale') or 'sale').lower().strip()
 
         if search_offer != "any":
             if search_offer == "sale":
-                # Must not be a rental listing
-                if list_offer in ["rent", "daily_rent"]:
+                # Must not be a rental listing or daily rent
+                if list_offer in ["rent", "daily_rent", "kiraye", "kirayə", "icarə", "icare"]:
                     return False
-                if any(kw in listing_text for kw in ["kirayəyə verilir", "icarəyə verilir", "kiraye verilir", "icareye verilir", "arendaya verilir", "aylıq kirayə", "ayliq kiraye", "aylıq icarə", "ayliq icare", "kirayə verilir"]):
+                if getattr(listing, 'price', 0) and listing.price <= 500:
+                    # Baku apartment/house priced <= 500 AZN is rental or daily rental, not a sale
+                    return False
+                if any(kw in listing_text for kw in ["kirayəyə verilir", "icarəyə verilir", "kiraye verilir", "icareye verilir", "arendaya verilir", "aylıq kirayə", "ayliq kiraye", "aylıq icarə", "ayliq icare", "kirayə verilir", "günlük", "gunluk", "sutkalıq", "sutkaliq", "/ gün", "/gun"]):
                     return False
             elif search_offer in ["rent", "kiraye", "kirayə", "icarə", "icare"]:
                 # Must be a rental listing
+                if list_offer in ["daily_rent"]:
+                    return False
                 if list_offer == "sale" and not any(kw in listing_text for kw in RENTAL_KEYWORDS):
+                    return False
+            elif search_offer in ["daily_rent", "gunluk", "günlük"]:
+                if list_offer != "daily_rent" and not any(kw in listing_text for kw in ["günlük", "gunluk", "sutkalıq", "sutkaliq"]):
                     return False
 
         # 2. Property Type Check (Apartment vs Villa/House vs Office vs Commercial vs Land)
@@ -699,6 +713,8 @@ class IngestionService:
                         listing.phone_number = details["phone_number"]
                     if details.get("property_type"):
                         listing.property_type = details["property_type"]
+                    if details.get("offer_type"):
+                        listing.offer_type = details["offer_type"]
                     if details.get("seller_type"):
                         listing.seller_type = details["seller_type"]
                         listing.is_makler = details.get("is_makler", False)
@@ -707,6 +723,10 @@ class IngestionService:
                         listing.rooms = details["rooms"]
                     if details.get("full_description") and len(details["full_description"]) > len(listing.description or ""):
                         listing.description = details["full_description"]
+
+                    # Sanity check: Baku apartments/houses with price <= 400 are daily or monthly rentals, not sale
+                    if getattr(listing, 'price', 0) and listing.price <= 400 and getattr(listing, 'offer_type', 'sale') == 'sale':
+                        listing.offer_type = 'daily_rent'
 
                     # Re-evaluate makler & seller legitimacy with full page content and phone
                     from app.services.makler_detector import MaklerDetectorService
