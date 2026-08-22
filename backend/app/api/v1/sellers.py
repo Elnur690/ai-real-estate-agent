@@ -32,6 +32,7 @@ class CreateSellerRequest(BaseModel):
 
 class UpdateSellerRequest(BaseModel):
     name: Optional[str] = None
+    email: Optional[str] = None
     phone: Optional[str] = None
     company_name: Optional[str] = None
     commission_rate: Optional[float] = None
@@ -292,6 +293,15 @@ async def update_seller_admin(
 
     if body.name is not None:
         seller.name = body.name
+    if body.email is not None and body.email.strip():
+        clean_email = body.email.strip().lower()
+        if clean_email != seller.email:
+            # Check for email collision
+            chk_stmt = select(User).where(User.email == clean_email, User.id != seller.user_id)
+            chk_res = await db.execute(chk_stmt)
+            if chk_res.scalars().first():
+                raise HTTPException(status_code=400, detail="Bu email ilə artıq başqa istifadəçi mövcuddur.")
+            seller.email = clean_email
     if body.phone is not None:
         seller.phone = body.phone
     if body.company_name is not None:
@@ -333,6 +343,8 @@ async def update_seller_admin(
     if user:
         if body.name is not None:
             user.name = body.name
+        if body.email is not None and body.email.strip():
+            user.email = body.email.strip().lower()
         if body.phone is not None:
             user.phone = body.phone
         if body.password:
@@ -344,6 +356,7 @@ async def update_seller_admin(
     return {"message": "Satıcı məlumatları yeniləndi", "seller": {
         "id": seller.id,
         "name": seller.name,
+        "email": seller.email,
         "commission_rate": seller.commission_rate,
         "rank": seller.rank,
         "status": seller.status,

@@ -73,6 +73,24 @@ async def test_admin_create_seller_and_list(client: AsyncClient, test_db: AsyncS
     sellers_list = list_res.json()
     assert len(sellers_list) == 1
     assert sellers_list[0]["email"] == "seller@bakufranchise.az"
+    seller_id = sellers_list[0]["id"]
+
+    # 4. Admin updates Seller login email
+    update_res = await client.put(f"/api/v1/sellers/{seller_id}", json={
+        "email": "newlogin@bakufranchise.az",
+        "name": "Baku Franchise Seller Updated"
+    }, headers=headers)
+    assert update_res.status_code == 200
+    assert update_res.json()["seller"]["email"] == "newlogin@bakufranchise.az"
+
+    # 5. Verify seller can log in using their new updated email
+    login_res = await client.post("/api/v1/auth/login", data={
+        "username": "newlogin@bakufranchise.az",
+        "password": "SellerPass2026!"
+    })
+    assert login_res.status_code == 200
+    assert login_res.json()["role"] == "seller"
+    assert login_res.json()["access_token"] is not None
 
 @pytest.mark.asyncio
 async def test_seller_portal_packages_and_agent_registration(client: AsyncClient, test_db: AsyncSession):

@@ -177,6 +177,7 @@ export function SellersAdminView() {
   const openEditModal = (seller: SellerItem) => {
     setEditingSeller(seller);
     setFormName(seller.name);
+    setFormEmail(seller.email);
     setFormPhone(seller.phone);
     setFormCompany(seller.company_name || '');
     setFormCommission(seller.commission_rate);
@@ -224,6 +225,7 @@ export function SellersAdminView() {
     try {
       await api.put(`/sellers/${editingSeller.id}`, {
         name: formName,
+        email: formEmail,
         phone: formPhone,
         company_name: formCompany || undefined,
         commission_rate: formCommission,
@@ -861,15 +863,27 @@ export function SellersAdminView() {
             </div>
 
             <form onSubmit={handleUpdateSeller} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Satıcı Adı *</label>
-                <input
-                  type="text"
-                  required
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">Satıcı Adı *</label>
+                  <input
+                    type="text"
+                    required
+                    value={formName}
+                    onChange={(e) => setFormName(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">Giriş Emaili (Login) *</label>
+                  <input
+                    type="email"
+                    required
+                    value={formEmail}
+                    onChange={(e) => setFormEmail(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                  />
+                </div>
               </div>
 
               <div>
