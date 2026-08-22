@@ -32,8 +32,12 @@ class PlanResponse(BaseModel):
     max_locations_per_search: int = 5
     feature_aged_listings: bool = False
     addon_aged_listings_price: float = 0.0
+    addon_aged_max_months: int = 12
+    addon_aged_tiers: Optional[List[dict]] = []
     max_saved_searches: int = 10
+    addon_saved_searches: int = 0
     addon_saved_searches_price: float = 10.0
+    addon_search_tiers: Optional[List[dict]] = []
     backup_enabled: bool
     subscriber_count: int = 0
 
@@ -56,8 +60,12 @@ class CreatePlanRequest(BaseModel):
     max_locations_per_search: int = 5
     feature_aged_listings: bool = False
     addon_aged_listings_price: float = 0.0
+    addon_aged_max_months: int = 12
+    addon_aged_tiers: Optional[List[dict]] = []
     max_saved_searches: int = 10
+    addon_saved_searches: int = 0
     addon_saved_searches_price: float = 10.0
+    addon_search_tiers: Optional[List[dict]] = []
     backup_enabled: bool = True
 
 
@@ -78,8 +86,12 @@ class UpdatePlanRequest(BaseModel):
     max_locations_per_search: Optional[int] = None
     feature_aged_listings: Optional[bool] = None
     addon_aged_listings_price: Optional[float] = None
+    addon_aged_max_months: Optional[int] = None
+    addon_aged_tiers: Optional[List[dict]] = None
     max_saved_searches: Optional[int] = None
+    addon_saved_searches: Optional[int] = None
     addon_saved_searches_price: Optional[float] = None
+    addon_search_tiers: Optional[List[dict]] = None
     backup_enabled: Optional[bool] = None
 
 
@@ -115,8 +127,12 @@ async def list_plans(db: AsyncSession = Depends(get_db)):
             max_locations_per_search=getattr(plan, 'max_locations_per_search', 5),
             feature_aged_listings=getattr(plan, 'feature_aged_listings', False),
             addon_aged_listings_price=getattr(plan, 'addon_aged_listings_price', 0.0),
+            addon_aged_max_months=getattr(plan, 'addon_aged_max_months', 12),
+            addon_aged_tiers=getattr(plan, 'addon_aged_tiers', []) or [],
             max_saved_searches=getattr(plan, 'max_saved_searches', 10),
+            addon_saved_searches=getattr(plan, 'addon_saved_searches', 0),
             addon_saved_searches_price=getattr(plan, 'addon_saved_searches_price', 10.0),
+            addon_search_tiers=getattr(plan, 'addon_search_tiers', []) or [],
             backup_enabled=plan.backup_enabled,
             subscriber_count=sub_count
         ))
@@ -157,8 +173,12 @@ async def create_plan(
         max_locations_per_search=body.max_locations_per_search,
         feature_aged_listings=body.feature_aged_listings,
         addon_aged_listings_price=body.addon_aged_listings_price,
+        addon_aged_max_months=body.addon_aged_max_months,
+        addon_aged_tiers=body.addon_aged_tiers or [],
         max_saved_searches=body.max_saved_searches,
+        addon_saved_searches=body.addon_saved_searches,
         addon_saved_searches_price=body.addon_saved_searches_price,
+        addon_search_tiers=body.addon_search_tiers or [],
         backup_enabled=body.backup_enabled
     )
     db.add(plan)
@@ -184,8 +204,12 @@ async def create_plan(
         max_locations_per_search=plan.max_locations_per_search,
         feature_aged_listings=plan.feature_aged_listings,
         addon_aged_listings_price=plan.addon_aged_listings_price,
+        addon_aged_max_months=getattr(plan, 'addon_aged_max_months', 12),
+        addon_aged_tiers=getattr(plan, 'addon_aged_tiers', []) or [],
         max_saved_searches=plan.max_saved_searches,
+        addon_saved_searches=getattr(plan, 'addon_saved_searches', 0),
         addon_saved_searches_price=plan.addon_saved_searches_price,
+        addon_search_tiers=getattr(plan, 'addon_search_tiers', []) or [],
         backup_enabled=plan.backup_enabled,
         subscriber_count=0
     )
@@ -227,6 +251,12 @@ async def get_plan(
         max_locations_per_search=getattr(plan, 'max_locations_per_search', 5),
         feature_aged_listings=getattr(plan, 'feature_aged_listings', False),
         addon_aged_listings_price=getattr(plan, 'addon_aged_listings_price', 0.0),
+        addon_aged_max_months=getattr(plan, 'addon_aged_max_months', 12),
+        addon_aged_tiers=getattr(plan, 'addon_aged_tiers', []) or [],
+        max_saved_searches=getattr(plan, 'max_saved_searches', 10),
+        addon_saved_searches=getattr(plan, 'addon_saved_searches', 0),
+        addon_saved_searches_price=getattr(plan, 'addon_saved_searches_price', 10.0),
+        addon_search_tiers=getattr(plan, 'addon_search_tiers', []) or [],
         backup_enabled=plan.backup_enabled,
         subscriber_count=sub_count
     )
@@ -278,10 +308,18 @@ async def update_plan(
         plan.feature_aged_listings = body.feature_aged_listings
     if body.addon_aged_listings_price is not None:
         plan.addon_aged_listings_price = body.addon_aged_listings_price
+    if body.addon_aged_max_months is not None:
+        plan.addon_aged_max_months = body.addon_aged_max_months
+    if body.addon_aged_tiers is not None:
+        plan.addon_aged_tiers = body.addon_aged_tiers
     if body.max_saved_searches is not None:
         plan.max_saved_searches = body.max_saved_searches
+    if body.addon_saved_searches is not None:
+        plan.addon_saved_searches = body.addon_saved_searches
     if body.addon_saved_searches_price is not None:
         plan.addon_saved_searches_price = body.addon_saved_searches_price
+    if body.addon_search_tiers is not None:
+        plan.addon_search_tiers = body.addon_search_tiers
     if body.backup_enabled is not None:
         plan.backup_enabled = body.backup_enabled
 
@@ -338,8 +376,12 @@ async def update_plan(
         max_locations_per_search=getattr(plan, 'max_locations_per_search', 5),
         feature_aged_listings=getattr(plan, 'feature_aged_listings', False),
         addon_aged_listings_price=getattr(plan, 'addon_aged_listings_price', 0.0),
+        addon_aged_max_months=getattr(plan, 'addon_aged_max_months', 12),
+        addon_aged_tiers=getattr(plan, 'addon_aged_tiers', []) or [],
         max_saved_searches=getattr(plan, 'max_saved_searches', 10),
+        addon_saved_searches=getattr(plan, 'addon_saved_searches', 0),
         addon_saved_searches_price=getattr(plan, 'addon_saved_searches_price', 10.0),
+        addon_search_tiers=getattr(plan, 'addon_search_tiers', []) or [],
         backup_enabled=plan.backup_enabled,
         subscriber_count=sub_count
     )

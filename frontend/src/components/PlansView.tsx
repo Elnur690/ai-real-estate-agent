@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Package, Plus, Check, X, Edit3, ShieldAlert, Sparkles, Users, RefreshCw, Layers, Search } from 'lucide-react';
+import { Package, Plus, Check, X, Edit3, ShieldAlert, Sparkles, Users, RefreshCw, Layers, Search, Trash2 } from 'lucide-react';
 import api from '../api';
 
 export interface PlanItem {
@@ -14,7 +14,9 @@ export interface PlanItem {
   is_active: boolean;
   max_agents: number;
   max_saved_searches?: number;
+  addon_saved_searches?: number;
   addon_saved_searches_price?: number;
+  addon_search_tiers?: Array<{ searches: number; price: number }>;
   feature_makler_detector: boolean;
   feature_avm_bargain_finder: boolean;
   feature_social_brochure: boolean;
@@ -23,6 +25,8 @@ export interface PlanItem {
   max_locations_per_search?: number;
   feature_aged_listings?: boolean;
   addon_aged_listings_price?: number;
+  addon_aged_max_months?: number;
+  addon_aged_tiers?: Array<{ months: number; price: number }>;
   backup_enabled: boolean;
   subscriber_count: number;
 }
@@ -44,6 +48,13 @@ export function PlansView() {
   const [formMaxAgents, setFormMaxAgents] = useState<number>(1);
   const [formMaxSavedSearches, setFormMaxSavedSearches] = useState<number>(10);
   const [formAddonSearchPrice, setFormAddonSearchPrice] = useState<number>(10);
+  const [formAddonSearches, setFormAddonSearches] = useState<number>(0);
+  const [formSearchTiers, setFormSearchTiers] = useState<Array<{ searches: number; price: number }>>([
+    { searches: 5, price: 10 },
+    { searches: 10, price: 18 },
+    { searches: 20, price: 30 }
+  ]);
+
   const [formMakler, setFormMakler] = useState(true);
   const [formAvm, setFormAvm] = useState(true);
   const [formBrochure, setFormBrochure] = useState(true);
@@ -51,8 +62,17 @@ export function PlansView() {
   const [formMultiLocation, setFormMultiLocation] = useState(true);
   const [formMaxLocations, setFormMaxLocations] = useState<number>(5);
   const [formBackup, setFormBackup] = useState(true);
+  
   const [formAgedListings, setFormAgedListings] = useState(false);
   const [formAddonPrice, setFormAddonPrice] = useState<number>(15);
+  const [formAgedMaxMonths, setFormAgedMaxMonths] = useState<number>(12);
+  const [formAgedTiers, setFormAgedTiers] = useState<Array<{ months: number; price: number }>>([
+    { months: 1, price: 10 },
+    { months: 3, price: 25 },
+    { months: 6, price: 45 },
+    { months: 12, price: 80 }
+  ]);
+
   const [submitting, setSubmitting] = useState(false);
 
   const fetchPlans = () => {
@@ -69,6 +89,38 @@ export function PlansView() {
     fetchPlans();
   }, []);
 
+  const handleAddAgedTier = () => {
+    const nextMonths = formAgedTiers.length > 0 ? formAgedTiers[formAgedTiers.length - 1].months * 2 : 3;
+    const nextPrice = formAgedTiers.length > 0 ? formAgedTiers[formAgedTiers.length - 1].price + 15 : 15;
+    setFormAgedTiers([...formAgedTiers, { months: nextMonths, price: nextPrice }]);
+  };
+
+  const handleRemoveAgedTier = (index: number) => {
+    setFormAgedTiers(formAgedTiers.filter((_, i) => i !== index));
+  };
+
+  const handleUpdateAgedTier = (index: number, field: 'months' | 'price', val: number) => {
+    const updated = [...formAgedTiers];
+    updated[index] = { ...updated[index], [field]: val };
+    setFormAgedTiers(updated);
+  };
+
+  const handleAddSearchTier = () => {
+    const nextSearches = formSearchTiers.length > 0 ? formSearchTiers[formSearchTiers.length - 1].searches + 5 : 5;
+    const nextPrice = formSearchTiers.length > 0 ? formSearchTiers[formSearchTiers.length - 1].price + 10 : 10;
+    setFormSearchTiers([...formSearchTiers, { searches: nextSearches, price: nextPrice }]);
+  };
+
+  const handleRemoveSearchTier = (index: number) => {
+    setFormSearchTiers(formSearchTiers.filter((_, i) => i !== index));
+  };
+
+  const handleUpdateSearchTier = (index: number, field: 'searches' | 'price', val: number) => {
+    const updated = [...formSearchTiers];
+    updated[index] = { ...updated[index], [field]: val };
+    setFormSearchTiers(updated);
+  };
+
   const openCreateModal = () => {
     setFormCode('');
     setFormName('');
@@ -80,6 +132,12 @@ export function PlansView() {
     setFormMaxAgents(1);
     setFormMaxSavedSearches(10);
     setFormAddonSearchPrice(10);
+    setFormAddonSearches(0);
+    setFormSearchTiers([
+      { searches: 5, price: 10 },
+      { searches: 10, price: 18 },
+      { searches: 20, price: 30 }
+    ]);
     setFormMakler(true);
     setFormAvm(true);
     setFormBrochure(true);
@@ -89,6 +147,13 @@ export function PlansView() {
     setFormBackup(true);
     setFormAgedListings(false);
     setFormAddonPrice(15);
+    setFormAgedMaxMonths(12);
+    setFormAgedTiers([
+      { months: 1, price: 10 },
+      { months: 3, price: 25 },
+      { months: 6, price: 45 },
+      { months: 12, price: 80 }
+    ]);
     setEditingPlan(null);
     setIsCreateOpen(true);
   };
@@ -105,6 +170,12 @@ export function PlansView() {
     setFormMaxAgents(plan.max_agents);
     setFormMaxSavedSearches(plan.max_saved_searches || 10);
     setFormAddonSearchPrice(plan.addon_saved_searches_price || 10);
+    setFormAddonSearches(plan.addon_saved_searches || 0);
+    setFormSearchTiers(plan.addon_search_tiers && plan.addon_search_tiers.length > 0 ? plan.addon_search_tiers : [
+      { searches: 5, price: 10 },
+      { searches: 10, price: 18 },
+      { searches: 20, price: 30 }
+    ]);
     setFormMakler(plan.feature_makler_detector);
     setFormAvm(plan.feature_avm_bargain_finder);
     setFormBrochure(plan.feature_social_brochure);
@@ -114,6 +185,13 @@ export function PlansView() {
     setFormBackup(plan.backup_enabled);
     setFormAgedListings(!!plan.feature_aged_listings);
     setFormAddonPrice(plan.addon_aged_listings_price || 15);
+    setFormAgedMaxMonths(plan.addon_aged_max_months || 12);
+    setFormAgedTiers(plan.addon_aged_tiers && plan.addon_aged_tiers.length > 0 ? plan.addon_aged_tiers : [
+      { months: 1, price: 10 },
+      { months: 3, price: 25 },
+      { months: 6, price: 45 },
+      { months: 12, price: 80 }
+    ]);
     setIsCreateOpen(true);
   };
 
@@ -133,7 +211,9 @@ export function PlansView() {
           trial_days: formTrialDays,
           max_agents: formMaxAgents,
           max_saved_searches: formMaxSavedSearches,
+          addon_saved_searches: formAddonSearches,
           addon_saved_searches_price: formAddonSearchPrice,
+          addon_search_tiers: formSearchTiers,
           feature_makler_detector: formMakler,
           feature_avm_bargain_finder: formAvm,
           feature_social_brochure: formBrochure,
@@ -142,6 +222,8 @@ export function PlansView() {
           max_locations_per_search: formMaxLocations,
           feature_aged_listings: formAgedListings,
           addon_aged_listings_price: formAddonPrice,
+          addon_aged_max_months: formAgedMaxMonths,
+          addon_aged_tiers: formAgedTiers,
           backup_enabled: formBackup,
         });
       } else {
@@ -156,7 +238,9 @@ export function PlansView() {
           trial_days: formTrialDays,
           max_agents: formMaxAgents,
           max_saved_searches: formMaxSavedSearches,
+          addon_saved_searches: formAddonSearches,
           addon_saved_searches_price: formAddonSearchPrice,
+          addon_search_tiers: formSearchTiers,
           feature_makler_detector: formMakler,
           feature_avm_bargain_finder: formAvm,
           feature_social_brochure: formBrochure,
@@ -165,6 +249,8 @@ export function PlansView() {
           max_locations_per_search: formMaxLocations,
           feature_aged_listings: formAgedListings,
           addon_aged_listings_price: formAddonPrice,
+          addon_aged_max_months: formAgedMaxMonths,
+          addon_aged_tiers: formAgedTiers,
           backup_enabled: formBackup,
         });
       }
@@ -330,42 +416,54 @@ export function PlansView() {
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Search className="w-4 h-4 text-cyan-400 shrink-0" />
-                      <span className="text-slate-200">Max Saved Searches</span>
-                    </div>
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 font-semibold">
-                      {plan.max_saved_searches || 10} Searches
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Plus className="w-4 h-4 text-teal-400 shrink-0" />
-                      <span className="text-slate-200">Search Top-Up (+5 Pack)</span>
-                    </div>
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-teal-500/15 text-teal-300 font-semibold">
-                      +{plan.addon_saved_searches_price || 10} AZN
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      {plan.feature_aged_listings ? (
-                        <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-                      ) : (
-                        <X className="w-4 h-4 text-slate-600 shrink-0" />
-                      )}
-                      <span className={plan.feature_aged_listings ? 'text-slate-200' : 'text-slate-500 line-through'}>
-                        Aged Inventory Archive (1-12+ mo.)
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Search className="w-4 h-4 text-cyan-400 shrink-0" />
+                        <span className="text-slate-200">Max Saved Searches</span>
+                      </div>
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-300 font-semibold">
+                        {plan.max_saved_searches || 10} Searches
                       </span>
                     </div>
-                    {plan.addon_aged_listings_price && plan.addon_aged_listings_price > 0 ? (
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 font-semibold">
-                        +{plan.addon_aged_listings_price} AZN Add-on
-                      </span>
-                    ) : null}
+                    {plan.addon_search_tiers && plan.addon_search_tiers.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pl-6">
+                        {plan.addon_search_tiers.map((t, idx) => (
+                          <span key={idx} className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                            +{t.searches} axtarış ({t.price} ₼)
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        {plan.feature_aged_listings ? (
+                          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                        ) : (
+                          <X className="w-4 h-4 text-slate-600 shrink-0" />
+                        )}
+                        <span className={plan.feature_aged_listings ? 'text-slate-200' : 'text-slate-500 line-through'}>
+                          Aged Inventory Archive ({plan.addon_aged_max_months || 12} mo.)
+                        </span>
+                      </div>
+                      {plan.addon_aged_listings_price && plan.addon_aged_listings_price > 0 ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 font-semibold">
+                          +{plan.addon_aged_listings_price} AZN Base
+                        </span>
+                      ) : null}
+                    </div>
+                    {plan.feature_aged_listings && plan.addon_aged_tiers && plan.addon_aged_tiers.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pl-6">
+                        {plan.addon_aged_tiers.map((t, idx) => (
+                          <span key={idx} className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                            {t.months} ay ({t.price} ₼)
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -507,7 +605,7 @@ export function PlansView() {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="font-semibold text-slate-300 text-xs">Max Agents Seats</label>
                   <input
@@ -521,7 +619,7 @@ export function PlansView() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="font-semibold text-slate-300 text-xs">Max Saved Searches</label>
+                  <label className="font-semibold text-slate-300 text-xs">Baza Axtarış Limiti (Max Searches)</label>
                   <input
                     type="number"
                     min="1"
@@ -531,18 +629,69 @@ export function PlansView() {
                     className="w-full bg-dark-900 border border-slate-700 rounded-xl px-3 py-2 text-cyan-300 text-sm font-semibold"
                   />
                 </div>
+              </div>
 
-                <div className="space-y-1">
-                  <label className="font-semibold text-slate-300 text-xs">+5 Pack Add-on (AZN)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    required
-                    value={formAddonSearchPrice}
-                    onChange={(e) => setFormAddonSearchPrice(parseFloat(e.target.value) || 0)}
-                    className="w-full bg-dark-900 border border-slate-700 rounded-xl px-3 py-2 text-teal-300 text-sm font-semibold"
-                  />
+              {/* Multi-Tier Extra Searches Addon Section */}
+              <div className="p-3.5 bg-dark-900/60 border border-slate-800 rounded-2xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-cyan-300 text-xs flex items-center gap-1.5">
+                    <Search className="w-3.5 h-3.5" />
+                    <span>Əlavə Axtarış Limitləri (Addon Paketləri)</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAddSearchTier}
+                    className="px-2.5 py-1 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/30 rounded-lg text-[11px] font-bold transition flex items-center gap-1"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>+ Sətir Əlavə Et</span>
+                  </button>
                 </div>
+
+                {formSearchTiers.length === 0 ? (
+                  <div className="text-[11px] text-slate-500 italic py-1">
+                    Əlavə axtarış tarifi əlavə edilməyib. Yuxarıdakı düymə ilə yeni sətir əlavə edə bilərsiniz.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {formSearchTiers.map((tier, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <div className="flex-1 flex items-center gap-1.5 bg-dark-950 border border-slate-700/80 rounded-xl px-3 py-1.5">
+                          <span className="text-slate-400 text-xs font-bold">+</span>
+                          <input
+                            type="number"
+                            min="1"
+                            value={tier.searches}
+                            onChange={(e) => handleUpdateSearchTier(idx, 'searches', Number(e.target.value))}
+                            className="w-full bg-transparent text-white text-xs font-bold focus:outline-none"
+                            placeholder="Məs: 5"
+                          />
+                          <span className="text-slate-400 text-xs font-medium shrink-0">axtarış</span>
+                        </div>
+                        <div className="w-32 flex items-center gap-1.5 bg-dark-950 border border-slate-700/80 rounded-xl px-3 py-1.5">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            value={tier.price}
+                            onChange={(e) => handleUpdateSearchTier(idx, 'price', Number(e.target.value))}
+                            className="w-full bg-transparent text-cyan-300 text-xs font-bold focus:outline-none"
+                            placeholder="Qiymət"
+                          />
+                          <span className="text-slate-400 text-xs font-medium shrink-0">AZN</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveSearchTier(idx)}
+                          className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
+                          title="Sətiri Sil"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Feature Toggles */}
@@ -625,32 +774,95 @@ export function PlansView() {
                       )}
                     </div>
                   </label>
+                </div>
 
-                  <label className="flex items-center gap-2 p-2 bg-dark-900/60 rounded-xl border border-slate-800 cursor-pointer col-span-2">
-                    <input
-                      type="checkbox"
-                      checked={formAgedListings}
-                      onChange={(e) => setFormAgedListings(e.target.checked)}
-                      className="rounded accent-emerald-500"
-                    />
-                    <div className="flex-1 flex items-center justify-between">
-                      <span className="text-slate-300">Aged Active Listings Archive (Listings sitting for XX months)</span>
-                      {formAgedListings && (
-                        <div className="flex items-center gap-1.5 text-xs">
-                          <span className="text-slate-400">Add-on Price:</span>
+                {/* Aged Listings Multi-Tier Addon Section */}
+                <div className="p-3.5 bg-dark-900/60 border border-slate-800 rounded-2xl space-y-3 mt-2">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formAgedListings}
+                        onChange={(e) => setFormAgedListings(e.target.checked)}
+                        className="rounded accent-emerald-500"
+                      />
+                      <span className="font-bold text-amber-300 text-xs">Köhnə Arxiv Elanlar (Aged Listings Archive)</span>
+                    </label>
+                    {formAgedListings && (
+                      <button
+                        type="button"
+                        onClick={handleAddAgedTier}
+                        className="px-2.5 py-1 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 rounded-lg text-[11px] font-bold transition flex items-center gap-1"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>+ Sətir Əlavə Et</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {formAgedListings && (
+                    <div className="space-y-2.5 pt-1">
+                      <div className="flex items-center justify-between text-xs text-slate-400">
+                        <span>Maksimal Arxiv Müddəti:</span>
+                        <div className="flex items-center gap-1.5">
                           <input
                             type="number"
-                            min="0"
-                            value={formAddonPrice}
-                            onChange={(e) => setFormAddonPrice(Number(e.target.value))}
-                            className="w-16 bg-dark-800 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs"
-                            onClick={(e) => e.stopPropagation()}
+                            min="1"
+                            max="60"
+                            value={formAgedMaxMonths}
+                            onChange={(e) => setFormAgedMaxMonths(Number(e.target.value))}
+                            className="w-16 bg-dark-950 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs text-center font-bold"
                           />
-                          <span className="text-emerald-400 font-semibold">AZN</span>
+                          <span>ay</span>
+                        </div>
+                      </div>
+
+                      {formAgedTiers.length === 0 ? (
+                        <div className="text-[11px] text-slate-500 italic py-1">
+                          Arxiv müddəti tarifi əlavə edilməyib. Yuxarıdakı düymə ilə hər müddət üçün fərdi qiymət sətiri əlavə edin.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {formAgedTiers.map((tier, idx) => (
+                            <div key={idx} className="flex items-center gap-2">
+                              <div className="flex-1 flex items-center gap-1.5 bg-dark-950 border border-slate-700/80 rounded-xl px-3 py-1.5">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  max="60"
+                                  value={tier.months}
+                                  onChange={(e) => handleUpdateAgedTier(idx, 'months', Number(e.target.value))}
+                                  className="w-full bg-transparent text-white text-xs font-bold focus:outline-none"
+                                  placeholder="Məs: 3"
+                                />
+                                <span className="text-slate-400 text-xs font-medium shrink-0">ay arxiv</span>
+                              </div>
+                              <div className="w-32 flex items-center gap-1.5 bg-dark-950 border border-slate-700/80 rounded-xl px-3 py-1.5">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.5"
+                                  value={tier.price}
+                                  onChange={(e) => handleUpdateAgedTier(idx, 'price', Number(e.target.value))}
+                                  className="w-full bg-transparent text-amber-300 text-xs font-bold focus:outline-none"
+                                  placeholder="Qiymət"
+                                />
+                                <span className="text-slate-400 text-xs font-medium shrink-0">AZN</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveAgedTier(idx)}
+                                className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
+                                title="Sətiri Sil"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
-                  </label>
+                  )}
                 </div>
               </div>
 

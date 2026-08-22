@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import String, Float, Integer, Boolean, Text, DateTime
+from sqlalchemy import String, Float, Integer, Boolean, Text, DateTime, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
@@ -28,9 +28,16 @@ class Plan(Base):
     feature_client_intake_bot: Mapped[bool] = mapped_column(Boolean, default=True)
     feature_multi_location: Mapped[bool] = mapped_column(Boolean, default=True)
     max_locations_per_search: Mapped[int] = mapped_column(Integer, default=5)
+    
     feature_aged_listings: Mapped[bool] = mapped_column(Boolean, default=False)
-    addon_aged_listings_price: Mapped[float] = mapped_column(Float, default=0.0) # Optional add-on price in AZN
-    addon_saved_searches_price: Mapped[float] = mapped_column(Float, default=10.0) # Price per +5 searches add-on pack in AZN
+    addon_aged_listings_price: Mapped[float] = mapped_column(Float, default=0.0) # Base add-on price in AZN
+    addon_aged_max_months: Mapped[int] = mapped_column(Integer, default=12)
+    addon_aged_tiers: Mapped[list[dict] | None] = mapped_column(JSON, default=list) # e.g. [{"months": 3, "price": 15.0}, {"months": 6, "price": 25.0}]
+
+    addon_saved_searches: Mapped[int] = mapped_column(Integer, default=0)
+    addon_saved_searches_price: Mapped[float] = mapped_column(Float, default=10.0) # Price per pack in AZN
+    addon_search_tiers: Mapped[list[dict] | None] = mapped_column(JSON, default=list) # e.g. [{"searches": 5, "price": 10.0}, {"searches": 10, "price": 18.0}]
+
     backup_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
