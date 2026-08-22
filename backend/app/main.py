@@ -242,10 +242,11 @@ app = FastAPI(
 from app.core.security_middleware import SecurityHeadersAndRateLimitMiddleware
 app.add_middleware(SecurityHeadersAndRateLimitMiddleware)
 
-# CORS Middleware for React frontend
+# CORS Middleware for React frontend and all dynamic white-label seller domains
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
