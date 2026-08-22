@@ -149,7 +149,8 @@ export function SellerPortalView() {
   const [agentError, setAgentError] = useState<string | null>(null);
   const [submittingAgent, setSubmittingAgent] = useState(false);
 
-  // Free Trial Offer Settings State
+  // Free Trial Offer Settings State & Modal
+  const [isTrialModalOpen, setIsTrialModalOpen] = useState(false);
   const [trialEnabled, setTrialEnabled] = useState(true);
   const [trialDays, setTrialDays] = useState(7);
   const [trialSearches, setTrialSearches] = useState(3);
@@ -223,6 +224,7 @@ export function SellerPortalView() {
         free_trial_feature_multi_location: trialMultiLocation
       });
       setTrialSavedMsg(true);
+      setIsTrialModalOpen(false);
       setTimeout(() => setTrialSavedMsg(false), 4000);
       fetchDashboard();
     } catch (err: any) {
@@ -803,172 +805,118 @@ export function SellerPortalView() {
       {/* TAB 2: PACKAGES */}
       {activeTab === 'packages' && (
         <div className="space-y-6">
-          {/* FREE TRIAL OFFER CONFIGURATION CARD */}
-          <div className="bg-gradient-to-r from-indigo-950/40 via-slate-900/80 to-slate-900/60 border border-indigo-500/20 rounded-3xl p-6 shadow-xl space-y-4">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
-                  <Gift className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
-                    <span>Pulsuz Sınaq (Free Trial) Təklifi və Funksiyaları</span>
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                      trialEnabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
-                    }`}>
-                      {trialEnabled ? 'Aktivdir' : 'Deaktivdir'}
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Agentlərə təklif etdiyiniz pulsuz sınaq müddətini və bu müddətdə istifadə edə biləcəkləri imkanları fərdiləşdirin.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-2 text-xs font-semibold text-slate-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={trialEnabled}
-                    onChange={(e) => setTrialEnabled(e.target.checked)}
-                    className="rounded bg-slate-950 border-slate-800 text-indigo-600 focus:ring-0"
-                  />
-                  <span>Sınaq Təklifini Aktiv Saxla</span>
-                </label>
-              </div>
+          {trialSavedMsg && (
+            <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+              <CheckCircle className="w-4 h-4 shrink-0" />
+              <span>Pulsuz sınaq parametrləri uğurla yadda saxlanıldı!</span>
             </div>
+          )}
 
-            {trialEnabled && (
-              <form onSubmit={handleSaveTrialSettings} className="space-y-4 pt-1">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">Sınaq Müddəti (Gün) *</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max={dashboard?.max_trial_days || 14}
-                      value={trialDays}
-                      onChange={(e) => setTrialDays(Number(e.target.value))}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs font-semibold"
-                    />
-                    <span className="text-[10px] text-slate-500 mt-1 block">
-                      Admin maksimum limiti: {dashboard?.max_trial_days || 14} gün
-                    </span>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">Axtarış Slotu Limiti *</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="20"
-                      value={trialSearches}
-                      onChange={(e) => setTrialSearches(Number(e.target.value))}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs font-semibold"
-                    />
-                    <span className="text-[10px] text-slate-500 mt-1 block">
-                      Sınaq zamanı aktiv axtarış sayı (Məs: 3)
-                    </span>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">Məkan & Metro Limiti *</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="10"
-                      value={trialLocations}
-                      onChange={(e) => setTrialLocations(Number(e.target.value))}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs font-semibold"
-                    />
-                    <span className="text-[10px] text-slate-500 mt-1 block">
-                      Axtarışda seçilə bilən rayon/metro sayı (Məs: 3)
-                    </span>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-slate-800/60">
-                  <label className="text-xs font-bold text-slate-300 block mb-2">
-                    Sınaq Dövründə Agentin İstifadəsində Olan Funksiyalar
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
-                    <label className="p-2.5 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center gap-2 text-xs text-slate-200 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={trialMakler}
-                        onChange={(e) => setTrialMakler(e.target.checked)}
-                        className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
-                      />
-                      <span>AI Makler Detektoru</span>
-                    </label>
-
-                    <label className="p-2.5 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center gap-2 text-xs text-slate-200 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={trialAvm}
-                        onChange={(e) => setTrialAvm(e.target.checked)}
-                        className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
-                      />
-                      <span>AVM Bazar Fürsəti</span>
-                    </label>
-
-                    <label className="p-2.5 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center gap-2 text-xs text-slate-200 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={trialBrochure}
-                        onChange={(e) => setTrialBrochure(e.target.checked)}
-                        className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
-                      />
-                      <span>PDF Buklet Generator</span>
-                    </label>
-
-                    <label className="p-2.5 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center gap-2 text-xs text-slate-200 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={trialMultiLocation}
-                        onChange={(e) => setTrialMultiLocation(e.target.checked)}
-                        className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
-                      />
-                      <span>Çoxsaylı Məkan Axtarışı</span>
-                    </label>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-2">
-                  {trialSavedMsg ? (
-                    <span className="text-xs text-emerald-400 font-bold flex items-center gap-1.5">
-                      <CheckCircle className="w-4 h-4" />
-                      <span>Sınaq parametrləri uğurla yadda saxlanıldı!</span>
-                    </span>
-                  ) : <span />}
-
-                  <button
-                    type="submit"
-                    disabled={savingTrial}
-                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-500/20 transition disabled:opacity-50"
-                  >
-                    {savingTrial ? 'Saxlanılır...' : 'Sınaq Parametrlərini Yadda Saxla'}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between pt-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h2 className="text-lg font-bold text-white">Ödənişli Abunə Paketlərim</h2>
-              <p className="text-xs text-slate-400">Öz agentləriniz üçün fərdi qiymət və imkanlara malik ödənişli paketlər qurun.</p>
+              <h2 className="text-xl font-bold text-white">Paketlərim və Sınaq Təklifim</h2>
+              <p className="text-xs text-slate-400">Agentləriniz üçün pulsuz sınaq şərtləri və fərdi ödənişli abunə paketləri qurun.</p>
             </div>
-            <button
-              onClick={openAddPkgModal}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/25 transition"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Yeni Paket Yarat</span>
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setIsTrialModalOpen(true)}
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 rounded-xl text-sm font-bold shadow-lg shadow-indigo-500/10 transition"
+              >
+                <Gift className="w-4 h-4 text-indigo-400" />
+                <span>Sınaq Təklifini Tənzimlə</span>
+              </button>
+              <button
+                onClick={openAddPkgModal}
+                className="flex items-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/25 transition"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Yeni Paket Yarat</span>
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* CARD 1: DEDICATED FREE TRIAL CARD */}
+            <div className="bg-gradient-to-b from-indigo-950/40 via-slate-900/80 to-slate-900/70 border border-indigo-500/30 rounded-3xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between hover:border-indigo-400/50 transition">
+              <div className="space-y-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 mb-2">
+                      <Gift className="w-3 h-3 text-indigo-400" />
+                      <span>Pulsuz Sınaq Paketi</span>
+                    </span>
+                    <h3 className="text-xl font-bold text-white">Pulsuz Sınaq (Free Trial)</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">Yeni agentlər üçün başlanğıc test paketi</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      trialEnabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
+                    }`}>
+                      {trialEnabled ? 'Aktiv' : 'Deaktiv'}
+                    </span>
+                    <button
+                      onClick={() => setIsTrialModalOpen(true)}
+                      className="p-1.5 text-slate-400 hover:text-white bg-slate-800/80 rounded-lg transition"
+                      title="Sınaq parametrlərini dəyiş"
+                    >
+                      <Edit3 className="w-4 h-4 text-indigo-400" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <span className="text-3xl font-black text-white">0 AZN</span>
+                  <span className="text-xs text-indigo-300 ml-1.5 font-medium">/ {trialDays} gün sınaq</span>
+                </div>
+
+                <div className="space-y-2 text-xs text-slate-300 pt-2 border-t border-indigo-500/20">
+                  <div className="flex items-center gap-2">
+                    <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>{trialSearches} Paralel Axtarış Limiti</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>{trialDays} Gün Aktivlik Müddəti</span>
+                  </div>
+                  {trialMultiLocation && (
+                    <div className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Çoxsaylı Məkan & Metro Axtarışı (max {trialLocations})</span>
+                    </div>
+                  )}
+                  {trialMakler && (
+                    <div className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>AI Makler & Vasitəçi Detektoru</span>
+                    </div>
+                  )}
+                  {trialAvm && (
+                    <div className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>AVM Bazar Qiyməti & Fürsət Bildirişi</span>
+                    </div>
+                  )}
+                  {trialBrochure && (
+                    <div className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>PDF & Sosial Şəbəkə Buklet Generatoru</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-indigo-500/20 flex items-center justify-between">
+                <button
+                  onClick={() => setIsTrialModalOpen(true)}
+                  className="w-full py-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 hover:text-white border border-indigo-500/30 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Sınaq Parametrlərini Düzəliş Et</span>
+                </button>
+              </div>
+            </div>
+
+            {/* PAID PACKAGES */}
             {packages.map((pkg) => (
               <div key={pkg.id} className="bg-slate-900/70 border border-slate-800 rounded-3xl p-6 shadow-xl relative overflow-hidden flex flex-col justify-between hover:border-slate-700 transition">
                 <div className="space-y-4">
@@ -1503,6 +1451,261 @@ export function SellerPortalView() {
                   className="w-1/2 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/25 transition disabled:opacity-50"
                 >
                   {submittingAgent ? 'Qeydiyyat...' : 'Agenti Qeyd Et'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* FREE TRIAL CONFIGURATION MODAL */}
+      {isTrialModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-xl rounded-3xl p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Gift className="w-5 h-5 text-indigo-400" />
+                  <span>Pulsuz Sınaq (Free Trial) Tənzimləmələri</span>
+                </h3>
+                <p className="text-xs text-slate-400">Agentləriniz üçün pulsuz sınaq müddəti və imkanlarını konfiqurasiya edin.</p>
+              </div>
+              <button onClick={() => setIsTrialModalOpen(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTrialSettings} className="space-y-5">
+              {/* Status Switch */}
+              <div className="p-3.5 bg-indigo-950/30 border border-indigo-500/20 rounded-2xl flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-white block">Sınaq Təklifinin Statusu</span>
+                  <span className="text-[11px] text-slate-400">
+                    {trialEnabled ? 'Agentlər qeydiyyat zamanı pulsuz sınaqdan yararlana bilər' : 'Sınaq təklifi hazırda deaktivdir'}
+                  </span>
+                </div>
+                <label className="flex items-center gap-2 text-xs font-bold text-indigo-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={trialEnabled}
+                    onChange={(e) => setTrialEnabled(e.target.checked)}
+                    className="rounded bg-slate-950 border-slate-800 text-indigo-600 focus:ring-0 w-4 h-4"
+                  />
+                  <span>{trialEnabled ? 'Aktivdir' : 'Deaktiv'}</span>
+                </label>
+              </div>
+
+              {/* Numerical settings */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Sınaq Müddəti (Gün) *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max={dashboard?.max_trial_days || 14}
+                    required
+                    value={trialDays}
+                    onChange={(e) => setTrialDays(Number(e.target.value))}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white text-xs font-semibold focus:outline-none focus:border-indigo-500"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    Admin limiti: max {dashboard?.max_trial_days || 14} gün
+                  </span>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-300">Axtarış Slotu</label>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTooltip(activeTooltip === 'trial_searches' ? null : 'trial_searches')}
+                      className="text-[11px] text-indigo-400 hover:text-indigo-300 font-mono"
+                    >
+                      ℹ️
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    min="1"
+                    max="20"
+                    required
+                    value={trialSearches}
+                    onChange={(e) => setTrialSearches(Number(e.target.value))}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white text-xs font-semibold focus:outline-none focus:border-indigo-500"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    Sınaq paralel axtarış sayı
+                  </span>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-300">Məkan Limiti</label>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTooltip(activeTooltip === 'trial_locations' ? null : 'trial_locations')}
+                      className="text-[11px] text-indigo-400 hover:text-indigo-300 font-mono"
+                    >
+                      ℹ️
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    required
+                    value={trialLocations}
+                    onChange={(e) => setTrialLocations(Number(e.target.value))}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white text-xs font-semibold focus:outline-none focus:border-indigo-500"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    Rayon/metro seçimi limiti
+                  </span>
+                </div>
+              </div>
+
+              {activeTooltip === 'trial_searches' && (
+                <p className="text-[11px] text-slate-400 bg-slate-950 p-2.5 rounded-xl border border-slate-800 leading-relaxed">
+                  Agentin sınaq müddətində eyni anda aktiv saxlaya biləcəyi daşınmaz əmlak filtri və axtarış tapşırığı sayı (Məs: 3).
+                </p>
+              )}
+              {activeTooltip === 'trial_locations' && (
+                <p className="text-[11px] text-slate-400 bg-slate-950 p-2.5 rounded-xl border border-slate-800 leading-relaxed">
+                  Agentin hər bir axtarış daxilində eyni anda seçə biləcəyi rayon və ya metro stansiyası sayı (Məs: 3).
+                </p>
+              )}
+
+              {/* Feature Toggles */}
+              <div className="space-y-3 pt-3 border-t border-slate-800">
+                <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
+                  Sınaq Dövründə Aktiv Olan Funksiyalar
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {/* Makler Detector */}
+                  <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-xs font-semibold text-slate-200 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={trialMakler}
+                          onChange={(e) => setTrialMakler(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
+                        />
+                        <span>AI Makler Detektoru</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTooltip(activeTooltip === 'trial_makler' ? null : 'trial_makler')}
+                        className="text-xs text-blue-400 hover:text-blue-300 px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/20"
+                      >
+                        ℹ️ İzah
+                      </button>
+                    </div>
+                    {activeTooltip === 'trial_makler' && (
+                      <p className="text-[11px] text-slate-400 bg-slate-900/90 p-2 rounded-lg border border-slate-800 leading-relaxed">
+                        Elanın sahibindən və ya maklerdən olduğunu 95% dəqiqliklə təyin edən süni intellekt aləti.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* AVM */}
+                  <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-xs font-semibold text-slate-200 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={trialAvm}
+                          onChange={(e) => setTrialAvm(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
+                        />
+                        <span>AVM Bazar Qiymətləndirmə</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTooltip(activeTooltip === 'trial_avm' ? null : 'trial_avm')}
+                        className="text-xs text-emerald-400 hover:text-emerald-300 px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20"
+                      >
+                        ℹ️ İzah
+                      </button>
+                    </div>
+                    {activeTooltip === 'trial_avm' && (
+                      <p className="text-[11px] text-slate-400 bg-slate-900/90 p-2 rounded-lg border border-slate-800 leading-relaxed">
+                        Mənzilin real bazar dəyərini (AVM) hesablayır və bazardan aşağı düşən fürsət elanları bildirir.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Brochure */}
+                  <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-xs font-semibold text-slate-200 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={trialBrochure}
+                          onChange={(e) => setTrialBrochure(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
+                        />
+                        <span>PDF & Sosial Buklet</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTooltip(activeTooltip === 'trial_brochure' ? null : 'trial_brochure')}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 px-1.5 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/20"
+                      >
+                        ℹ️ İzah
+                      </button>
+                    </div>
+                    {activeTooltip === 'trial_brochure' && (
+                      <p className="text-[11px] text-slate-400 bg-slate-900/90 p-2 rounded-lg border border-slate-800 leading-relaxed">
+                        Elan üçün bir kliklə agentin nömrəsi və brendi ilə peşəkar PDF və Instagram hekayə bukletləri hazırlayır.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Multi Location */}
+                  <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-xs font-semibold text-slate-200 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={trialMultiLocation}
+                          onChange={(e) => setTrialMultiLocation(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
+                        />
+                        <span>Çoxsaylı Məkan Axtarışı</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTooltip(activeTooltip === 'trial_multi' ? null : 'trial_multi')}
+                        className="text-xs text-amber-400 hover:text-amber-300 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20"
+                      >
+                        ℹ️ İzah
+                      </button>
+                    </div>
+                    {activeTooltip === 'trial_multi' && (
+                      <p className="text-[11px] text-slate-400 bg-slate-900/90 p-2 rounded-lg border border-slate-800 leading-relaxed">
+                        Agentə eyni axtarış tapşırığı daxilində birdən çox rayon və ya metro seçməyə imkan verir.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-3 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsTrialModalOpen(false)}
+                  className="w-1/2 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-xl transition text-xs"
+                >
+                  Ləğv et
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingTrial}
+                  className="w-1/2 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-semibold rounded-xl shadow-lg shadow-indigo-500/25 transition disabled:opacity-50 text-xs"
+                >
+                  {savingTrial ? 'Saxlanılır...' : 'Sınaq Parametrlərini Yadda Saxla'}
                 </button>
               </div>
             </form>
