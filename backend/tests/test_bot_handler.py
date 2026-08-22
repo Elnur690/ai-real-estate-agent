@@ -96,4 +96,49 @@ async def test_bot_onboarding_and_commands():
         )
         assert "xoş gəlmisiniz" in res3.lower() or "bütün mövcud əmr" in res3.lower()
 
+        # Test /status command with Seller Linkage
+        from app.models.seller import Seller
+        from app.models.user import User
+        from app.api.v1.auth import get_password_hash
+        from datetime import datetime, timezone, timedelta
+
+        seller_u = User(name="Bakı Əmlak Satıcısı", email="seller_bot@test.az", role="seller", password_hash=get_password_hash("pass"))
+        db.add(seller_u)
+        await db.commit()
+
+        s = Seller(user_id=seller_u.id, name="Bakı Əmlak Satıcısı", phone="+994507776655", email="seller_bot@test.az")
+        db.add(s)
+        await db.commit()
+
+        # Link tenant to seller
+        t.seller_id = s.id
+        await db.commit()
+
+        res_status = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="telegram",
+            sender_id="999888777",
+            sender_name="Orxan Agent",
+            raw_text="/status"
+        )
+        assert "Bakı Əmlak Satıcısı" in res_status
+        assert "+994507776655" in res_status
+
+        # Test /status command when tenant package is expired
+        t.status = "expired"
+        t.plan_expires_at = datetime.now(timezone.utc) - timedelta(days=1)
+        await db.commit()
+
+        res_status_exp = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="telegram",
+            sender_id="999888777",
+            sender_name="Orxan Agent",
+            raw_text="/status"
+        )
+        assert "Müddəti bitib" in res_status_exp
+        assert "satıcınızla əlaqə saxlayın" in res_status_exp.lower()
+        assert "Bakı Əmlak Satıcısı" in res_status_exp
+        assert "+994507776655" in res_status_exp
+
     await engine.dispose()

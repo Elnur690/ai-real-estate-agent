@@ -32,16 +32,35 @@ class TrialTrackerService:
                 tenant.status = "expired"
                 expired_count += 1
 
-                # Send expiry notification with plan offers
-                msg = (
-                    f"⚠️ *Hörmətli {tenant.name}, Sınaq Müddətiniz Başa Çatdı!*\n\n"
-                    "Sizin pulsuz sınaq müddətiniz (Free Trial) tamamlandı. "
-                    "AI Əmlak Agentinin üstünlüklərindən istifadəyə davam etmək üçün abunə planlarımızı seçin:\n\n"
-                    "🔹 *Starter Plan* — 50 AZN / ay (Real vaxt mənzil elanları + Avto-Match)\n"
-                    "🔹 *Pro Plan* — 100 AZN / ay (Makler Detektoru + Qiymətləndirmə AVM + Broşur)\n"
-                    "🔹 *Agency Plan* — 250 AZN / ay (Çoxlu agent marşrutlaşdırma + BaaS Baza Backup)\n\n"
-                    "💳 Abunəliyi aktivləşdirmək üçün administratorla əlaqə saxlayın və ya bota /plans yazın."
-                )
+                # Check if tenant has an assigned seller
+                seller = None
+                if tenant.seller_id:
+                    from app.models.seller import Seller
+                    stmt_s = select(Seller).where(Seller.id == tenant.seller_id)
+                    res_s = await db.execute(stmt_s)
+                    seller = res_s.scalars().first()
+
+                if seller:
+                    seller_name = seller.company_name or seller.name
+                    msg = (
+                        f"⚠️ *Hörmətli {tenant.name}, Paket / Abunəlik Müddətiniz Başa Çatdı!*\n\n"
+                        "Sizin xidmət müddətiniz tamamlandı. "
+                        "AI Əmlak Agentinin xidmətlərindən istifadəyə davam etmək və paketinizin yenilənməsi üçün zəhmət olmasa satıcınızla əlaqə saxlayın:\n\n"
+                        f"👤 *Satıcı:* {seller_name}\n"
+                        f"📞 *Telefon / WhatsApp:* {seller.phone}\n\n"
+                        "Statusunuzu və detalları yoxlamaq üçün istənilən vaxt bota `/status` yaza bilərsiniz."
+                    )
+                else:
+                    # Send standard expiry notification with plan offers
+                    msg = (
+                        f"⚠️ *Hörmətli {tenant.name}, Sınaq / Abunəlik Müddətiniz Başa Çatdı!*\n\n"
+                        "Sizin xidmət müddətiniz tamamlandı. "
+                        "AI Əmlak Agentinin üstünlüklərindən istifadəyə davam etmək üçün abunə planlarımızı seçin:\n\n"
+                        "🔹 *Starter Plan* — 50 AZN / ay (Real vaxt mənzil elanları + Avto-Match)\n"
+                        "🔹 *Pro Plan* — 100 AZN / ay (Makler Detektoru + Qiymətləndirmə AVM + Broşur)\n"
+                        "🔹 *Agency Plan* — 250 AZN / ay (Çoxlu agent marşrutlaşdırma + BaaS Baza Backup)\n\n"
+                        "💳 Abunəliyi aktivləşdirmək üçün administratorla əlaqə saxlayın və ya bota /status yazın."
+                    )
 
                 if tenant.preferred_channel == "whatsapp" and (tenant.whatsapp_number or tenant.phone):
                     target_num = tenant.whatsapp_number or tenant.phone

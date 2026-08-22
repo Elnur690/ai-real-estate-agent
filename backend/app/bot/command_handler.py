@@ -669,6 +669,37 @@ class BotCommandHandler:
         min_fl = draft.get("min_floor")
         max_fl = draft.get("max_floor")
 
+        # Check if plan or trial is expired
+        from datetime import datetime, timezone
+        from app.models.seller import Seller
+        now_utc = datetime.now(timezone.utc)
+        plan_exp = tenant.plan_expires_at
+        if plan_exp and plan_exp.tzinfo is None:
+            plan_exp = plan_exp.replace(tzinfo=timezone.utc)
+
+        is_expired = tenant.status == "expired" or (plan_exp is not None and plan_exp <= now_utc)
+        if is_expired:
+            seller = None
+            if tenant.seller_id:
+                stmt_s = select(Seller).where(Seller.id == tenant.seller_id)
+                res_s = await db.execute(stmt_s)
+                seller = res_s.scalars().first()
+
+            if seller:
+                seller_name = seller.company_name or seller.name
+                return (
+                    f"⚠️ *Hörmətli {tenant.name}, paket / abunəlik müddətiniz başa çatıb!*\n\n"
+                    f"Yeni axtarış yaratmaq və elan bildirişlərini aktiv saxlamaq üçün zəhmət olmasa satıcınızla əlaqə saxlayın:\n"
+                    f"👤 *Satıcı:* {seller_name}\n"
+                    f"📞 *Telefon / WhatsApp:* {seller.phone}\n\n"
+                    f"Statusunuzu yoxlamaq üçün: `/status`"
+                )
+            else:
+                return (
+                    f"⚠️ *Hörmətli {tenant.name}, abunəlik müddətiniz başa çatıb!*\n\n"
+                    f"Yeni axtarış yaratmaq üçün administratorla əlaqə saxlayın və ya bota `/status` yazın."
+                )
+
         # Check active search limit
         from app.models.plan import Plan
         stmt_cnt = select(func.count(SavedSearch.id)).where(SavedSearch.tenant_id == tenant.id, SavedSearch.is_active == True)
@@ -802,6 +833,8 @@ class BotCommandHandler:
     async def _get_account_status(db: AsyncSession, tenant: Tenant, app_name: str) -> str:
         from app.models.saved_search import SavedSearch
         from app.models.plan import Plan
+        from app.models.seller import Seller
+        from datetime import datetime, timezone
 
         stmt_count = select(func.count(SavedSearch.id)).where(SavedSearch.tenant_id == tenant.id, SavedSearch.is_active == True)
         res_count = await db.execute(stmt_count)
@@ -820,20 +853,67 @@ class BotCommandHandler:
             "enterprise": 500
         }.get(tenant.plan, 10)
 
+        # Include addon searches if any
+        if getattr(tenant, 'addon_saved_searches', 0):
+            max_limit += tenant.addon_saved_searches
+
         remaining = max(0, max_limit - active_searches)
 
         expires = tenant.plan_expires_at.strftime("%Y-%m-%d") if tenant.plan_expires_at else "Təyin edilməyib"
-        status_tr = {"active": "Aktiv ✅", "pending": "Aktivasiya gözlənilir ⏳", "expired": "Müddəti bitib ❌", "suspended": "Dayandırılıb ⚠️"}
-        status_text = status_tr.get(tenant.status, tenant.status)
+
+        now_utc = datetime.now(timezone.utc)
+        plan_exp = tenant.plan_expires_at
+        if plan_exp and plan_exp.tzinfo is None:
+            plan_exp = plan_exp.replace(tzinfo=timezone.utc)
+
+        is_expired = tenant.status == "expired" or (plan_exp is not None and plan_exp <= now_utc)
+
+        status_tr = {
+            "active": "Aktiv ✅" if not is_expired else "Müddəti bitib ❌",
+            "pending": "Aktivasiya gözlənilir ⏳",
+            "expired": "Müddəti bitib ❌",
+            "suspended": "Dayandırılıb ⚠️"
+        }
+        status_text = status_tr.get(tenant.status, "Müddəti bitib ❌" if is_expired else tenant.status)
+
+        # Lookup Seller if assigned
+        seller = None
+        seller_line = ""
+        if tenant.seller_id:
+            stmt_seller = select(Seller).where(Seller.id == tenant.seller_id)
+            res_seller = await db.execute(stmt_seller)
+            seller = res_seller.scalars().first()
+            if seller:
+                seller_name = seller.company_name or seller.name
+                seller_line = f"▪️ *Satıcı:* {seller_name} (📞 {seller.phone})\n"
+
+        # Expiration notice with Seller contact
+        expiry_notice = ""
+        if is_expired:
+            if seller:
+                seller_name = seller.company_name or seller.name
+                expiry_notice = (
+                    f"\n\n⚠️ *Diqqət:* Paket / Abunəlik müddətiniz başa çatıb!\n"
+                    f"Xidmətin yenilənməsi və ya yeni paket seçimi üçün zəhmət olmasa satıcınızla əlaqə saxlayın:\n"
+                    f"👤 *Satıcı:* {seller_name}\n"
+                    f"📞 *Telefon / WhatsApp:* {seller.phone}"
+                )
+            else:
+                expiry_notice = (
+                    f"\n\n⚠️ *Diqqət:* Abunəlik müddətiniz başa çatıb!\n"
+                    f"Paketinizin yenilənməsi üçün sistem administratoru ilə əlaqə saxlayın."
+                )
 
         return (
             f"👤 *Hesab Məlumatları - {app_name}*\n\n"
             f"▪️ *Ad:* {tenant.name}\n"
-            f"▪️ *Tarif:* {tenant.plan.capitalize()}\n"
+            f"▪️ *Tarif / Paket:* {tenant.plan.capitalize()}\n"
             f"▪️ *Status:* {status_text}\n"
             f"▪️ *Bitmə tarixi:* {expires}\n"
+            f"{seller_line}"
             f"▪️ *Bildiriş kanalı:* {tenant.preferred_channel.capitalize()}\n"
             f"▪️ *Axtarış limiti:* {active_searches} / {max_limit} istifadə edilib ({remaining} qalıb) 📊"
+            f"{expiry_notice}"
         )
 
     @staticmethod
