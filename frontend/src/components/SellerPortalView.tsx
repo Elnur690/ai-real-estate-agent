@@ -60,6 +60,8 @@ export interface SellerAgent {
   whatsapp_number?: string;
   preferred_channel: string;
   plan: string;
+  plan_price?: number;
+  is_transferred?: boolean;
   status: string;
   is_expired?: boolean;
   plan_started_at?: string;
@@ -513,8 +515,8 @@ export function SellerPortalView() {
     setEditAgentAgedMonths(agent.addon_aged_max_months || 12);
     setEditAgentSearches(agent.addon_saved_searches || 0);
 
-    // Initialize renew fields
-    const defaultPkgId = agent.seller_package_id || packages[0]?.id || 0;
+    // Initialize renew fields (0 means keep current/transferred plan)
+    const defaultPkgId = agent.seller_package_id || 0;
     setRenewPkgId(defaultPkgId);
     setRenewAgedMonths(0);
     setRenewAgedPrice(0);
@@ -545,6 +547,8 @@ export function SellerPortalView() {
         setEditAgentSearches(res.data.addon_saved_searches || 0);
         if (res.data.seller_package_id) {
           setRenewPkgId(res.data.seller_package_id);
+        } else {
+          setRenewPkgId(0);
         }
       }
     } catch (err) {
@@ -601,8 +605,10 @@ export function SellerPortalView() {
     setRenewSuccessMsg(null);
 
     try {
+      const isCustomPlan = renewPkgId === 0;
       const res = await api.post(`/sellers/me/agents/${selectedAgent.id}/renew`, {
-        package_id: renewPkgId,
+        package_id: isCustomPlan ? undefined : renewPkgId,
+        custom_price: isCustomPlan ? (selectedAgent.plan_price || 50.0) : undefined,
         selected_aged_months: renewAgedMonths > 0 ? renewAgedMonths : undefined,
         selected_aged_price: renewAgedPrice > 0 ? renewAgedPrice : undefined,
         selected_extra_searches: renewExtraSearches > 0 ? renewExtraSearches : undefined,
@@ -1027,7 +1033,17 @@ export function SellerPortalView() {
                           </span>
                         </td>
                         <td className="py-3.5 px-4">
-                          <div className="font-semibold text-emerald-400 text-xs">{a.plan}</div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-semibold text-emerald-400 text-xs">{a.plan}</span>
+                            {a.plan_price !== undefined && a.plan_price > 0 && (
+                              <span className="text-[10px] text-slate-400 font-mono">({a.plan_price} ₼)</span>
+                            )}
+                            {a.is_transferred && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-purple-500/15 text-purple-300 border border-purple-500/25 font-semibold">
+                                Köçürülmüş
+                              </span>
+                            )}
+                          </div>
                           <div className="flex flex-wrap gap-1 mt-0.5">
                             {a.feature_aged_listings && (
                               <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
@@ -2022,6 +2038,9 @@ export function SellerPortalView() {
                     onChange={(e) => setRenewPkgId(Number(e.target.value))}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-emerald-500"
                   >
+                    <option value={0}>
+                      ✨ Cari Planı Qoru: {selectedAgent.plan} ({(selectedAgent.plan_price ?? 50).toFixed(2)} AZN / 30 Gün) — Bütün funksiyalar saxlanılır
+                    </option>
                     {packages.map((p) => (
                       <option key={p.id} value={p.id}>
                         💳 {p.name} ({p.price} AZN / {p.duration_days || 30} Gün)
@@ -2032,18 +2051,24 @@ export function SellerPortalView() {
 
                 {/* Addon Tier Selectors for Renewal */}
                 {(() => {
-                  const currentPkg = packages.find(p => p.id === renewPkgId) || packages[0];
-                  if (!currentPkg) return null;
-                  const hasAgedTiers = currentPkg.addon_aged_tiers && currentPkg.addon_aged_tiers.length > 0;
-                  const hasSearchTiers = currentPkg.addon_search_tiers && currentPkg.addon_search_tiers.length > 0;
+                  const isCustomPlan = renewPkgId === 0;
+                  const currentPkg = isCustomPlan ? null : (packages.find(p => p.id === renewPkgId) || null);
+                  const hasAgedTiers = currentPkg && currentPkg.addon_aged_tiers && currentPkg.addon_aged_tiers.length > 0;
+                  const hasSearchTiers = currentPkg && currentPkg.addon_search_tiers && currentPkg.addon_search_tiers.length > 0;
 
-                  const basePrice = currentPkg.price;
+                  const basePrice = isCustomPlan ? (selectedAgent.plan_price ?? 50.0) : (currentPkg?.price ?? 0);
                   const totalGross = basePrice + renewAgedPrice + renewExtraSearchesPrice;
                   const commRate = dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70;
                   const sellerProfit = (totalGross * commRate) / 100;
 
                   return (
                     <div className="space-y-3 pt-2 border-t border-slate-800">
+                      {isCustomPlan && (
+                        <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-xs text-indigo-300">
+                          ℹ️ <strong>Mövcud/Köçürülmüş Plan qorunur:</strong> Agentin bütün aktiv imkanları və real ödəniş qiyməti ({basePrice.toFixed(2)} AZN) toxunulmaz saxlanılaraq abunəliyi 30 gün müddətinə yenilənir.
+                        </div>
+                      )}
+
                       {hasAgedTiers && (
                         <div>
                           <label className="block text-xs font-semibold text-amber-300 mb-1">📦 Arxiv Elanlar Müddəti</label>
@@ -2055,7 +2080,7 @@ export function SellerPortalView() {
                                 setRenewAgedMonths(0);
                                 setRenewAgedPrice(0);
                               } else {
-                                const tier = currentPkg.addon_aged_tiers.find(t => t.months === val);
+                                const tier = currentPkg?.addon_aged_tiers?.find(t => t.months === val);
                                 setRenewAgedMonths(val);
                                 setRenewAgedPrice(tier?.price ?? 0);
                               }
@@ -2063,7 +2088,7 @@ export function SellerPortalView() {
                             className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-amber-500"
                           >
                             <option value={0}>Yoxdur (Arxiv seçilməyib)</option>
-                            {currentPkg.addon_aged_tiers.map((t, i) => (
+                            {currentPkg?.addon_aged_tiers?.map((t, i) => (
                               <option key={i} value={t.months}>
                                 {t.months} ay arxiv — +{t.price} AZN
                               </option>
@@ -2083,7 +2108,7 @@ export function SellerPortalView() {
                                 setRenewExtraSearches(0);
                                 setRenewExtraSearchesPrice(0);
                               } else {
-                                const tier = currentPkg.addon_search_tiers.find(t => t.searches === val);
+                                const tier = currentPkg?.addon_search_tiers?.find(t => t.searches === val);
                                 setRenewExtraSearches(val);
                                 setRenewExtraSearchesPrice(tier?.price ?? 0);
                               }
@@ -2091,7 +2116,7 @@ export function SellerPortalView() {
                             className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-cyan-500"
                           >
                             <option value={0}>Yoxdur (Əlavə axtarış seçilməyib)</option>
-                            {currentPkg.addon_search_tiers.map((t, i) => (
+                            {currentPkg?.addon_search_tiers?.map((t, i) => (
                               <option key={i} value={t.searches}>
                                 +{t.searches} axtarış — +{t.price} AZN
                               </option>
@@ -2103,7 +2128,7 @@ export function SellerPortalView() {
                       {/* Renewal Price Summary */}
                       <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl space-y-1.5">
                         <div className="flex justify-between text-xs text-slate-300">
-                          <span>Paket qiyməti:</span>
+                          <span>{isCustomPlan ? 'Cari Plan Qiyməti:' : 'Paket qiyməti:'}</span>
                           <span className="font-medium">{basePrice.toFixed(2)} AZN</span>
                         </div>
                         {renewAgedPrice > 0 && (

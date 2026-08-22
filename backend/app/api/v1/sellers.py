@@ -12,6 +12,8 @@ from app.models.seller import Seller, SellerPackage, SellerTransaction
 from app.models.saved_search import SavedSearch
 from app.models.match import Match
 from app.models.setting import AppSettings
+from app.models.plan import Plan
+from app.models.payment import Payment
 from app.api.v1.auth import get_password_hash
 from app.core.config import settings
 from app.core.security import validate_strong_password
@@ -126,7 +128,8 @@ class UpdateSellerAgentRequest(BaseModel):
     addon_saved_searches: Optional[int] = None
 
 class RenewSellerAgentRequest(BaseModel):
-    package_id: int
+    package_id: Optional[int] = None
+    custom_price: Optional[float] = None
     selected_aged_months: Optional[int] = None
     selected_aged_price: Optional[float] = None
     selected_extra_searches: Optional[int] = None
@@ -574,12 +577,31 @@ async def get_my_agents(
     for a in agents:
         # Load package info
         pkg_name = None
+        pkg_price = 0.0
         if a.seller_package_id:
             p_stmt = select(SellerPackage).where(SellerPackage.id == a.seller_package_id)
             p_res = await db.execute(p_stmt)
             pkg = p_res.scalars().first()
             if pkg:
                 pkg_name = pkg.name
+                pkg_price = pkg.price
+        else:
+            # Check latest payment or global Plan price
+            last_pay_stmt = select(Payment.amount).where(Payment.tenant_id == a.id).order_by(Payment.received_at.desc())
+            last_pay_res = await db.execute(last_pay_stmt)
+            last_amount = last_pay_res.scalars().first()
+            if last_amount is not None and last_amount > 0:
+                pkg_price = last_amount
+            else:
+                plan_stmt = select(Plan.price).where(or_(Plan.code == a.plan, Plan.name == a.plan))
+                plan_res = await db.execute(plan_stmt)
+                p_price = plan_res.scalars().first()
+                if p_price is not None:
+                    pkg_price = p_price
+                elif a.plan in ["pro", "agency"]:
+                    pkg_price = 99.0
+                elif a.plan in ["starter"]:
+                    pkg_price = 49.0
 
         is_expired = _is_expired(a.plan_expires_at)
         tg_url = f"https://t.me/{tg_bot_user}?start=agent_{a.id}"
@@ -594,6 +616,8 @@ async def get_my_agents(
             "whatsapp_number": a.whatsapp_number,
             "preferred_channel": a.preferred_channel,
             "plan": pkg_name or a.plan,
+            "plan_price": pkg_price,
+            "is_transferred": a.seller_package_id is None,
             "status": a.status,
             "is_expired": is_expired,
             "plan_started_at": a.plan_started_at.isoformat() if a.plan_started_at else None,
@@ -644,11 +668,13 @@ async def get_my_agent_detail(
     matches_count = match_cnt_res.scalar() or 0
 
     pkg_data = None
+    plan_price = 0.0
     if agent.seller_package_id:
         p_stmt = select(SellerPackage).where(SellerPackage.id == agent.seller_package_id)
         p_res = await db.execute(p_stmt)
         pkg = p_res.scalars().first()
         if pkg:
+            plan_price = pkg.price
             pkg_data = {
                 "id": pkg.id,
                 "name": pkg.name,
@@ -660,6 +686,23 @@ async def get_my_agent_detail(
                 "addon_aged_tiers": pkg.addon_aged_tiers or [],
                 "addon_search_tiers": pkg.addon_search_tiers or []
             }
+    else:
+        # Check latest payment or global Plan price
+        last_pay_stmt = select(Payment.amount).where(Payment.tenant_id == agent.id).order_by(Payment.received_at.desc())
+        last_pay_res = await db.execute(last_pay_stmt)
+        last_amount = last_pay_res.scalars().first()
+        if last_amount is not None and last_amount > 0:
+            plan_price = last_amount
+        else:
+            plan_stmt = select(Plan.price).where(or_(Plan.code == agent.plan, Plan.name == agent.plan))
+            plan_res = await db.execute(plan_stmt)
+            p_price = plan_res.scalars().first()
+            if p_price is not None:
+                plan_price = p_price
+            elif agent.plan in ["pro", "agency"]:
+                plan_price = 99.0
+            elif agent.plan in ["starter"]:
+                plan_price = 49.0
 
     settings_stmt = select(AppSettings).where(AppSettings.key.in_(["telegram_bot_username", "whatsapp_bot_phone", "app_name"]))
     settings_res = await db.execute(settings_stmt)
@@ -681,6 +724,8 @@ async def get_my_agent_detail(
         "whatsapp_number": agent.whatsapp_number,
         "preferred_channel": agent.preferred_channel,
         "plan": pkg_data["name"] if pkg_data else agent.plan,
+        "plan_price": plan_price,
+        "is_transferred": agent.seller_package_id is None,
         "status": agent.status,
         "is_expired": is_expired,
         "plan_started_at": agent.plan_started_at.isoformat() if agent.plan_started_at else None,
@@ -807,56 +852,93 @@ async def renew_my_agent(
     if not agent:
         raise HTTPException(status_code=404, detail="Agent tapılmadı")
 
-    p_stmt = select(SellerPackage).where(
-        SellerPackage.id == body.package_id,
-        SellerPackage.seller_id == seller.id,
-        SellerPackage.is_active == True
-    )
-    p_res = await db.execute(p_stmt)
-    package = p_res.scalars().first()
-    if not package:
-        raise HTTPException(status_code=404, detail="Seçilmiş paket tapılmadı və ya aktiv deyil.")
-
     from datetime import timedelta
     if agent.plan_expires_at and not _is_expired(agent.plan_expires_at):
         base_expiry = agent.plan_expires_at
     else:
         base_expiry = datetime.now(timezone.utc)
 
-    duration_days = package.duration_days or 30
-    new_expires_at = base_expiry + timedelta(days=duration_days)
+    # 1. If a specific SellerPackage is selected (> 0)
+    if body.package_id and body.package_id > 0:
+        p_stmt = select(SellerPackage).where(
+            SellerPackage.id == body.package_id,
+            SellerPackage.seller_id == seller.id,
+            SellerPackage.is_active == True
+        )
+        p_res = await db.execute(p_stmt)
+        package = p_res.scalars().first()
+        if not package:
+            raise HTTPException(status_code=404, detail="Seçilmiş paket tapılmadı və ya aktiv deyil.")
 
-    if body.selected_aged_months is not None and body.selected_aged_months > 0:
-        f_aged = True
-        aged_months = int(body.selected_aged_months)
+        duration_days = package.duration_days or 30
+        new_expires_at = base_expiry + timedelta(days=duration_days)
+
+        if body.selected_aged_months is not None and body.selected_aged_months > 0:
+            f_aged = True
+            aged_months = int(body.selected_aged_months)
+        else:
+            f_aged = package.feature_aged_listings
+            aged_months = package.addon_aged_max_months
+
+        if body.selected_extra_searches is not None and body.selected_extra_searches > 0:
+            addon_searches = int(body.selected_extra_searches)
+            addon_searches_price = float(body.selected_extra_searches_price or 0.0)
+        else:
+            addon_searches = package.addon_saved_searches
+            addon_searches_price = package.addon_saved_searches_price
+
+        agent.plan = package.name
+        agent.seller_package_id = package.id
+        agent.status = "active"
+        agent.plan_expires_at = new_expires_at
+        agent.feature_makler_detector = package.feature_makler_detector
+        agent.feature_avm_bargain_finder = package.feature_avm_bargain_finder
+        agent.feature_social_brochure = package.feature_social_brochure
+        agent.feature_multi_location = package.feature_multi_location
+        agent.max_locations_per_search = package.max_locations
+        agent.feature_client_intake_bot = package.feature_client_intake_bot
+        agent.backup_enabled = package.feature_backup_service
+        agent.feature_aged_listings = f_aged
+        agent.addon_aged_max_months = aged_months
+        agent.addon_saved_searches = addon_searches
+        agent.addon_saved_searches_price = addon_searches_price
+
+        base_price = package.price
+        pkg_tx_id = package.id
+        desc_plan = f"Paket Yenilənməsi: {agent.name} ({package.name})"
     else:
-        f_aged = package.feature_aged_listings
-        aged_months = package.addon_aged_max_months
+        # 2. Keep transferred / existing plan and preserve ALL features intact
+        duration_days = 30
+        new_expires_at = base_expiry + timedelta(days=duration_days)
+        agent.status = "active"
+        agent.plan_expires_at = new_expires_at
 
-    if body.selected_extra_searches is not None and body.selected_extra_searches > 0:
-        addon_searches = int(body.selected_extra_searches)
-        addon_searches_price = float(body.selected_extra_searches_price or 0.0)
-    else:
-        addon_searches = package.addon_saved_searches
-        addon_searches_price = package.addon_saved_searches_price
+        # Determine price from custom_price, latest payment, plan table, or fallback
+        if body.custom_price is not None and body.custom_price > 0:
+            base_price = float(body.custom_price)
+        else:
+            last_pay_stmt = select(Payment.amount).where(Payment.tenant_id == agent.id).order_by(Payment.received_at.desc())
+            last_pay_res = await db.execute(last_pay_stmt)
+            last_amount = last_pay_res.scalars().first()
+            if last_amount is not None and last_amount > 0:
+                base_price = last_amount
+            else:
+                plan_stmt = select(Plan.price).where(or_(Plan.code == agent.plan, Plan.name == agent.plan))
+                plan_res = await db.execute(plan_stmt)
+                p_price = plan_res.scalars().first()
+                if p_price is not None:
+                    base_price = p_price
+                elif agent.plan in ["pro", "agency"]:
+                    base_price = 99.0
+                elif agent.plan in ["starter"]:
+                    base_price = 49.0
+                else:
+                    base_price = 50.0
 
-    agent.plan = package.name
-    agent.seller_package_id = package.id
-    agent.status = "active"
-    agent.plan_expires_at = new_expires_at
-    agent.feature_makler_detector = package.feature_makler_detector
-    agent.feature_avm_bargain_finder = package.feature_avm_bargain_finder
-    agent.feature_social_brochure = package.feature_social_brochure
-    agent.feature_multi_location = package.feature_multi_location
-    agent.max_locations_per_search = package.max_locations
-    agent.feature_client_intake_bot = package.feature_client_intake_bot
-    agent.backup_enabled = package.feature_backup_service
-    agent.feature_aged_listings = f_aged
-    agent.addon_aged_max_months = aged_months
-    agent.addon_saved_searches = addon_searches
-    agent.addon_saved_searches_price = addon_searches_price
+        pkg_tx_id = agent.seller_package_id
+        desc_plan = f"Köçürülmüş Plan Yenilənməsi: {agent.name} ({agent.plan})"
 
-    if package.price > 0:
+    if base_price > 0:
         rank_map = await get_seller_rank_config_map(db)
         rank_info = rank_map.get(seller.rank, rank_map.get("Bronze", {}))
         bonus_pct = rank_info.get("bonus_commission", 0.0)
@@ -864,7 +946,7 @@ async def renew_my_agent(
 
         selected_aged_price = max(0.0, float(body.selected_aged_price or 0.0))
         selected_extra_searches_price = max(0.0, float(body.selected_extra_searches_price or 0.0))
-        gross_amount = round(package.price + selected_aged_price + selected_extra_searches_price, 2)
+        gross_amount = round(base_price + selected_aged_price + selected_extra_searches_price, 2)
 
         seller_profit = round(gross_amount * (effective_commission_pct / 100.0), 2)
         platform_fee = round(gross_amount - seller_profit, 2)
@@ -881,13 +963,13 @@ async def renew_my_agent(
         tx = SellerTransaction(
             seller_id=seller.id,
             tenant_id=agent.id,
-            package_id=package.id,
+            package_id=pkg_tx_id,
             amount=gross_amount,
             commission_rate=effective_commission_pct,
             seller_profit=seller_profit,
             platform_fee=platform_fee,
             type="subscription_sale",
-            description=f"Paket Yenilənməsi: {agent.name} ({package.name}) [Bonus: +{bonus_pct}%]"
+            description=f"{desc_plan} [Bonus: +{bonus_pct}%]"
         )
         db.add(tx)
 
