@@ -16,13 +16,19 @@ class SecurityHeadersAndRateLimitMiddleware(BaseHTTPMiddleware):
     3. Request Body Size Limiter (prevents memory exhaustion DoS).
     """
 
+    _request_history: Dict[str, List[float]] = defaultdict(list)
+    _auth_request_history: Dict[str, List[float]] = defaultdict(list)
+
     def __init__(self, app, max_upload_size_bytes: int = 10 * 1024 * 1024):
         super().__init__(app)
         self.max_upload_size_bytes = max_upload_size_bytes
-        # In-memory storage: IP -> List of request timestamps
-        self._request_history: Dict[str, List[float]] = defaultdict(list)
-        self._auth_request_history: Dict[str, List[float]] = defaultdict(list)
         self._last_cleanup = time.time()
+
+    @classmethod
+    def clear_rate_limits(cls):
+        """Reset in-memory rate limit logs (useful for testing)."""
+        cls._request_history.clear()
+        cls._auth_request_history.clear()
 
     def _cleanup_old_records(self, now: float):
         """Purge records older than 120 seconds to prevent memory leak."""

@@ -10,6 +10,7 @@ from app.models.user import User
 from app.models.tenant import Tenant
 from app.models.seller import Seller, SellerPackage, SellerTransaction
 from app.api.v1.auth import get_password_hash
+from app.core.security import validate_strong_password
 
 router = APIRouter(prefix="/sellers", tags=["Sellers"])
 
@@ -189,6 +190,8 @@ async def create_seller_admin(
     if res.scalars().first():
         raise HTTPException(status_code=400, detail="Bu email ilə artıq istifadəçi mövcuddur.")
 
+    validate_strong_password(body.password)
+
     # 1. Create User
     user = User(
         name=body.name,
@@ -323,6 +326,7 @@ async def update_seller_admin(
         if body.phone is not None:
             user.phone = body.phone
         if body.password:
+            validate_strong_password(body.password)
             user.password_hash = get_password_hash(body.password)
 
     await db.commit()

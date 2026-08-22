@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, ForeignKey
+from typing import Any
+from sqlalchemy import String, DateTime, ForeignKey, Boolean, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
@@ -13,6 +14,13 @@ class User(Base):
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     role: Mapped[str] = mapped_column(String(50), default="agent")  # admin | seller | agency_owner | agent
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    
+    # Optional 2FA (Two-Factor Authentication / Authenticator App)
+    totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    totp_temp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    totp_backup_codes: Mapped[list[Any] | None] = mapped_column(JSON, default=list)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Relationships

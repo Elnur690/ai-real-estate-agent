@@ -56,7 +56,7 @@ async def test_admin_create_seller_and_list(client: AsyncClient, test_db: AsyncS
         "name": "Baku Franchise Seller",
         "email": "seller@bakufranchise.az",
         "phone": "+994502222222",
-        "password": "sellerpass123",
+        "password": "SellerPass2026!",
         "company_name": "Baku Franchise Group",
         "commission_rate": 80.0,
         "rank": "Gold"

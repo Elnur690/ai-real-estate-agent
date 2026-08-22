@@ -19,6 +19,10 @@ async def lifespan(app: FastAPI):
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         from sqlalchemy import text
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(64);"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_temp_secret VARCHAR(64);"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_backup_codes JSON DEFAULT '[]'::json;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS seller_id INTEGER;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS seller_package_id INTEGER;"))
         await conn.execute(text("ALTER TABLE sellers ADD COLUMN IF NOT EXISTS custom_domain VARCHAR(255);"))
