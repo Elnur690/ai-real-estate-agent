@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, Users, DollarSign, Package, Database, Sliders, Building, LogOut, ShieldCheck, Globe, Menu, X, MapPin } from 'lucide-react';
+import { LayoutDashboard, Users, DollarSign, Package, Database, Sliders, Building, LogOut, ShieldCheck, Globe, Menu, X, MapPin, Store } from 'lucide-react';
 import api from './api';
 import { LoginView } from './components/LoginView';
 import { DashboardView } from './components/DashboardView';
@@ -10,12 +10,15 @@ import { AppSettingsView } from './components/AppSettingsView';
 import { ScrapersView } from './components/ScrapersView';
 import { BakuPropertyMap } from './components/BakuPropertyMap';
 import { AdminProfileModal } from './components/AdminProfileModal';
+import { SellersAdminView } from './components/SellersAdminView';
+import { SellerPortalView } from './components/SellerPortalView';
 import { useTranslation } from './i18n';
 
 export function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => !!localStorage.getItem('token'));
   const [userName, setUserName] = useState<string>(() => localStorage.getItem('user_name') || 'Admin');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'tenants' | 'payments' | 'plans' | 'scrapers' | 'map' | 'settings'>('dashboard');
+  const [userRole, setUserRole] = useState<string>(() => localStorage.getItem('user_role') || 'admin');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'tenants' | 'payments' | 'plans' | 'sellers' | 'scrapers' | 'map' | 'settings'>('dashboard');
   const [appName, setAppName] = useState('RealEstate AI Agent');
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
@@ -47,16 +50,20 @@ export function App() {
     }
   }, [isAuthenticated]);
 
-  const handleLoginSuccess = (token: string, name: string) => {
+  const handleLoginSuccess = (token: string, name: string, role?: string) => {
     localStorage.setItem('token', token);
     localStorage.setItem('user_name', name);
+    const assignedRole = role || 'admin';
+    localStorage.setItem('user_role', assignedRole);
     setUserName(name);
+    setUserRole(assignedRole);
     setIsAuthenticated(true);
   };
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user_name');
+    localStorage.removeItem('user_role');
     setIsAuthenticated(false);
   };
 
@@ -69,9 +76,48 @@ export function App() {
     return <LoginView onLoginSuccess={handleLoginSuccess} appName={appName} />;
   }
 
+  // If logged in as Seller, render dedicated Seller Portal
+  if (userRole === 'seller') {
+    return (
+      <div className="min-h-screen bg-dark-900 text-slate-100 flex flex-col">
+        <header className="flex items-center justify-between px-6 py-4 bg-slate-900/90 border-b border-slate-800 sticky top-0 z-30 backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+              <Store className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h1 className="font-bold text-white text-base leading-tight">{appName}</h1>
+              <span className="text-[10px] font-semibold text-blue-400 tracking-wider uppercase block">Satıcı Portalı (Reseller Portal)</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="text-right hidden sm:block">
+              <div className="text-xs font-bold text-white">{userName}</div>
+              <div className="text-[10px] text-slate-400">Rəsmi Satıcı Hesabı</div>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-rose-500/20 hover:text-rose-400 text-slate-300 rounded-xl text-xs font-semibold border border-slate-700 transition"
+              title="Çıxış"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Çıxış</span>
+            </button>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-y-auto">
+          <SellerPortalView />
+        </main>
+      </div>
+    );
+  }
+
   const navItems = [
     { key: 'dashboard', label: t.navDashboard, icon: LayoutDashboard },
     { key: 'tenants', label: t.navTenants, icon: Users },
+    { key: 'sellers', label: 'Satıcılar', icon: Store },
     { key: 'payments', label: t.navPayments, icon: DollarSign },
     { key: 'plans', label: t.navPlans, icon: Package },
     { key: 'scrapers', label: t.navScrapers, icon: Database },
@@ -246,6 +292,7 @@ export function App() {
       <main className="flex-1 p-4 sm:p-6 md:p-8 max-w-7xl mx-auto w-full overflow-y-auto min-w-0">
         {activeTab === 'dashboard' && <DashboardView onNavigate={(tab) => handleSelectTab(tab as any)} />}
         {activeTab === 'tenants' && <TenantsView />}
+        {activeTab === 'sellers' && <SellersAdminView />}
         {activeTab === 'payments' && <PaymentsView />}
         {activeTab === 'plans' && <PlansView />}
         {activeTab === 'scrapers' && <ScrapersView />}

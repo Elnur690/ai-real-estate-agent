@@ -12,15 +12,22 @@ from app.api.deps import get_db, get_current_user
 from app.models.user import User
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+import bcrypt
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    safe_password = plain_password[:72] if plain_password else ""
-    return pwd_context.verify(safe_password, hashed_password)
+    if not plain_password or not hashed_password:
+        return False
+    try:
+        password_bytes = plain_password.encode('utf-8')[:72]
+        hash_bytes = hashed_password.encode('utf-8')
+        return bcrypt.checkpw(password_bytes, hash_bytes)
+    except Exception:
+        return False
 
 def get_password_hash(password: str) -> str:
-    safe_password = password[:72] if password else ""
-    return pwd_context.hash(safe_password)
+    safe_password = password.encode('utf-8')[:72]
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(safe_password, salt).decode('utf-8')
 
 def create_access_token(user_id: int) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)

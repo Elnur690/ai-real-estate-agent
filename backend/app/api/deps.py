@@ -46,3 +46,17 @@ async def get_current_admin(current_user: User = Depends(get_current_user)) -> U
     if current_user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin permissions required")
     return current_user
+
+async def get_current_seller_user(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> tuple[User, Optional["Seller"]]:
+    from app.models.seller import Seller
+    if current_user.role not in ["seller", "admin"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Seller permissions required")
+    stmt = select(Seller).where(Seller.user_id == current_user.id)
+    res = await db.execute(stmt)
+    seller = res.scalars().first()
+    if not seller and current_user.role == "seller":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Seller profile not found")
+    return current_user, seller

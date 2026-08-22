@@ -52,6 +52,10 @@ class Tenant(Base):
     assigned_districts: Mapped[list[Any] | None] = mapped_column(JSON, default=list)
     allowed_group_jids: Mapped[list[Any] | None] = mapped_column(JSON, default=list)
 
+    # 🏢 Reseller / Seller Linkage (Multi-Tenant Franchise)
+    seller_id: Mapped[int | None] = mapped_column(ForeignKey("sellers.id", ondelete="SET NULL"), nullable=True, index=True)
+    seller_package_id: Mapped[int | None] = mapped_column(ForeignKey("seller_packages.id", ondelete="SET NULL"), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     draft_search_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -60,3 +64,5 @@ class Tenant(Base):
     saved_searches = relationship("SavedSearch", back_populates="tenant", cascade="all, delete-orphan")
     matches = relationship("Match", back_populates="tenant", cascade="all, delete-orphan")
     payments = relationship("Payment", back_populates="tenant", cascade="all, delete-orphan")
+    seller = relationship("Seller", back_populates="agents")
+    seller_package = relationship("SellerPackage", back_populates="subscribed_agents")

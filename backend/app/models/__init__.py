@@ -10,6 +10,7 @@ from app.models.setting import AppSettings
 from app.models.b2b_match import B2BMatch
 from app.models.promo_code import PromoCode
 from app.models.plan import Plan
+from app.models.seller import Seller, SellerPackage, SellerTransaction
 
 __all__ = [
     "Base",
@@ -26,4 +27,7 @@ __all__ = [
     "B2BMatch",
     "PromoCode",
     "Plan",
+    "Seller",
+    "SellerPackage",
+    "SellerTransaction"
 ]

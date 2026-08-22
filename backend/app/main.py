@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.session import async_engine
 from app.models import Base
-from app.api.v1 import auth, tenants, payments, ai_config, settings as settings_api, scrapers, webhooks, client_intake, promo_codes, plans, whatsapp
+from app.api.v1 import auth, tenants, payments, ai_config, settings as settings_api, scrapers, webhooks, client_intake, promo_codes, plans, whatsapp, sellers
 from app.bot.telegram_adapter import build_telegram_app
 
 logging.basicConfig(level=logging.INFO)
@@ -19,6 +19,8 @@ async def lifespan(app: FastAPI):
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         from sqlalchemy import text
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS seller_id INTEGER;"))
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS seller_package_id INTEGER;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS draft_search_json TEXT;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS parent_tenant_id INTEGER;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS assigned_districts JSON;"))
@@ -212,6 +214,7 @@ app.include_router(promo_codes.router, prefix=settings.API_V1_STR)
 app.include_router(plans.router, prefix=settings.API_V1_STR)
 app.include_router(whatsapp.router, prefix=settings.API_V1_STR)
 app.include_router(analytics.router, prefix=settings.API_V1_STR)
+app.include_router(sellers.router, prefix=settings.API_V1_STR)
 
 @app.get("/health")
 async def health_check():
