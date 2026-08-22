@@ -19,6 +19,9 @@ export interface SellerItem {
   balance: number;
   total_earnings: number;
   total_sales_volume: number;
+  total_platform_fee?: number;
+  platform_fee_settled?: number;
+  pending_platform_debt?: number;
   total_agents: number;
   active_agents: number;
   custom_domain?: string;
@@ -72,6 +75,12 @@ export function SellersAdminView() {
   const [sellerAgents, setSellerAgents] = useState<SellerAgentItem[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(false);
 
+  // Cash Settlement Modal State
+  const [settleModalSeller, setSettleModalSeller] = useState<SellerItem | null>(null);
+  const [settleAmount, setSettleAmount] = useState<number>(0);
+  const [settleNotes, setSettleNotes] = useState<string>('');
+  const [settling, setSettling] = useState(false);
+
   // Form State
   const [formName, setFormName] = useState('');
   const [formEmail, setFormEmail] = useState('');
@@ -121,6 +130,25 @@ export function SellersAdminView() {
       fetchSellers();
     } catch (err: any) {
       alert(err.response?.data?.detail || 'Xəta baş verdi.');
+    }
+  };
+
+  const handleSettleCash = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!settleModalSeller || settleAmount <= 0) return;
+    setSettling(true);
+    try {
+      await api.post(`/sellers/${settleModalSeller.id}/settle-cash`, {
+        amount: settleAmount,
+        notes: settleNotes || undefined
+      });
+      alert('Nağd hesablaşma uğurla qeydə alındı!');
+      setSettleModalSeller(null);
+      fetchSellers();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Hesablaşma zamanı xəta baş verdi.');
+    } finally {
+      setSettling(false);
     }
   };
 
@@ -255,6 +283,8 @@ export function SellersAdminView() {
 
   const totalSales = sellers.reduce((acc, s) => acc + (s.total_sales_volume || 0), 0);
   const totalSellerEarnings = sellers.reduce((acc, s) => acc + (s.total_earnings || 0), 0);
+  const totalPlatformFee = sellers.reduce((acc, s) => acc + (s.total_platform_fee ?? ((s.total_sales_volume || 0) - (s.total_earnings || 0))), 0);
+  const totalPendingDebt = sellers.reduce((acc, s) => acc + (s.pending_platform_debt || 0), 0);
   const totalAgents = sellers.reduce((acc, s) => acc + (s.total_agents || 0), 0);
 
   return (
@@ -269,7 +299,7 @@ export function SellersAdminView() {
             <h1 className="text-2xl font-bold text-white tracking-tight">SaaS Satıcılar (Resellers & Franchise)</h1>
           </div>
           <p className="text-slate-400 text-sm">
-            Platforma satıcılarını idarə edin, fərdi komissiya faizləri təyin edin və dərəcələri izləyin.
+            Platforma satıcılarını idarə edin, fərdi komissiya faizləri təyin edin və nağd hesablaşmaları izləyin.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -291,44 +321,56 @@ export function SellersAdminView() {
       </div>
 
       {/* Overview Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-900/40 p-5 rounded-2xl border border-slate-800 flex items-center gap-4">
-          <div className="p-3 bg-blue-500/10 rounded-xl text-blue-400 border border-blue-500/20">
-            <Store className="w-6 h-6" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+        <div className="bg-slate-900/40 p-4 rounded-2xl border border-slate-800 flex items-center gap-3">
+          <div className="p-2.5 bg-blue-500/10 rounded-xl text-blue-400 border border-blue-500/20">
+            <Store className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Ümumi Satıcılar</p>
-            <p className="text-2xl font-black text-white">{sellers.length}</p>
+            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Ümumi Satıcılar</p>
+            <p className="text-xl font-black text-white">{sellers.length}</p>
           </div>
         </div>
 
-        <div className="bg-slate-900/40 p-5 rounded-2xl border border-slate-800 flex items-center gap-4">
-          <div className="p-3 bg-indigo-500/10 rounded-xl text-indigo-400 border border-indigo-500/20">
-            <Users className="w-6 h-6" />
+        <div className="bg-slate-900/40 p-4 rounded-2xl border border-slate-800 flex items-center gap-3">
+          <div className="p-2.5 bg-indigo-500/10 rounded-xl text-indigo-400 border border-indigo-500/20">
+            <Users className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Satıcı Agentləri</p>
-            <p className="text-2xl font-black text-indigo-400">{totalAgents}</p>
+            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Satıcı Agentləri</p>
+            <p className="text-xl font-black text-indigo-400">{totalAgents}</p>
           </div>
         </div>
 
-        <div className="bg-slate-900/40 p-5 rounded-2xl border border-slate-800 flex items-center gap-4">
-          <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-400 border border-emerald-500/20">
-            <DollarSign className="w-6 h-6" />
+        <div className="bg-slate-900/40 p-4 rounded-2xl border border-slate-800 flex items-center gap-3">
+          <div className="p-2.5 bg-emerald-500/10 rounded-xl text-emerald-400 border border-emerald-500/20">
+            <DollarSign className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Ümumi Dövriyyə</p>
-            <p className="text-2xl font-black text-emerald-400">{totalSales.toLocaleString()} AZN</p>
+            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Nağd Satış Yığımı</p>
+            <p className="text-xl font-black text-emerald-400">{totalSales.toLocaleString()} AZN</p>
           </div>
         </div>
 
-        <div className="bg-slate-900/40 p-5 rounded-2xl border border-slate-800 flex items-center gap-4">
-          <div className="p-3 bg-amber-500/10 rounded-xl text-amber-400 border border-amber-500/20">
-            <Award className="w-6 h-6" />
+        <div className="bg-slate-900/40 p-4 rounded-2xl border border-slate-800 flex items-center gap-3">
+          <div className="p-2.5 bg-amber-500/10 rounded-xl text-amber-400 border border-amber-500/20">
+            <Award className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Satıcı Qazancları</p>
-            <p className="text-2xl font-black text-amber-400">{totalSellerEarnings.toLocaleString()} AZN</p>
+            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Satıcıların Qazancı</p>
+            <p className="text-xl font-black text-amber-400">{totalSellerEarnings.toLocaleString()} AZN</p>
+          </div>
+        </div>
+
+        <div className="bg-slate-900/40 p-4 rounded-2xl border border-cyan-500/30 flex items-center gap-3 shadow-lg shadow-cyan-500/5">
+          <div className="p-2.5 bg-cyan-500/10 rounded-xl text-cyan-400 border border-cyan-500/20">
+            <Shield className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Adminə Çatacaq Pay</p>
+            <p className="text-xl font-black text-cyan-400">
+              {totalPendingDebt > 0 ? `${totalPendingDebt.toLocaleString()} AZN` : '0 AZN (Tam Təhvil)'}
+            </p>
           </div>
         </div>
       </div>
@@ -355,7 +397,7 @@ export function SellersAdminView() {
           }`}
         >
           <span>🏧</span>
-          <span>Çıxarış Tələbləri ({payouts.filter(p => p.status === 'pending').length} gözləyir)</span>
+          <span>Bank Çıxarış Tələbləri ({payouts.filter(p => p.status === 'pending').length} gözləyir)</span>
         </button>
       </div>
 
@@ -386,7 +428,8 @@ export function SellersAdminView() {
                     <th className="py-3.5 px-4">Komissiya %</th>
                     <th className="py-3.5 px-4">Dərəcə</th>
                     <th className="py-3.5 px-4">Agentlər</th>
-                    <th className="py-3.5 px-4">Balans / Qazanc</th>
+                    <th className="py-3.5 px-4">Nağd Satış / Qazanc</th>
+                    <th className="py-3.5 px-4">Admin Payı (Borc)</th>
                     <th className="py-3.5 px-4">Status</th>
                     <th className="py-3.5 px-4 text-right">Əməliyyatlar</th>
                   </tr>
@@ -396,83 +439,111 @@ export function SellersAdminView() {
                     <tr key={s.id} className="hover:bg-slate-800/30 transition">
                       <td className="py-4 px-4">
                         <div className="font-semibold text-white">{s.name}</div>
-                      {s.company_name && (
-                        <div className="text-xs text-slate-400">{s.company_name}</div>
-                      )}
-                    </td>
-                    <td className="py-4 px-4">
-                      {s.custom_domain ? (
-                        <div>
-                          <div className="text-xs font-mono text-cyan-400 font-semibold flex items-center gap-1">
-                            <span>🌐 {s.custom_domain}</span>
+                        {s.company_name && (
+                          <div className="text-xs text-slate-400">{s.company_name}</div>
+                        )}
+                      </td>
+                      <td className="py-4 px-4">
+                        {s.custom_domain ? (
+                          <div>
+                            <div className="text-xs font-mono text-cyan-400 font-semibold flex items-center gap-1">
+                              <span>🌐 {s.custom_domain}</span>
+                            </div>
+                            <span className={`inline-flex items-center text-[10px] mt-0.5 font-medium px-1.5 py-0.2 rounded ${
+                              s.domain_status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
+                            }`}>
+                              {s.domain_status === 'active' ? '🟢 Aktiv' : '🟡 DNS Gözlənilir'}
+                            </span>
                           </div>
-                          <span className={`inline-flex items-center text-[10px] mt-0.5 font-medium px-1.5 py-0.2 rounded ${
-                            s.domain_status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
-                          }`}>
-                            {s.domain_status === 'active' ? '🟢 Aktiv' : '🟡 DNS Gözlənilir'}
+                        ) : (
+                          <span className="text-xs text-slate-500">-</span>
+                        )}
+                      </td>
+                      <td className="py-4 px-4">
+                        <div>{s.email}</div>
+                        <div className="text-xs text-slate-400">{s.phone}</div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="font-bold text-emerald-400">%{s.commission_rate}</div>
+                        {s.bonus_commission && s.bonus_commission > 0 ? (
+                          <div className="text-[10px] text-amber-400 font-bold">
+                            +{s.bonus_commission}% Rank Bonusu (%{s.effective_commission_rate})
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="py-4 px-4">
+                        {getRankBadge(s.rank)}
+                      </td>
+                      <td className="py-4 px-4">
+                        <button
+                          onClick={() => openAgentsModal(s)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-blue-400 hover:text-blue-300 rounded-lg text-xs font-semibold transition"
+                        >
+                          <Users className="w-3.5 h-3.5" />
+                          <span>{s.active_agents} / {s.total_agents} Agent</span>
+                          <ChevronRight className="w-3 h-3" />
+                        </button>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="font-bold text-emerald-400">Qazanc: {s.total_earnings?.toLocaleString() || 0} AZN</div>
+                        <div className="text-xs text-slate-400">Nağd Satış: {s.total_sales_volume?.toLocaleString() || 0} AZN</div>
+                      </td>
+                      <td className="py-4 px-4">
+                        {(s.pending_platform_debt || 0) > 0 ? (
+                          <div>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                              🔴 {s.pending_platform_debt?.toLocaleString()} AZN gözləyir
+                            </span>
+                            <div className="text-[10px] text-slate-500 mt-0.5">
+                              Təhvil verilən: {s.platform_fee_settled || 0} AZN
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            🟢 Borc yoxdur
                           </span>
+                        )}
+                      </td>
+                      <td className="py-4 px-4">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                          s.status === 'active' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                        }`}>
+                          {s.status === 'active' ? 'Aktiv' : 'Dayandırılıb'}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => {
+                              setSettleModalSeller(s);
+                              setSettleAmount(s.pending_platform_debt || 0);
+                              setSettleNotes('');
+                            }}
+                            className="px-2.5 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-xs font-bold transition flex items-center gap-1"
+                            title="Nağd Platforma Haqqını Təhvil Al"
+                          >
+                            <span>💵</span>
+                            <span>Təhvil Al</span>
+                          </button>
+                          <button
+                            onClick={() => openEditModal(s)}
+                            className="p-1.5 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition"
+                            title="Redaktə et"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSeller(s)}
+                            className="p-1.5 text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 rounded-lg transition"
+                            title="Sil"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
-                      ) : (
-                        <span className="text-xs text-slate-500">-</span>
-                      )}
-                    </td>
-                    <td className="py-4 px-4">
-                      <div>{s.email}</div>
-                      <div className="text-xs text-slate-400">{s.phone}</div>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="font-bold text-emerald-400">%{s.commission_rate}</div>
-                      {s.bonus_commission && s.bonus_commission > 0 ? (
-                        <div className="text-[10px] text-amber-400 font-bold">
-                          +{s.bonus_commission}% Rank Bonusu (%{s.effective_commission_rate})
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="py-4 px-4">
-                      {getRankBadge(s.rank)}
-                    </td>
-                    <td className="py-4 px-4">
-                      <button
-                        onClick={() => openAgentsModal(s)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-blue-400 hover:text-blue-300 rounded-lg text-xs font-semibold transition"
-                      >
-                        <Users className="w-3.5 h-3.5" />
-                        <span>{s.active_agents} / {s.total_agents} Agent</span>
-                        <ChevronRight className="w-3 h-3" />
-                      </button>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div className="font-bold text-white">{s.balance.toLocaleString()} AZN</div>
-                      <div className="text-xs text-slate-400">Cəmi: {s.total_earnings.toLocaleString()} AZN</div>
-                    </td>
-                    <td className="py-4 px-4">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                        s.status === 'active' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                      }`}>
-                        {s.status === 'active' ? 'Aktiv' : 'Dayandırılıb'}
-                      </span>
-                    </td>
-                    <td className="py-4 px-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => openEditModal(s)}
-                          className="p-1.5 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition"
-                          title="Redaktə et"
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteSeller(s)}
-                          className="p-1.5 text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 rounded-lg transition"
-                          title="Sil"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
             </table>
           </div>
         )}
@@ -1001,6 +1072,95 @@ export function SellersAdminView() {
                 Bağla
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* CASH SETTLEMENT MODAL (Admin collects cash platform share from seller) */}
+      {settleModalSeller && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <span>💵</span>
+                <span>Nağd Platforma Haqqını Təhvil Al</span>
+              </h3>
+              <button onClick={() => setSettleModalSeller(null)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3.5 bg-slate-950/70 border border-slate-800 rounded-xl space-y-1.5 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Satıcı:</span>
+                <span className="font-bold text-white">{settleModalSeller.name} ({settleModalSeller.company_name || 'Fərdi'})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Telefon:</span>
+                <span className="text-slate-300 font-mono">{settleModalSeller.phone}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Məcmu Nağd Satış:</span>
+                <span className="text-slate-300">{settleModalSeller.total_sales_volume?.toLocaleString() || 0} AZN</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Satıcının Qazancı:</span>
+                <span className="text-emerald-400 font-bold">{settleModalSeller.total_earnings?.toLocaleString() || 0} AZN</span>
+              </div>
+              <div className="flex justify-between pt-1 border-t border-slate-800 text-sm">
+                <span className="text-cyan-300 font-bold">Adminə Qalan Borc Pay:</span>
+                <span className="text-rose-400 font-black">
+                  {settleModalSeller.pending_platform_debt?.toLocaleString() || 0} AZN
+                </span>
+              </div>
+            </div>
+
+            <form onSubmit={handleSettleCash} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Təhvil Alınan Məbləğ (AZN) *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  required
+                  value={settleAmount || ''}
+                  onChange={(e) => setSettleAmount(parseFloat(e.target.value) || 0)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white font-black text-base focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Qeyd / Təhvil Təsviri (İstəyə bağlı)
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Məs: Ofisdə nağd qəbul edildi və ya BirBank köçürməsi"
+                  value={settleNotes}
+                  onChange={(e) => setSettleNotes(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setSettleModalSeller(null)}
+                  className="w-1/2 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-xl text-xs transition"
+                >
+                  Ləğv et
+                </button>
+                <button
+                  type="submit"
+                  disabled={settling || settleAmount <= 0}
+                  className="w-1/2 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl text-xs shadow-lg shadow-emerald-600/25 transition disabled:opacity-50"
+                >
+                  {settling ? 'Qeydə alınır...' : 'Təsdiqlə və Qeydə Al'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

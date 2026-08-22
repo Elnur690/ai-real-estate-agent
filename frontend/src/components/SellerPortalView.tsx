@@ -27,6 +27,9 @@ export interface SellerDashboardData {
   balance: number;
   total_earnings: number;
   total_sales_volume: number;
+  total_platform_fee?: number;
+  platform_fee_settled?: number;
+  pending_platform_debt?: number;
   total_agents: number;
   active_agents: number;
   total_packages: number;
@@ -512,43 +515,59 @@ export function SellerPortalView() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="bg-slate-900/60 p-5 rounded-2xl border border-slate-800/80">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Mövcud Balans</span>
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Məcmu Nağd Satış</span>
             <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-400 border border-emerald-500/20">
               <DollarSign className="w-5 h-5" />
             </div>
           </div>
-          <p className="text-2xl font-black text-emerald-400">
-            {dashboard?.balance.toLocaleString() || 0} <span className="text-sm font-bold text-emerald-500/70">AZN</span>
+          <p className="text-2xl font-black text-white">
+            {dashboard?.total_sales_volume?.toLocaleString() || 0} <span className="text-sm font-bold text-slate-400">AZN</span>
           </p>
+          <span className="text-[10px] text-slate-500 mt-0.5 block">Agentlərdən toplanan nağd məbləğ</span>
         </div>
 
         <div className="bg-slate-900/60 p-5 rounded-2xl border border-slate-800/80">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Cəmi Xalis Qazanc</span>
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Xalis Qazancınız</span>
             <div className="p-2 bg-blue-500/10 rounded-xl text-blue-400 border border-blue-500/20">
               <TrendingUp className="w-5 h-5" />
             </div>
           </div>
-          <p className="text-2xl font-black text-blue-400">
-            {dashboard?.total_earnings.toLocaleString() || 0} <span className="text-sm font-bold text-blue-500/70">AZN</span>
+          <p className="text-2xl font-black text-emerald-400">
+            {dashboard?.total_earnings?.toLocaleString() || 0} <span className="text-sm font-bold text-emerald-500/70">AZN</span>
           </p>
+          <span className="text-[10px] text-slate-500 mt-0.5 block">Sizdə qalan xalis gəlir payı</span>
         </div>
 
         <div className="bg-slate-900/60 p-5 rounded-2xl border border-slate-800/80">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Effektiv Komissiya</span>
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Komissiya Faiziniz</span>
             <div className="p-2 bg-indigo-500/10 rounded-xl text-indigo-400 border border-indigo-500/20">
               <Award className="w-5 h-5" />
             </div>
           </div>
           <p className="text-2xl font-black text-indigo-400 flex items-center gap-1.5">
-            <span>%{dashboard?.effective_commission_rate || dashboard?.commission_rate || 70}</span>
+            <span>%{dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70}</span>
             {dashboard?.bonus_commission ? (
               <span className="text-[11px] font-bold text-amber-400">
                 (+%{dashboard.bonus_commission})
               </span>
             ) : null}
           </p>
+          <span className="text-[10px] text-slate-500 mt-0.5 block">Satışdan satıcıya qalan %</span>
+        </div>
+
+        <div className="bg-slate-900/60 p-5 rounded-2xl border border-cyan-500/30 shadow-lg shadow-cyan-500/5">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-cyan-300 uppercase tracking-wider">Adminə Qalan Pay</span>
+            <div className="p-2 bg-cyan-500/10 rounded-xl text-cyan-400 border border-cyan-500/20">
+              <Shield className="w-5 h-5" />
+            </div>
+          </div>
+          <p className="text-2xl font-black text-rose-400">
+            {(dashboard?.pending_platform_debt || 0) > 0 ? `${dashboard?.pending_platform_debt?.toLocaleString()} AZN` : '0 AZN (Təhvil verildi)'}
+          </p>
+          <span className="text-[10px] text-slate-500 mt-0.5 block">Adminə nağd təhvil verilməli</span>
         </div>
 
         <div className="bg-slate-900/60 p-5 rounded-2xl border border-slate-800/80">
@@ -561,18 +580,7 @@ export function SellerPortalView() {
           <p className="text-2xl font-black text-white">
             {dashboard?.active_agents || 0} <span className="text-sm font-normal text-slate-500">/ {dashboard?.total_agents || 0}</span>
           </p>
-        </div>
-
-        <div className="bg-slate-900/60 p-5 rounded-2xl border border-slate-800/80">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Fərdi Paketlər</span>
-            <div className="p-2 bg-amber-500/10 rounded-xl text-amber-400 border border-amber-500/20">
-              <Package className="w-5 h-5" />
-            </div>
-          </div>
-          <p className="text-2xl font-black text-amber-400">
-            {packages.length} <span className="text-xs font-normal text-slate-500">/ max {dashboard?.rank_max_packages || 5}</span>
-          </p>
+          <span className="text-[10px] text-slate-500 mt-0.5 block">Paket sayı: {packages.length}</span>
         </div>
       </div>
 
@@ -789,8 +797,8 @@ export function SellerPortalView() {
                 </div>
 
                 <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                  <span className="text-slate-500">Qazancınız (70%):</span>
-                  <span className="font-bold text-emerald-400">+{((pkg.price * (dashboard?.commission_rate || 70)) / 100).toFixed(1)} AZN</span>
+                  <span className="text-slate-500">Qazancınız (%{dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70}):</span>
+                  <span className="font-bold text-emerald-400">+{((pkg.price * (dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70)) / 100).toFixed(1)} AZN</span>
                 </div>
               </div>
             ))}
@@ -801,15 +809,50 @@ export function SellerPortalView() {
       {/* TAB 3: EARNINGS & TRANSACTIONS */}
       {activeTab === 'earnings' && (
         <div className="space-y-6">
+          {/* Cash Settlement Summary Card */}
+          <div className="bg-slate-900/80 rounded-3xl border border-cyan-500/30 p-6 backdrop-blur-md shadow-xl relative overflow-hidden">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-cyan-400 font-bold text-sm">
+                  <span>💵</span>
+                  <span>Nağd Yığım və Platforma Hesablaşması (Cash Settlement)</span>
+                </div>
+                <h3 className="text-xl font-black text-white">
+                  Agentlərdən Nağd Yığılan Məbləğ və Admin Payı
+                </h3>
+                <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+                  Siz agentlərinizdən paket ödənişlərini <strong>birbaşa nağd</strong> qəbul edirsiniz. Komissiya payınız (<strong>%{dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70}</strong>) birbaşa sizin xalis qazancınız olaraq qalır, platforma haqqı (<strong>%{100 - (dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70)}</strong>) isə sistem admininə nağd təhvil verilir.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 shrink-0">
+                <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Cəmi Nağd Satış</span>
+                  <span className="text-base font-bold text-white">{dashboard?.total_sales_volume?.toLocaleString() || 0} AZN</span>
+                </div>
+                <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800">
+                  <span className="text-[10px] text-slate-400 block">Sizin Xalis Qazancınız</span>
+                  <span className="text-base font-black text-emerald-400">+{dashboard?.total_earnings?.toLocaleString() || 0} AZN</span>
+                </div>
+                <div className="p-3 bg-slate-950/60 rounded-xl border border-cyan-500/30 col-span-2 sm:col-span-1">
+                  <span className="text-[10px] text-cyan-300 block">Adminə Təhvil Verilməli Pay</span>
+                  <span className="text-base font-black text-rose-400">
+                    {(dashboard?.pending_platform_debt || 0) > 0 ? `${dashboard?.pending_platform_debt?.toLocaleString()} AZN` : '0 AZN (Tam Təhvil)'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="bg-slate-900/60 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
             <div className="p-5 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 className="text-lg font-bold text-white">Qazanc və Komissiya Tarixçəsi</h2>
-                <p className="text-xs text-slate-400">Agentlərinizin abunələrindən qazandığınız komissiya daxilolmaları.</p>
+                <h2 className="text-lg font-bold text-white">Satış və Komissiya Əməliyyatları</h2>
+                <p className="text-xs text-slate-400">Agentlərinizin paket satışları və qeydə alınan hesablaşmalar.</p>
               </div>
               <div className="flex items-center gap-4">
                 <div className="text-right">
-                  <span className="text-xs text-slate-400 block">Çıxarıla bilən Balans</span>
+                  <span className="text-xs text-slate-400 block">Gələcək Onlayn Çıxarış</span>
                   <span className="text-xl font-black text-emerald-400">{dashboard?.balance.toLocaleString()} AZN</span>
                 </div>
                 <button
@@ -819,9 +862,10 @@ export function SellerPortalView() {
                     setIsWithdrawOpen(true);
                   }}
                   disabled={!dashboard?.balance || dashboard.balance <= 0}
-                  className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl text-xs shadow-lg shadow-emerald-600/20 transition disabled:opacity-40"
+                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs border border-slate-700 transition disabled:opacity-40"
+                  title="Gələcək onlayn bank çıxarışı üçün"
                 >
-                  💸 Balansı Çıxar
+                  🏧 Bank Kartına Çıxar (Beta)
                 </button>
               </div>
             </div>
@@ -1255,6 +1299,17 @@ export function SellerPortalView() {
                     {pkgPrice === 0 ? `Max sınaq: ${dashboard?.max_trial_days || 14} gün` : 'Standart: 30 gün'}
                   </span>
                 </div>
+
+                {pkgPrice > 0 && (
+                  <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs flex justify-between items-center col-span-2">
+                    <span className="text-slate-300">
+                      Sizin Komissiya Payınız (%{dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70}):
+                    </span>
+                    <span className="font-bold text-emerald-400">
+                      +{((pkgPrice * (dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70)) / 100).toFixed(1)} AZN
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div>

@@ -25,6 +25,7 @@ class Seller(Base):
     balance: Mapped[float] = mapped_column(Float, default=0.0)  # Current available profit in AZN
     total_earnings: Mapped[float] = mapped_column(Float, default=0.0)  # Lifetime profit in AZN
     total_sales_volume: Mapped[float] = mapped_column(Float, default=0.0)  # Lifetime gross sales in AZN
+    platform_fee_settled: Mapped[float] = mapped_column(Float, default=0.0)  # Platform fee collected by Admin in AZN
     
     # Custom White-label Domain settings
     custom_domain: Mapped[str | None] = mapped_column(String(255), nullable=True)  # e.g., "agent.bakuemlak.az"

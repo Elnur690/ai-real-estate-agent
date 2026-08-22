@@ -577,3 +577,79 @@ async def test_health_monitor_admin_alert_endpoint(client: AsyncClient, test_db:
     assert s_res.json()["admin_telegram_chat_id"] == "123456789"
 
 
+@pytest.mark.asyncio
+async def test_dynamic_commission_rate_and_cash_settlement(client: AsyncClient, test_db: AsyncSession):
+    """Test dynamic seller commission change by admin and cash settlement workflow."""
+    # 1. Setup Admin and Seller with default 70% commission
+    admin_u = User(name="Cash Admin", email="cashadmin@test.az", phone="+994509999950", role="admin", password_hash=get_password_hash("pass"))
+    seller_u = User(name="Cash Seller", email="cashseller@test.az", phone="+994509999951", role="seller", password_hash=get_password_hash("pass"))
+    test_db.add_all([admin_u, seller_u])
+    await test_db.commit()
+
+    admin_headers = {"Authorization": f"Bearer {create_access_token(admin_u.id)}"}
+    seller_headers = {"Authorization": f"Bearer {create_access_token(seller_u.id)}"}
+
+    seller = Seller(
+        user_id=seller_u.id,
+        name="Cash Seller",
+        email="cashseller@test.az",
+        phone="+994509999951",
+        commission_rate=70.0,
+        status="active"
+    )
+    test_db.add(seller)
+    await test_db.commit()
+    await test_db.refresh(seller)
+
+    # 2. Admin changes seller commission rate to 85%
+    put_res = await client.put(f"/api/v1/sellers/{seller.id}", json={
+        "commission_rate": 85.0
+    }, headers=admin_headers)
+    assert put_res.status_code == 200
+    assert put_res.json()["seller"]["commission_rate"] == 85.0
+
+    # 3. Seller creates a 100 AZN package
+    pkg_res = await client.post("/api/v1/sellers/me/packages", json={
+        "name": "Custom 85% Pack",
+        "price": 100.0,
+        "duration_days": 30
+    }, headers=seller_headers)
+    assert pkg_res.status_code == 201
+    pkg_id = pkg_res.json()["package_id"]
+
+    # 4. Seller registers an agent under this package
+    # Seller collects 100 AZN cash from agent
+    # Seller keeps 85 AZN profit (85%), owes 15 AZN platform fee (15%) to Admin
+    agent_res = await client.post("/api/v1/sellers/me/agents", json={
+        "name": "Agent Under 85%",
+        "phone": "+994509999952",
+        "preferred_channel": "telegram",
+        "package_id": pkg_id
+    }, headers=seller_headers)
+    assert agent_res.status_code == 201
+
+    # 5. Check dashboard: seller profit 85 AZN, total cash 100 AZN, pending platform debt 15 AZN
+    dash_res = await client.get("/api/v1/sellers/me/dashboard", headers=seller_headers)
+    assert dash_res.status_code == 200
+    dash_data = dash_res.json()
+    assert dash_data["commission_rate"] == 85.0
+    assert dash_data["effective_commission_rate"] == 85.0
+    assert dash_data["total_earnings"] == 85.0
+    assert dash_data["total_sales_volume"] == 100.0
+    assert dash_data["pending_platform_debt"] == 15.0
+
+    # 6. Admin collects 15 AZN cash platform share from seller
+    settle_res = await client.post(f"/api/v1/sellers/{seller.id}/settle-cash", json={
+        "amount": 15.0,
+        "notes": "Collected cash at office"
+    }, headers=admin_headers)
+    assert settle_res.status_code == 200
+    assert settle_res.json()["total_settled"] == 15.0
+    assert settle_res.json()["pending_platform_debt"] == 0.0
+
+    # 7. Verify dashboard pending debt is now 0 AZN
+    dash_res2 = await client.get("/api/v1/sellers/me/dashboard", headers=seller_headers)
+    assert dash_res2.json()["pending_platform_debt"] == 0.0
+
+
+

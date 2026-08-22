@@ -68,6 +68,7 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS duplicate_count INTEGER DEFAULT 1;"))
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS duplicate_listings JSON DEFAULT '[]'::json;"))
         await conn.execute(text("ALTER TABLE saved_searches ADD COLUMN IF NOT EXISTS include_adjacent_metro BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE sellers ADD COLUMN IF NOT EXISTS platform_fee_settled FLOAT DEFAULT 0.0;"))
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS seller_payout_requests (
                 id SERIAL PRIMARY KEY,

@@ -82,6 +82,10 @@ class PayoutRequest(BaseModel):
     amount: float
     description: Optional[str] = None
 
+class SettleCashRequest(BaseModel):
+    amount: float
+    notes: Optional[str] = None
+
 
 # ----------------- ADMIN ENDPOINTS -----------------
 
@@ -110,6 +114,10 @@ async def list_all_sellers_admin(
 
         rank_info = SELLER_RANK_CONFIG.get(s.rank, SELLER_RANK_CONFIG["Bronze"])
 
+        total_platform_fee = max(0.0, round((s.total_sales_volume or 0.0) - (s.total_earnings or 0.0), 2))
+        platform_fee_settled = getattr(s, 'platform_fee_settled', 0.0) or 0.0
+        pending_platform_debt = max(0.0, round(total_platform_fee - platform_fee_settled, 2))
+
         results.append({
             "id": s.id,
             "user_id": s.user_id,
@@ -127,6 +135,9 @@ async def list_all_sellers_admin(
             "balance": s.balance,
             "total_earnings": s.total_earnings,
             "total_sales_volume": s.total_sales_volume,
+            "total_platform_fee": total_platform_fee,
+            "platform_fee_settled": platform_fee_settled,
+            "pending_platform_debt": pending_platform_debt,
             "total_agents": total_agents,
             "active_agents": active_agents,
             "custom_domain": s.custom_domain,
@@ -383,6 +394,52 @@ async def process_seller_payout_admin(
     return {"message": "Ödəniş uğurla qeydə alındı", "new_balance": seller.balance}
 
 
+@router.post("/{seller_id}/settle-cash")
+async def settle_seller_cash_admin(
+    seller_id: int,
+    body: SettleCashRequest,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Admin-only: Record cash platform fee collection from a seller.
+    When a seller collects cash from agents, they owe the platform fee share to Admin.
+    Admin uses this endpoint to confirm receiving cash from the seller.
+    """
+    stmt = select(Seller).where(Seller.id == seller_id)
+    res = await db.execute(stmt)
+    seller = res.scalars().first()
+    if not seller:
+        raise HTTPException(status_code=404, detail="Satıcı tapılmadı")
+
+    if body.amount <= 0:
+        raise HTTPException(status_code=400, detail="Məbləğ müsbət olmalıdır.")
+
+    seller.platform_fee_settled = (getattr(seller, 'platform_fee_settled', 0.0) or 0.0) + body.amount
+    
+    # Record transaction
+    tx = SellerTransaction(
+        seller_id=seller.id,
+        amount=-body.amount,
+        type="cash_settlement",
+        description=f"Admin nağd təhvil aldı: {body.amount:.2f} AZN ({body.notes or 'Nağd hesablaşma'})"
+    )
+    db.add(tx)
+    await db.commit()
+    await db.refresh(seller)
+
+    total_platform_fee = max(0.0, round((seller.total_sales_volume or 0.0) - (seller.total_earnings or 0.0), 2))
+    pending_debt = max(0.0, round(total_platform_fee - seller.platform_fee_settled, 2))
+
+    return {
+        "message": "Nağd hesablaşma uğurla qeydə alındı",
+        "seller_id": seller.id,
+        "amount_settled": body.amount,
+        "total_settled": seller.platform_fee_settled,
+        "pending_platform_debt": pending_debt
+    }
+
+
 # ----------------- SELLER PORTAL ENDPOINTS (ISOLATED) -----------------
 
 @router.get("/me/dashboard")
@@ -435,6 +492,10 @@ async def get_seller_dashboard(
 
     min_price, max_trial_days = await _get_seller_package_constraints(db)
 
+    total_platform_fee = max(0.0, round((seller.total_sales_volume or 0.0) - (seller.total_earnings or 0.0), 2))
+    platform_fee_settled = getattr(seller, 'platform_fee_settled', 0.0) or 0.0
+    pending_platform_debt = max(0.0, round(total_platform_fee - platform_fee_settled, 2))
+
     return {
         "seller_id": seller.id,
         "name": seller.name,
@@ -456,6 +517,9 @@ async def get_seller_dashboard(
         "balance": seller.balance,
         "total_earnings": seller.total_earnings,
         "total_sales_volume": seller.total_sales_volume,
+        "total_platform_fee": total_platform_fee,
+        "platform_fee_settled": platform_fee_settled,
+        "pending_platform_debt": pending_platform_debt,
         "total_agents": total_agents,
         "active_agents": active_agents,
         "total_packages": total_packages,
