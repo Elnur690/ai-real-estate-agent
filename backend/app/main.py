@@ -21,6 +21,11 @@ async def lifespan(app: FastAPI):
         from sqlalchemy import text
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS seller_id INTEGER;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS seller_package_id INTEGER;"))
+        await conn.execute(text("ALTER TABLE sellers ADD COLUMN IF NOT EXISTS custom_domain VARCHAR(255);"))
+        await conn.execute(text("ALTER TABLE sellers ADD COLUMN IF NOT EXISTS custom_domain_enabled BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE sellers ADD COLUMN IF NOT EXISTS domain_status VARCHAR(50) DEFAULT 'disabled';"))
+        await conn.execute(text("ALTER TABLE sellers ADD COLUMN IF NOT EXISTS custom_brand_title VARCHAR(255);"))
+        await conn.execute(text("ALTER TABLE sellers ADD COLUMN IF NOT EXISTS custom_brand_logo VARCHAR(500);"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS draft_search_json TEXT;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS parent_tenant_id INTEGER;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS assigned_districts JSON;"))

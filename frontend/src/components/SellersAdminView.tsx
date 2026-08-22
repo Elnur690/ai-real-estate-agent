@@ -10,13 +10,22 @@ export interface SellerItem {
   phone: string;
   company_name?: string;
   commission_rate: number;
+  bonus_commission?: number;
+  effective_commission_rate?: number;
   rank: string;
+  rank_label?: string;
+  rank_emoji?: string;
   status: string;
   balance: number;
   total_earnings: number;
   total_sales_volume: number;
   total_agents: number;
   active_agents: number;
+  custom_domain?: string;
+  custom_domain_enabled?: boolean;
+  domain_status?: string;
+  custom_brand_title?: string;
+  custom_brand_logo?: string;
   created_at: string;
 }
 
@@ -52,6 +61,11 @@ export function SellersAdminView() {
   const [formCommission, setFormCommission] = useState<number>(70);
   const [formRank, setFormRank] = useState('Bronze');
   const [formStatus, setFormStatus] = useState('active');
+  const [formCustomDomain, setFormCustomDomain] = useState('');
+  const [formCustomDomainEnabled, setFormCustomDomainEnabled] = useState(false);
+  const [formDomainStatus, setFormDomainStatus] = useState('disabled');
+  const [formBrandTitle, setFormBrandTitle] = useState('');
+  const [formBrandLogo, setFormBrandLogo] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const fetchSellers = async () => {
@@ -80,6 +94,11 @@ export function SellersAdminView() {
     setFormCommission(70);
     setFormRank('Bronze');
     setFormStatus('active');
+    setFormCustomDomain('');
+    setFormCustomDomainEnabled(false);
+    setFormDomainStatus('disabled');
+    setFormBrandTitle('');
+    setFormBrandLogo('');
     setIsAddOpen(true);
   };
 
@@ -91,6 +110,11 @@ export function SellersAdminView() {
     setFormCommission(seller.commission_rate);
     setFormRank(seller.rank);
     setFormStatus(seller.status);
+    setFormCustomDomain(seller.custom_domain || '');
+    setFormCustomDomainEnabled(seller.custom_domain_enabled || false);
+    setFormDomainStatus(seller.domain_status || 'disabled');
+    setFormBrandTitle(seller.custom_brand_title || '');
+    setFormBrandLogo(seller.custom_brand_logo || '');
     setFormPassword('');
   };
 
@@ -105,7 +129,11 @@ export function SellersAdminView() {
         password: formPassword,
         company_name: formCompany || undefined,
         commission_rate: formCommission,
-        rank: formRank
+        rank: formRank,
+        custom_domain: formCustomDomain || undefined,
+        custom_domain_enabled: formCustomDomainEnabled,
+        custom_brand_title: formBrandTitle || undefined,
+        custom_brand_logo: formBrandLogo || undefined
       });
       setIsAddOpen(false);
       fetchSellers();
@@ -128,7 +156,12 @@ export function SellersAdminView() {
         commission_rate: formCommission,
         rank: formRank,
         status: formStatus,
-        password: formPassword || undefined
+        password: formPassword || undefined,
+        custom_domain: formCustomDomain || undefined,
+        custom_domain_enabled: formCustomDomainEnabled,
+        domain_status: formDomainStatus,
+        custom_brand_title: formBrandTitle || undefined,
+        custom_brand_logo: formBrandLogo || undefined
       });
       setEditingSeller(null);
       fetchSellers();
@@ -278,6 +311,7 @@ export function SellersAdminView() {
               <thead>
                 <tr className="border-b border-slate-800 bg-slate-950/40 text-slate-400 text-xs uppercase font-semibold">
                   <th className="py-3.5 px-4">Satıcı / Şirkət</th>
+                  <th className="py-3.5 px-4">Fərdi Domen</th>
                   <th className="py-3.5 px-4">Əlaqə</th>
                   <th className="py-3.5 px-4">Komissiya %</th>
                   <th className="py-3.5 px-4">Dərəcə</th>
@@ -297,11 +331,32 @@ export function SellersAdminView() {
                       )}
                     </td>
                     <td className="py-4 px-4">
+                      {s.custom_domain ? (
+                        <div>
+                          <div className="text-xs font-mono text-cyan-400 font-semibold flex items-center gap-1">
+                            <span>🌐 {s.custom_domain}</span>
+                          </div>
+                          <span className={`inline-flex items-center text-[10px] mt-0.5 font-medium px-1.5 py-0.2 rounded ${
+                            s.domain_status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
+                          }`}>
+                            {s.domain_status === 'active' ? '🟢 Aktiv' : '🟡 DNS Gözlənilir'}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-500">-</span>
+                      )}
+                    </td>
+                    <td className="py-4 px-4">
                       <div>{s.email}</div>
                       <div className="text-xs text-slate-400">{s.phone}</div>
                     </td>
                     <td className="py-4 px-4">
-                      <span className="font-bold text-emerald-400">%{s.commission_rate}</span>
+                      <div className="font-bold text-emerald-400">%{s.commission_rate}</div>
+                      {s.bonus_commission && s.bonus_commission > 0 ? (
+                        <div className="text-[10px] text-amber-400 font-bold">
+                          +{s.bonus_commission}% Rank Bonusu (%{s.effective_commission_rate})
+                        </div>
+                      ) : null}
                     </td>
                     <td className="py-4 px-4">
                       {getRankBadge(s.rank)}
@@ -451,11 +506,50 @@ export function SellersAdminView() {
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
                   >
                     <option value="Bronze">🥉 Bronze</option>
-                    <option value="Silver">🥈 Silver</option>
-                    <option value="Gold">🥇 Gold</option>
-                    <option value="Platinum">💠 Platinum</option>
-                    <option value="Diamond">💎 Diamond</option>
+                    <option value="Silver">🥈 Silver (+3% Bonus)</option>
+                    <option value="Gold">🥇 Gold (+5% Bonus & Domen)</option>
+                    <option value="Platinum">💠 Platinum (+8% Bonus)</option>
+                    <option value="Diamond">💎 Diamond (+10% Bonus)</option>
                   </select>
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
+                <div className="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
+                  <span>🌐</span>
+                  <span>Fərdi Domen və White-label Brend (Könüllü)</span>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">Fərdi Domen</label>
+                  <input
+                    type="text"
+                    value={formCustomDomain}
+                    onChange={(e) => setFormCustomDomain(e.target.value)}
+                    placeholder="agent.bakuemlak.az"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-white text-xs font-mono focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Fərdi Brend Başlığı</label>
+                    <input
+                      type="text"
+                      value={formBrandTitle}
+                      onChange={(e) => setFormBrandTitle(e.target.value)}
+                      placeholder="Baku Emlak Portalı"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-white text-xs focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Fərdi Loqo URL</label>
+                    <input
+                      type="text"
+                      value={formBrandLogo}
+                      onChange={(e) => setFormBrandLogo(e.target.value)}
+                      placeholder="https://..."
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-white text-xs focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -483,7 +577,7 @@ export function SellersAdminView() {
       {/* EDIT SELLER MODAL */}
       {editingSeller && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-5">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 <Edit3 className="w-5 h-5 text-blue-400" />
@@ -577,6 +671,72 @@ export function SellersAdminView() {
                     <option value="active">Aktiv</option>
                     <option value="suspended">Dayandırılıb</option>
                   </select>
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
+                <div className="text-xs font-bold text-cyan-400 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <span>🌐</span>
+                    <span>Fərdi Domen (White-label) İdarəsi</span>
+                  </span>
+                  <label className="flex items-center gap-1.5 text-xs text-slate-300 font-normal cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formCustomDomainEnabled}
+                      onChange={(e) => setFormCustomDomainEnabled(e.target.checked)}
+                      className="rounded bg-slate-900 border-slate-700 text-cyan-500"
+                    />
+                    <span>İcazə Verilib</span>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Fərdi Domen</label>
+                    <input
+                      type="text"
+                      value={formCustomDomain}
+                      onChange={(e) => setFormCustomDomain(e.target.value)}
+                      placeholder="agent.bakuemlak.az"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-white text-xs font-mono focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Domen Statusu</label>
+                    <select
+                      value={formDomainStatus}
+                      onChange={(e) => setFormDomainStatus(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-2 py-1.5 text-white text-xs focus:outline-none focus:border-cyan-500"
+                    >
+                      <option value="disabled">Deaktiv</option>
+                      <option value="pending_dns">DNS Gözlənilir</option>
+                      <option value="active">Aktiv (DNS Təsdiqlənib)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Fərdi Brend Başlığı</label>
+                    <input
+                      type="text"
+                      value={formBrandTitle}
+                      onChange={(e) => setFormBrandTitle(e.target.value)}
+                      placeholder="Baku Emlak Portalı"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-white text-xs focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-400 mb-1">Fərdi Loqo URL</label>
+                    <input
+                      type="text"
+                      value={formBrandLogo}
+                      onChange={(e) => setFormBrandLogo(e.target.value)}
+                      placeholder="https://..."
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-white text-xs focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
                 </div>
               </div>
 

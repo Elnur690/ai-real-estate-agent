@@ -88,6 +88,9 @@ class TenantResponse(BaseModel):
     max_saved_searches: int = 10
     referral_code: Optional[str] = None
     referral_balance: float
+    seller_id: Optional[int] = None
+    seller_name: Optional[str] = None
+    seller_company: Optional[str] = None
     created_at: Optional[datetime] = None
 
     class Config:
@@ -97,12 +100,18 @@ class TenantResponse(BaseModel):
 async def list_tenants(db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
     from app.models.saved_search import SavedSearch
     from app.models.plan import Plan
+    from app.models.seller import Seller
     from sqlalchemy import func
 
     # Fetch plans
     stmt_p = select(Plan)
     res_p = await db.execute(stmt_p)
     plans = {p.code: getattr(p, 'max_saved_searches', 10) for p in res_p.scalars().all()}
+
+    # Fetch sellers
+    stmt_s = select(Seller)
+    res_s = await db.execute(stmt_s)
+    sellers_dict = {s.id: s for s in res_s.scalars().all()}
 
     # Fetch active search counts
     stmt_c = select(SavedSearch.tenant_id, func.count(SavedSearch.id)).where(SavedSearch.is_active == True).group_by(SavedSearch.tenant_id)
@@ -120,6 +129,12 @@ async def list_tenants(db: AsyncSession = Depends(get_db), current_admin = Depen
         t_resp = TenantResponse.model_validate(t)
         t_resp.active_searches_count = counts.get(t.id, 0)
         t_resp.max_saved_searches = total_lim
+        
+        seller_obj = sellers_dict.get(t.seller_id) if t.seller_id else None
+        t_resp.seller_id = t.seller_id
+        t_resp.seller_name = seller_obj.name if seller_obj else None
+        t_resp.seller_company = seller_obj.company_name if seller_obj else None
+        
         resp.append(t_resp)
 
     return resp
@@ -357,3 +372,47 @@ async def trigger_trial_check(db: AsyncSession = Depends(get_db), current_admin 
     from app.services.trial_tracker import TrialTrackerService
     await TrialTrackerService.check_and_notify_expired_trials(db)
     return {"status": "completed", "message": "Trial expiration check complete."}
+
+
+class MoveTenantSellerRequest(BaseModel):
+    seller_id: Optional[int] = None  # None to unassign to direct platform
+
+
+@router.put("/{tenant_id}/seller")
+async def move_tenant_seller(
+    tenant_id: int,
+    body: MoveTenantSellerRequest,
+    db: AsyncSession = Depends(get_db),
+    current_admin = Depends(get_current_admin)
+):
+    """
+    Admin-only: Move/Reassign an agent to a different seller or to direct platform.
+    Agent's active searches, plans, and preferences stay completely intact and unaffected.
+    """
+    from app.models.seller import Seller
+    stmt = select(Tenant).where(Tenant.id == tenant_id)
+    res = await db.execute(stmt)
+    tenant = res.scalars().first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Agent tapılmadı")
+
+    seller_name = "Direkt Platforma"
+    if body.seller_id is not None:
+        s_stmt = select(Seller).where(Seller.id == body.seller_id)
+        s_res = await db.execute(s_stmt)
+        seller = s_res.scalars().first()
+        if not seller:
+            raise HTTPException(status_code=404, detail="Satıcı tapılmadı")
+        seller_name = seller.name
+
+    tenant.seller_id = body.seller_id
+    await db.commit()
+    await db.refresh(tenant)
+
+    return {
+        "status": "success",
+        "message": f"Agent uğurla '{seller_name}' hesabına köçürüldü. Agentin axtarışları və planı toxunulmaz qaldı.",
+        "tenant_id": tenant.id,
+        "seller_id": tenant.seller_id,
+        "seller_name": seller_name
+    }

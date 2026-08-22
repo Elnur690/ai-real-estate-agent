@@ -127,12 +127,12 @@ async def test_seller_portal_packages_and_agent_registration(client: AsyncClient
     assert agent_res.status_code == 201
     assert agent_res.json()["name"] == "Nurlan Agent"
 
-    # 4. Verify Seller Balance & Profit (100 AZN * 75% = 75 AZN)
+    # 4. Verify Seller Balance & Profit (100 AZN * 78% [75% base + 3% Silver bonus] = 78 AZN)
     dash_res = await client.get("/api/v1/sellers/me/dashboard", headers=seller_headers)
     assert dash_res.status_code == 200
     dash_data = dash_res.json()
-    assert dash_data["balance"] == 75.0
-    assert dash_data["total_earnings"] == 75.0
+    assert dash_data["balance"] == 78.0
+    assert dash_data["total_earnings"] == 78.0
     assert dash_data["total_sales_volume"] == 100.0
     assert dash_data["total_agents"] == 1
 
@@ -249,4 +249,154 @@ async def test_seller_package_minimum_price_and_free_trial_constraints(client: A
         "duration_days": 7
     }, headers=seller_headers)
     assert valid_trial_res.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_admin_move_agent_between_sellers(client: AsyncClient, test_db: AsyncSession):
+    """Test that Admin can safely reassign an agent to any seller account without touching searches or plan."""
+    from app.models.saved_search import SavedSearch
+    # 1. Create Admin
+    admin_user = User(
+        name="Admin",
+        email="admin2@system.az",
+        phone="+994509999901",
+        role="admin",
+        password_hash=get_password_hash("adminpass")
+    )
+    test_db.add(admin_user)
+    await test_db.commit()
+    admin_token = create_access_token(admin_user.id)
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    # 2. Create Seller 1 and Seller 2
+    seller1_u = User(name="Seller One", email="s1@test.az", phone="+994509999902", role="seller", password_hash=get_password_hash("pass1"))
+    seller2_u = User(name="Seller Two", email="s2@test.az", phone="+994509999903", role="seller", password_hash=get_password_hash("pass2"))
+    test_db.add_all([seller1_u, seller2_u])
+    await test_db.commit()
+
+    s1 = Seller(user_id=seller1_u.id, name="Seller One", email="s1@test.az", phone="+994509999902", commission_rate=70.0, rank="Silver")
+    s2 = Seller(user_id=seller2_u.id, name="Seller Two", email="s2@test.az", phone="+994509999903", commission_rate=80.0, rank="Gold")
+    test_db.add_all([s1, s2])
+    await test_db.commit()
+    await test_db.refresh(s1)
+    await test_db.refresh(s2)
+
+    # 3. Create an existing direct platform Tenant with saved searches
+    tenant = Tenant(
+        name="Farid Agent",
+        phone="+994509999904",
+        preferred_channel="telegram",
+        plan="pro",
+        status="active"
+    )
+    test_db.add(tenant)
+    await test_db.commit()
+    await test_db.refresh(tenant)
+
+    search1 = SavedSearch(tenant_id=tenant.id, name="Yasamal 2-otaq", raw_criteria_text="Yasamal 2 otaq 100000 AZN", is_active=True)
+    test_db.add(search1)
+    await test_db.commit()
+
+    # 4. Admin moves Farid to Seller 1
+    move_res1 = await client.put(f"/api/v1/tenants/{tenant.id}/seller", json={"seller_id": s1.id}, headers=admin_headers)
+    assert move_res1.status_code == 200
+    assert move_res1.json()["seller_id"] == s1.id
+    assert move_res1.json()["seller_name"] == "Seller One"
+
+    # Verify search and plan are unchanged
+    t_check = await client.get("/api/v1/tenants", headers=admin_headers)
+    tenants_data = t_check.json()
+    t_found = next(t for t in tenants_data if t["id"] == tenant.id)
+    assert t_found["seller_id"] == s1.id
+    assert t_found["seller_name"] == "Seller One"
+    assert t_found["plan"] == "pro"
+
+    # 5. Admin moves Farid to Seller 2
+    move_res2 = await client.put(f"/api/v1/tenants/{tenant.id}/seller", json={"seller_id": s2.id}, headers=admin_headers)
+    assert move_res2.status_code == 200
+    assert move_res2.json()["seller_id"] == s2.id
+    assert move_res2.json()["seller_name"] == "Seller Two"
+
+    # 6. Admin moves Farid back to Direct platform (seller_id = None)
+    move_res3 = await client.put(f"/api/v1/tenants/{tenant.id}/seller", json={"seller_id": None}, headers=admin_headers)
+    assert move_res3.status_code == 200
+    assert move_res3.json()["seller_id"] is None
+    assert move_res3.json()["seller_name"] == "Direkt Platforma"
+
+
+@pytest.mark.asyncio
+async def test_seller_rank_bonus_and_custom_domain(client: AsyncClient, test_db: AsyncSession):
+    """Test rank progression bonus commission and custom domain whitelist/verification."""
+    # 1. Create Gold Seller with 70% base commission
+    seller_u = User(name="Gold Seller", email="gold@seller.az", phone="+994509999910", role="seller", password_hash=get_password_hash("goldpass"))
+    test_db.add(seller_u)
+    await test_db.commit()
+
+    seller = Seller(
+        user_id=seller_u.id,
+        name="Gold Seller",
+        email="gold@seller.az",
+        phone="+994509999910",
+        commission_rate=70.0,
+        rank="Gold",
+        total_sales_volume=2500.0,
+        status="active"
+    )
+    test_db.add(seller)
+    await test_db.commit()
+    await test_db.refresh(seller)
+
+    seller_token = create_access_token(seller_u.id)
+    headers = {"Authorization": f"Bearer {seller_token}"}
+
+    # 2. Check Dashboard: Gold rank gives +5% bonus -> effective commission is 75%
+    dash_res = await client.get("/api/v1/sellers/me/dashboard", headers=headers)
+    assert dash_res.status_code == 200
+    dash_data = dash_res.json()
+    assert dash_data["commission_rate"] == 70.0
+    assert dash_data["bonus_commission"] == 5.0
+    assert dash_data["effective_commission_rate"] == 75.0
+    assert dash_data["rank_custom_domain_allowed"] is True
+
+    # 3. Create a Package and register an agent -> commission is calculated with effective 75%
+    pkg_res = await client.post("/api/v1/sellers/me/packages", json={
+        "name": "Gold VIP Pack",
+        "price": 100.0,
+        "duration_days": 30
+    }, headers=headers)
+    assert pkg_res.status_code == 201
+    pkg_id = pkg_res.json()["package_id"]
+
+    agent_res = await client.post("/api/v1/sellers/me/agents", json={
+        "name": "Agent Under Gold",
+        "phone": "+994509999911",
+        "preferred_channel": "telegram",
+        "package_id": pkg_id
+    }, headers=headers)
+    assert agent_res.status_code == 201
+
+    # Check seller balance: 100 AZN * 75% = 75 AZN (bonus +5% applied)
+    earn_res = await client.get("/api/v1/sellers/me/earnings", headers=headers)
+    assert earn_res.status_code == 200
+    assert earn_res.json()["balance"] == 75.0
+
+    # 4. Configure Custom Domain & White-label
+    dom_res = await client.post("/api/v1/sellers/me/domain", json={
+        "custom_domain": "agent.bakuemlak.az",
+        "custom_brand_title": "Baku Emlak White-Label",
+        "custom_brand_logo": "https://bakuemlak.az/logo.png"
+    }, headers=headers)
+    assert dom_res.status_code == 200
+
+    # 5. Public Branding endpoint test
+    # If domain active
+    seller.domain_status = "active"
+    await test_db.commit()
+
+    brand_res = await client.get("/api/v1/sellers/public-branding?host=agent.bakuemlak.az")
+    assert brand_res.status_code == 200
+    brand_data = brand_res.json()
+    assert brand_data["is_custom"] is True
+    assert brand_data["app_name"] == "Baku Emlak White-Label"
+    assert brand_data["logo_url"] == "https://bakuemlak.az/logo.png"
 

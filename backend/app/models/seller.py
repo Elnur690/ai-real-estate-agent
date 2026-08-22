@@ -26,6 +26,13 @@ class Seller(Base):
     total_earnings: Mapped[float] = mapped_column(Float, default=0.0)  # Lifetime profit in AZN
     total_sales_volume: Mapped[float] = mapped_column(Float, default=0.0)  # Lifetime gross sales in AZN
     
+    # Custom White-label Domain settings
+    custom_domain: Mapped[str | None] = mapped_column(String(255), nullable=True)  # e.g., "agent.bakuemlak.az"
+    custom_domain_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    domain_status: Mapped[str] = mapped_column(String(50), default="disabled")  # disabled | pending_dns | active
+    custom_brand_title: Mapped[str | None] = mapped_column(String(255), nullable=True)  # Custom SaaS App Title
+    custom_brand_logo: Mapped[str | None] = mapped_column(String(500), nullable=True)  # Custom Logo URL
+    
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -86,3 +93,62 @@ class SellerTransaction(Base):
     seller = relationship("Seller", back_populates="transactions")
     agent = relationship("Tenant")
     package = relationship("SellerPackage")
+
+
+SELLER_RANK_CONFIG: Dict[str, Dict[str, Any]] = {
+    "Bronze": {
+        "min_sales": 0.0,
+        "bonus_commission": 0.0,
+        "max_packages": 5,
+        "custom_domain_allowed": False,
+        "badge_emoji": "🥉",
+        "label": "Bronze Seller",
+        "description": "Başlanğıc satıcı səviyyəsi. 5 fərdi paket yaratmaq imkanı.",
+        "next_rank": "Silver",
+        "next_sales_target": 500.0
+    },
+    "Silver": {
+        "min_sales": 500.0,
+        "bonus_commission": 3.0,
+        "max_packages": 10,
+        "custom_domain_allowed": False,
+        "badge_emoji": "🥈",
+        "label": "Silver Seller",
+        "description": "+3% Əlavə komissiya bonusu və 10 fərdi paket limiti.",
+        "next_rank": "Gold",
+        "next_sales_target": 2000.0
+    },
+    "Gold": {
+        "min_sales": 2000.0,
+        "bonus_commission": 5.0,
+        "max_packages": 20,
+        "custom_domain_allowed": True,
+        "badge_emoji": "🥇",
+        "label": "Gold Seller",
+        "description": "+5% Komissiya bonusu, 20 paket limiti və Fərdi Domen (White-label) hüququ.",
+        "next_rank": "Platinum",
+        "next_sales_target": 5000.0
+    },
+    "Platinum": {
+        "min_sales": 5000.0,
+        "bonus_commission": 8.0,
+        "max_packages": 50,
+        "custom_domain_allowed": True,
+        "badge_emoji": "💠",
+        "label": "Platinum Seller",
+        "description": "+8% Komissiya bonusu, 50 paket limiti, Fərdi Domen və 24/7 Prioritet Dəstək.",
+        "next_rank": "Diamond",
+        "next_sales_target": 10000.0
+    },
+    "Diamond": {
+        "min_sales": 10000.0,
+        "bonus_commission": 10.0,
+        "max_packages": 999,
+        "custom_domain_allowed": True,
+        "badge_emoji": "💎",
+        "label": "Diamond Seller",
+        "description": "+10% Komissiya bonusu, Limitsiz paketlər, Fərdi Domen və VIP Partnyor statusu.",
+        "next_rank": None,
+        "next_sales_target": None
+    }
+}

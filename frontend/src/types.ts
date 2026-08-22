@@ -32,6 +32,9 @@ export interface Tenant {
   referral_balance?: number;
   parent_tenant_id?: number;
   assigned_districts?: string[];
+  seller_id?: number;
+  seller_name?: string;
+  seller_company?: string;
   created_at: string;
 }
 

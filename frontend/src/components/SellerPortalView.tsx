@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { 
   Store, Users, Package, DollarSign, Award, Plus, Edit3, Trash2, CheckCircle, 
-  AlertTriangle, RefreshCw, X, Shield, Phone, Send, Sparkles, Check, ChevronRight, TrendingUp
+  AlertTriangle, RefreshCw, X, Shield, Phone, Send, Sparkles, Check, ChevronRight, TrendingUp,
+  Globe, ExternalLink, Lock
 } from 'lucide-react';
 import api from '../api';
 
@@ -12,7 +13,16 @@ export interface SellerDashboardData {
   phone: string;
   company_name?: string;
   commission_rate: number;
+  bonus_commission?: number;
+  effective_commission_rate?: number;
   rank: string;
+  rank_label?: string;
+  rank_emoji?: string;
+  rank_description?: string;
+  rank_max_packages?: number;
+  rank_custom_domain_allowed?: boolean;
+  next_rank?: string;
+  next_sales_target?: number;
   status: string;
   balance: number;
   total_earnings: number;
@@ -22,6 +32,11 @@ export interface SellerDashboardData {
   total_packages: number;
   min_package_price?: number;
   max_trial_days?: number;
+  custom_domain?: string;
+  custom_domain_enabled?: boolean;
+  domain_status?: string;
+  custom_brand_title?: string;
+  custom_brand_logo?: string;
 }
 
 export interface SellerAgent {
@@ -65,12 +80,21 @@ export interface SellerTransactionItem {
 }
 
 export function SellerPortalView() {
-  const [activeTab, setActiveTab] = useState<'agents' | 'packages' | 'earnings'>('agents');
+  const [activeTab, setActiveTab] = useState<'agents' | 'packages' | 'earnings' | 'domain'>('agents');
   const [dashboard, setDashboard] = useState<SellerDashboardData | null>(null);
   const [agents, setAgents] = useState<SellerAgent[]>([]);
   const [packages, setPackages] = useState<SellerPackageItem[]>([]);
   const [earnings, setEarnings] = useState<{ balance: number; total_earnings: number; transactions: SellerTransactionItem[] } | null>(null);
+  const [domainSettings, setDomainSettings] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Custom Domain State
+  const [domainHost, setDomainHost] = useState('');
+  const [brandTitle, setBrandTitle] = useState('');
+  const [brandLogo, setBrandLogo] = useState('');
+  const [savingDomain, setSavingDomain] = useState(false);
+  const [verifyingDns, setVerifyingDns] = useState(false);
+  const [dnsResult, setDnsResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // Agent Modal State
   const [isAddAgentOpen, setIsAddAgentOpen] = useState(false);
@@ -102,8 +126,27 @@ export function SellerPortalView() {
     try {
       const res = await api.get('/sellers/me/dashboard');
       setDashboard(res.data);
+      if (res.data) {
+        setDomainHost(res.data.custom_domain || '');
+        setBrandTitle(res.data.custom_brand_title || '');
+        setBrandLogo(res.data.custom_brand_logo || '');
+      }
     } catch (err) {
       console.error('Error fetching seller dashboard:', err);
+    }
+  };
+
+  const fetchDomainSettings = async () => {
+    try {
+      const res = await api.get('/sellers/me/domain');
+      setDomainSettings(res.data);
+      if (res.data) {
+        setDomainHost(res.data.custom_domain || '');
+        setBrandTitle(res.data.custom_brand_title || '');
+        setBrandLogo(res.data.custom_brand_logo || '');
+      }
+    } catch (err) {
+      console.error('Error fetching domain settings:', err);
     }
   };
 
@@ -139,13 +182,60 @@ export function SellerPortalView() {
 
   const reloadAll = async () => {
     setLoading(true);
-    await Promise.all([fetchDashboard(), fetchAgents(), fetchPackages(), fetchEarnings()]);
+    await Promise.all([
+      fetchDashboard(),
+      fetchAgents(),
+      fetchPackages(),
+      fetchEarnings(),
+      fetchDomainSettings()
+    ]);
     setLoading(false);
   };
 
   useEffect(() => {
     reloadAll();
   }, []);
+
+  const handleSaveDomain = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingDomain(true);
+    setDnsResult(null);
+    try {
+      const res = await api.post('/sellers/me/domain', {
+        custom_domain: domainHost.trim() || null,
+        custom_brand_title: brandTitle.trim() || null,
+        custom_brand_logo: brandLogo.trim() || null
+      });
+      alert(res.data.message || 'Domen parametrləri saxlanıldı.');
+      fetchDomainSettings();
+      fetchDashboard();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Xəta baş verdi.');
+    } finally {
+      setSavingDomain(false);
+    }
+  };
+
+  const handleVerifyDns = async () => {
+    setVerifyingDns(true);
+    setDnsResult(null);
+    try {
+      const res = await api.post('/sellers/me/domain/verify');
+      setDnsResult({
+        success: res.data.success,
+        message: res.data.message
+      });
+      fetchDomainSettings();
+      fetchDashboard();
+    } catch (err: any) {
+      setDnsResult({
+        success: false,
+        message: err.response?.data?.detail || 'DNS yoxlanışı zamanı xəta baş verdi.'
+      });
+    } finally {
+      setVerifyingDns(false);
+    }
+  };
 
   const handleRegisterAgent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -271,8 +361,8 @@ export function SellerPortalView() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
-      {/* Welcome Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 p-6 rounded-3xl border border-slate-800 backdrop-blur-md shadow-2xl relative overflow-hidden">
+      {/* Welcome Banner & Rank Progression */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 p-6 rounded-3xl border border-slate-800 backdrop-blur-md shadow-2xl relative overflow-hidden space-y-5">
         <div className="absolute right-0 top-0 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl pointer-events-none" />
         
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
@@ -305,6 +395,56 @@ export function SellerPortalView() {
             </button>
           </div>
         </div>
+
+        {/* Rank Progression Bar & Perks Banner */}
+        {dashboard && (
+          <div className="pt-3 border-t border-slate-800/80 relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-950/40 p-4 rounded-2xl border border-slate-800/50">
+            <div className="space-y-1.5 flex-1 max-w-xl">
+              <div className="flex justify-between text-xs font-semibold">
+                <span className="text-slate-300 flex items-center gap-1.5">
+                  <span>{dashboard.rank_emoji || '🥉'}</span>
+                  <span>Dərəcəniz: <strong>{dashboard.rank_label || dashboard.rank}</strong></span>
+                  {dashboard.bonus_commission ? (
+                    <span className="text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                      +{dashboard.bonus_commission}% Bonus Komissiya
+                    </span>
+                  ) : null}
+                </span>
+                {dashboard.next_rank && dashboard.next_sales_target ? (
+                  <span className="text-cyan-400">
+                    Hədəf: {dashboard.total_sales_volume.toLocaleString()} / {dashboard.next_sales_target.toLocaleString()} AZN ({dashboard.next_rank})
+                  </span>
+                ) : (
+                  <span className="text-emerald-400 font-bold">Maksimum Səviyyə 💎</span>
+                )}
+              </div>
+
+              {dashboard.next_rank && dashboard.next_sales_target ? (
+                <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-gradient-to-r from-blue-500 to-cyan-400 h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${Math.min(100, Math.max(5, (dashboard.total_sales_volume / dashboard.next_sales_target) * 100))}%`
+                    }}
+                  />
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex items-center gap-3 text-xs text-slate-300 shrink-0">
+              <div className="px-3 py-1.5 bg-slate-900 rounded-xl border border-slate-800">
+                <span className="text-slate-500 mr-1">Paket Limiti:</span>
+                <span className="font-bold text-white">{dashboard.rank_max_packages || 5} ədəd</span>
+              </div>
+              <div className="px-3 py-1.5 bg-slate-900 rounded-xl border border-slate-800">
+                <span className="text-slate-500 mr-1">Fərdi Domen:</span>
+                <span className={`font-bold ${dashboard.rank_custom_domain_allowed ? 'text-emerald-400' : 'text-slate-500'}`}>
+                  {dashboard.rank_custom_domain_allowed ? 'Aktiv (İcazəli)' : 'Gold+ ilə açılır'}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* KPI Metric Cards */}
@@ -335,13 +475,18 @@ export function SellerPortalView() {
 
         <div className="bg-slate-900/60 p-5 rounded-2xl border border-slate-800/80">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Komissiya Faiziniz</span>
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Effektiv Komissiya</span>
             <div className="p-2 bg-indigo-500/10 rounded-xl text-indigo-400 border border-indigo-500/20">
               <Award className="w-5 h-5" />
             </div>
           </div>
-          <p className="text-2xl font-black text-indigo-400">
-            %{dashboard?.commission_rate || 70}
+          <p className="text-2xl font-black text-indigo-400 flex items-center gap-1.5">
+            <span>%{dashboard?.effective_commission_rate || dashboard?.commission_rate || 70}</span>
+            {dashboard?.bonus_commission ? (
+              <span className="text-[11px] font-bold text-amber-400">
+                (+%{dashboard.bonus_commission})
+              </span>
+            ) : null}
           </p>
         </div>
 
@@ -365,7 +510,7 @@ export function SellerPortalView() {
             </div>
           </div>
           <p className="text-2xl font-black text-amber-400">
-            {packages.length}
+            {packages.length} <span className="text-xs font-normal text-slate-500">/ max {dashboard?.rank_max_packages || 5}</span>
           </p>
         </div>
       </div>
@@ -406,6 +551,18 @@ export function SellerPortalView() {
         >
           <DollarSign className="w-4 h-4" />
           <span>Qazanc Tarixçəsi</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('domain')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition ${
+            activeTab === 'domain'
+              ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-500/20'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+          }`}
+        >
+          <Globe className="w-4 h-4" />
+          <span>Fərdi Domenim (White-label)</span>
         </button>
       </div>
 
@@ -629,7 +786,173 @@ export function SellerPortalView() {
         </div>
       )}
 
-      {/* REGISTER AGENT MODAL */}
+      {/* TAB 4: CUSTOM DOMAIN & BRANDING */}
+      {activeTab === 'domain' && (
+        <div className="space-y-6">
+          {/* Domain Status Banner */}
+          <div className="bg-slate-900/60 rounded-3xl border border-slate-800 p-6 backdrop-blur-md shadow-xl">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+              <div>
+                <div className="flex items-center gap-3 mb-1">
+                  <div className="p-2.5 bg-cyan-500/10 rounded-xl text-cyan-400 border border-cyan-500/20">
+                    <Globe className="w-6 h-6" />
+                  </div>
+                  <h2 className="text-xl font-bold text-white tracking-tight">Fərdi Domen və White-label Brend Tənzimləmələri</h2>
+                </div>
+                <p className="text-xs text-slate-400 max-w-2xl">
+                  Agentləriniz üçün öz brendinizlə xüsusi giriş və qeydiyyat domeni təyin edin.
+                </p>
+              </div>
+
+              <div>
+                {dashboard?.rank_custom_domain_allowed ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                    <CheckCircle className="w-4 h-4" />
+                    <span>Domen Funksiyası Aktivdir</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                    <Lock className="w-4 h-4" />
+                    <span>Gold+ və ya Admin İcazəsi Lazımdır</span>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {!dashboard?.rank_custom_domain_allowed ? (
+              <div className="pt-6 text-center py-10 space-y-4 max-w-lg mx-auto">
+                <div className="w-16 h-16 bg-amber-500/10 rounded-2xl border border-amber-500/20 flex items-center justify-center mx-auto text-amber-400">
+                  <Lock className="w-8 h-8" />
+                </div>
+                <h3 className="text-lg font-bold text-white">Fərdi Domen Səviyyənizə görə Kilidlidir</h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Fərdi domen və brendinizi aktivləşdirmək üçün satış həcminizi <strong>2,000 AZN (Gold Dərəcəsi)</strong> səviyyəsinə çatdırın və ya platforma administratoru ilə əlaqə saxlayın.
+                </p>
+                <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 text-xs text-slate-300">
+                  Hazırki dövriyyəniz: <span className="text-white font-bold">{dashboard?.total_sales_volume || 0} AZN</span> / Hədəf: 2,000 AZN
+                </div>
+              </div>
+            ) : (
+              <div className="pt-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Form column */}
+                <div className="lg:col-span-7 space-y-5">
+                  <form onSubmit={handleSaveDomain} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                        Fərdi Domen Adınız *
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          required
+                          value={domainHost}
+                          onChange={(e) => setDomainHost(e.target.value)}
+                          placeholder="agent.bakuemlak.az və ya emlak.brendiniz.com"
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-3.5 pr-10 py-2.5 text-white text-sm font-mono focus:outline-none focus:border-cyan-500"
+                        />
+                        <Globe className="w-4 h-4 text-slate-500 absolute right-3.5 top-3" />
+                      </div>
+                      <span className="text-[11px] text-slate-500 mt-1 block">
+                        https:// yazmadan yalnız subdomain və ya domeninizi daxil edin.
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                          Fərdi Brend Başlığı
+                        </label>
+                        <input
+                          type="text"
+                          value={brandTitle}
+                          onChange={(e) => setBrandTitle(e.target.value)}
+                          placeholder="Məs: Baku Emlak Portalı"
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                          Fərdi Loqo URL
+                        </label>
+                        <input
+                          type="text"
+                          value={brandLogo}
+                          onChange={(e) => setBrandLogo(e.target.value)}
+                          placeholder="https://yourbrand.az/logo.png"
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3 pt-2">
+                      <button
+                        type="submit"
+                        disabled={savingDomain}
+                        className="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-cyan-500/20 transition disabled:opacity-50"
+                      >
+                        {savingDomain ? 'Saxlanılır...' : 'Domeni Yadda Saxla'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                {/* DNS Instructions Column */}
+                <div className="lg:col-span-5 space-y-4 bg-slate-950/60 p-5 rounded-2xl border border-slate-800/80">
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-cyan-400" />
+                    <span>DNS Qoşulma Təlimatı</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Domen provayderinizin (məs: Cloudflare, GoDaddy, Namecheap) DNS idarəetmə panelinə daxil olaraq aşağıdakı CNAME qeydini əlavə edin:
+                  </p>
+
+                  <div className="space-y-2 text-xs font-mono bg-slate-900 p-3.5 rounded-xl border border-slate-800">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Record Type:</span>
+                      <span className="text-cyan-400 font-bold">CNAME</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Host / Name:</span>
+                      <span className="text-white font-bold">{domainHost || 'subdomain'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Target / Value:</span>
+                      <span className="text-emerald-400 font-bold">cname.realestateai.az</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">TTL:</span>
+                      <span className="text-slate-400">300 və ya Auto</span>
+                    </div>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={handleVerifyDns}
+                      disabled={verifyingDns || !domainHost}
+                      className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/30 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${verifyingDns ? 'animate-spin' : ''}`} />
+                      <span>{verifyingDns ? 'DNS Yoxlanılır...' : 'DNS Yoxla və Təsdiqlə'}</span>
+                    </button>
+                  </div>
+
+                  {dnsResult && (
+                    <div className={`p-3 rounded-xl text-xs flex items-start gap-2 ${
+                      dnsResult.success
+                        ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                        : 'bg-amber-500/10 border border-amber-500/30 text-amber-400'
+                    }`}>
+                      {dnsResult.success ? <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" /> : <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />}
+                      <span>{dnsResult.message}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {isAddAgentOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-5">

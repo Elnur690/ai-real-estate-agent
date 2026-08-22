@@ -23,6 +23,10 @@ class CreateSellerRequest(BaseModel):
     company_name: Optional[str] = None
     commission_rate: float = 70.0
     rank: str = "Bronze"
+    custom_domain: Optional[str] = None
+    custom_domain_enabled: bool = False
+    custom_brand_title: Optional[str] = None
+    custom_brand_logo: Optional[str] = None
 
 class UpdateSellerRequest(BaseModel):
     name: Optional[str] = None
@@ -32,6 +36,11 @@ class UpdateSellerRequest(BaseModel):
     rank: Optional[str] = None
     status: Optional[str] = None
     password: Optional[str] = None
+    custom_domain: Optional[str] = None
+    custom_domain_enabled: Optional[bool] = None
+    domain_status: Optional[str] = None
+    custom_brand_title: Optional[str] = None
+    custom_brand_logo: Optional[str] = None
 
 class CreatePackageRequest(BaseModel):
     name: str
@@ -81,7 +90,8 @@ async def list_all_sellers_admin(
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
-    """Admin-only: List all registered sellers with their agent counts and earnings."""
+    """Admin-only: List all registered sellers with their agent counts, earnings, and domain configs."""
+    from app.models.seller import SELLER_RANK_CONFIG
     stmt = select(Seller).order_by(Seller.created_at.desc())
     res = await db.execute(stmt)
     sellers = res.scalars().all()
@@ -98,6 +108,8 @@ async def list_all_sellers_admin(
         active_cnt_res = await db.execute(active_cnt_stmt)
         active_agents = active_cnt_res.scalar() or 0
 
+        rank_info = SELLER_RANK_CONFIG.get(s.rank, SELLER_RANK_CONFIG["Bronze"])
+
         results.append({
             "id": s.id,
             "user_id": s.user_id,
@@ -106,15 +118,25 @@ async def list_all_sellers_admin(
             "phone": s.phone,
             "company_name": s.company_name,
             "commission_rate": s.commission_rate,
+            "bonus_commission": rank_info.get("bonus_commission", 0.0),
+            "effective_commission_rate": min(100.0, s.commission_rate + rank_info.get("bonus_commission", 0.0)),
             "rank": s.rank,
+            "rank_label": rank_info.get("label", s.rank),
+            "rank_emoji": rank_info.get("badge_emoji", "🥉"),
             "status": s.status,
             "balance": s.balance,
             "total_earnings": s.total_earnings,
             "total_sales_volume": s.total_sales_volume,
             "total_agents": total_agents,
             "active_agents": active_agents,
+            "custom_domain": s.custom_domain,
+            "custom_domain_enabled": s.custom_domain_enabled,
+            "domain_status": s.domain_status,
+            "custom_brand_title": s.custom_brand_title,
+            "custom_brand_logo": s.custom_brand_logo,
             "created_at": s.created_at.isoformat() if s.created_at else None
         })
+
     return results
 
 
@@ -143,6 +165,8 @@ async def create_seller_admin(
     await db.commit()
     await db.refresh(user)
 
+    clean_domain = body.custom_domain.strip().lower().replace("https://", "").replace("http://", "").rstrip("/") if body.custom_domain else None
+
     # 2. Create Seller Profile
     seller = Seller(
         user_id=user.id,
@@ -152,6 +176,11 @@ async def create_seller_admin(
         company_name=body.company_name,
         commission_rate=max(0.0, min(100.0, body.commission_rate)),
         rank=body.rank,
+        custom_domain=clean_domain,
+        custom_domain_enabled=body.custom_domain_enabled or (clean_domain is not None),
+        domain_status="pending_dns" if clean_domain else "disabled",
+        custom_brand_title=body.custom_brand_title,
+        custom_brand_logo=body.custom_brand_logo,
         status="active"
     )
     db.add(seller)
@@ -205,7 +234,7 @@ async def update_seller_admin(
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(get_current_admin)
 ):
-    """Admin-only: Update seller details, commission %, rank, or status."""
+    """Admin-only: Update seller details, commission %, rank, domain, or status."""
     stmt = select(Seller).where(Seller.id == seller_id)
     res = await db.execute(stmt)
     seller = res.scalars().first()
@@ -224,6 +253,21 @@ async def update_seller_admin(
         seller.rank = body.rank
     if body.status is not None:
         seller.status = body.status
+    if body.custom_domain is not None:
+        clean_d = body.custom_domain.strip().lower().replace("https://", "").replace("http://", "").rstrip("/") if body.custom_domain else None
+        seller.custom_domain = clean_d
+        if clean_d:
+            seller.domain_status = "pending_dns" if seller.domain_status == "disabled" else seller.domain_status
+        else:
+            seller.domain_status = "disabled"
+    if body.custom_domain_enabled is not None:
+        seller.custom_domain_enabled = body.custom_domain_enabled
+    if body.domain_status is not None:
+        seller.domain_status = body.domain_status
+    if body.custom_brand_title is not None:
+        seller.custom_brand_title = body.custom_brand_title
+    if body.custom_brand_logo is not None:
+        seller.custom_brand_logo = body.custom_brand_logo
 
     # Update associated user
     u_stmt = select(User).where(User.id == seller.user_id)
@@ -244,7 +288,10 @@ async def update_seller_admin(
         "name": seller.name,
         "commission_rate": seller.commission_rate,
         "rank": seller.rank,
-        "status": seller.status
+        "status": seller.status,
+        "custom_domain": seller.custom_domain,
+        "custom_domain_enabled": seller.custom_domain_enabled,
+        "domain_status": seller.domain_status
     }}
 
 
@@ -377,6 +424,15 @@ async def get_seller_dashboard(
             auto_rank = rank_name
             break
 
+    if auto_rank != seller.rank and seller.rank == "Bronze":
+        seller.rank = auto_rank
+        await db.commit()
+
+    from app.models.seller import SELLER_RANK_CONFIG
+    rank_info = SELLER_RANK_CONFIG.get(seller.rank, SELLER_RANK_CONFIG["Bronze"])
+    bonus_commission = rank_info.get("bonus_commission", 0.0)
+    effective_commission_rate = min(100.0, seller.commission_rate + bonus_commission)
+
     min_price, max_trial_days = await _get_seller_package_constraints(db)
 
     return {
@@ -386,7 +442,16 @@ async def get_seller_dashboard(
         "phone": seller.phone,
         "company_name": seller.company_name,
         "commission_rate": seller.commission_rate,
+        "bonus_commission": bonus_commission,
+        "effective_commission_rate": effective_commission_rate,
         "rank": seller.rank,
+        "rank_label": rank_info.get("label", seller.rank),
+        "rank_emoji": rank_info.get("badge_emoji", "🥉"),
+        "rank_description": rank_info.get("description", ""),
+        "rank_max_packages": rank_info.get("max_packages", 5),
+        "rank_custom_domain_allowed": rank_info.get("custom_domain_allowed", False) or seller.custom_domain_enabled,
+        "next_rank": rank_info.get("next_rank"),
+        "next_sales_target": rank_info.get("next_sales_target"),
         "status": seller.status,
         "balance": seller.balance,
         "total_earnings": seller.total_earnings,
@@ -395,7 +460,12 @@ async def get_seller_dashboard(
         "active_agents": active_agents,
         "total_packages": total_packages,
         "min_package_price": min_price,
-        "max_trial_days": max_trial_days
+        "max_trial_days": max_trial_days,
+        "custom_domain": seller.custom_domain,
+        "custom_domain_enabled": seller.custom_domain_enabled,
+        "domain_status": seller.domain_status,
+        "custom_brand_title": seller.custom_brand_title,
+        "custom_brand_logo": seller.custom_brand_logo
     }
 
 
@@ -530,9 +600,13 @@ async def register_my_agent(
 
     # 4. Calculate Commission & Financials if package has price
     if package and package.price > 0:
+        from app.models.seller import SELLER_RANK_CONFIG
+        rank_info = SELLER_RANK_CONFIG.get(seller.rank, SELLER_RANK_CONFIG["Bronze"])
+        bonus_pct = rank_info.get("bonus_commission", 0.0)
+        effective_commission_pct = min(100.0, seller.commission_rate + bonus_pct)
+
         gross_amount = package.price
-        commission_pct = seller.commission_rate
-        seller_profit = round(gross_amount * (commission_pct / 100.0), 2)
+        seller_profit = round(gross_amount * (effective_commission_pct / 100.0), 2)
         platform_fee = round(gross_amount - seller_profit, 2)
 
         # Update seller balances
@@ -540,17 +614,23 @@ async def register_my_agent(
         seller.total_earnings += seller_profit
         seller.total_sales_volume += gross_amount
 
+        # Check for auto rank upgrade
+        for rank_name, min_vol in [("Diamond", 10000.0), ("Platinum", 5000.0), ("Gold", 2000.0), ("Silver", 500.0), ("Bronze", 0.0)]:
+            if seller.total_sales_volume >= min_vol:
+                seller.rank = rank_name
+                break
+
         # Create transaction record
         tx = SellerTransaction(
             seller_id=seller.id,
             tenant_id=agent.id,
             package_id=package.id,
             amount=gross_amount,
-            commission_rate=commission_pct,
+            commission_rate=effective_commission_pct,
             seller_profit=seller_profit,
             platform_fee=platform_fee,
             type="subscription_sale",
-            description=f"Agent abunəsi: {agent.name} ({package.name})"
+            description=f"Agent abunəsi: {agent.name} ({package.name}) [Bonus: +{bonus_pct}%]"
         )
         db.add(tx)
         await db.commit()
@@ -630,6 +710,20 @@ async def create_my_package(
         raise HTTPException(status_code=403, detail="Satıcı profili tələb olunur.")
 
     min_price, max_trial_days = await _get_seller_package_constraints(db)
+
+    from app.models.seller import SELLER_RANK_CONFIG
+    rank_info = SELLER_RANK_CONFIG.get(seller.rank, SELLER_RANK_CONFIG["Bronze"])
+    max_pkgs = rank_info.get("max_packages", 5)
+
+    pkg_cnt_stmt = select(func.count(SellerPackage.id)).where(SellerPackage.seller_id == seller.id, SellerPackage.is_active == True)
+    pkg_cnt_res = await db.execute(pkg_cnt_stmt)
+    current_active_pkgs = pkg_cnt_res.scalar() or 0
+
+    if current_active_pkgs >= max_pkgs:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Sizin '{seller.rank}' səviyyəniz üçün maksimum {max_pkgs} paket limiti dolub. Satış həcminizi artıraraq növbəti səviyyəyə yüksələ bilərsiniz."
+        )
 
     if body.price < 0:
         raise HTTPException(status_code=400, detail="Qiymət mənfi ola bilməz.")
@@ -792,3 +886,133 @@ async def get_my_earnings(
             "created_at": t.created_at.isoformat() if t.created_at else None
         } for t in txs]
     }
+
+
+# ----------------- CUSTOM DOMAIN & WHITE-LABEL ENDPOINTS -----------------
+
+class UpdateMyDomainRequest(BaseModel):
+    custom_domain: Optional[str] = None
+    custom_brand_title: Optional[str] = None
+    custom_brand_logo: Optional[str] = None
+
+
+@router.get("/me/domain")
+async def get_my_domain_settings(
+    db: AsyncSession = Depends(get_db),
+    current_auth: tuple[User, Optional[Seller]] = Depends(get_current_seller_user)
+):
+    """Seller-only: Get custom domain details and DNS setup instructions."""
+    user, seller = current_auth
+    if not seller:
+        raise HTTPException(status_code=403, detail="Satıcı profili tələb olunur.")
+
+    from app.models.seller import SELLER_RANK_CONFIG
+    rank_info = SELLER_RANK_CONFIG.get(seller.rank, SELLER_RANK_CONFIG["Bronze"])
+
+    return {
+        "custom_domain": seller.custom_domain,
+        "custom_domain_enabled": seller.custom_domain_enabled,
+        "domain_status": seller.domain_status,
+        "custom_brand_title": seller.custom_brand_title,
+        "custom_brand_logo": seller.custom_brand_logo,
+        "rank_allows_domain": rank_info.get("custom_domain_allowed", False) or seller.custom_domain_enabled,
+        "dns_instructions": {
+            "type": "CNAME",
+            "host": seller.custom_domain or "subdomain.yourbrand.az",
+            "target": "cname.realestateai.az",
+            "ttl": 300
+        }
+    }
+
+
+@router.post("/me/domain")
+async def update_my_domain_settings(
+    body: UpdateMyDomainRequest,
+    db: AsyncSession = Depends(get_db),
+    current_auth: tuple[User, Optional[Seller]] = Depends(get_current_seller_user)
+):
+    """Seller-only: Save custom domain & brand details if allowed by Admin or Rank."""
+    user, seller = current_auth
+    if not seller:
+        raise HTTPException(status_code=403, detail="Satıcı profili tələb olunur.")
+
+    from app.models.seller import SELLER_RANK_CONFIG
+    rank_info = SELLER_RANK_CONFIG.get(seller.rank, SELLER_RANK_CONFIG["Bronze"])
+    if not (rank_info.get("custom_domain_allowed", False) or seller.custom_domain_enabled):
+        raise HTTPException(
+            status_code=403,
+            detail="Fərdi domen funksiyası üçün admin icazəsi və ya Gold+ səviyyəsi tələb olunur."
+        )
+
+    if body.custom_domain is not None:
+        clean_domain = body.custom_domain.strip().lower().replace("https://", "").replace("http://", "").rstrip("/")
+        seller.custom_domain = clean_domain if clean_domain else None
+        seller.domain_status = "pending_dns" if clean_domain else "disabled"
+    if body.custom_brand_title is not None:
+        seller.custom_brand_title = body.custom_brand_title.strip()
+    if body.custom_brand_logo is not None:
+        seller.custom_brand_logo = body.custom_brand_logo.strip()
+
+    await db.commit()
+    await db.refresh(seller)
+    return {"message": "Domen məlumatları yeniləndi", "domain_status": seller.domain_status}
+
+
+@router.post("/me/domain/verify")
+async def verify_my_domain_dns(
+    db: AsyncSession = Depends(get_db),
+    current_auth: tuple[User, Optional[Seller]] = Depends(get_current_seller_user)
+):
+    """Seller-only: Verify DNS resolution for custom domain."""
+    user, seller = current_auth
+    if not seller or not seller.custom_domain:
+        raise HTTPException(status_code=400, detail="Fərdi domen təyin edilməyib.")
+
+    import socket
+    domain = seller.custom_domain.strip()
+    try:
+        ip = socket.gethostbyname(domain)
+        seller.domain_status = "active"
+        seller.custom_domain_enabled = True
+        await db.commit()
+        return {
+            "success": True,
+            "domain": domain,
+            "resolved_ip": ip,
+            "domain_status": "active",
+            "message": f"DNS uğurla təsdiqləndi ({ip}). Fərdi domen aktivdir!"
+        }
+    except Exception as e:
+        seller.domain_status = "pending_dns"
+        await db.commit()
+        return {
+            "success": False,
+            "domain": domain,
+            "domain_status": "pending_dns",
+            "message": f"DNS hələ aktiv deyil və ya ünvanlanmayıb: {str(e)}"
+        }
+
+
+@router.get("/public-branding")
+async def get_public_branding_by_domain(
+    host: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Public endpoint: Resolve seller branding by hostname for white-label display."""
+    if not host:
+        return {"is_custom": False, "app_name": "RealEstate AI Agent", "logo_url": None}
+
+    clean_host = host.split(":")[0].strip().lower()
+    stmt = select(Seller).where(Seller.custom_domain == clean_host, Seller.domain_status == "active")
+    res = await db.execute(stmt)
+    seller = res.scalars().first()
+    if seller:
+        return {
+            "is_custom": True,
+            "seller_id": seller.id,
+            "seller_name": seller.name,
+            "app_name": seller.custom_brand_title or seller.company_name or f"{seller.name} Emlak Portalı",
+            "logo_url": seller.custom_brand_logo
+        }
+
+    return {"is_custom": False, "app_name": "RealEstate AI Agent", "logo_url": None}

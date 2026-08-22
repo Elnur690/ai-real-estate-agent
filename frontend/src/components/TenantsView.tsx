@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { UserPlus, Search, ShieldCheck, Clock, AlertCircle, Phone, MessageSquare, Plus, CheckCircle, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff, DollarSign, Edit3, Trash2, X, AlertTriangle, Users, MapPin } from 'lucide-react';
+import { UserPlus, Search, ShieldCheck, Clock, AlertCircle, Phone, MessageSquare, Plus, CheckCircle, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff, DollarSign, Edit3, Trash2, X, AlertTriangle, Users, MapPin, Store } from 'lucide-react';
 import api from '../api';
 import { Tenant, SavedSearch } from '../types';
 
@@ -11,10 +11,16 @@ const BAKU_DISTRICT_OPTIONS = [
 
 export const TenantsView: React.FC = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [sellers, setSellers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTenant, setSelectedTenant] = useState<{ tenant: Tenant; saved_searches: SavedSearch[]; sub_agents?: Tenant[] } | null>(null);
   
+  // Move Seller Modal State
+  const [moveSellerModalTenant, setMoveSellerModalTenant] = useState<Tenant | null>(null);
+  const [selectedSellerId, setSelectedSellerId] = useState<number | ''>('');
+  const [movingSeller, setMovingSeller] = useState(false);
+
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
   const [newTenant, setNewTenant] = useState({
@@ -89,13 +95,15 @@ export const TenantsView: React.FC = () => {
   const loadTenants = async () => {
     setLoading(true);
     try {
-      const [tRes, pRes] = await Promise.all([
+      const [tRes, pRes, sRes] = await Promise.all([
         api.get('/tenants'),
-        api.get('/plans').catch(() => ({ data: [] }))
+        api.get('/plans').catch(() => ({ data: [] })),
+        api.get('/sellers').catch(() => ({ data: [] }))
       ]);
       setTenants(tRes.data || []);
       const fetchedPlans = pRes.data || [];
       setAvailablePlans(fetchedPlans);
+      setSellers(sRes.data || []);
 
       if (fetchedPlans.length > 0 && !newTenant.plan) {
         setNewTenant(prev => ({ ...prev, plan: fetchedPlans[0].code }));
@@ -104,6 +112,28 @@ export const TenantsView: React.FC = () => {
       console.error(e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const openMoveSellerModal = (t: Tenant) => {
+    setMoveSellerModalTenant(t);
+    setSelectedSellerId(t.seller_id || '');
+  };
+
+  const handleMoveSeller = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!moveSellerModalTenant) return;
+    setMovingSeller(true);
+    try {
+      await api.put(`/tenants/${moveSellerModalTenant.id}/seller`, {
+        seller_id: selectedSellerId !== '' ? Number(selectedSellerId) : null
+      });
+      setMoveSellerModalTenant(null);
+      loadTenants();
+    } catch (e: any) {
+      alert(e.response?.data?.detail || 'Agenti satıcıya köçürmək mümkün olmadı.');
+    } finally {
+      setMovingSeller(false);
     }
   };
 
@@ -443,11 +473,12 @@ export const TenantsView: React.FC = () => {
 
       {/* Tenants Table */}
       <div className="glass-card rounded-2xl border border-slate-800 overflow-x-auto">
-        <table className="w-full text-left text-sm text-slate-300 min-w-[760px]">
+        <table className="w-full text-left text-sm text-slate-300 min-w-[850px]">
           <thead className="bg-dark-800/80 text-slate-400 font-medium text-xs uppercase tracking-wider border-b border-slate-800">
             <tr>
               <th className="p-4 w-24">ID / Instance</th>
               <th className="p-4">Agent / Agency</th>
+              <th className="p-4">Satıcı (Seller)</th>
               <th className="p-4">Account Type</th>
               <th className="p-4">Channel</th>
               <th className="p-4">Plan & Seats</th>
@@ -482,6 +513,22 @@ export const TenantsView: React.FC = () => {
                       )}
                     </div>
                     <div className="text-xs text-slate-400">{t.phone}</div>
+                  </td>
+                  <td className="p-4">
+                    {t.seller_name ? (
+                      <div className="flex flex-col">
+                        <span className="inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
+                          🏢 {t.seller_name}
+                        </span>
+                        {t.seller_company && (
+                          <span className="text-[10px] text-slate-500 ml-1 mt-0.5">{t.seller_company}</span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-slate-800 text-slate-400 border border-slate-700/60">
+                        🌐 Direkt Platforma
+                      </span>
+                    )}
                   </td>
                   <td className="p-4">
                     <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full font-medium ${
@@ -556,6 +603,13 @@ export const TenantsView: React.FC = () => {
                         Renew
                       </button>
                     )}
+                    <button
+                      onClick={() => openMoveSellerModal(t)}
+                      className="text-xs p-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 border border-indigo-500/20"
+                      title="Satıcıya Köçür / Dəyiş"
+                    >
+                      <Store className="w-3.5 h-3.5" />
+                    </button>
                     <button
                       onClick={() => openEditModal(t)}
                       className="text-xs p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20"
@@ -1436,6 +1490,73 @@ export const TenantsView: React.FC = () => {
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Move / Reassign Seller Modal */}
+      {moveSellerModalTenant && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-card w-full max-w-md p-6 rounded-2xl border border-slate-800 space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Store className="w-5 h-5 text-indigo-400" />
+                <span>Agenti Satıcıya Köçür / Təyin Et</span>
+              </h3>
+              <button onClick={() => setMoveSellerModalTenant(null)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl space-y-1 text-xs">
+              <div className="font-semibold text-white">Agent: {moveSellerModalTenant.name} (#{moveSellerModalTenant.id})</div>
+              <div className="text-slate-400">Telefon: {moveSellerModalTenant.phone}</div>
+              <div className="text-slate-400">
+                Hazırki Satıcı: <span className="text-indigo-300 font-bold">{moveSellerModalTenant.seller_name || 'Direkt / Əsas Platforma'}</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-300 flex items-start gap-2">
+              <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                <strong>Təhlükəsiz Köçürmə:</strong> Agent satıcıya köçürüldükdə və ya direkt platformaya keçirildikdə onun aktiv axtarışları, plan müddəti və bildiriş parametrləri 100% toxunulmaz qalır.
+              </span>
+            </div>
+
+            <form onSubmit={handleMoveSeller} className="space-y-4 pt-2">
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1.5">Yeni Satıcı Hesabını Seçin *</label>
+                <select
+                  value={selectedSellerId}
+                  onChange={(e) => setSelectedSellerId(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full glass-input px-3.5 py-2.5 rounded-xl text-sm text-white bg-slate-950 border border-slate-700"
+                >
+                  <option value="">🌐 Direkt Platforma (Satıcısız / Əsas Hesab)</option>
+                  {sellers.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      🏢 {s.name} ({s.company_name || 'Satıcı'}) — {s.rank}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setMoveSellerModalTenant(null)}
+                  className="w-1/2 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium transition"
+                >
+                  Ləğv et
+                </button>
+                <button
+                  type="submit"
+                  disabled={movingSeller}
+                  className="w-1/2 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-500/25 transition disabled:opacity-50"
+                >
+                  {movingSeller ? 'Köçürülür...' : 'Təsdiqlə və Köçür'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
