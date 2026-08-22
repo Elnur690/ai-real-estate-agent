@@ -483,6 +483,54 @@ export const AppSettingsView: React.FC = () => {
             />
           </div>
 
+          <div className="pt-4 border-t border-slate-800 space-y-4">
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <span className="p-1 bg-blue-500/10 rounded-lg text-blue-400">🏢</span>
+                <span>Satıcı (Reseller) Paket Qiymət və Sınaq Qaydaları</span>
+              </h4>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Satıcıların öz agentləri üçün paket yaradarkən riayət etməli olduğu minimum qiymət və maksimum pulsuz sınaq günləri.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-slate-300 font-semibold block mb-1">
+                  Ödənişli Paketlər üçün Minimum Qiymət (AZN) (`seller_min_package_price`)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={settingsMap['seller_min_package_price'] || '29'}
+                  onChange={(e) => setSettingsMap({ ...settingsMap, seller_min_package_price: e.target.value })}
+                  className="w-full bg-dark-900 border border-slate-700/80 px-3.5 py-2.5 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                />
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  Satıcılar ödənişli paket yaradarkən bu qiymətdən aşağı təyin edə bilməzlər. (Pulsuz sınağa təsir etmir)
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-300 font-semibold block mb-1">
+                  Maksimum Pulsuz Sınaq Müddəti (Gün) (`seller_max_trial_days`)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="90"
+                  value={settingsMap['seller_max_trial_days'] || '14'}
+                  onChange={(e) => setSettingsMap({ ...settingsMap, seller_max_trial_days: e.target.value })}
+                  className="w-full bg-dark-900 border border-slate-700/80 px-3.5 py-2.5 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                />
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  Satıcının qurduğu 0 AZN pulsuz sınaq paketlərinin maksimum aktivlik müddəti.
+                </span>
+              </div>
+            </div>
+          </div>
+
           <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
             {brandingSaved && (
               <span className="text-xs text-emerald-400 font-medium flex items-center gap-1">

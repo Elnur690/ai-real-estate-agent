@@ -26,6 +26,10 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
         out["support_phone"] = "+994501234567"
     if "app_logo_url" not in out:
         out["app_logo_url"] = ""
+    if "seller_min_package_price" not in out:
+        out["seller_min_package_price"] = "29.0"
+    if "seller_max_trial_days" not in out:
+        out["seller_max_trial_days"] = "14"
 
     return out
 

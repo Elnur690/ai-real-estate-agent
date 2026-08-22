@@ -377,9 +377,7 @@ async def get_seller_dashboard(
             auto_rank = rank_name
             break
 
-    if auto_rank != seller.rank:
-        seller.rank = auto_rank
-        await db.commit()
+    min_price, max_trial_days = await _get_seller_package_constraints(db)
 
     return {
         "seller_id": seller.id,
@@ -395,7 +393,9 @@ async def get_seller_dashboard(
         "total_sales_volume": seller.total_sales_volume,
         "total_agents": total_agents,
         "active_agents": active_agents,
-        "total_packages": total_packages
+        "total_packages": total_packages,
+        "min_package_price": min_price,
+        "max_trial_days": max_trial_days
     }
 
 
@@ -599,19 +599,55 @@ async def get_my_packages(
     } for p in packages]
 
 
+async def _get_seller_package_constraints(db: AsyncSession) -> tuple[float, int]:
+    from app.models.setting import AppSettings
+    stmt = select(AppSettings).where(AppSettings.key.in_(["seller_min_package_price", "seller_max_trial_days"]))
+    res = await db.execute(stmt)
+    settings_map = {s.key: s.value for s in res.scalars().all()}
+
+    try:
+        min_price = float(settings_map.get("seller_min_package_price", "29.0"))
+    except (ValueError, TypeError):
+        min_price = 29.0
+
+    try:
+        max_trial_days = int(settings_map.get("seller_max_trial_days", "14"))
+    except (ValueError, TypeError):
+        max_trial_days = 14
+
+    return min_price, max_trial_days
+
+
 @router.post("/me/packages", status_code=status.HTTP_201_CREATED)
 async def create_my_package(
     body: CreatePackageRequest,
     db: AsyncSession = Depends(get_db),
     current_auth: tuple[User, Optional[Seller]] = Depends(get_current_seller_user)
 ):
-    """Seller-only: Create a new custom package."""
+    """Seller-only: Create a new custom package with admin minimum price and trial duration constraints."""
     user, seller = current_auth
     if not seller:
         raise HTTPException(status_code=403, detail="Satıcı profili tələb olunur.")
 
+    min_price, max_trial_days = await _get_seller_package_constraints(db)
+
     if body.price < 0:
         raise HTTPException(status_code=400, detail="Qiymət mənfi ola bilməz.")
+
+    if body.price == 0:
+        # Free Trial Package: duration cannot exceed max_trial_days
+        if body.duration_days > max_trial_days:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Pulsuz sınaq paketinin müddəti maksimum {max_trial_days} gün ola bilər."
+            )
+    else:
+        # Paid Package: price cannot be less than min_price
+        if body.price < min_price:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ödənişli paket qiyməti minimum {min_price} AZN olmalıdır."
+            )
 
     pkg = SellerPackage(
         seller_id=seller.id,
@@ -642,7 +678,7 @@ async def update_my_package(
     db: AsyncSession = Depends(get_db),
     current_auth: tuple[User, Optional[Seller]] = Depends(get_current_seller_user)
 ):
-    """Seller-only: Update a custom package."""
+    """Seller-only: Update a custom package with admin constraints."""
     user, seller = current_auth
     if not seller:
         raise HTTPException(status_code=403, detail="Satıcı profili tələb olunur.")
@@ -653,11 +689,30 @@ async def update_my_package(
     if not pkg:
         raise HTTPException(status_code=404, detail="Paket tapılmadı")
 
+    min_price, max_trial_days = await _get_seller_package_constraints(db)
+
+    target_price = body.price if body.price is not None else pkg.price
+    target_duration = body.duration_days if body.duration_days is not None else pkg.duration_days
+
+    if target_price < 0:
+        raise HTTPException(status_code=400, detail="Qiymət mənfi ola bilməz.")
+
+    if target_price == 0:
+        if target_duration > max_trial_days:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Pulsuz sınaq paketinin müddəti maksimum {max_trial_days} gün ola bilər."
+            )
+    else:
+        if target_price < min_price:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ödənişli paket qiyməti minimum {min_price} AZN olmalıdır."
+            )
+
     if body.name is not None:
         pkg.name = body.name
     if body.price is not None:
-        if body.price < 0:
-            raise HTTPException(status_code=400, detail="Qiymət mənfi ola bilməz.")
         pkg.price = body.price
     if body.description is not None:
         pkg.description = body.description

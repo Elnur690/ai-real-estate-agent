@@ -20,6 +20,8 @@ export interface SellerDashboardData {
   total_agents: number;
   active_agents: number;
   total_packages: number;
+  min_package_price?: number;
+  max_trial_days?: number;
 }
 
 export interface SellerAgent {
@@ -774,17 +776,24 @@ export function SellerPortalView() {
                     onChange={(e) => setPkgPrice(Number(e.target.value))}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
                   />
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    {pkgPrice === 0 ? 'Pulsuz Sınaq Paketi (0 AZN)' : `Min: ${dashboard?.min_package_price || 29} AZN`}
+                  </span>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-400 mb-1">Müddət (Gün)</label>
                   <input
                     type="number"
                     min="1"
+                    max={pkgPrice === 0 ? (dashboard?.max_trial_days || 14) : 365}
                     required
                     value={pkgDuration}
                     onChange={(e) => setPkgDuration(Number(e.target.value))}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
                   />
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    {pkgPrice === 0 ? `Max sınaq: ${dashboard?.max_trial_days || 14} gün` : 'Standart: 30 gün'}
+                  </span>
                 </div>
               </div>
 

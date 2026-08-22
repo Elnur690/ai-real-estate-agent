@@ -167,3 +167,86 @@ async def test_seller_portal_packages_and_agent_registration(client: AsyncClient
     }, headers=other_headers)
     assert dup_res.status_code == 400
     assert "Bu agent artıq sistemdə qeydiyyatdan keçib və tətbiqdən istifadə edir." in dup_res.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_seller_package_minimum_price_and_free_trial_constraints(client: AsyncClient, test_db: AsyncSession):
+    # 1. Create Admin
+    admin_user = User(
+        name="Admin Boss",
+        email="admin@boss.az",
+        phone="+994509999999",
+        role="admin",
+        password_hash=get_password_hash("adminpass")
+    )
+    test_db.add(admin_user)
+    await test_db.commit()
+    admin_token = create_access_token(admin_user.id)
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    # Set custom constraints in Admin Settings: min price = 35 AZN, max trial days = 10
+    await client.post("/api/v1/settings", json={
+        "settings": {
+            "seller_min_package_price": "35.0",
+            "seller_max_trial_days": "10"
+        }
+    }, headers=admin_headers)
+
+    # 2. Create Seller
+    seller_user = User(
+        name="Tural Seller",
+        email="tural@seller.az",
+        phone="+994508888888",
+        role="seller",
+        password_hash=get_password_hash("turalpass")
+    )
+    test_db.add(seller_user)
+    await test_db.commit()
+
+    seller = Seller(
+        user_id=seller_user.id,
+        name="Tural Seller",
+        phone="+994508888888",
+        email="tural@seller.az",
+        commission_rate=70.0
+    )
+    test_db.add(seller)
+    await test_db.commit()
+
+    seller_token = create_access_token(seller_user.id)
+    seller_headers = {"Authorization": f"Bearer {seller_token}"}
+
+    # 3. Test: Seller tries to create paid package with 20 AZN (below min 35 AZN) -> FAILS
+    cheap_res = await client.post("/api/v1/sellers/me/packages", json={
+        "name": "Too Cheap Package",
+        "price": 20.0,
+        "duration_days": 30
+    }, headers=seller_headers)
+    assert cheap_res.status_code == 400
+    assert "Ödənişli paket qiyməti minimum 35.0 AZN olmalıdır." in cheap_res.json()["detail"]
+
+    # 4. Test: Seller creates valid paid package with 35 AZN (at min threshold) -> SUCCEEDS
+    valid_paid_res = await client.post("/api/v1/sellers/me/packages", json={
+        "name": "Standard 35",
+        "price": 35.0,
+        "duration_days": 30
+    }, headers=seller_headers)
+    assert valid_paid_res.status_code == 201
+
+    # 5. Test: Seller tries to create Free Trial (0 AZN) with 20 days (exceeds max trial 10 days) -> FAILS
+    long_trial_res = await client.post("/api/v1/sellers/me/packages", json={
+        "name": "Long Free Trial",
+        "price": 0.0,
+        "duration_days": 20
+    }, headers=seller_headers)
+    assert long_trial_res.status_code == 400
+    assert "Pulsuz sınaq paketinin müddəti maksimum 10 gün ola bilər." in long_trial_res.json()["detail"]
+
+    # 6. Test: Seller creates valid Free Trial (0 AZN) with 7 days -> SUCCEEDS (not blocked by min price!)
+    valid_trial_res = await client.post("/api/v1/sellers/me/packages", json={
+        "name": "7 Days Free Trial",
+        "price": 0.0,
+        "duration_days": 7
+    }, headers=seller_headers)
+    assert valid_trial_res.status_code == 201
+
