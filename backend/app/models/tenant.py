@@ -17,6 +17,7 @@ class Tenant(Base):
     plan_period: Mapped[str] = mapped_column(String(50), default="monthly")  # monthly | quarterly
     plan_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     plan_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_expiry_warning_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="pending")  # active | expired | suspended | pending
 
     preferred_channel: Mapped[str] = mapped_column(String(20), default="telegram")  # whatsapp | telegram

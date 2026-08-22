@@ -141,4 +141,26 @@ async def test_bot_onboarding_and_commands():
         assert "Bakı Əmlak Satıcısı" in res_status_exp
         assert "+994507776655" in res_status_exp
 
+        # Test TrialTrackerService 3-Day Warning & Full Expiry
+        from app.services.trial_tracker import TrialTrackerService
+
+        # 1. Test 3-Day Upcoming Reminder
+        t.status = "active"
+        t.plan_expires_at = datetime.now(timezone.utc) + timedelta(days=2) # 2 days left
+        t.last_expiry_warning_at = None
+        await db.commit()
+
+        await TrialTrackerService.check_and_notify_expired_trials(db)
+        await db.refresh(t)
+        assert t.status == "active"
+        assert t.last_expiry_warning_at is not None
+
+        # 2. Test Full Expiry
+        t.plan_expires_at = datetime.now(timezone.utc) - timedelta(hours=2) # expired 2 hours ago
+        await db.commit()
+
+        await TrialTrackerService.check_and_notify_expired_trials(db)
+        await db.refresh(t)
+        assert t.status == "expired"
+
     await engine.dispose()
