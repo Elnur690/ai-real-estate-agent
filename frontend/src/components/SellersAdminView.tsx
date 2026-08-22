@@ -26,6 +26,7 @@ export interface SellerItem {
   active_agents: number;
   custom_domain?: string;
   custom_domain_enabled?: boolean;
+  rank_allows_domain?: boolean;
   domain_status?: string;
   custom_brand_title?: string;
   custom_brand_logo?: string;
@@ -182,8 +183,9 @@ export function SellersAdminView() {
     setFormRank(seller.rank);
     setFormStatus(seller.status);
     setFormCustomDomain(seller.custom_domain || '');
-    setFormCustomDomainEnabled(seller.custom_domain_enabled || false);
-    setFormDomainStatus(seller.domain_status || 'disabled');
+    const isHighRank = ['Gold', 'Platinum', 'Diamond'].includes(seller.rank);
+    setFormCustomDomainEnabled(seller.custom_domain_enabled || isHighRank);
+    setFormDomainStatus(seller.domain_status && seller.domain_status !== 'disabled' ? seller.domain_status : (seller.custom_domain ? 'active' : (isHighRank ? 'active' : 'disabled')));
     setFormBrandTitle(seller.custom_brand_title || '');
     setFormBrandLogo(seller.custom_brand_logo || '');
     setFormPassword('');
@@ -449,14 +451,29 @@ export function SellersAdminView() {
                             <div className="text-xs font-mono text-cyan-400 font-semibold flex items-center gap-1">
                               <span>🌐 {s.custom_domain}</span>
                             </div>
-                            <span className={`inline-flex items-center text-[10px] mt-0.5 font-medium px-1.5 py-0.2 rounded ${
-                              s.domain_status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
+                            <span className={`inline-flex items-center text-[10px] mt-0.5 font-medium px-1.5 py-0.5 rounded ${
+                              s.domain_status === 'active' 
+                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                                : s.domain_status === 'pending_dns'
+                                ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                : 'bg-slate-800 text-slate-400 border border-slate-700'
                             }`}>
-                              {s.domain_status === 'active' ? '🟢 Aktiv' : '🟡 DNS Gözlənilir'}
+                              {s.domain_status === 'active' ? '🟢 Aktiv' : s.domain_status === 'pending_dns' ? '🟡 DNS Gözlənilir' : '🔴 Deaktiv'}
                             </span>
                           </div>
                         ) : (
-                          <span className="text-xs text-slate-500">-</span>
+                          <div>
+                            {s.rank_allows_domain || s.custom_domain_enabled || ['Gold', 'Platinum', 'Diamond'].includes(s.rank) ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/20">
+                                <span>✨ İcazə Verilib</span>
+                                <span className="text-[9px] text-emerald-300 font-normal">({s.rank})</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center text-[10px] text-slate-500 bg-slate-800/50 px-2 py-0.5 rounded">
+                                ⚪ İcazə Yoxdur
+                              </span>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td className="py-4 px-4">
@@ -744,17 +761,30 @@ export function SellersAdminView() {
                   <label className="block text-xs font-semibold text-slate-400 mb-1">Dərəcə (Rank)</label>
                   <select
                     value={formRank}
-                    onChange={(e) => setFormRank(e.target.value)}
+                    onChange={(e) => {
+                      const newRank = e.target.value;
+                      setFormRank(newRank);
+                      if (['Gold', 'Platinum', 'Diamond'].includes(newRank)) {
+                        setFormCustomDomainEnabled(true);
+                      }
+                    }}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
                   >
                     <option value="Bronze">🥉 Bronze</option>
                     <option value="Silver">🥈 Silver (+3% Bonus)</option>
                     <option value="Gold">🥇 Gold (+5% Bonus & Domen)</option>
-                    <option value="Platinum">💠 Platinum (+8% Bonus)</option>
-                    <option value="Diamond">💎 Diamond (+10% Bonus)</option>
+                    <option value="Platinum">💠 Platinum (+8% Bonus & Domen)</option>
+                    <option value="Diamond">💎 Diamond (+10% Bonus & Domen)</option>
                   </select>
                 </div>
               </div>
+
+              {['Gold', 'Platinum', 'Diamond'].includes(formRank) && (
+                <div className="text-[11px] text-emerald-400 bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20 flex items-center gap-2">
+                  <span>💎</span>
+                  <span><strong>{formRank} Səviyyəsi:</strong> Fərdi Domen (White-label) səlahiyyəti avtomatik olaraq bu satıcı üçün aktivdir.</span>
+                </div>
+              )}
 
               <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
                 <div className="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
@@ -893,14 +923,23 @@ export function SellersAdminView() {
                   <label className="block text-xs font-semibold text-slate-400 mb-1">Dərəcə</label>
                   <select
                     value={formRank}
-                    onChange={(e) => setFormRank(e.target.value)}
+                    onChange={(e) => {
+                      const newRank = e.target.value;
+                      setFormRank(newRank);
+                      if (['Gold', 'Platinum', 'Diamond'].includes(newRank)) {
+                        setFormCustomDomainEnabled(true);
+                        if (formDomainStatus === 'disabled') {
+                          setFormDomainStatus('active');
+                        }
+                      }
+                    }}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
                   >
-                    <option value="Bronze">Bronze</option>
-                    <option value="Silver">Silver</option>
-                    <option value="Gold">Gold</option>
-                    <option value="Platinum">Platinum</option>
-                    <option value="Diamond">Diamond</option>
+                    <option value="Bronze">🥉 Bronze</option>
+                    <option value="Silver">🥈 Silver (+3% Bonus)</option>
+                    <option value="Gold">🥇 Gold (+5% Bonus & Domen)</option>
+                    <option value="Platinum">💠 Platinum (+8% Bonus & Domen)</option>
+                    <option value="Diamond">💎 Diamond (+10% Bonus & Domen)</option>
                   </select>
                 </div>
                 <div>
@@ -916,6 +955,13 @@ export function SellersAdminView() {
                 </div>
               </div>
 
+              {['Gold', 'Platinum', 'Diamond'].includes(formRank) && (
+                <div className="text-[11px] text-emerald-400 bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20 flex items-center gap-2">
+                  <span>💎</span>
+                  <span><strong>{formRank} Səviyyəsi:</strong> Fərdi Domen (White-label) səlahiyyəti avtomatik olaraq bu satıcı üçün aktivdir.</span>
+                </div>
+              )}
+
               <div className="p-3.5 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
                 <div className="text-xs font-bold text-cyan-400 flex items-center justify-between">
                   <span className="flex items-center gap-1.5">
@@ -925,7 +971,7 @@ export function SellersAdminView() {
                   <label className="flex items-center gap-1.5 text-xs text-slate-300 font-normal cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={formCustomDomainEnabled}
+                      checked={formCustomDomainEnabled || ['Gold', 'Platinum', 'Diamond'].includes(formRank)}
                       onChange={(e) => setFormCustomDomainEnabled(e.target.checked)}
                       className="rounded bg-slate-900 border-slate-700 text-cyan-500"
                     />

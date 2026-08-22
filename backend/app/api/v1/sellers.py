@@ -169,6 +169,7 @@ async def list_all_sellers_admin(
             "active_agents": active_agents,
             "custom_domain": s.custom_domain,
             "custom_domain_enabled": s.custom_domain_enabled,
+            "rank_allows_domain": rank_info.get("custom_domain_allowed", False) or s.custom_domain_enabled,
             "domain_status": s.domain_status,
             "custom_brand_title": s.custom_brand_title,
             "custom_brand_logo": s.custom_brand_logo,
@@ -299,13 +300,21 @@ async def update_seller_admin(
         seller.commission_rate = max(0.0, min(100.0, body.commission_rate))
     if body.rank is not None:
         seller.rank = body.rank
+        from app.models.seller import SELLER_RANK_CONFIG
+        rank_info = SELLER_RANK_CONFIG.get(body.rank, {})
+        if rank_info.get("custom_domain_allowed", False):
+            seller.custom_domain_enabled = True
+
     if body.status is not None:
         seller.status = body.status
     if body.custom_domain is not None:
         clean_d = body.custom_domain.strip().lower().replace("https://", "").replace("http://", "").rstrip("/") if body.custom_domain else None
         seller.custom_domain = clean_d
         if clean_d:
-            seller.domain_status = "pending_dns" if seller.domain_status == "disabled" else seller.domain_status
+            if body.domain_status:
+                seller.domain_status = body.domain_status
+            elif seller.domain_status == "disabled":
+                seller.domain_status = "active" if seller.custom_domain_enabled else "pending_dns"
         else:
             seller.domain_status = "disabled"
     if body.custom_domain_enabled is not None:
