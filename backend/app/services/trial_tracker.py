@@ -114,7 +114,7 @@ class TrialTrackerService:
                         msg = (
                             f"⏳ *Hörmətli {tenant.name}, Paketinizin Bitməsinə {days_text} Qaldı!*\n\n"
                             f"Sizin AI Əmlak Agent xidmət paketiniz *{exp_date_str}* tarixində başa çatacaq. "
-                            f"Elan axınının və axtarışlarınızın kəsilməməsi üçün zəhmət olmasa satıcınızla əlaqə saxlayaraq paketinizi vaxtında uzadın:\n\n"
+                            f"Elan axınının və axtarışlarınızın kəsilməməsi üçün zəhmət olmasa satıcınızla əlaqə saxlayaraq paketinizi vaxtında yeniləyin:\n\n"
                             f"👤 *Satıcı:* {seller_name}\n"
                             f"📞 *Telefon / WhatsApp:* {seller.phone}\n\n"
                             f"Cari statusunuzu görmək üçün bota istənilən vaxt `/status` yaza bilərsiniz."

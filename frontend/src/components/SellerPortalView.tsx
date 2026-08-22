@@ -609,13 +609,13 @@ export function SellerPortalView() {
         selected_extra_searches_price: renewExtraSearchesPrice > 0 ? renewExtraSearchesPrice : undefined
       });
 
-      setRenewSuccessMsg(res.data.message || 'Abunə uğurla uzadıldı!');
+      setRenewSuccessMsg(res.data.message || 'Abunə uğurla yeniləndi!');
       reloadAll();
       // Refresh current detail
       const detailRes = await api.get(`/sellers/me/agents/${selectedAgent.id}`);
       setSelectedAgent(detailRes.data);
     } catch (err: any) {
-      setRenewError(err.response?.data?.detail || 'Abunəni uzadarkən xəta baş verdi.');
+      setRenewError(err.response?.data?.detail || 'Abunəni yeniləyərkən xəta baş verdi.');
     } finally {
       setRenewingAgent(false);
     }
@@ -1081,10 +1081,10 @@ export function SellerPortalView() {
                               type="button"
                               onClick={() => openAgentDetail(a, 'renew')}
                               className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition text-xs flex items-center gap-1 font-semibold"
-                              title="Abunəni Uzat"
+                              title="Abunəni Yenilə"
                             >
                               <RefreshCw className="w-3.5 h-3.5" />
-                              <span className="hidden sm:inline">Uzat</span>
+                              <span className="hidden sm:inline">Yenilə</span>
                             </button>
                             <button
                               type="button"
@@ -1800,7 +1800,7 @@ export function SellerPortalView() {
                 }`}
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                <span>Abunəni Uzat</span>
+                <span>Abunəni Yenilə</span>
               </button>
               <button
                 type="button"
@@ -1932,7 +1932,7 @@ export function SellerPortalView() {
                     className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
                   >
                     <RefreshCw className="w-4 h-4" />
-                    <span>Abunəni Uzat</span>
+                    <span>Abunəni Yenilə</span>
                   </button>
                   <button
                     type="button"
@@ -2137,7 +2137,7 @@ export function SellerPortalView() {
                   className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/25 transition disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   <RefreshCw className={`w-4 h-4 ${renewingAgent ? 'animate-spin' : ''}`} />
-                  <span>{renewingAgent ? 'Yenilənir...' : 'Abunəni Təsdiqlə və Uzat'}</span>
+                  <span>{renewingAgent ? 'Yenilənir...' : 'Abunəni Təsdiqlə və Yenilə'}</span>
                 </button>
               </form>
             )}

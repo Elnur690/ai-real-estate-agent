@@ -896,7 +896,7 @@ async def renew_my_agent(
     await db.refresh(seller)
 
     return {
-        "message": f"Agentin abunəsi uğurla {duration_days} gün uzadıldı!",
+        "message": f"Agentin abunəsi uğurla {duration_days} gün müddətinə yeniləndi!",
         "agent_id": agent.id,
         "plan": agent.plan,
         "plan_expires_at": agent.plan_expires_at.isoformat() if agent.plan_expires_at else None,
