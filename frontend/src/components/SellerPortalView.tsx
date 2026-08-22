@@ -66,8 +66,15 @@ export interface SellerPackageItem {
   max_locations: number;
   feature_makler_detector: boolean;
   feature_avm_bargain_finder: boolean;
-  feature_b2b_cobrokering: boolean;
+  feature_social_brochure: boolean;
+  feature_multi_location: boolean;
+  feature_client_intake_bot: boolean;
   feature_backup_service: boolean;
+  feature_aged_listings: boolean;
+  addon_aged_listings_price: number;
+  addon_aged_max_months: number;
+  addon_saved_searches: number;
+  addon_saved_searches_price: number;
   is_active: boolean;
 }
 
@@ -142,11 +149,20 @@ export function SellerPortalView() {
   const [pkgDescription, setPkgDescription] = useState('');
   const [pkgPeriod, setPkgPeriod] = useState('monthly');
   const [pkgDuration, setPkgDuration] = useState<number>(30);
-  const [pkgMaxSearches, setPkgMaxSearches] = useState<number>(5);
+  const [pkgMaxSearches, setPkgMaxSearches] = useState<number>(10);
+  const [pkgMaxLocations, setPkgMaxLocations] = useState<number>(5);
   const [pkgMakler, setPkgMakler] = useState(true);
   const [pkgAvm, setPkgAvm] = useState(true);
-  const [pkgB2b, setPkgB2b] = useState(false);
+  const [pkgSocialBrochure, setPkgSocialBrochure] = useState(true);
+  const [pkgMultiLocation, setPkgMultiLocation] = useState(true);
+  const [pkgIntakeBot, setPkgIntakeBot] = useState(false);
   const [pkgBackup, setPkgBackup] = useState(false);
+  const [pkgAgedListings, setPkgAgedListings] = useState(false);
+  const [pkgAgedPrice, setPkgAgedPrice] = useState<number>(15);
+  const [pkgAgedMonths, setPkgAgedMonths] = useState<number>(12);
+  const [pkgAddonSearches, setPkgAddonSearches] = useState<number>(0);
+  const [pkgAddonSearchesPrice, setPkgAddonSearchesPrice] = useState<number>(10);
+  const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const [submittingPkg, setSubmittingPkg] = useState(false);
 
   const fetchDashboard = async () => {
@@ -331,32 +347,31 @@ export function SellerPortalView() {
     e.preventDefault();
     setSubmittingPkg(true);
     try {
+      const payload = {
+        name: pkgName,
+        price: pkgPrice,
+        description: pkgDescription || undefined,
+        period: pkgPeriod,
+        duration_days: pkgDuration,
+        max_searches: pkgMaxSearches,
+        max_locations: pkgMaxLocations,
+        feature_makler_detector: pkgMakler,
+        feature_avm_bargain_finder: pkgAvm,
+        feature_social_brochure: pkgSocialBrochure,
+        feature_multi_location: pkgMultiLocation,
+        feature_client_intake_bot: pkgIntakeBot,
+        feature_backup_service: pkgBackup,
+        feature_aged_listings: pkgAgedListings,
+        addon_aged_listings_price: pkgAgedPrice,
+        addon_aged_max_months: pkgAgedMonths,
+        addon_saved_searches: pkgAddonSearches,
+        addon_saved_searches_price: pkgAddonSearchesPrice
+      };
+
       if (editingPkg) {
-        await api.put(`/sellers/me/packages/${editingPkg.id}`, {
-          name: pkgName,
-          price: pkgPrice,
-          description: pkgDescription || undefined,
-          period: pkgPeriod,
-          duration_days: pkgDuration,
-          max_searches: pkgMaxSearches,
-          feature_makler_detector: pkgMakler,
-          feature_avm_bargain_finder: pkgAvm,
-          feature_b2b_cobrokering: pkgB2b,
-          feature_backup_service: pkgBackup
-        });
+        await api.put(`/sellers/me/packages/${editingPkg.id}`, payload);
       } else {
-        await api.post('/sellers/me/packages', {
-          name: pkgName,
-          price: pkgPrice,
-          description: pkgDescription || undefined,
-          period: pkgPeriod,
-          duration_days: pkgDuration,
-          max_searches: pkgMaxSearches,
-          feature_makler_detector: pkgMakler,
-          feature_avm_bargain_finder: pkgAvm,
-          feature_b2b_cobrokering: pkgB2b,
-          feature_backup_service: pkgBackup
-        });
+        await api.post('/sellers/me/packages', payload);
       }
       setIsAddPkgOpen(false);
       setEditingPkg(null);
@@ -381,15 +396,23 @@ export function SellerPortalView() {
   const openAddPkgModal = () => {
     setEditingPkg(null);
     setPkgName('');
-    setPkgPrice(49);
+    setPkgPrice(Math.max(49, dashboard?.min_package_price || 29));
     setPkgDescription('');
     setPkgPeriod('monthly');
     setPkgDuration(30);
-    setPkgMaxSearches(5);
+    setPkgMaxSearches(10);
+    setPkgMaxLocations(5);
     setPkgMakler(true);
     setPkgAvm(true);
-    setPkgB2b(false);
+    setPkgSocialBrochure(true);
+    setPkgMultiLocation(true);
+    setPkgIntakeBot(false);
     setPkgBackup(false);
+    setPkgAgedListings(false);
+    setPkgAgedPrice(15);
+    setPkgAgedMonths(12);
+    setPkgAddonSearches(0);
+    setPkgAddonSearchesPrice(10);
     setIsAddPkgOpen(true);
   };
 
@@ -400,11 +423,19 @@ export function SellerPortalView() {
     setPkgDescription(pkg.description || '');
     setPkgPeriod(pkg.period);
     setPkgDuration(pkg.duration_days);
-    setPkgMaxSearches(pkg.max_searches);
+    setPkgMaxSearches(pkg.max_searches || 10);
+    setPkgMaxLocations(pkg.max_locations || 5);
     setPkgMakler(pkg.feature_makler_detector);
     setPkgAvm(pkg.feature_avm_bargain_finder);
-    setPkgB2b(pkg.feature_b2b_cobrokering);
-    setPkgBackup(pkg.feature_backup_service);
+    setPkgSocialBrochure(pkg.feature_social_brochure ?? true);
+    setPkgMultiLocation(pkg.feature_multi_location ?? true);
+    setPkgIntakeBot(pkg.feature_client_intake_bot ?? false);
+    setPkgBackup(pkg.feature_backup_service ?? false);
+    setPkgAgedListings(pkg.feature_aged_listings ?? false);
+    setPkgAgedPrice(pkg.addon_aged_listings_price ?? 15);
+    setPkgAgedMonths(pkg.addon_aged_max_months ?? 12);
+    setPkgAddonSearches(pkg.addon_saved_searches ?? 0);
+    setPkgAddonSearchesPrice(pkg.addon_saved_searches_price ?? 10);
     setIsAddPkgOpen(true);
   };
 
@@ -762,35 +793,57 @@ export function SellerPortalView() {
 
                   <div className="space-y-2 text-xs text-slate-300 pt-2 border-t border-slate-800">
                     <div className="flex items-center gap-2">
-                      <Check className="w-4 h-4 text-emerald-400" />
+                      <Check className="w-4 h-4 text-emerald-400 shrink-0" />
                       <span>{pkg.max_searches} Paralel Axtarış Limiti</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Check className="w-4 h-4 text-emerald-400" />
+                      <Check className="w-4 h-4 text-emerald-400 shrink-0" />
                       <span>{pkg.duration_days} Gün Aktivlik Müddəti</span>
                     </div>
+                    {pkg.feature_multi_location && (
+                      <div className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>Çoxsaylı Məkan & Metro Axtarışı (max {pkg.max_locations || 5})</span>
+                      </div>
+                    )}
                     {pkg.feature_makler_detector && (
                       <div className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-emerald-400" />
+                        <Check className="w-4 h-4 text-emerald-400 shrink-0" />
                         <span>AI Makler & Vasitəçi Detektoru</span>
                       </div>
                     )}
                     {pkg.feature_avm_bargain_finder && (
                       <div className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-emerald-400" />
+                        <Check className="w-4 h-4 text-emerald-400 shrink-0" />
                         <span>AVM Bazar Qiyməti & Fırsət Bildirişi</span>
                       </div>
                     )}
-                    {pkg.feature_b2b_cobrokering && (
+                    {pkg.feature_social_brochure && (
                       <div className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-emerald-400" />
-                        <span>B2B Partnyorluq və Qapalı Elanlar</span>
+                        <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>PDF & Sosial Şəbəkə Buklet Generatoru</span>
+                      </div>
+                    )}
+                    {pkg.feature_client_intake_bot && (
+                      <div className="flex items-center gap-2">
+                        <Check className="w-4 h-4 text-indigo-400 shrink-0" />
+                        <span className="text-indigo-300">Brendli Müştəri Qəbul Botu</span>
                       </div>
                     )}
                     {pkg.feature_backup_service && (
                       <div className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-emerald-400" />
-                        <span>Avtomatlaşdırılmış Backup Xidməti</span>
+                        <Check className="w-4 h-4 text-purple-400 shrink-0" />
+                        <span className="text-purple-300">Avtomatik BaaS Data Backup</span>
+                      </div>
+                    )}
+                    {pkg.addon_saved_searches > 0 && (
+                      <div className="flex items-center gap-2 text-cyan-400 font-semibold bg-cyan-500/10 px-2 py-1 rounded-lg border border-cyan-500/20">
+                        <span>⚡ +{pkg.addon_saved_searches} Əlavə Axtarış (+{pkg.addon_saved_searches_price} AZN)</span>
+                      </div>
+                    )}
+                    {pkg.feature_aged_listings && (
+                      <div className="flex items-center gap-2 text-amber-400 font-semibold bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-500/20">
+                        <span>📦 Köhnə Elanlar Arxivi ({pkg.addon_aged_max_months || 12} ay) (+{pkg.addon_aged_listings_price} AZN)</span>
                       </div>
                     )}
                   </div>
@@ -1244,36 +1297,39 @@ export function SellerPortalView() {
       {/* CREATE / EDIT PACKAGE MODAL */}
       {isAddPkgOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-5">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-xl rounded-3xl p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Package className="w-5 h-5 text-blue-400" />
-                <span>{editingPkg ? 'Paketi Redaktə Et' : 'Yeni Fərdi Paket'}</span>
-              </h3>
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Package className="w-5 h-5 text-blue-400" />
+                  <span>{editingPkg ? 'Paketi Redaktə Et' : 'Yeni Fərdi Agent Paketi'}</span>
+                </h3>
+                <p className="text-xs text-slate-400">Agentləriniz üçün fərdi qiymət və imkanları konfiqurasiya edin.</p>
+              </div>
               <button onClick={() => setIsAddPkgOpen(false)} className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSavePackage} className="space-y-4">
+            <form onSubmit={handleSavePackage} className="space-y-5">
               <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Paketin Adı *</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Paketin Adı *</label>
                 <input
                   type="text"
                   required
                   value={pkgName}
                   onChange={(e) => setPkgName(e.target.value)}
-                  placeholder="Məs: VIP Agent Paketi"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                  placeholder="Məs: Standart Agent, VIP Broker Paketi"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-1">Qiymət (AZN) *</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Paket Qiyməti (AZN) *</label>
                   <input
                     type="number"
-                    min="0"
+                    min={dashboard?.min_package_price || 29}
                     step="1"
                     required
                     value={pkgPrice}
@@ -1281,88 +1337,368 @@ export function SellerPortalView() {
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
                   />
                   <span className="text-[10px] text-slate-500 mt-1 block">
-                    {pkgPrice === 0 ? 'Pulsuz Sınaq Paketi (0 AZN)' : `Min: ${dashboard?.min_package_price || 29} AZN`}
+                    Admin minimum limiti: {dashboard?.min_package_price || 29} AZN
                   </span>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-1">Müddət (Gün)</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Müddət (Gün)</label>
                   <input
                     type="number"
                     min="1"
-                    max={pkgPrice === 0 ? (dashboard?.max_trial_days || 14) : 365}
+                    max="365"
                     required
                     value={pkgDuration}
                     onChange={(e) => setPkgDuration(Number(e.target.value))}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
                   />
                   <span className="text-[10px] text-slate-500 mt-1 block">
-                    {pkgPrice === 0 ? `Max sınaq: ${dashboard?.max_trial_days || 14} gün` : 'Standart: 30 gün'}
+                    Standart aylıq abunə: 30 gün
                   </span>
                 </div>
 
-                {pkgPrice > 0 && (
-                  <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs flex justify-between items-center col-span-2">
-                    <span className="text-slate-300">
-                      Sizin Komissiya Payınız (%{dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70}):
-                    </span>
-                    <span className="font-bold text-emerald-400">
-                      +{((pkgPrice * (dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70)) / 100).toFixed(1)} AZN
-                    </span>
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs flex justify-between items-center col-span-2">
+                  <span className="text-slate-300 font-medium">
+                    Sizin Komissiya Payınız (%{dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70}):
+                  </span>
+                  <span className="font-bold text-emerald-400 text-sm">
+                    +{((pkgPrice * (dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70)) / 100).toFixed(1)} AZN
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-300">Axtarış Slotu Limiti</label>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTooltip(activeTooltip === 'searches' ? null : 'searches')}
+                      className="text-[11px] text-blue-400 hover:text-blue-300 font-mono"
+                      title="Məlumat"
+                    >
+                      ℹ️
+                    </button>
                   </div>
-                )}
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    required
+                    value={pkgMaxSearches}
+                    onChange={(e) => setPkgMaxSearches(Number(e.target.value))}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                  />
+                  {activeTooltip === 'searches' && (
+                    <div className="mt-1 p-2 bg-slate-950 rounded-lg text-[11px] text-slate-300 border border-blue-500/30">
+                      Agentin sistemdə eyni vaxtda aktiv saxlaya biləcəyi daimi axtarış filtrlərinin sayı (Məs: 10 Axtarış).
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-300">Max Məkan / Metro Limiti</label>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTooltip(activeTooltip === 'locations' ? null : 'locations')}
+                      className="text-[11px] text-blue-400 hover:text-blue-300 font-mono"
+                      title="Məlumat"
+                    >
+                      ℹ️
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    min="1"
+                    max="20"
+                    required
+                    value={pkgMaxLocations}
+                    onChange={(e) => setPkgMaxLocations(Number(e.target.value))}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                  />
+                  {activeTooltip === 'locations' && (
+                    <div className="mt-1 p-2 bg-slate-950 rounded-lg text-[11px] text-slate-300 border border-blue-500/30">
+                      Bir axtarış sorğusunda eyni vaxtda birləşdirilə bilən fərqli rayon və ya metro stansiyalarının sayı (max 5 məkan).
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Axtarış Slotu Limiti</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  required
-                  value={pkgMaxSearches}
-                  onChange={(e) => setPkgMaxSearches(Number(e.target.value))}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
-                />
+              {/* Main Feature Flags with "i" Explanation Popups */}
+              <div className="space-y-3 pt-3 border-t border-slate-800">
+                <label className="text-xs font-bold text-white uppercase tracking-wider block">
+                  Paketə Daxil Olan Əsas İmkanlar
+                </label>
+
+                <div className="space-y-2">
+                  {/* Feature 1: Makler Detector */}
+                  <div className="p-2.5 bg-slate-950/60 border border-slate-800/80 rounded-xl space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-xs text-slate-200 cursor-pointer font-medium">
+                        <input
+                          type="checkbox"
+                          checked={pkgMakler}
+                          onChange={(e) => setPkgMakler(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-0"
+                        />
+                        <span>AI Makler & Vasitəçi Detektoru</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTooltip(activeTooltip === 'makler' ? null : 'makler')}
+                        className="text-xs text-blue-400 hover:text-blue-300 px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/20"
+                      >
+                        ℹ️ İzah
+                      </button>
+                    </div>
+                    {activeTooltip === 'makler' && (
+                      <p className="text-[11px] text-slate-400 bg-slate-900/90 p-2 rounded-lg border border-slate-800 leading-relaxed">
+                        Elan mətni və telefon tarixçəsini AI ilə analiz edərək maklerləri/vasitəçiləri aşkarlayır və birbaşa sahibindən olan elanları filtirləyir.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Feature 2: AVM Bargain Finder */}
+                  <div className="p-2.5 bg-slate-950/60 border border-slate-800/80 rounded-xl space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-xs text-slate-200 cursor-pointer font-medium">
+                        <input
+                          type="checkbox"
+                          checked={pkgAvm}
+                          onChange={(e) => setPkgAvm(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-0"
+                        />
+                        <span>AVM Bazar Qiyməti & Fırsət Bildirişi</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTooltip(activeTooltip === 'avm' ? null : 'avm')}
+                        className="text-xs text-blue-400 hover:text-blue-300 px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/20"
+                      >
+                        ℹ️ İzah
+                      </button>
+                    </div>
+                    {activeTooltip === 'avm' && (
+                      <p className="text-[11px] text-slate-400 bg-slate-900/90 p-2 rounded-lg border border-slate-800 leading-relaxed">
+                        Məhəllə və bina üzrə orta bazar qiymətini (AZN/m²) avtomatik hesablayır və bazar qiymətindən 15%+ aşağı olan fürsət elanlarını xüsusi işarə ilə bildirir.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Feature 3: Social Brochure Generator */}
+                  <div className="p-2.5 bg-slate-950/60 border border-slate-800/80 rounded-xl space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-xs text-slate-200 cursor-pointer font-medium">
+                        <input
+                          type="checkbox"
+                          checked={pkgSocialBrochure}
+                          onChange={(e) => setPkgSocialBrochure(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-0"
+                        />
+                        <span>PDF & Sosial Şəbəkə Buklet Generatoru</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTooltip(activeTooltip === 'brochure' ? null : 'brochure')}
+                        className="text-xs text-blue-400 hover:text-blue-300 px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/20"
+                      >
+                        ℹ️ İzah
+                      </button>
+                    </div>
+                    {activeTooltip === 'brochure' && (
+                      <p className="text-[11px] text-slate-400 bg-slate-900/90 p-2 rounded-lg border border-slate-800 leading-relaxed">
+                        Agentlər üçün elanlardan 1 kliklə WhatsApp və Instagram üçün fərdi brend loqolu PDF və foto bukletlər hazırlayır.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Feature 4: Multi-Location Search */}
+                  <div className="p-2.5 bg-slate-950/60 border border-slate-800/80 rounded-xl space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-xs text-slate-200 cursor-pointer font-medium">
+                        <input
+                          type="checkbox"
+                          checked={pkgMultiLocation}
+                          onChange={(e) => setPkgMultiLocation(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-blue-600 focus:ring-0"
+                        />
+                        <span>Çoxsaylı Məkan & Qonşu Metro Axtarışı</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTooltip(activeTooltip === 'multiloc' ? null : 'multiloc')}
+                        className="text-xs text-blue-400 hover:text-blue-300 px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/20"
+                      >
+                        ℹ️ İzah
+                      </button>
+                    </div>
+                    {activeTooltip === 'multiloc' && (
+                      <p className="text-[11px] text-slate-400 bg-slate-900/90 p-2 rounded-lg border border-slate-800 leading-relaxed">
+                        Agentə eyni axtarışda bir neçə qonşu metro (məs: Elmlər + Nizami + 28 May) və rayonları eyni vaxtda izləməyə icazə verir.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Feature 5: Branded Intake Bot */}
+                  <div className="p-2.5 bg-slate-950/60 border border-slate-800/80 rounded-xl space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-xs text-slate-200 cursor-pointer font-medium">
+                        <input
+                          type="checkbox"
+                          checked={pkgIntakeBot}
+                          onChange={(e) => setPkgIntakeBot(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
+                        />
+                        <span className="text-indigo-300 font-semibold">Brendli Müştəri Qəbul Botu</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTooltip(activeTooltip === 'bot' ? null : 'bot')}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 px-1.5 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/20"
+                      >
+                        ℹ️ İzah
+                      </button>
+                    </div>
+                    {activeTooltip === 'bot' && (
+                      <p className="text-[11px] text-slate-400 bg-slate-900/90 p-2 rounded-lg border border-slate-800 leading-relaxed">
+                        Agentin müştəriləri üçün Telegram/WhatsApp üzərindən avtomatlaşdırılmış sorğu-sual və mülk tələblərinin toplanması botu.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Feature 6: Backup Service */}
+                  <div className="p-2.5 bg-slate-950/60 border border-slate-800/80 rounded-xl space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-xs text-slate-200 cursor-pointer font-medium">
+                        <input
+                          type="checkbox"
+                          checked={pkgBackup}
+                          onChange={(e) => setPkgBackup(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-purple-600 focus:ring-0"
+                        />
+                        <span className="text-purple-300 font-semibold">Avtomatik BaaS Data Backup</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTooltip(activeTooltip === 'backup' ? null : 'backup')}
+                        className="text-xs text-purple-400 hover:text-purple-300 px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/20"
+                      >
+                        ℹ️ İzah
+                      </button>
+                    </div>
+                    {activeTooltip === 'backup' && (
+                      <p className="text-[11px] text-slate-400 bg-slate-900/90 p-2 rounded-lg border border-slate-800 leading-relaxed">
+                        Agentin bütün axtarışları, bəyəndiyi elanları və müştəri siyahısını həftəlik arxivləşdirir və təhlükəsiz e-poçtuna göndərir.
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
 
-              <div className="space-y-2 pt-2 border-t border-slate-800">
-                <label className="text-xs font-semibold text-slate-400 block mb-1">İmkanlar və Funksiyalar</label>
-                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={pkgMakler}
-                    onChange={(e) => setPkgMakler(e.target.checked)}
-                    className="rounded bg-slate-950 border-slate-800 text-blue-600 focus:ring-0"
-                  />
-                  <span>AI Makler & Vasitəçi Detektoru</span>
+              {/* Add-on Features & Pricing (No Minimum Required) */}
+              <div className="space-y-3 pt-3 border-t border-slate-800">
+                <label className="text-xs font-bold text-cyan-400 uppercase tracking-wider block">
+                  Əlavə Xidmətlər (Add-ons) — Fərdi Qiymət Qoyuluşu
                 </label>
-                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={pkgAvm}
-                    onChange={(e) => setPkgAvm(e.target.checked)}
-                    className="rounded bg-slate-950 border-slate-800 text-blue-600 focus:ring-0"
-                  />
-                  <span>AVM Bazar Qiyməti & Fırsət Bildirişi</span>
-                </label>
-                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={pkgB2b}
-                    onChange={(e) => setPkgB2b(e.target.checked)}
-                    className="rounded bg-slate-950 border-slate-800 text-blue-600 focus:ring-0"
-                  />
-                  <span>B2B Şəbəkə & Co-Brokering</span>
-                </label>
-                <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={pkgBackup}
-                    onChange={(e) => setPkgBackup(e.target.checked)}
-                    className="rounded bg-slate-950 border-slate-800 text-blue-600 focus:ring-0"
-                  />
-                  <span>Avtomatik Backup Xidməti</span>
-                </label>
+
+                {/* Add-on 1: Search Top-Up */}
+                <div className="p-3 bg-cyan-950/20 border border-cyan-500/20 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-cyan-300">
+                      ⚡ Əlavə Axtarış Slotu (+5 Pack)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTooltip(activeTooltip === 'topup' ? null : 'topup')}
+                      className="text-xs text-cyan-400 hover:text-cyan-300 px-1.5 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20"
+                    >
+                      ℹ️ İzah
+                    </button>
+                  </div>
+                  {activeTooltip === 'topup' && (
+                    <p className="text-[11px] text-slate-400 bg-slate-900/90 p-2 rounded-lg border border-slate-800 leading-relaxed">
+                      Paket limitindən əlavə hər +5 axtarış slotu üçün təyin edilən əlavə ödəniş (Məs: +10 AZN/ay). Minimum qiymət məhdudiyyəti yoxdur.
+                    </p>
+                  )}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <label className="text-[11px] text-slate-400 block mb-1">Əlavə Slot Sayı</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="50"
+                        step="5"
+                        value={pkgAddonSearches}
+                        onChange={(e) => setPkgAddonSearches(Number(e.target.value))}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-slate-400 block mb-1">Add-on Qiyməti (AZN)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={pkgAddonSearchesPrice}
+                        onChange={(e) => setPkgAddonSearchesPrice(Number(e.target.value))}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white text-xs font-bold text-cyan-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Add-on 2: Aged Inventory Archive */}
+                <div className="p-3 bg-amber-950/20 border border-amber-500/20 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 text-xs font-semibold text-amber-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={pkgAgedListings}
+                        onChange={(e) => setPkgAgedListings(e.target.checked)}
+                        className="rounded bg-slate-900 border-slate-700 text-amber-600 focus:ring-0"
+                      />
+                      <span>📦 Köhnə Elanlar Arxivi (1-12+ ay)</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTooltip(activeTooltip === 'aged' ? null : 'aged')}
+                      className="text-xs text-amber-400 hover:text-amber-300 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20"
+                    >
+                      ℹ️ İzah
+                    </button>
+                  </div>
+                  {activeTooltip === 'aged' && (
+                    <p className="text-[11px] text-slate-400 bg-slate-900/90 p-2 rounded-lg border border-slate-800 leading-relaxed">
+                      Bazardan çıxmış və ya son 12 ay ərzində paylaşılmış arxiv elanlarının axtarışı və müqayisəsi üçün əlavə add-on (Məs: +15 AZN/ay). Minimum qiymət məhdudiyyəti yoxdur.
+                    </p>
+                  )}
+                  {pkgAgedListings && (
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div>
+                        <label className="text-[11px] text-slate-400 block mb-1">Maksimum Arxiv (Ay)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="24"
+                          value={pkgAgedMonths}
+                          onChange={(e) => setPkgAgedMonths(Number(e.target.value))}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] text-slate-400 block mb-1">Add-on Qiyməti (AZN)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={pkgAgedPrice}
+                          onChange={(e) => setPkgAgedPrice(Number(e.target.value))}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white text-xs font-bold text-amber-400"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="pt-3 flex gap-3">

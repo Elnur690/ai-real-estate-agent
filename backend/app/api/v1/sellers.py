@@ -48,12 +48,19 @@ class CreatePackageRequest(BaseModel):
     description: Optional[str] = None
     period: str = "monthly"
     duration_days: int = 30
-    max_searches: int = 5
+    max_searches: int = 10
     max_locations: int = 5
     feature_makler_detector: bool = True
     feature_avm_bargain_finder: bool = True
-    feature_b2b_cobrokering: bool = False
+    feature_social_brochure: bool = True
+    feature_multi_location: bool = True
+    feature_client_intake_bot: bool = False
     feature_backup_service: bool = False
+    feature_aged_listings: bool = False
+    addon_aged_listings_price: float = 15.0
+    addon_aged_max_months: int = 12
+    addon_saved_searches: int = 0
+    addon_saved_searches_price: float = 10.0
 
 class UpdatePackageRequest(BaseModel):
     name: Optional[str] = None
@@ -65,8 +72,15 @@ class UpdatePackageRequest(BaseModel):
     max_locations: Optional[int] = None
     feature_makler_detector: Optional[bool] = None
     feature_avm_bargain_finder: Optional[bool] = None
-    feature_b2b_cobrokering: Optional[bool] = None
+    feature_social_brochure: Optional[bool] = None
+    feature_multi_location: Optional[bool] = None
+    feature_client_intake_bot: Optional[bool] = None
     feature_backup_service: Optional[bool] = None
+    feature_aged_listings: Optional[bool] = None
+    addon_aged_listings_price: Optional[float] = None
+    addon_aged_max_months: Optional[int] = None
+    addon_saved_searches: Optional[int] = None
+    addon_saved_searches_price: Optional[float] = None
     is_active: Optional[bool] = None
 
 class RegisterSellerAgentRequest(BaseModel):
@@ -207,21 +221,29 @@ async def create_seller_admin(
             price=49.0,
             period="monthly",
             duration_days=30,
-            max_searches=5,
+            max_searches=10,
+            max_locations=5,
             feature_makler_detector=True,
-            feature_avm_bargain_finder=True
+            feature_avm_bargain_finder=True,
+            feature_social_brochure=True,
+            feature_multi_location=True,
+            feature_client_intake_bot=False,
+            feature_backup_service=False
         ),
         SellerPackage(
             seller_id=seller.id,
             name="Pro Agent Paketi",
-            description="Geniş axtarışlar və B2B şəbəkəsi ilə",
+            description="Geniş axtarışlar, müştəri botu və backup ilə",
             price=89.0,
             period="monthly",
             duration_days=30,
-            max_searches=15,
+            max_searches=20,
+            max_locations=10,
             feature_makler_detector=True,
             feature_avm_bargain_finder=True,
-            feature_b2b_cobrokering=True,
+            feature_social_brochure=True,
+            feature_multi_location=True,
+            feature_client_intake_bot=True,
             feature_backup_service=True
         )
     ]
@@ -655,8 +677,15 @@ async def register_my_agent(
         plan_expires_at=expires_at,
         feature_makler_detector=package.feature_makler_detector if package else True,
         feature_avm_bargain_finder=package.feature_avm_bargain_finder if package else True,
-        feature_b2b_cobrokering=package.feature_b2b_cobrokering if package else False,
-        backup_enabled=package.feature_backup_service if package else False
+        feature_social_brochure=package.feature_social_brochure if package else True,
+        feature_multi_location=package.feature_multi_location if package else True,
+        max_locations_per_search=package.max_locations if package else 5,
+        feature_client_intake_bot=package.feature_client_intake_bot if package else False,
+        backup_enabled=package.feature_backup_service if package else False,
+        feature_aged_listings=package.feature_aged_listings if package else False,
+        addon_aged_max_months=package.addon_aged_max_months if package else 12,
+        addon_saved_searches=package.addon_saved_searches if package else 0,
+        addon_saved_searches_price=package.addon_saved_searches_price if package else 0.0
     )
     db.add(agent)
     await db.commit()
@@ -736,8 +765,15 @@ async def get_my_packages(
         "max_locations": p.max_locations,
         "feature_makler_detector": p.feature_makler_detector,
         "feature_avm_bargain_finder": p.feature_avm_bargain_finder,
-        "feature_b2b_cobrokering": p.feature_b2b_cobrokering,
+        "feature_social_brochure": p.feature_social_brochure,
+        "feature_multi_location": p.feature_multi_location,
+        "feature_client_intake_bot": p.feature_client_intake_bot,
         "feature_backup_service": p.feature_backup_service,
+        "feature_aged_listings": p.feature_aged_listings,
+        "addon_aged_listings_price": p.addon_aged_listings_price,
+        "addon_aged_max_months": p.addon_aged_max_months,
+        "addon_saved_searches": p.addon_saved_searches,
+        "addon_saved_searches_price": p.addon_saved_searches_price,
         "is_active": p.is_active,
         "created_at": p.created_at.isoformat() if p.created_at else None
     } for p in packages]
@@ -768,12 +804,12 @@ async def create_my_package(
     db: AsyncSession = Depends(get_db),
     current_auth: tuple[User, Optional[Seller]] = Depends(get_current_seller_user)
 ):
-    """Seller-only: Create a new custom package with admin minimum price and trial duration constraints."""
+    """Seller-only: Create a new custom package with admin minimum price constraints. Free trials are disabled for sellers."""
     user, seller = current_auth
     if not seller:
         raise HTTPException(status_code=403, detail="Satıcı profili tələb olunur.")
 
-    min_price, max_trial_days = await _get_seller_package_constraints(db)
+    min_price, _ = await _get_seller_package_constraints(db)
 
     from app.models.seller import SELLER_RANK_CONFIG
     rank_info = SELLER_RANK_CONFIG.get(seller.rank, SELLER_RANK_CONFIG["Bronze"])
@@ -789,23 +825,12 @@ async def create_my_package(
             detail=f"Sizin '{seller.rank}' səviyyəniz üçün maksimum {max_pkgs} paket limiti dolub. Satış həcminizi artıraraq növbəti səviyyəyə yüksələ bilərsiniz."
         )
 
-    if body.price < 0:
-        raise HTTPException(status_code=400, detail="Qiymət mənfi ola bilməz.")
-
-    if body.price == 0:
-        # Free Trial Package: duration cannot exceed max_trial_days
-        if body.duration_days > max_trial_days:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Pulsuz sınaq paketinin müddəti maksimum {max_trial_days} gün ola bilər."
-            )
-    else:
-        # Paid Package: price cannot be less than min_price
-        if body.price < min_price:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Ödənişli paket qiyməti minimum {min_price} AZN olmalıdır."
-            )
+    # 1. Sellers cannot add free trial (0 AZN) packages
+    if body.price < min_price:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Paket qiyməti minimum {min_price:.2f} AZN olmalıdır. Satıcılar pulsuz sınaq paketi yarada bilməz."
+        )
 
     pkg = SellerPackage(
         seller_id=seller.id,
@@ -818,8 +843,15 @@ async def create_my_package(
         max_locations=body.max_locations,
         feature_makler_detector=body.feature_makler_detector,
         feature_avm_bargain_finder=body.feature_avm_bargain_finder,
-        feature_b2b_cobrokering=body.feature_b2b_cobrokering,
+        feature_social_brochure=body.feature_social_brochure,
+        feature_multi_location=body.feature_multi_location,
+        feature_client_intake_bot=body.feature_client_intake_bot,
         feature_backup_service=body.feature_backup_service,
+        feature_aged_listings=body.feature_aged_listings,
+        addon_aged_listings_price=body.addon_aged_listings_price,
+        addon_aged_max_months=body.addon_aged_max_months,
+        addon_saved_searches=body.addon_saved_searches,
+        addon_saved_searches_price=body.addon_saved_searches_price,
         is_active=True
     )
     db.add(pkg)
@@ -847,26 +879,15 @@ async def update_my_package(
     if not pkg:
         raise HTTPException(status_code=404, detail="Paket tapılmadı")
 
-    min_price, max_trial_days = await _get_seller_package_constraints(db)
+    min_price, _ = await _get_seller_package_constraints(db)
 
     target_price = body.price if body.price is not None else pkg.price
-    target_duration = body.duration_days if body.duration_days is not None else pkg.duration_days
 
-    if target_price < 0:
-        raise HTTPException(status_code=400, detail="Qiymət mənfi ola bilməz.")
-
-    if target_price == 0:
-        if target_duration > max_trial_days:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Pulsuz sınaq paketinin müddəti maksimum {max_trial_days} gün ola bilər."
-            )
-    else:
-        if target_price < min_price:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Ödənişli paket qiyməti minimum {min_price} AZN olmalıdır."
-            )
+    if target_price < min_price:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Paket qiyməti minimum {min_price:.2f} AZN olmalıdır. Satıcılar pulsuz sınaq paketi yarada bilməz."
+        )
 
     if body.name is not None:
         pkg.name = body.name
@@ -886,10 +907,24 @@ async def update_my_package(
         pkg.feature_makler_detector = body.feature_makler_detector
     if body.feature_avm_bargain_finder is not None:
         pkg.feature_avm_bargain_finder = body.feature_avm_bargain_finder
-    if body.feature_b2b_cobrokering is not None:
-        pkg.feature_b2b_cobrokering = body.feature_b2b_cobrokering
+    if body.feature_social_brochure is not None:
+        pkg.feature_social_brochure = body.feature_social_brochure
+    if body.feature_multi_location is not None:
+        pkg.feature_multi_location = body.feature_multi_location
+    if body.feature_client_intake_bot is not None:
+        pkg.feature_client_intake_bot = body.feature_client_intake_bot
     if body.feature_backup_service is not None:
         pkg.feature_backup_service = body.feature_backup_service
+    if body.feature_aged_listings is not None:
+        pkg.feature_aged_listings = body.feature_aged_listings
+    if body.addon_aged_listings_price is not None:
+        pkg.addon_aged_listings_price = body.addon_aged_listings_price
+    if body.addon_aged_max_months is not None:
+        pkg.addon_aged_max_months = body.addon_aged_max_months
+    if body.addon_saved_searches is not None:
+        pkg.addon_saved_searches = body.addon_saved_searches
+    if body.addon_saved_searches_price is not None:
+        pkg.addon_saved_searches_price = body.addon_saved_searches_price
     if body.is_active is not None:
         pkg.is_active = body.is_active
 

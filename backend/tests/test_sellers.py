@@ -1,6 +1,7 @@
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from app.main import app
 from app.models import Base
@@ -184,11 +185,10 @@ async def test_seller_package_minimum_price_and_free_trial_constraints(client: A
     admin_token = create_access_token(admin_user.id)
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
-    # Set custom constraints in Admin Settings: min price = 35 AZN, max trial days = 10
+    # Set custom constraints in Admin Settings: min price = 35 AZN
     await client.post("/api/v1/settings", json={
         "settings": {
-            "seller_min_package_price": "35.0",
-            "seller_max_trial_days": "10"
+            "seller_min_package_price": "35.0"
         }
     }, headers=admin_headers)
 
@@ -223,32 +223,61 @@ async def test_seller_package_minimum_price_and_free_trial_constraints(client: A
         "duration_days": 30
     }, headers=seller_headers)
     assert cheap_res.status_code == 400
-    assert "Ödənişli paket qiyməti minimum 35.0 AZN olmalıdır." in cheap_res.json()["detail"]
+    assert "minimum 35.00 AZN olmalıdır" in cheap_res.json()["detail"]
 
-    # 4. Test: Seller creates valid paid package with 35 AZN (at min threshold) -> SUCCEEDS
-    valid_paid_res = await client.post("/api/v1/sellers/me/packages", json={
-        "name": "Standard 35",
-        "price": 35.0,
-        "duration_days": 30
-    }, headers=seller_headers)
-    assert valid_paid_res.status_code == 201
-
-    # 5. Test: Seller tries to create Free Trial (0 AZN) with 20 days (exceeds max trial 10 days) -> FAILS
-    long_trial_res = await client.post("/api/v1/sellers/me/packages", json={
-        "name": "Long Free Trial",
-        "price": 0.0,
-        "duration_days": 20
-    }, headers=seller_headers)
-    assert long_trial_res.status_code == 400
-    assert "Pulsuz sınaq paketinin müddəti maksimum 10 gün ola bilər." in long_trial_res.json()["detail"]
-
-    # 6. Test: Seller creates valid Free Trial (0 AZN) with 7 days -> SUCCEEDS (not blocked by min price!)
-    valid_trial_res = await client.post("/api/v1/sellers/me/packages", json={
-        "name": "7 Days Free Trial",
+    # 4. Test: Seller tries to create Free Trial (0 AZN) -> FAILS (sellers cannot add free trial)
+    trial_res = await client.post("/api/v1/sellers/me/packages", json={
+        "name": "Free Trial Attempt",
         "price": 0.0,
         "duration_days": 7
     }, headers=seller_headers)
-    assert valid_trial_res.status_code == 201
+    assert trial_res.status_code == 400
+    assert "Satıcılar pulsuz sınaq paketi yarada bilməz" in trial_res.json()["detail"]
+
+    # 5. Test: Seller creates valid paid package with all features and add-ons -> SUCCEEDS
+    valid_paid_res = await client.post("/api/v1/sellers/me/packages", json={
+        "name": "Full Feature Package",
+        "price": 50.0,
+        "duration_days": 30,
+        "max_searches": 10,
+        "max_locations": 5,
+        "feature_makler_detector": True,
+        "feature_avm_bargain_finder": True,
+        "feature_social_brochure": True,
+        "feature_multi_location": True,
+        "feature_client_intake_bot": True,
+        "feature_backup_service": True,
+        "feature_aged_listings": True,
+        "addon_aged_listings_price": 15.0,
+        "addon_aged_max_months": 12,
+        "addon_saved_searches": 5,
+        "addon_saved_searches_price": 10.0
+    }, headers=seller_headers)
+    assert valid_paid_res.status_code == 201
+    pkg_id = valid_paid_res.json()["package_id"]
+
+    # 6. Test: Seller registers agent with that full-featured package -> verify features
+    agent_res = await client.post("/api/v1/sellers/me/agents", json={
+        "name": "VIP Agent 1",
+        "phone": "+994508888889",
+        "package_id": pkg_id
+    }, headers=seller_headers)
+    assert agent_res.status_code == 201
+    agent_id = agent_res.json()["agent_id"]
+
+    # Verify Tenant in DB has all feature flags
+    from app.models.tenant import Tenant
+    t_res = await test_db.execute(select(Tenant).where(Tenant.id == agent_id))
+    agent_t = t_res.scalars().first()
+    assert agent_t is not None
+    assert agent_t.feature_makler_detector is True
+    assert agent_t.feature_avm_bargain_finder is True
+    assert agent_t.feature_social_brochure is True
+    assert agent_t.feature_multi_location is True
+    assert agent_t.feature_client_intake_bot is True
+    assert agent_t.backup_enabled is True
+    assert agent_t.feature_aged_listings is True
+    assert agent_t.addon_saved_searches == 5
 
 
 @pytest.mark.asyncio

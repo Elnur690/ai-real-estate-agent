@@ -69,6 +69,14 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS duplicate_listings JSON DEFAULT '[]'::json;"))
         await conn.execute(text("ALTER TABLE saved_searches ADD COLUMN IF NOT EXISTS include_adjacent_metro BOOLEAN DEFAULT FALSE;"))
         await conn.execute(text("ALTER TABLE sellers ADD COLUMN IF NOT EXISTS platform_fee_settled FLOAT DEFAULT 0.0;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS feature_social_brochure BOOLEAN DEFAULT TRUE;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS feature_multi_location BOOLEAN DEFAULT TRUE;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS feature_client_intake_bot BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS feature_aged_listings BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS addon_aged_listings_price FLOAT DEFAULT 15.0;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS addon_aged_max_months INTEGER DEFAULT 12;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS addon_saved_searches INTEGER DEFAULT 0;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS addon_saved_searches_price FLOAT DEFAULT 10.0;"))
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS seller_payout_requests (
                 id SERIAL PRIMARY KEY,
