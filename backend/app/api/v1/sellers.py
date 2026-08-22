@@ -9,6 +9,9 @@ from app.api.deps import get_db, get_current_user, get_current_admin, get_curren
 from app.models.user import User
 from app.models.tenant import Tenant
 from app.models.seller import Seller, SellerPackage, SellerTransaction
+from app.models.saved_search import SavedSearch
+from app.models.match import Match
+from app.models.setting import AppSettings
 from app.api.v1.auth import get_password_hash
 from app.core.config import settings
 from app.core.security import validate_strong_password
@@ -99,6 +102,31 @@ class RegisterSellerAgentRequest(BaseModel):
     preferred_channel: str = "telegram"
     package_id: Optional[int] = None
     is_trial: bool = False
+    selected_aged_months: Optional[int] = None
+    selected_aged_price: Optional[float] = None
+    selected_extra_searches: Optional[int] = None
+    selected_extra_searches_price: Optional[float] = None
+
+class UpdateSellerAgentRequest(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    telegram_handle: Optional[str] = None
+    whatsapp_number: Optional[str] = None
+    preferred_channel: Optional[str] = None
+    status: Optional[str] = None
+    feature_makler_detector: Optional[bool] = None
+    feature_avm_bargain_finder: Optional[bool] = None
+    feature_social_brochure: Optional[bool] = None
+    feature_multi_location: Optional[bool] = None
+    max_locations_per_search: Optional[int] = None
+    feature_client_intake_bot: Optional[bool] = None
+    backup_enabled: Optional[bool] = None
+    feature_aged_listings: Optional[bool] = None
+    addon_aged_max_months: Optional[int] = None
+    addon_saved_searches: Optional[int] = None
+
+class RenewSellerAgentRequest(BaseModel):
+    package_id: int
     selected_aged_months: Optional[int] = None
     selected_aged_price: Optional[float] = None
     selected_extra_searches: Optional[int] = None
@@ -513,6 +541,14 @@ async def get_seller_dashboard(
     }
 
 
+def _is_expired(expires_at: Optional[datetime]) -> bool:
+    if not expires_at:
+        return False
+    if expires_at.tzinfo is None:
+        return expires_at < datetime.now(timezone.utc).replace(tzinfo=None)
+    return expires_at < datetime.now(timezone.utc)
+
+
 @router.get("/me/agents")
 async def get_my_agents(
     db: AsyncSession = Depends(get_db),
@@ -527,6 +563,13 @@ async def get_my_agents(
     res = await db.execute(stmt)
     agents = res.scalars().all()
 
+    # Load App Settings for Bot Links
+    settings_stmt = select(AppSettings).where(AppSettings.key.in_(["telegram_bot_username", "whatsapp_bot_phone"]))
+    settings_res = await db.execute(settings_stmt)
+    settings_map = {s.key: s.value for s in settings_res.scalars().all()}
+    tg_bot_user = settings_map.get("telegram_bot_username", "baku_realestate_ai_bot").lstrip("@")
+    wa_bot_phone = settings_map.get("whatsapp_bot_phone", "+994501234567").replace("+", "").replace(" ", "")
+
     results = []
     for a in agents:
         # Load package info
@@ -538,6 +581,11 @@ async def get_my_agents(
             if pkg:
                 pkg_name = pkg.name
 
+        is_expired = _is_expired(a.plan_expires_at)
+        tg_url = f"https://t.me/{tg_bot_user}?start=agent_{a.id}"
+        wa_url = f"https://wa.me/{wa_bot_phone}?text=START_{a.id}"
+        invite_url = tg_url if a.preferred_channel == "telegram" else wa_url
+
         results.append({
             "id": a.id,
             "name": a.name,
@@ -547,10 +595,313 @@ async def get_my_agents(
             "preferred_channel": a.preferred_channel,
             "plan": pkg_name or a.plan,
             "status": a.status,
+            "is_expired": is_expired,
+            "plan_started_at": a.plan_started_at.isoformat() if a.plan_started_at else None,
             "plan_expires_at": a.plan_expires_at.isoformat() if a.plan_expires_at else None,
-            "created_at": a.created_at.isoformat() if a.created_at else None
+            "feature_makler_detector": a.feature_makler_detector,
+            "feature_avm_bargain_finder": a.feature_avm_bargain_finder,
+            "feature_social_brochure": a.feature_social_brochure,
+            "feature_multi_location": a.feature_multi_location,
+            "max_locations_per_search": a.max_locations_per_search,
+            "feature_client_intake_bot": a.feature_client_intake_bot,
+            "backup_enabled": a.backup_enabled,
+            "feature_aged_listings": a.feature_aged_listings,
+            "addon_aged_max_months": a.addon_aged_max_months,
+            "addon_saved_searches": a.addon_saved_searches,
+            "seller_package_id": a.seller_package_id,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+            "telegram_bot_url": tg_url,
+            "whatsapp_bot_url": wa_url,
+            "invite_url": invite_url,
+            "telegram_bot_username": tg_bot_user
         })
     return results
+
+
+@router.get("/me/agents/{agent_id}")
+async def get_my_agent_detail(
+    agent_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_auth: tuple[User, Optional[Seller]] = Depends(get_current_seller_user)
+):
+    """Seller-only: Get full details and QR bot connection URLs for a specific agent."""
+    user, seller = current_auth
+    if not seller:
+        raise HTTPException(status_code=403, detail="Satıcı profili tələb olunur.")
+
+    stmt = select(Tenant).where(Tenant.id == agent_id, Tenant.seller_id == seller.id)
+    res = await db.execute(stmt)
+    agent = res.scalars().first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent tapılmadı")
+
+    search_cnt_stmt = select(func.count(SavedSearch.id)).where(SavedSearch.tenant_id == agent.id)
+    search_cnt_res = await db.execute(search_cnt_stmt)
+    saved_searches_count = search_cnt_res.scalar() or 0
+
+    match_cnt_stmt = select(func.count(Match.id)).where(Match.tenant_id == agent.id)
+    match_cnt_res = await db.execute(match_cnt_stmt)
+    matches_count = match_cnt_res.scalar() or 0
+
+    pkg_data = None
+    if agent.seller_package_id:
+        p_stmt = select(SellerPackage).where(SellerPackage.id == agent.seller_package_id)
+        p_res = await db.execute(p_stmt)
+        pkg = p_res.scalars().first()
+        if pkg:
+            pkg_data = {
+                "id": pkg.id,
+                "name": pkg.name,
+                "price": pkg.price,
+                "period": pkg.period,
+                "duration_days": pkg.duration_days,
+                "max_searches": pkg.max_searches,
+                "max_locations": pkg.max_locations,
+                "addon_aged_tiers": pkg.addon_aged_tiers or [],
+                "addon_search_tiers": pkg.addon_search_tiers or []
+            }
+
+    settings_stmt = select(AppSettings).where(AppSettings.key.in_(["telegram_bot_username", "whatsapp_bot_phone", "app_name"]))
+    settings_res = await db.execute(settings_stmt)
+    settings_map = {s.key: s.value for s in settings_res.scalars().all()}
+    tg_bot_user = settings_map.get("telegram_bot_username", "baku_realestate_ai_bot").lstrip("@")
+    wa_bot_phone = settings_map.get("whatsapp_bot_phone", "+994501234567").replace("+", "").replace(" ", "")
+
+    tg_url = f"https://t.me/{tg_bot_user}?start=agent_{agent.id}"
+    wa_url = f"https://wa.me/{wa_bot_phone}?text=START_{agent.id}"
+    invite_url = tg_url if agent.preferred_channel == "telegram" else wa_url
+
+    is_expired = _is_expired(agent.plan_expires_at)
+
+    return {
+        "id": agent.id,
+        "name": agent.name,
+        "phone": agent.phone,
+        "telegram_handle": agent.telegram_handle,
+        "whatsapp_number": agent.whatsapp_number,
+        "preferred_channel": agent.preferred_channel,
+        "plan": pkg_data["name"] if pkg_data else agent.plan,
+        "status": agent.status,
+        "is_expired": is_expired,
+        "plan_started_at": agent.plan_started_at.isoformat() if agent.plan_started_at else None,
+        "plan_expires_at": agent.plan_expires_at.isoformat() if agent.plan_expires_at else None,
+        "feature_makler_detector": agent.feature_makler_detector,
+        "feature_avm_bargain_finder": agent.feature_avm_bargain_finder,
+        "feature_social_brochure": agent.feature_social_brochure,
+        "feature_multi_location": agent.feature_multi_location,
+        "max_locations_per_search": agent.max_locations_per_search,
+        "feature_client_intake_bot": agent.feature_client_intake_bot,
+        "backup_enabled": agent.backup_enabled,
+        "feature_aged_listings": agent.feature_aged_listings,
+        "addon_aged_max_months": agent.addon_aged_max_months,
+        "addon_saved_searches": agent.addon_saved_searches,
+        "addon_saved_searches_price": agent.addon_saved_searches_price,
+        "seller_package_id": agent.seller_package_id,
+        "package_data": pkg_data,
+        "saved_searches_count": saved_searches_count,
+        "matches_count": matches_count,
+        "created_at": agent.created_at.isoformat() if agent.created_at else None,
+        "telegram_bot_url": tg_url,
+        "whatsapp_bot_url": wa_url,
+        "invite_url": invite_url,
+        "telegram_bot_username": tg_bot_user
+    }
+
+
+@router.put("/me/agents/{agent_id}")
+async def update_my_agent(
+    agent_id: int,
+    body: UpdateSellerAgentRequest,
+    db: AsyncSession = Depends(get_db),
+    current_auth: tuple[User, Optional[Seller]] = Depends(get_current_seller_user)
+):
+    """Seller-only: Update agent contact information, preferred channel, status, and feature flags."""
+    user, seller = current_auth
+    if not seller:
+        raise HTTPException(status_code=403, detail="Satıcı profili tələb olunur.")
+
+    stmt = select(Tenant).where(Tenant.id == agent_id, Tenant.seller_id == seller.id)
+    res = await db.execute(stmt)
+    agent = res.scalars().first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent tapılmadı")
+
+    from app.core.baku_locations import extract_az_phone
+
+    if body.phone is not None and body.phone.strip():
+        clean_phone = body.phone.strip()
+        p_res = extract_az_phone(clean_phone)
+        formatted_phone = p_res[0] if p_res else clean_phone
+        raw_phone = p_res[1] if p_res else clean_phone
+
+        if formatted_phone != agent.phone:
+            stmt_check = select(Tenant).where(
+                Tenant.id != agent.id,
+                or_(
+                    Tenant.phone == formatted_phone,
+                    Tenant.phone == raw_phone,
+                    Tenant.whatsapp_number == formatted_phone,
+                    Tenant.whatsapp_number == raw_phone
+                )
+            )
+            res_check = await db.execute(stmt_check)
+            if res_check.scalars().first():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Bu telefon nömrəsi artıq başqa bir agent üçün qeydiyyatdan keçib."
+                )
+            agent.phone = formatted_phone
+
+    if body.name is not None and body.name.strip():
+        agent.name = body.name.strip()
+    if body.telegram_handle is not None:
+        agent.telegram_handle = body.telegram_handle.strip().lstrip('@') or None
+    if body.whatsapp_number is not None:
+        agent.whatsapp_number = body.whatsapp_number.strip() or None
+    if body.preferred_channel is not None:
+        agent.preferred_channel = body.preferred_channel
+    if body.status is not None:
+        agent.status = body.status
+    if body.feature_makler_detector is not None:
+        agent.feature_makler_detector = body.feature_makler_detector
+    if body.feature_avm_bargain_finder is not None:
+        agent.feature_avm_bargain_finder = body.feature_avm_bargain_finder
+    if body.feature_social_brochure is not None:
+        agent.feature_social_brochure = body.feature_social_brochure
+    if body.feature_multi_location is not None:
+        agent.feature_multi_location = body.feature_multi_location
+    if body.max_locations_per_search is not None:
+        agent.max_locations_per_search = max(1, min(20, body.max_locations_per_search))
+    if body.feature_client_intake_bot is not None:
+        agent.feature_client_intake_bot = body.feature_client_intake_bot
+    if body.backup_enabled is not None:
+        agent.backup_enabled = body.backup_enabled
+    if body.feature_aged_listings is not None:
+        agent.feature_aged_listings = body.feature_aged_listings
+    if body.addon_aged_max_months is not None:
+        agent.addon_aged_max_months = body.addon_aged_max_months
+    if body.addon_saved_searches is not None:
+        agent.addon_saved_searches = body.addon_saved_searches
+
+    await db.commit()
+    await db.refresh(agent)
+
+    return {"message": "Agent məlumatları uğurla yeniləndi", "agent_id": agent.id}
+
+
+@router.post("/me/agents/{agent_id}/renew")
+async def renew_my_agent(
+    agent_id: int,
+    body: RenewSellerAgentRequest,
+    db: AsyncSession = Depends(get_db),
+    current_auth: tuple[User, Optional[Seller]] = Depends(get_current_seller_user)
+):
+    """Seller-only: Renew or extend an agent's subscription with package and selected addon tiers."""
+    user, seller = current_auth
+    if not seller:
+        raise HTTPException(status_code=403, detail="Satıcı profili tələb olunur.")
+
+    stmt = select(Tenant).where(Tenant.id == agent_id, Tenant.seller_id == seller.id)
+    res = await db.execute(stmt)
+    agent = res.scalars().first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent tapılmadı")
+
+    p_stmt = select(SellerPackage).where(
+        SellerPackage.id == body.package_id,
+        SellerPackage.seller_id == seller.id,
+        SellerPackage.is_active == True
+    )
+    p_res = await db.execute(p_stmt)
+    package = p_res.scalars().first()
+    if not package:
+        raise HTTPException(status_code=404, detail="Seçilmiş paket tapılmadı və ya aktiv deyil.")
+
+    from datetime import timedelta
+    if agent.plan_expires_at and not _is_expired(agent.plan_expires_at):
+        base_expiry = agent.plan_expires_at
+    else:
+        base_expiry = datetime.now(timezone.utc)
+
+    duration_days = package.duration_days or 30
+    new_expires_at = base_expiry + timedelta(days=duration_days)
+
+    if body.selected_aged_months is not None and body.selected_aged_months > 0:
+        f_aged = True
+        aged_months = int(body.selected_aged_months)
+    else:
+        f_aged = package.feature_aged_listings
+        aged_months = package.addon_aged_max_months
+
+    if body.selected_extra_searches is not None and body.selected_extra_searches > 0:
+        addon_searches = int(body.selected_extra_searches)
+        addon_searches_price = float(body.selected_extra_searches_price or 0.0)
+    else:
+        addon_searches = package.addon_saved_searches
+        addon_searches_price = package.addon_saved_searches_price
+
+    agent.plan = package.name
+    agent.seller_package_id = package.id
+    agent.status = "active"
+    agent.plan_expires_at = new_expires_at
+    agent.feature_makler_detector = package.feature_makler_detector
+    agent.feature_avm_bargain_finder = package.feature_avm_bargain_finder
+    agent.feature_social_brochure = package.feature_social_brochure
+    agent.feature_multi_location = package.feature_multi_location
+    agent.max_locations_per_search = package.max_locations
+    agent.feature_client_intake_bot = package.feature_client_intake_bot
+    agent.backup_enabled = package.feature_backup_service
+    agent.feature_aged_listings = f_aged
+    agent.addon_aged_max_months = aged_months
+    agent.addon_saved_searches = addon_searches
+    agent.addon_saved_searches_price = addon_searches_price
+
+    if package.price > 0:
+        rank_map = await get_seller_rank_config_map(db)
+        rank_info = rank_map.get(seller.rank, rank_map.get("Bronze", {}))
+        bonus_pct = rank_info.get("bonus_commission", 0.0)
+        effective_commission_pct = min(100.0, seller.commission_rate + bonus_pct)
+
+        selected_aged_price = max(0.0, float(body.selected_aged_price or 0.0))
+        selected_extra_searches_price = max(0.0, float(body.selected_extra_searches_price or 0.0))
+        gross_amount = round(package.price + selected_aged_price + selected_extra_searches_price, 2)
+
+        seller_profit = round(gross_amount * (effective_commission_pct / 100.0), 2)
+        platform_fee = round(gross_amount - seller_profit, 2)
+
+        seller.balance += seller_profit
+        seller.total_earnings += seller_profit
+        seller.total_sales_volume += gross_amount
+
+        for rank_name, min_vol in [("Diamond", 10000.0), ("Platinum", 5000.0), ("Gold", 2000.0), ("Silver", 500.0), ("Bronze", 0.0)]:
+            if seller.total_sales_volume >= min_vol:
+                seller.rank = rank_name
+                break
+
+        tx = SellerTransaction(
+            seller_id=seller.id,
+            tenant_id=agent.id,
+            package_id=package.id,
+            amount=gross_amount,
+            commission_rate=effective_commission_pct,
+            seller_profit=seller_profit,
+            platform_fee=platform_fee,
+            type="subscription_sale",
+            description=f"Paket Yenilənməsi: {agent.name} ({package.name}) [Bonus: +{bonus_pct}%]"
+        )
+        db.add(tx)
+
+    await db.commit()
+    await db.refresh(agent)
+    await db.refresh(seller)
+
+    return {
+        "message": f"Agentin abunəsi uğurla {duration_days} gün uzadıldı!",
+        "agent_id": agent.id,
+        "plan": agent.plan,
+        "plan_expires_at": agent.plan_expires_at.isoformat() if agent.plan_expires_at else None,
+        "status": agent.status
+    }
 
 
 @router.post("/me/agents", status_code=status.HTTP_201_CREATED)

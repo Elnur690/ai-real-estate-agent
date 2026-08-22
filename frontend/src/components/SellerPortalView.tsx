@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { 
   Store, Users, Package, DollarSign, Award, Plus, Edit3, Trash2, CheckCircle, 
   AlertTriangle, RefreshCw, X, Shield, Phone, Send, Sparkles, Check, ChevronRight, TrendingUp,
-  Globe, ExternalLink, Lock, Gift, Copy
+  Globe, ExternalLink, Lock, Gift, Copy, QrCode, Search, Zap, ShieldCheck, CheckCircle2,
+  Calendar, Layers, MessageSquare, Database, ArrowUpRight, Clock, Info
 } from 'lucide-react';
 import api from '../api';
 
@@ -59,8 +61,29 @@ export interface SellerAgent {
   preferred_channel: string;
   plan: string;
   status: string;
+  is_expired?: boolean;
+  plan_started_at?: string;
   plan_expires_at?: string;
   created_at: string;
+  feature_makler_detector?: boolean;
+  feature_avm_bargain_finder?: boolean;
+  feature_social_brochure?: boolean;
+  feature_multi_location?: boolean;
+  max_locations_per_search?: number;
+  feature_client_intake_bot?: boolean;
+  backup_enabled?: boolean;
+  feature_aged_listings?: boolean;
+  addon_aged_max_months?: number;
+  addon_saved_searches?: number;
+  addon_saved_searches_price?: number;
+  seller_package_id?: number;
+  package_data?: any;
+  saved_searches_count?: number;
+  matches_count?: number;
+  telegram_bot_url?: string;
+  whatsapp_bot_url?: string;
+  invite_url?: string;
+  telegram_bot_username?: string;
 }
 
 export interface SellerPackageItem {
@@ -202,6 +225,43 @@ export function SellerPortalView() {
   const [agentSelectedAgedPrice, setAgentSelectedAgedPrice] = useState<number>(0);
   const [agentSelectedExtraSearches, setAgentSelectedExtraSearches] = useState<number>(0);
   const [agentSelectedExtraSearchesPrice, setAgentSelectedExtraSearchesPrice] = useState<number>(0);
+
+  // Agent Detail & Management Modal State
+  const [isAgentDetailOpen, setIsAgentDetailOpen] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState<SellerAgent | null>(null);
+  const [agentModalTab, setAgentModalTab] = useState<'overview' | 'qr' | 'renew' | 'edit'>('overview');
+  const [loadingAgentDetail, setLoadingAgentDetail] = useState(false);
+
+  // Edit Agent State
+  const [editAgentName, setEditAgentName] = useState('');
+  const [editAgentPhone, setEditAgentPhone] = useState('');
+  const [editAgentTg, setEditAgentTg] = useState('');
+  const [editAgentWa, setEditAgentWa] = useState('');
+  const [editAgentChannel, setEditAgentChannel] = useState('telegram');
+  const [editAgentStatus, setEditAgentStatus] = useState('active');
+  const [editAgentMakler, setEditAgentMakler] = useState(true);
+  const [editAgentAvm, setEditAgentAvm] = useState(true);
+  const [editAgentBrochure, setEditAgentBrochure] = useState(true);
+  const [editAgentMultiLoc, setEditAgentMultiLoc] = useState(true);
+  const [editAgentMaxLocs, setEditAgentMaxLocs] = useState(5);
+  const [editAgentBot, setEditAgentBot] = useState(false);
+  const [editAgentBackup, setEditAgentBackup] = useState(false);
+  const [editAgentAged, setEditAgentAged] = useState(false);
+  const [editAgentAgedMonths, setEditAgentAgedMonths] = useState(12);
+  const [editAgentSearches, setEditAgentSearches] = useState(0);
+  const [savingAgentEdit, setSavingAgentEdit] = useState(false);
+  const [agentEditError, setAgentEditError] = useState<string | null>(null);
+  const [agentEditSuccessMsg, setAgentEditSuccessMsg] = useState<string | null>(null);
+
+  // Renew Agent State
+  const [renewPkgId, setRenewPkgId] = useState<number>(0);
+  const [renewAgedMonths, setRenewAgedMonths] = useState<number>(0);
+  const [renewAgedPrice, setRenewAgedPrice] = useState<number>(0);
+  const [renewExtraSearches, setRenewExtraSearches] = useState<number>(0);
+  const [renewExtraSearchesPrice, setRenewExtraSearchesPrice] = useState<number>(0);
+  const [renewingAgent, setRenewingAgent] = useState(false);
+  const [renewError, setRenewError] = useState<string | null>(null);
+  const [renewSuccessMsg, setRenewSuccessMsg] = useState<string | null>(null);
 
   const fetchDashboard = async () => {
     try {
@@ -423,6 +483,141 @@ export function SellerPortalView() {
       setAgentError(err.response?.data?.detail || 'Xəta baş verdi');
     } finally {
       setSubmittingAgent(false);
+    }
+  };
+
+  const openAgentDetail = async (agent: SellerAgent, defaultTab: 'overview' | 'qr' | 'renew' | 'edit' = 'overview') => {
+    setSelectedAgent(agent);
+    setAgentModalTab(defaultTab);
+    setIsAgentDetailOpen(true);
+    setAgentEditError(null);
+    setAgentEditSuccessMsg(null);
+    setRenewError(null);
+    setRenewSuccessMsg(null);
+
+    // Initialize edit fields
+    setEditAgentName(agent.name);
+    setEditAgentPhone(agent.phone);
+    setEditAgentTg(agent.telegram_handle || '');
+    setEditAgentWa(agent.whatsapp_number || '');
+    setEditAgentChannel(agent.preferred_channel || 'telegram');
+    setEditAgentStatus(agent.status || 'active');
+    setEditAgentMakler(agent.feature_makler_detector ?? true);
+    setEditAgentAvm(agent.feature_avm_bargain_finder ?? true);
+    setEditAgentBrochure(agent.feature_social_brochure ?? true);
+    setEditAgentMultiLoc(agent.feature_multi_location ?? true);
+    setEditAgentMaxLocs(agent.max_locations_per_search || 5);
+    setEditAgentBot(agent.feature_client_intake_bot ?? false);
+    setEditAgentBackup(agent.backup_enabled ?? false);
+    setEditAgentAged(agent.feature_aged_listings ?? false);
+    setEditAgentAgedMonths(agent.addon_aged_max_months || 12);
+    setEditAgentSearches(agent.addon_saved_searches || 0);
+
+    // Initialize renew fields
+    const defaultPkgId = agent.seller_package_id || packages[0]?.id || 0;
+    setRenewPkgId(defaultPkgId);
+    setRenewAgedMonths(0);
+    setRenewAgedPrice(0);
+    setRenewExtraSearches(0);
+    setRenewExtraSearchesPrice(0);
+
+    // Fetch fresh details with counts & QR URLs
+    setLoadingAgentDetail(true);
+    try {
+      const res = await api.get(`/sellers/me/agents/${agent.id}`);
+      setSelectedAgent(res.data);
+      if (res.data) {
+        setEditAgentName(res.data.name);
+        setEditAgentPhone(res.data.phone);
+        setEditAgentTg(res.data.telegram_handle || '');
+        setEditAgentWa(res.data.whatsapp_number || '');
+        setEditAgentChannel(res.data.preferred_channel || 'telegram');
+        setEditAgentStatus(res.data.status || 'active');
+        setEditAgentMakler(res.data.feature_makler_detector ?? true);
+        setEditAgentAvm(res.data.feature_avm_bargain_finder ?? true);
+        setEditAgentBrochure(res.data.feature_social_brochure ?? true);
+        setEditAgentMultiLoc(res.data.feature_multi_location ?? true);
+        setEditAgentMaxLocs(res.data.max_locations_per_search || 5);
+        setEditAgentBot(res.data.feature_client_intake_bot ?? false);
+        setEditAgentBackup(res.data.backup_enabled ?? false);
+        setEditAgentAged(res.data.feature_aged_listings ?? false);
+        setEditAgentAgedMonths(res.data.addon_aged_max_months || 12);
+        setEditAgentSearches(res.data.addon_saved_searches || 0);
+        if (res.data.seller_package_id) {
+          setRenewPkgId(res.data.seller_package_id);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching agent detail:', err);
+    } finally {
+      setLoadingAgentDetail(false);
+    }
+  };
+
+  const handleSaveAgentEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedAgent) return;
+    setSavingAgentEdit(true);
+    setAgentEditError(null);
+    setAgentEditSuccessMsg(null);
+
+    try {
+      await api.put(`/sellers/me/agents/${selectedAgent.id}`, {
+        name: editAgentName,
+        phone: editAgentPhone,
+        telegram_handle: editAgentTg || undefined,
+        whatsapp_number: editAgentWa || undefined,
+        preferred_channel: editAgentChannel,
+        status: editAgentStatus,
+        feature_makler_detector: editAgentMakler,
+        feature_avm_bargain_finder: editAgentAvm,
+        feature_social_brochure: editAgentBrochure,
+        feature_multi_location: editAgentMultiLoc,
+        max_locations_per_search: editAgentMaxLocs,
+        feature_client_intake_bot: editAgentBot,
+        backup_enabled: editAgentBackup,
+        feature_aged_listings: editAgentAged,
+        addon_aged_max_months: editAgentAgedMonths,
+        addon_saved_searches: editAgentSearches
+      });
+
+      setAgentEditSuccessMsg('Agent məlumatları uğurla yeniləndi!');
+      fetchAgents();
+      // Refresh current detail
+      const res = await api.get(`/sellers/me/agents/${selectedAgent.id}`);
+      setSelectedAgent(res.data);
+    } catch (err: any) {
+      setAgentEditError(err.response?.data?.detail || 'Məlumatları yeniləyərkən xəta baş verdi.');
+    } finally {
+      setSavingAgentEdit(false);
+    }
+  };
+
+  const handleRenewAgent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedAgent) return;
+    setRenewingAgent(true);
+    setRenewError(null);
+    setRenewSuccessMsg(null);
+
+    try {
+      const res = await api.post(`/sellers/me/agents/${selectedAgent.id}/renew`, {
+        package_id: renewPkgId,
+        selected_aged_months: renewAgedMonths > 0 ? renewAgedMonths : undefined,
+        selected_aged_price: renewAgedPrice > 0 ? renewAgedPrice : undefined,
+        selected_extra_searches: renewExtraSearches > 0 ? renewExtraSearches : undefined,
+        selected_extra_searches_price: renewExtraSearchesPrice > 0 ? renewExtraSearchesPrice : undefined
+      });
+
+      setRenewSuccessMsg(res.data.message || 'Abunə uğurla uzadıldı!');
+      reloadAll();
+      // Refresh current detail
+      const detailRes = await api.get(`/sellers/me/agents/${selectedAgent.id}`);
+      setSelectedAgent(detailRes.data);
+    } catch (err: any) {
+      setRenewError(err.response?.data?.detail || 'Abunəni uzadarkən xəta baş verdi.');
+    } finally {
+      setRenewingAgent(false);
     }
   };
 
@@ -791,41 +986,120 @@ export function SellerPortalView() {
                     <th className="py-3.5 px-4">Agent Adı</th>
                     <th className="py-3.5 px-4">Əlaqə</th>
                     <th className="py-3.5 px-4">Kanal</th>
-                    <th className="py-3.5 px-4">Paket</th>
+                    <th className="py-3.5 px-4">Paket & Addon</th>
                     <th className="py-3.5 px-4">Status</th>
                     <th className="py-3.5 px-4">Bitmə Vaxtı</th>
-                    <th className="py-3.5 px-4">Qeydiyyat</th>
+                    <th className="py-3.5 px-4 text-right">Əməliyyatlar</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                  {agents.map((a) => (
-                    <tr key={a.id} className="hover:bg-slate-800/30 transition">
-                      <td className="py-4 px-4 font-bold text-white">{a.name}</td>
-                      <td className="py-4 px-4 text-xs">
-                        <div>{a.phone}</div>
-                        {a.telegram_handle && <div className="text-blue-400">@{a.telegram_handle}</div>}
-                      </td>
-                      <td className="py-4 px-4">
-                        <span className="capitalize text-xs font-medium px-2 py-0.5 rounded-md bg-slate-800 text-slate-300">
-                          {a.preferred_channel}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4 font-semibold text-emerald-400">{a.plan}</td>
-                      <td className="py-4 px-4">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                          a.status === 'active' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                        }`}>
-                          {a.status === 'active' ? 'Aktiv' : a.status}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4 text-xs text-slate-400">
-                        {a.plan_expires_at ? new Date(a.plan_expires_at).toLocaleDateString('az-AZ') : 'Limitsiz'}
-                      </td>
-                      <td className="py-4 px-4 text-xs text-slate-500">
-                        {new Date(a.created_at).toLocaleDateString('az-AZ')}
-                      </td>
-                    </tr>
-                  ))}
+                  {agents.map((a) => {
+                    const isExp = a.is_expired;
+                    return (
+                      <tr 
+                        key={a.id} 
+                        onClick={() => openAgentDetail(a, 'overview')}
+                        className="hover:bg-slate-800/40 transition cursor-pointer group"
+                      >
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-white group-hover:text-blue-400 transition flex items-center gap-2">
+                            <span>{a.name}</span>
+                            <span className="text-[10px] text-slate-500 font-mono">#{a.id}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-400">{a.phone}</div>
+                        </td>
+                        <td className="py-3.5 px-4 text-xs">
+                          {a.telegram_handle ? (
+                            <div className="text-blue-400 font-mono">@{a.telegram_handle}</div>
+                          ) : a.whatsapp_number ? (
+                            <div className="text-emerald-400 font-mono">{a.whatsapp_number}</div>
+                          ) : (
+                            <span className="text-slate-500">—</span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className={`capitalize text-xs font-semibold px-2 py-0.5 rounded-md ${
+                            a.preferred_channel === 'telegram'
+                              ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                              : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                          }`}>
+                            {a.preferred_channel}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-semibold text-emerald-400 text-xs">{a.plan}</div>
+                          <div className="flex flex-wrap gap-1 mt-0.5">
+                            {a.feature_aged_listings && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                📦 Arxiv ({a.addon_aged_max_months || 12}ay)
+                              </span>
+                            )}
+                            {(a.addon_saved_searches ?? 0) > 0 && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                                ⚡ +{a.addon_saved_searches} axtarış
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                            isExp
+                              ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                              : a.status === 'active'
+                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                              : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                          }`}>
+                            {isExp ? 'Bitib' : a.status === 'active' ? 'Aktiv' : a.status}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-xs text-slate-400">
+                          {a.plan_expires_at ? (
+                            <div>
+                              <div className={isExp ? 'text-rose-400 font-semibold' : 'text-slate-300'}>
+                                {new Date(a.plan_expires_at).toLocaleDateString('az-AZ')}
+                              </div>
+                              <div className="text-[10px] text-slate-500">
+                                {isExp ? 'Müddət bitib' : 'Aktiv abunə'}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-slate-500">Limitsiz</span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openAgentDetail(a, 'qr')}
+                              className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 border border-indigo-500/20 transition text-xs flex items-center gap-1 font-semibold"
+                              title="QR Kod & Bot Linki"
+                            >
+                              <QrCode className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">QR</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openAgentDetail(a, 'renew')}
+                              className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition text-xs flex items-center gap-1 font-semibold"
+                              title="Abunəni Uzat"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Uzat</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openAgentDetail(a, 'edit')}
+                              className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition text-xs flex items-center gap-1 font-semibold"
+                              title="Redaktə Et"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Redaktə</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1463,6 +1737,580 @@ export function SellerPortalView() {
           </div>
         </div>
       )}
+      {/* AGENT DETAIL & MANAGEMENT MODAL (OVERVIEW, QR CONNECT, RENEW, EDIT) */}
+      {isAgentDetailOpen && selectedAgent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-2xl rounded-3xl p-6 shadow-2xl space-y-5 max-h-[92vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-blue-600/10 border border-blue-500/30 flex items-center justify-center text-blue-400 font-bold text-lg">
+                  {selectedAgent.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-white">{selectedAgent.name}</h3>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                      selectedAgent.is_expired
+                        ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                        : selectedAgent.status === 'active'
+                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                        : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                    }`}>
+                      {selectedAgent.is_expired ? 'Müddət Bitib' : selectedAgent.status === 'active' ? 'Aktiv' : selectedAgent.status}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 font-mono">
+                    {selectedAgent.phone} {selectedAgent.telegram_handle && `• @${selectedAgent.telegram_handle}`}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setIsAgentDetailOpen(false)} className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Navigation Tabs */}
+            <div className="flex bg-slate-950/70 p-1.5 rounded-2xl border border-slate-800 gap-1 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setAgentModalTab('overview')}
+                className={`flex-1 py-2 rounded-xl transition flex items-center justify-center gap-1.5 ${
+                  agentModalTab === 'overview' ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Info className="w-3.5 h-3.5" />
+                <span>Ümumi Baxış</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAgentModalTab('qr')}
+                className={`flex-1 py-2 rounded-xl transition flex items-center justify-center gap-1.5 ${
+                  agentModalTab === 'qr' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <QrCode className="w-3.5 h-3.5" />
+                <span>QR Kod & Qoşulma</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAgentModalTab('renew')}
+                className={`flex-1 py-2 rounded-xl transition flex items-center justify-center gap-1.5 ${
+                  agentModalTab === 'renew' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Abunəni Uzat</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAgentModalTab('edit')}
+                className={`flex-1 py-2 rounded-xl transition flex items-center justify-center gap-1.5 ${
+                  agentModalTab === 'edit' ? 'bg-amber-600 text-white shadow-lg shadow-amber-500/20' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Redaktə Et</span>
+              </button>
+            </div>
+
+            {/* TAB 1: OVERVIEW */}
+            {agentModalTab === 'overview' && (
+              <div className="space-y-4">
+                {/* Stats cards */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-2xl">
+                    <span className="text-[10px] text-slate-500 block">Cari Paket</span>
+                    <span className="text-sm font-bold text-emerald-400 block mt-0.5">{selectedAgent.plan}</span>
+                  </div>
+                  <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-2xl">
+                    <span className="text-[10px] text-slate-500 block">Aktiv Axtarışlar</span>
+                    <span className="text-sm font-bold text-cyan-400 block mt-0.5">{selectedAgent.saved_searches_count ?? 0}</span>
+                  </div>
+                  <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-2xl">
+                    <span className="text-[10px] text-slate-500 block">Tapılan Uyğun Elanlar</span>
+                    <span className="text-sm font-bold text-purple-400 block mt-0.5">{selectedAgent.matches_count ?? 0}</span>
+                  </div>
+                </div>
+
+                {/* Details Grid */}
+                <div className="bg-slate-950/40 border border-slate-800 rounded-2xl p-4 space-y-2.5 text-xs">
+                  <div className="flex justify-between py-1 border-b border-slate-800/60">
+                    <span className="text-slate-400">Agent ID:</span>
+                    <span className="font-mono text-white font-bold">#{selectedAgent.id}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-800/60">
+                    <span className="text-slate-400">Telefon:</span>
+                    <span className="font-mono text-white">{selectedAgent.phone}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-800/60">
+                    <span className="text-slate-400">Telegram / WhatsApp:</span>
+                    <span className="text-white">
+                      {selectedAgent.telegram_handle ? `@${selectedAgent.telegram_handle}` : (selectedAgent.whatsapp_number || '—')}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-800/60">
+                    <span className="text-slate-400">Əsas Bildiriş Kanalı:</span>
+                    <span className="capitalize font-bold text-blue-400">{selectedAgent.preferred_channel}</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-800/60">
+                    <span className="text-slate-400">Qeydiyyat Tarixi:</span>
+                    <span className="text-slate-300">
+                      {new Date(selectedAgent.created_at).toLocaleDateString('az-AZ')}
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-1">
+                    <span className="text-slate-400">Abunə Bitmə Tarixi:</span>
+                    <span className={selectedAgent.is_expired ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
+                      {selectedAgent.plan_expires_at ? new Date(selectedAgent.plan_expires_at).toLocaleDateString('az-AZ') : 'Limitsiz'}
+                      {selectedAgent.is_expired && ' (Müddəti bitib)'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Enabled Features List */}
+                <div className="p-4 bg-slate-950/40 border border-slate-800 rounded-2xl space-y-2">
+                  <span className="text-xs font-bold text-slate-300 block uppercase tracking-wider">Aktiv İmkanlar & Funksiyalar</span>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="flex items-center gap-2 text-slate-300">
+                      <span className={selectedAgent.feature_makler_detector ? 'text-emerald-400 font-bold' : 'text-slate-600'}>
+                        {selectedAgent.feature_makler_detector ? '✓' : '✗'}
+                      </span>
+                      <span>Makler Detektoru</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-slate-300">
+                      <span className={selectedAgent.feature_avm_bargain_finder ? 'text-emerald-400 font-bold' : 'text-slate-600'}>
+                        {selectedAgent.feature_avm_bargain_finder ? '✓' : '✗'}
+                      </span>
+                      <span>AVM Bazar Qiyməti</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-slate-300">
+                      <span className={selectedAgent.feature_social_brochure ? 'text-emerald-400 font-bold' : 'text-slate-600'}>
+                        {selectedAgent.feature_social_brochure ? '✓' : '✗'}
+                      </span>
+                      <span>Sosial Bukletlər</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-slate-300">
+                      <span className={selectedAgent.feature_multi_location ? 'text-emerald-400 font-bold' : 'text-slate-600'}>
+                        {selectedAgent.feature_multi_location ? '✓' : '✗'}
+                      </span>
+                      <span>Çoxsaylı Məkan ({selectedAgent.max_locations_per_search || 5})</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-slate-300">
+                      <span className={selectedAgent.feature_client_intake_bot ? 'text-emerald-400 font-bold' : 'text-slate-600'}>
+                        {selectedAgent.feature_client_intake_bot ? '✓' : '✗'}
+                      </span>
+                      <span>Müştəri Qəbul Botu</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-slate-300">
+                      <span className={selectedAgent.backup_enabled ? 'text-emerald-400 font-bold' : 'text-slate-600'}>
+                        {selectedAgent.backup_enabled ? '✓' : '✗'}
+                      </span>
+                      <span>BaaS Data Backup</span>
+                    </div>
+                    {selectedAgent.feature_aged_listings && (
+                      <div className="flex items-center gap-2 text-amber-400 col-span-2 font-medium">
+                        <span>✓</span>
+                        <span>Köhnə Arxiv Elanlar ({selectedAgent.addon_aged_max_months || 12} ay)</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex gap-2.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setAgentModalTab('qr')}
+                    className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20"
+                  >
+                    <QrCode className="w-4 h-4" />
+                    <span>QR Kodu Göstər</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgentModalTab('renew')}
+                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    <span>Abunəni Uzat</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAgentModalTab('edit')}
+                    className="py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                    <span>Redaktə</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: QR & CONNECT */}
+            {agentModalTab === 'qr' && (
+              <div className="space-y-5 text-center">
+                <div className="p-5 bg-slate-950/60 border border-slate-800 rounded-3xl space-y-4 max-w-sm mx-auto">
+                  <div className="bg-white p-4 rounded-2xl inline-block shadow-2xl">
+                    <QRCodeSVG
+                      value={selectedAgent.invite_url || `https://t.me/${selectedAgent.telegram_bot_username || 'baku_realestate_ai_bot'}?start=agent_${selectedAgent.id}`}
+                      size={200}
+                      level="H"
+                      includeMargin={false}
+                    />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-white text-sm">Agent Bot Qoşulma QR Kodu</h4>
+                    <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                      Agent bu QR kodu telefon kamerası və ya Telegram ilə skan edərək anında bot-a qoşula və bildirişləri ala bilər.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Direct Link & Copy */}
+                <div className="space-y-2 max-w-md mx-auto text-left">
+                  <label className="text-[11px] font-semibold text-slate-400 block">Birbaşa Dəvət Linki</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={selectedAgent.invite_url || `https://t.me/${selectedAgent.telegram_bot_username || 'baku_realestate_ai_bot'}?start=agent_${selectedAgent.id}`}
+                      className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-cyan-300 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(selectedAgent.invite_url || `https://t.me/${selectedAgent.telegram_bot_username || 'baku_realestate_ai_bot'}?start=agent_${selectedAgent.id}`, 'agent_invite')}
+                      className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>{copiedKey === 'agent_invite' ? 'Kopyalandı!' : 'Kopyala'}</span>
+                    </button>
+                  </div>
+
+                  <a
+                    href={selectedAgent.invite_url || `https://t.me/${selectedAgent.telegram_bot_username || 'baku_realestate_ai_bot'}?start=agent_${selectedAgent.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full py-2.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 mt-3"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    <span>Bot-u Brauzerdə Aç ↗</span>
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: RENEW SUBSCRIPTION */}
+            {agentModalTab === 'renew' && (
+              <form onSubmit={handleRenewAgent} className="space-y-4">
+                {renewSuccessMsg && (
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-400 flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 shrink-0" />
+                    <span>{renewSuccessMsg}</span>
+                  </div>
+                )}
+                {renewError && (
+                  <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-400 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>{renewError}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Yenilənəcək Paket *</label>
+                  <select
+                    value={renewPkgId}
+                    onChange={(e) => setRenewPkgId(Number(e.target.value))}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-emerald-500"
+                  >
+                    {packages.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        💳 {p.name} ({p.price} AZN / {p.duration_days || 30} Gün)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Addon Tier Selectors for Renewal */}
+                {(() => {
+                  const currentPkg = packages.find(p => p.id === renewPkgId) || packages[0];
+                  if (!currentPkg) return null;
+                  const hasAgedTiers = currentPkg.addon_aged_tiers && currentPkg.addon_aged_tiers.length > 0;
+                  const hasSearchTiers = currentPkg.addon_search_tiers && currentPkg.addon_search_tiers.length > 0;
+
+                  const basePrice = currentPkg.price;
+                  const totalGross = basePrice + renewAgedPrice + renewExtraSearchesPrice;
+                  const commRate = dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70;
+                  const sellerProfit = (totalGross * commRate) / 100;
+
+                  return (
+                    <div className="space-y-3 pt-2 border-t border-slate-800">
+                      {hasAgedTiers && (
+                        <div>
+                          <label className="block text-xs font-semibold text-amber-300 mb-1">📦 Arxiv Elanlar Müddəti</label>
+                          <select
+                            value={renewAgedMonths}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              if (val === 0) {
+                                setRenewAgedMonths(0);
+                                setRenewAgedPrice(0);
+                              } else {
+                                const tier = currentPkg.addon_aged_tiers.find(t => t.months === val);
+                                setRenewAgedMonths(val);
+                                setRenewAgedPrice(tier?.price ?? 0);
+                              }
+                            }}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-amber-500"
+                          >
+                            <option value={0}>Yoxdur (Arxiv seçilməyib)</option>
+                            {currentPkg.addon_aged_tiers.map((t, i) => (
+                              <option key={i} value={t.months}>
+                                {t.months} ay arxiv — +{t.price} AZN
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      {hasSearchTiers && (
+                        <div>
+                          <label className="block text-xs font-semibold text-cyan-300 mb-1">⚡ Əlavə Axtarış Limiti</label>
+                          <select
+                            value={renewExtraSearches}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              if (val === 0) {
+                                setRenewExtraSearches(0);
+                                setRenewExtraSearchesPrice(0);
+                              } else {
+                                const tier = currentPkg.addon_search_tiers.find(t => t.searches === val);
+                                setRenewExtraSearches(val);
+                                setRenewExtraSearchesPrice(tier?.price ?? 0);
+                              }
+                            }}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-cyan-500"
+                          >
+                            <option value={0}>Yoxdur (Əlavə axtarış seçilməyib)</option>
+                            {currentPkg.addon_search_tiers.map((t, i) => (
+                              <option key={i} value={t.searches}>
+                                +{t.searches} axtarış — +{t.price} AZN
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      {/* Renewal Price Summary */}
+                      <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl space-y-1.5">
+                        <div className="flex justify-between text-xs text-slate-300">
+                          <span>Paket qiyməti:</span>
+                          <span className="font-medium">{basePrice.toFixed(2)} AZN</span>
+                        </div>
+                        {renewAgedPrice > 0 && (
+                          <div className="flex justify-between text-xs text-amber-300">
+                            <span>Arxiv ({renewAgedMonths} ay):</span>
+                            <span>+{renewAgedPrice.toFixed(2)} AZN</span>
+                          </div>
+                        )}
+                        {renewExtraSearchesPrice > 0 && (
+                          <div className="flex justify-between text-xs text-cyan-300">
+                            <span>+{renewExtraSearches} axtarış:</span>
+                            <span>+{renewExtraSearchesPrice.toFixed(2)} AZN</span>
+                          </div>
+                        )}
+                        <div className="border-t border-emerald-500/30 pt-1.5 flex justify-between text-sm font-bold">
+                          <span className="text-white">Ümumi Satış Məbləği:</span>
+                          <span className="text-emerald-400">{totalGross.toFixed(2)} AZN</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-400">Sizin Qazancınız (%{commRate}):</span>
+                          <span className="text-emerald-300 font-bold">+{sellerProfit.toFixed(2)} AZN</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <button
+                  type="submit"
+                  disabled={renewingAgent}
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/25 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <RefreshCw className={`w-4 h-4 ${renewingAgent ? 'animate-spin' : ''}`} />
+                  <span>{renewingAgent ? 'Yenilənir...' : 'Abunəni Təsdiqlə və Uzat'}</span>
+                </button>
+              </form>
+            )}
+
+            {/* TAB 4: EDIT AGENT */}
+            {agentModalTab === 'edit' && (
+              <form onSubmit={handleSaveAgentEdit} className="space-y-4">
+                {agentEditSuccessMsg && (
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-400 flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4 shrink-0" />
+                    <span>{agentEditSuccessMsg}</span>
+                  </div>
+                )}
+                {agentEditError && (
+                  <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-400 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <span>{agentEditError}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Agentin Adı *</label>
+                    <input
+                      type="text"
+                      required
+                      value={editAgentName}
+                      onChange={(e) => setEditAgentName(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Telefon Nömrəsi *</label>
+                    <input
+                      type="text"
+                      required
+                      value={editAgentPhone}
+                      onChange={(e) => setEditAgentPhone(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Telegram İstifadəçi Adı</label>
+                    <input
+                      type="text"
+                      value={editAgentTg}
+                      onChange={(e) => setEditAgentTg(e.target.value)}
+                      placeholder="@username"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">WhatsApp Nömrəsi</label>
+                    <input
+                      type="text"
+                      value={editAgentWa}
+                      onChange={(e) => setEditAgentWa(e.target.value)}
+                      placeholder="+99450..."
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Kanal & Status</label>
+                    <div className="flex gap-1.5">
+                      <select
+                        value={editAgentChannel}
+                        onChange={(e) => setEditAgentChannel(e.target.value)}
+                        className="w-1/2 bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-white text-xs"
+                      >
+                        <option value="telegram">TG</option>
+                        <option value="whatsapp">WA</option>
+                      </select>
+                      <select
+                        value={editAgentStatus}
+                        onChange={(e) => setEditAgentStatus(e.target.value)}
+                        className="w-1/2 bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-white text-xs"
+                      >
+                        <option value="active">Aktiv</option>
+                        <option value="suspended">Dayandır</option>
+                        <option value="expired">Bitib</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Feature Toggles */}
+                <div className="pt-2 border-t border-slate-800 space-y-2">
+                  <label className="text-xs font-bold text-white uppercase tracking-wider block">
+                    İmkan və Funksiya İcazələri
+                  </label>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <label className="flex items-center gap-2 p-2 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editAgentMakler}
+                        onChange={(e) => setEditAgentMakler(e.target.checked)}
+                        className="rounded bg-slate-900 border-slate-700 text-blue-600"
+                      />
+                      <span className="text-slate-200">Makler Detektoru</span>
+                    </label>
+                    <label className="flex items-center gap-2 p-2 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editAgentAvm}
+                        onChange={(e) => setEditAgentAvm(e.target.checked)}
+                        className="rounded bg-slate-900 border-slate-700 text-blue-600"
+                      />
+                      <span className="text-slate-200">AVM Bazar Qiyməti</span>
+                    </label>
+                    <label className="flex items-center gap-2 p-2 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editAgentBrochure}
+                        onChange={(e) => setEditAgentBrochure(e.target.checked)}
+                        className="rounded bg-slate-900 border-slate-700 text-blue-600"
+                      />
+                      <span className="text-slate-200">Sosial Bukletlər</span>
+                    </label>
+                    <label className="flex items-center gap-2 p-2 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editAgentMultiLoc}
+                        onChange={(e) => setEditAgentMultiLoc(e.target.checked)}
+                        className="rounded bg-slate-900 border-slate-700 text-blue-600"
+                      />
+                      <span className="text-slate-200">Çoxsaylı Məkan</span>
+                    </label>
+                    <label className="flex items-center gap-2 p-2 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editAgentBot}
+                        onChange={(e) => setEditAgentBot(e.target.checked)}
+                        className="rounded bg-slate-900 border-slate-700 text-indigo-600"
+                      />
+                      <span className="text-indigo-300 font-medium">Müştəri Qəbul Botu</span>
+                    </label>
+                    <label className="flex items-center gap-2 p-2 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editAgentBackup}
+                        onChange={(e) => setEditAgentBackup(e.target.checked)}
+                        className="rounded bg-slate-900 border-slate-700 text-purple-600"
+                      />
+                      <span className="text-purple-300 font-medium">BaaS Data Backup</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsAgentDetailOpen(false)}
+                    className="w-1/2 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-xl transition"
+                  >
+                    Bağla
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingAgentEdit}
+                    className="w-1/2 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-semibold rounded-xl shadow-lg shadow-amber-500/25 transition disabled:opacity-50"
+                  >
+                    {savingAgentEdit ? 'Yadda saxlanılır...' : 'Dəyişiklikləri Saxla'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
       {isAddAgentOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-5">

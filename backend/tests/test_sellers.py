@@ -161,17 +161,57 @@ async def test_seller_portal_packages_and_agent_registration(client: AsyncClient
     assert my_agents_res.status_code == 200
     agents_data = my_agents_res.json()
     assert len(agents_data) == 1
+    agent_id = agents_data[0]["id"]
     assert agents_data[0]["name"] == "Nurlan Agent"
     assert "444 44 44" in agents_data[0]["phone"]
     assert agents_data[0]["status"] == "active"
+    assert "t.me" in agents_data[0]["telegram_bot_url"]
 
-    # 4. Verify Seller Balance & Profit (120 AZN * 78% [75% base + 3% Silver bonus] = 93.6 AZN)
+    # 3c. Verify Seller can view Agent Details with QR info via GET /me/agents/{id}
+    detail_res = await client.get(f"/api/v1/sellers/me/agents/{agent_id}", headers=seller_headers)
+    assert detail_res.status_code == 200
+    detail_data = detail_res.json()
+    assert detail_data["name"] == "Nurlan Agent"
+    assert detail_data["package_data"]["name"] == "VIP Agent 100 Pro"
+    assert "t.me" in detail_data["invite_url"]
+    assert detail_data["saved_searches_count"] == 0
+
+    # 3d. Verify Seller can Update Agent information via PUT /me/agents/{id}
+    update_agent_res = await client.put(f"/api/v1/sellers/me/agents/{agent_id}", json={
+        "name": "Nurlan Agent (Updated)",
+        "whatsapp_number": "+994504444444",
+        "preferred_channel": "whatsapp",
+        "feature_client_intake_bot": True,
+        "backup_enabled": True
+    }, headers=seller_headers)
+    assert update_agent_res.status_code == 200
+
+    # Verify updated fields
+    detail_res2 = await client.get(f"/api/v1/sellers/me/agents/{agent_id}", headers=seller_headers)
+    assert detail_res2.status_code == 200
+    assert detail_res2.json()["name"] == "Nurlan Agent (Updated)"
+    assert detail_res2.json()["preferred_channel"] == "whatsapp"
+    assert detail_res2.json()["backup_enabled"] is True
+
+    # 3e. Verify Seller can Renew Agent Subscription via POST /me/agents/{id}/renew
+    renew_res = await client.post(f"/api/v1/sellers/me/agents/{agent_id}/renew", json={
+        "package_id": package_id,
+        "selected_aged_months": 6,
+        "selected_aged_price": 25.0
+    }, headers=seller_headers)
+    assert renew_res.status_code == 200
+    assert "uğurla" in renew_res.json()["message"]
+
+    # 4. Verify Seller Balance & Profit after sale (120 AZN) + renewal (145 AZN) = 265 AZN
+    # Sale profit = 120 * 78% = 93.6 AZN
+    # Renew profit = 145 * 78% = 113.1 AZN
+    # Total earnings = 93.6 + 113.1 = 206.7 AZN
     dash_res = await client.get("/api/v1/sellers/me/dashboard", headers=seller_headers)
     assert dash_res.status_code == 200
     dash_data = dash_res.json()
-    assert dash_data["balance"] == 93.6
-    assert dash_data["total_earnings"] == 93.6
-    assert dash_data["total_sales_volume"] == 120.0
+    assert dash_data["balance"] == 202.35
+    assert dash_data["total_earnings"] == 202.35
+    assert dash_data["total_sales_volume"] == 265.0
     assert dash_data["total_agents"] == 1
 
     # 5. Strict System-Wide Uniqueness Test: Attempt to register SAME agent under another seller

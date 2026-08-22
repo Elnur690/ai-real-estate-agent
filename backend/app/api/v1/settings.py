@@ -38,6 +38,10 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
         out["addon_default_aged_tiers"] = '[{"months": 3, "price": 15.0}, {"months": 6, "price": 25.0}, {"months": 12, "price": 40.0}, {"months": 24, "price": 60.0}]'
     if "addon_default_search_tiers" not in out:
         out["addon_default_search_tiers"] = '[{"searches": 5, "price": 10.0}, {"searches": 10, "price": 18.0}, {"searches": 20, "price": 30.0}, {"searches": 50, "price": 60.0}]'
+    if "telegram_bot_username" not in out:
+        out["telegram_bot_username"] = "baku_realestate_ai_bot"
+    if "whatsapp_bot_phone" not in out:
+        out["whatsapp_bot_phone"] = "+994501234567"
 
     return out
 
