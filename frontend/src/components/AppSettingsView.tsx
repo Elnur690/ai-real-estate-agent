@@ -533,6 +533,36 @@ export const AppSettingsView: React.FC = () => {
                 </span>
               </div>
             </div>
+
+            <div className="mt-4 space-y-3">
+              <h5 className="text-xs font-bold text-amber-400 flex items-center gap-1.5">
+                <span>📦</span> Standart Arxiv Elanlar Pilləli Qiymətləri (JSON)
+              </h5>
+              <p className="text-[10px] text-slate-500">
+                Yeni satıcılar yaratdıqda paketin default arxiv elanlar tier qiymətləri. Format: {`[{"months": 3, "price": 15}, ...]`}
+              </p>
+              <textarea
+                rows={3}
+                value={settingsMap['addon_default_aged_tiers'] || '[{"months": 3, "price": 15.0}, {"months": 6, "price": 25.0}, {"months": 12, "price": 40.0}, {"months": 24, "price": 60.0}]'}
+                onChange={(e) => setSettingsMap({ ...settingsMap, addon_default_aged_tiers: e.target.value })}
+                className="w-full bg-dark-900 border border-slate-700/80 px-3.5 py-2.5 rounded-xl text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:border-amber-500"
+              />
+            </div>
+
+            <div className="mt-3 space-y-3">
+              <h5 className="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
+                <span>⚡</span> Standart Əlavə Axtarış Pilləli Qiymətləri (JSON)
+              </h5>
+              <p className="text-[10px] text-slate-500">
+                Yeni satıcılar yaratdıqda paketin default əlavə axtarış tier qiymətləri. Format: {`[{"searches": 5, "price": 10}, ...]`}
+              </p>
+              <textarea
+                rows={3}
+                value={settingsMap['addon_default_search_tiers'] || '[{"searches": 5, "price": 10.0}, {"searches": 10, "price": 18.0}, {"searches": 20, "price": 30.0}, {"searches": 50, "price": 60.0}]'}
+                onChange={(e) => setSettingsMap({ ...settingsMap, addon_default_search_tiers: e.target.value })}
+                className="w-full bg-dark-900 border border-slate-700/80 px-3.5 py-2.5 rounded-xl text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+              />
+            </div>
           </div>
 
           <div className="pt-4 border-t border-slate-800 space-y-4">

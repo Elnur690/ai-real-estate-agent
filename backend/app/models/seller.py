@@ -77,13 +77,15 @@ class SellerPackage(Base):
     feature_client_intake_bot: Mapped[bool] = mapped_column(Boolean, default=False)
     feature_backup_service: Mapped[bool] = mapped_column(Boolean, default=False)
     
-    # Add-on features and custom pricing configured by seller (no minimum enforced)
+    # Add-on features and custom multi-tier pricing configured by seller (no minimum enforced)
     feature_aged_listings: Mapped[bool] = mapped_column(Boolean, default=False)
     addon_aged_listings_price: Mapped[float] = mapped_column(Float, default=15.0)
     addon_aged_max_months: Mapped[int] = mapped_column(Integer, default=12)
+    addon_aged_tiers: Mapped[list[dict] | None] = mapped_column(JSON, default=list)  # e.g. [{"months": 3, "price": 10.0}, {"months": 6, "price": 20.0}]
 
     addon_saved_searches: Mapped[int] = mapped_column(Integer, default=0) # e.g. +5 extra searches
     addon_saved_searches_price: Mapped[float] = mapped_column(Float, default=10.0)
+    addon_search_tiers: Mapped[list[dict] | None] = mapped_column(JSON, default=list) # e.g. [{"searches": 5, "price": 10.0}, {"searches": 10, "price": 18.0}]
     
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

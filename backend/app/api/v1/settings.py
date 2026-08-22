@@ -34,6 +34,10 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
         out["admin_telegram_chat_id"] = ""
     if "scraper_health_alerts_enabled" not in out:
         out["scraper_health_alerts_enabled"] = "true"
+    if "addon_default_aged_tiers" not in out:
+        out["addon_default_aged_tiers"] = '[{"months": 3, "price": 15.0}, {"months": 6, "price": 25.0}, {"months": 12, "price": 40.0}, {"months": 24, "price": 60.0}]'
+    if "addon_default_search_tiers" not in out:
+        out["addon_default_search_tiers"] = '[{"searches": 5, "price": 10.0}, {"searches": 10, "price": 18.0}, {"searches": 20, "price": 30.0}, {"searches": 50, "price": 60.0}]'
 
     return out
 

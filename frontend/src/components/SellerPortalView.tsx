@@ -81,8 +81,10 @@ export interface SellerPackageItem {
   feature_aged_listings: boolean;
   addon_aged_listings_price: number;
   addon_aged_max_months: number;
+  addon_aged_tiers: { months: number; price: number }[];
   addon_saved_searches: number;
   addon_saved_searches_price: number;
+  addon_search_tiers: { searches: number; price: number }[];
   is_active: boolean;
 }
 
@@ -190,8 +192,16 @@ export function SellerPortalView() {
   const [pkgAgedMonths, setPkgAgedMonths] = useState<number>(12);
   const [pkgAddonSearches, setPkgAddonSearches] = useState<number>(0);
   const [pkgAddonSearchesPrice, setPkgAddonSearchesPrice] = useState<number>(10);
+  const [pkgAgedTiers, setPkgAgedTiers] = useState<{ months: number; price: number }[]>([]);
+  const [pkgSearchTiers, setPkgSearchTiers] = useState<{ searches: number; price: number }[]>([]);
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const [submittingPkg, setSubmittingPkg] = useState(false);
+
+  // Agent Registration Addon Selections
+  const [agentSelectedAgedMonths, setAgentSelectedAgedMonths] = useState<number>(0);
+  const [agentSelectedAgedPrice, setAgentSelectedAgedPrice] = useState<number>(0);
+  const [agentSelectedExtraSearches, setAgentSelectedExtraSearches] = useState<number>(0);
+  const [agentSelectedExtraSearchesPrice, setAgentSelectedExtraSearchesPrice] = useState<number>(0);
 
   const fetchDashboard = async () => {
     try {
@@ -392,7 +402,11 @@ export function SellerPortalView() {
         whatsapp_number: agentWhatsapp || undefined,
         preferred_channel: agentChannel,
         package_id: isTrial ? undefined : agentPkgId,
-        is_trial: isTrial
+        is_trial: isTrial,
+        selected_aged_months: agentSelectedAgedMonths > 0 ? agentSelectedAgedMonths : undefined,
+        selected_aged_price: agentSelectedAgedPrice > 0 ? agentSelectedAgedPrice : undefined,
+        selected_extra_searches: agentSelectedExtraSearches > 0 ? agentSelectedExtraSearches : undefined,
+        selected_extra_searches_price: agentSelectedExtraSearchesPrice > 0 ? agentSelectedExtraSearchesPrice : undefined
       });
       setIsAddAgentOpen(false);
       setAgentName('');
@@ -400,6 +414,10 @@ export function SellerPortalView() {
       setAgentTg('');
       setAgentWhatsapp('');
       setAgentPkgId(undefined);
+      setAgentSelectedAgedMonths(0);
+      setAgentSelectedAgedPrice(0);
+      setAgentSelectedExtraSearches(0);
+      setAgentSelectedExtraSearchesPrice(0);
       reloadAll();
     } catch (err: any) {
       setAgentError(err.response?.data?.detail || 'Xəta baş verdi');
@@ -429,8 +447,10 @@ export function SellerPortalView() {
         feature_aged_listings: pkgAgedListings,
         addon_aged_listings_price: pkgAgedPrice,
         addon_aged_max_months: pkgAgedMonths,
+        addon_aged_tiers: pkgAgedTiers,
         addon_saved_searches: pkgAddonSearches,
-        addon_saved_searches_price: pkgAddonSearchesPrice
+        addon_saved_searches_price: pkgAddonSearchesPrice,
+        addon_search_tiers: pkgSearchTiers
       };
 
       if (editingPkg) {
@@ -478,6 +498,8 @@ export function SellerPortalView() {
     setPkgAgedMonths(12);
     setPkgAddonSearches(0);
     setPkgAddonSearchesPrice(10);
+    setPkgAgedTiers([{ months: 3, price: 15 }, { months: 6, price: 25 }, { months: 12, price: 40 }]);
+    setPkgSearchTiers([{ searches: 5, price: 10 }, { searches: 10, price: 18 }, { searches: 20, price: 30 }]);
     setIsAddPkgOpen(true);
   };
 
@@ -501,6 +523,8 @@ export function SellerPortalView() {
     setPkgAgedMonths(pkg.addon_aged_max_months ?? 12);
     setPkgAddonSearches(pkg.addon_saved_searches ?? 0);
     setPkgAddonSearchesPrice(pkg.addon_saved_searches_price ?? 10);
+    setPkgAgedTiers(pkg.addon_aged_tiers || []);
+    setPkgSearchTiers(pkg.addon_search_tiers || []);
     setIsAddPkgOpen(true);
   };
 
@@ -1534,6 +1558,114 @@ export function SellerPortalView() {
                 )}
               </div>
 
+              {/* Addon Tier Selectors — only for paid packages */}
+              {agentPkgId !== undefined && agentPkgId !== -1 && (() => {
+                const selectedPkg = packages.find(p => p.id === agentPkgId);
+                if (!selectedPkg) return null;
+                const hasAgedTiers = selectedPkg.addon_aged_tiers && selectedPkg.addon_aged_tiers.length > 0;
+                const hasSearchTiers = selectedPkg.addon_search_tiers && selectedPkg.addon_search_tiers.length > 0;
+                if (!hasAgedTiers && !hasSearchTiers) return null;
+
+                const basePrice = selectedPkg.price;
+                const totalGross = basePrice + agentSelectedAgedPrice + agentSelectedExtraSearchesPrice;
+                const commRate = dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70;
+                const sellerProfit = (totalGross * commRate) / 100;
+
+                return (
+                  <div className="space-y-3 pt-2 border-t border-slate-800">
+                    <label className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider block">
+                      Əlavə Xidmətlər (Addon Seçimi)
+                    </label>
+
+                    {/* Aged Listings Tier Selector */}
+                    {hasAgedTiers && (
+                      <div>
+                        <label className="block text-xs font-semibold text-amber-300 mb-1">📦 Arxiv Elanlar Müddəti</label>
+                        <select
+                          value={agentSelectedAgedMonths}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            if (val === 0) {
+                              setAgentSelectedAgedMonths(0);
+                              setAgentSelectedAgedPrice(0);
+                            } else {
+                              const tier = selectedPkg.addon_aged_tiers.find(t => t.months === val);
+                              setAgentSelectedAgedMonths(val);
+                              setAgentSelectedAgedPrice(tier?.price ?? 0);
+                            }
+                          }}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-amber-500"
+                        >
+                          <option value={0}>Yoxdur (Arxiv seçilməyib)</option>
+                          {selectedPkg.addon_aged_tiers.map((t, i) => (
+                            <option key={i} value={t.months}>
+                              {t.months} ay arxiv — +{t.price} AZN
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Extra Search Tier Selector */}
+                    {hasSearchTiers && (
+                      <div>
+                        <label className="block text-xs font-semibold text-cyan-300 mb-1">⚡ Əlavə Axtarış Limiti</label>
+                        <select
+                          value={agentSelectedExtraSearches}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            if (val === 0) {
+                              setAgentSelectedExtraSearches(0);
+                              setAgentSelectedExtraSearchesPrice(0);
+                            } else {
+                              const tier = selectedPkg.addon_search_tiers.find(t => t.searches === val);
+                              setAgentSelectedExtraSearches(val);
+                              setAgentSelectedExtraSearchesPrice(tier?.price ?? 0);
+                            }
+                          }}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
+                        >
+                          <option value={0}>Yoxdur (Əlavə axtarış seçilməyib)</option>
+                          {selectedPkg.addon_search_tiers.map((t, i) => (
+                            <option key={i} value={t.searches}>
+                              +{t.searches} axtarış — +{t.price} AZN
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Real-time Price Summary */}
+                    <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl space-y-1.5">
+                      <div className="flex justify-between text-xs text-slate-300">
+                        <span>Paket bazası:</span>
+                        <span className="font-medium">{basePrice.toFixed(2)} AZN</span>
+                      </div>
+                      {agentSelectedAgedPrice > 0 && (
+                        <div className="flex justify-between text-xs text-amber-300">
+                          <span>📦 Arxiv ({agentSelectedAgedMonths} ay):</span>
+                          <span className="font-medium">+{agentSelectedAgedPrice.toFixed(2)} AZN</span>
+                        </div>
+                      )}
+                      {agentSelectedExtraSearchesPrice > 0 && (
+                        <div className="flex justify-between text-xs text-cyan-300">
+                          <span>⚡ +{agentSelectedExtraSearches} axtarış:</span>
+                          <span className="font-medium">+{agentSelectedExtraSearchesPrice.toFixed(2)} AZN</span>
+                        </div>
+                      )}
+                      <div className="border-t border-emerald-500/30 pt-1.5 flex justify-between text-sm font-bold">
+                        <span className="text-white">Ümumi Məbləğ:</span>
+                        <span className="text-emerald-400">{totalGross.toFixed(2)} AZN</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-400">Sizin qazanc (%{commRate}):</span>
+                        <span className="text-emerald-300 font-semibold">+{sellerProfit.toFixed(2)} AZN</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div className="pt-3 flex gap-3">
                 <button
                   type="button"
@@ -2111,59 +2243,75 @@ export function SellerPortalView() {
                 </div>
               </div>
 
-              {/* Add-on Features & Pricing (No Minimum Required) */}
+              {/* Add-on Features & Pricing with Dynamic Tiers */}
               <div className="space-y-3 pt-3 border-t border-slate-800">
                 <label className="text-xs font-bold text-cyan-400 uppercase tracking-wider block">
-                  Əlavə Xidmətlər (Add-ons) — Fərdi Qiymət Qoyuluşu
+                  Əlavə Xidmətlər (Add-ons) — Çoxpilləli Qiymət
                 </label>
 
-                {/* Add-on 1: Search Top-Up */}
+                {/* Add-on 1: Extra Search Tiers */}
                 <div className="p-3 bg-cyan-950/20 border border-cyan-500/20 rounded-xl space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-cyan-300">
-                      ⚡ Əlavə Axtarış Slotu (+5 Pack)
+                      ⚡ Əlavə Axtarış Limitləri
                     </span>
                     <button
                       type="button"
-                      onClick={() => setActiveTooltip(activeTooltip === 'topup' ? null : 'topup')}
-                      className="text-xs text-cyan-400 hover:text-cyan-300 px-1.5 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20"
+                      onClick={() => setPkgSearchTiers([...pkgSearchTiers, { searches: 5, price: 10 }])}
+                      className="text-[11px] text-cyan-400 hover:text-cyan-300 px-2 py-0.5 rounded bg-cyan-500/10 border border-cyan-500/20"
                     >
-                      ℹ️ İzah
+                      + Sətr əlavə et
                     </button>
                   </div>
-                  {activeTooltip === 'topup' && (
-                    <p className="text-[11px] text-slate-400 bg-slate-900/90 p-2 rounded-lg border border-slate-800 leading-relaxed">
-                      Paket limitindən əlavə hər +5 axtarış slotu üçün təyin edilən əlavə ödəniş (Məs: +10 AZN/ay). Minimum qiymət məhdudiyyəti yoxdur.
-                    </p>
+                  <p className="text-[10px] text-slate-500">Hər sətr üçün əlavə axtarış sayı və qiyməti təyin edin. Agent qeydiyyatı zamanı müştəri bunlardan birini seçə biləcək.</p>
+                  {pkgSearchTiers.map((tier, idx) => (
+                    <div key={idx} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">+Axtarış Sayı</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="100"
+                          value={tier.searches}
+                          onChange={(e) => {
+                            const copy = [...pkgSearchTiers];
+                            copy[idx] = { ...copy[idx], searches: Number(e.target.value) };
+                            setPkgSearchTiers(copy);
+                          }}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-white text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">Qiymət (AZN)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={tier.price}
+                          onChange={(e) => {
+                            const copy = [...pkgSearchTiers];
+                            copy[idx] = { ...copy[idx], price: Number(e.target.value) };
+                            setPkgSearchTiers(copy);
+                          }}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-white text-xs font-bold text-cyan-400"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPkgSearchTiers(pkgSearchTiers.filter((_, i) => i !== idx))}
+                        className="text-rose-400 hover:text-rose-300 p-1.5 rounded-lg hover:bg-rose-500/10"
+                        title="Sil"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  {pkgSearchTiers.length === 0 && (
+                    <p className="text-[10px] text-slate-600 italic py-1">Heç bir əlavə axtarış pilləsi yoxdur.</p>
                   )}
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <div>
-                      <label className="text-[11px] text-slate-400 block mb-1">Əlavə Slot Sayı</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="50"
-                        step="5"
-                        value={pkgAddonSearches}
-                        onChange={(e) => setPkgAddonSearches(Number(e.target.value))}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white text-xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[11px] text-slate-400 block mb-1">Add-on Qiyməti (AZN)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={pkgAddonSearchesPrice}
-                        onChange={(e) => setPkgAddonSearchesPrice(Number(e.target.value))}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white text-xs font-bold text-cyan-400"
-                      />
-                    </div>
-                  </div>
                 </div>
 
-                {/* Add-on 2: Aged Inventory Archive */}
+                {/* Add-on 2: Aged Inventory Archive Tiers */}
                 <div className="p-3 bg-amber-950/20 border border-amber-500/20 rounded-xl space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="flex items-center gap-2 text-xs font-semibold text-amber-300 cursor-pointer">
@@ -2173,46 +2321,67 @@ export function SellerPortalView() {
                         onChange={(e) => setPkgAgedListings(e.target.checked)}
                         className="rounded bg-slate-900 border-slate-700 text-amber-600 focus:ring-0"
                       />
-                      <span>📦 Köhnə Elanlar Arxivi (1-12+ ay)</span>
+                      <span>📦 Köhnə Elanlar Arxivi</span>
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTooltip(activeTooltip === 'aged' ? null : 'aged')}
-                      className="text-xs text-amber-400 hover:text-amber-300 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20"
-                    >
-                      ℹ️ İzah
-                    </button>
+                    {pkgAgedListings && (
+                      <button
+                        type="button"
+                        onClick={() => setPkgAgedTiers([...pkgAgedTiers, { months: 3, price: 15 }])}
+                        className="text-[11px] text-amber-400 hover:text-amber-300 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20"
+                      >
+                        + Sətr əlavə et
+                      </button>
+                    )}
                   </div>
-                  {activeTooltip === 'aged' && (
-                    <p className="text-[11px] text-slate-400 bg-slate-900/90 p-2 rounded-lg border border-slate-800 leading-relaxed">
-                      Bazardan çıxmış və ya son 12 ay ərzində paylaşılmış arxiv elanlarının axtarışı və müqayisəsi üçün əlavə add-on (Məs: +15 AZN/ay). Minimum qiymət məhdudiyyəti yoxdur.
-                    </p>
-                  )}
                   {pkgAgedListings && (
-                    <div className="grid grid-cols-2 gap-2 pt-1">
-                      <div>
-                        <label className="text-[11px] text-slate-400 block mb-1">Maksimum Arxiv (Ay)</label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="24"
-                          value={pkgAgedMonths}
-                          onChange={(e) => setPkgAgedMonths(Number(e.target.value))}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white text-xs"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[11px] text-slate-400 block mb-1">Add-on Qiyməti (AZN)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={pkgAgedPrice}
-                          onChange={(e) => setPkgAgedPrice(Number(e.target.value))}
-                          className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-white text-xs font-bold text-amber-400"
-                        />
-                      </div>
-                    </div>
+                    <>
+                      <p className="text-[10px] text-slate-500">Hər sətr üçün arxiv müddəti (ay) və qiymət təyin edin. Agent qeydiyyatı zamanı müştəri bunlardan birini seçə biləcək.</p>
+                      {pkgAgedTiers.map((tier, idx) => (
+                        <div key={idx} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                          <div>
+                            <label className="text-[10px] text-slate-400 block mb-0.5">Müddət (Ay)</label>
+                            <input
+                              type="number"
+                              min="1"
+                              max="48"
+                              value={tier.months}
+                              onChange={(e) => {
+                                const copy = [...pkgAgedTiers];
+                                copy[idx] = { ...copy[idx], months: Number(e.target.value) };
+                                setPkgAgedTiers(copy);
+                              }}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-white text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-400 block mb-0.5">Qiymət (AZN)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              value={tier.price}
+                              onChange={(e) => {
+                                const copy = [...pkgAgedTiers];
+                                copy[idx] = { ...copy[idx], price: Number(e.target.value) };
+                                setPkgAgedTiers(copy);
+                              }}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-white text-xs font-bold text-amber-400"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setPkgAgedTiers(pkgAgedTiers.filter((_, i) => i !== idx))}
+                            className="text-rose-400 hover:text-rose-300 p-1.5 rounded-lg hover:bg-rose-500/10"
+                            title="Sil"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                      {pkgAgedTiers.length === 0 && (
+                        <p className="text-[10px] text-slate-600 italic py-1">Heç bir arxiv pilləsi yoxdur.</p>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

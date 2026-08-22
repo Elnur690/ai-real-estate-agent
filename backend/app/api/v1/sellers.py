@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from sqlalchemy import select, func, or_
@@ -62,8 +62,10 @@ class CreatePackageRequest(BaseModel):
     feature_aged_listings: bool = False
     addon_aged_listings_price: float = 15.0
     addon_aged_max_months: int = 12
+    addon_aged_tiers: Optional[List[Dict[str, Any]]] = None
     addon_saved_searches: int = 0
     addon_saved_searches_price: float = 10.0
+    addon_search_tiers: Optional[List[Dict[str, Any]]] = None
 
 class UpdatePackageRequest(BaseModel):
     name: Optional[str] = None
@@ -82,8 +84,10 @@ class UpdatePackageRequest(BaseModel):
     feature_aged_listings: Optional[bool] = None
     addon_aged_listings_price: Optional[float] = None
     addon_aged_max_months: Optional[int] = None
+    addon_aged_tiers: Optional[List[Dict[str, Any]]] = None
     addon_saved_searches: Optional[int] = None
     addon_saved_searches_price: Optional[float] = None
+    addon_search_tiers: Optional[List[Dict[str, Any]]] = None
     is_active: Optional[bool] = None
 
 class RegisterSellerAgentRequest(BaseModel):
@@ -95,6 +99,10 @@ class RegisterSellerAgentRequest(BaseModel):
     preferred_channel: str = "telegram"
     package_id: Optional[int] = None
     is_trial: bool = False
+    selected_aged_months: Optional[int] = None
+    selected_aged_price: Optional[float] = None
+    selected_extra_searches: Optional[int] = None
+    selected_extra_searches_price: Optional[float] = None
 
 class UpdateFreeTrialSettingsRequest(BaseModel):
     free_trial_enabled: Optional[bool] = None
@@ -350,7 +358,18 @@ async def create_seller_admin(
             feature_social_brochure=True,
             feature_multi_location=True,
             feature_client_intake_bot=False,
-            feature_backup_service=False
+            feature_backup_service=False,
+            feature_aged_listings=False,
+            addon_aged_tiers=[
+                {"months": 3, "price": 15.0},
+                {"months": 6, "price": 25.0},
+                {"months": 12, "price": 40.0}
+            ],
+            addon_search_tiers=[
+                {"searches": 5, "price": 10.0},
+                {"searches": 10, "price": 18.0},
+                {"searches": 20, "price": 30.0}
+            ]
         ),
         SellerPackage(
             seller_id=seller.id,
@@ -366,7 +385,18 @@ async def create_seller_admin(
             feature_social_brochure=True,
             feature_multi_location=True,
             feature_client_intake_bot=True,
-            feature_backup_service=True
+            feature_backup_service=True,
+            feature_aged_listings=True,
+            addon_aged_tiers=[
+                {"months": 6, "price": 20.0},
+                {"months": 12, "price": 35.0},
+                {"months": 24, "price": 55.0}
+            ],
+            addon_search_tiers=[
+                {"searches": 10, "price": 15.0},
+                {"searches": 20, "price": 25.0},
+                {"searches": 50, "price": 50.0}
+            ]
         )
     ]
     db.add_all(default_packages)
@@ -618,10 +648,22 @@ async def register_my_agent(
         max_locs = package.max_locations if package else 5
         f_bot = package.feature_client_intake_bot if package else False
         f_backup = package.feature_backup_service if package else False
-        f_aged = package.feature_aged_listings if package else False
-        aged_months = package.addon_aged_max_months if package else 12
-        addon_searches = package.addon_saved_searches if package else 0
-        addon_searches_price = package.addon_saved_searches_price if package else 0.0
+        
+        # Determine aged listings addon
+        if body.selected_aged_months is not None and body.selected_aged_months > 0:
+            f_aged = True
+            aged_months = int(body.selected_aged_months)
+        else:
+            f_aged = package.feature_aged_listings if package else False
+            aged_months = package.addon_aged_max_months if package else 12
+
+        # Determine extra searches addon
+        if body.selected_extra_searches is not None and body.selected_extra_searches > 0:
+            addon_searches = int(body.selected_extra_searches)
+            addon_searches_price = float(body.selected_extra_searches_price or 0.0)
+        else:
+            addon_searches = package.addon_saved_searches if package else 0
+            addon_searches_price = package.addon_saved_searches_price if package else 0.0
 
     agent = Tenant(
         name=body.name,
@@ -658,7 +700,11 @@ async def register_my_agent(
         bonus_pct = rank_info.get("bonus_commission", 0.0)
         effective_commission_pct = min(100.0, seller.commission_rate + bonus_pct)
 
-        gross_amount = package.price
+        # Dynamic Addon Pricing Calculation
+        selected_aged_price = max(0.0, float(body.selected_aged_price or 0.0))
+        selected_extra_searches_price = max(0.0, float(body.selected_extra_searches_price or 0.0))
+        gross_amount = round(package.price + selected_aged_price + selected_extra_searches_price, 2)
+
         seller_profit = round(gross_amount * (effective_commission_pct / 100.0), 2)
         platform_fee = round(gross_amount - seller_profit, 2)
 
@@ -796,8 +842,10 @@ async def get_my_packages(
         "feature_aged_listings": p.feature_aged_listings,
         "addon_aged_listings_price": p.addon_aged_listings_price,
         "addon_aged_max_months": p.addon_aged_max_months,
+        "addon_aged_tiers": p.addon_aged_tiers or [],
         "addon_saved_searches": p.addon_saved_searches,
         "addon_saved_searches_price": p.addon_saved_searches_price,
+        "addon_search_tiers": p.addon_search_tiers or [],
         "is_active": p.is_active,
         "created_at": p.created_at.isoformat() if p.created_at else None
     } for p in packages]
@@ -874,8 +922,10 @@ async def create_my_package(
         feature_aged_listings=body.feature_aged_listings,
         addon_aged_listings_price=body.addon_aged_listings_price,
         addon_aged_max_months=body.addon_aged_max_months,
+        addon_aged_tiers=body.addon_aged_tiers or [],
         addon_saved_searches=body.addon_saved_searches,
         addon_saved_searches_price=body.addon_saved_searches_price,
+        addon_search_tiers=body.addon_search_tiers or [],
         is_active=True
     )
     db.add(pkg)
@@ -945,10 +995,14 @@ async def update_my_package(
         pkg.addon_aged_listings_price = body.addon_aged_listings_price
     if body.addon_aged_max_months is not None:
         pkg.addon_aged_max_months = body.addon_aged_max_months
+    if body.addon_aged_tiers is not None:
+        pkg.addon_aged_tiers = body.addon_aged_tiers
     if body.addon_saved_searches is not None:
         pkg.addon_saved_searches = body.addon_saved_searches
     if body.addon_saved_searches_price is not None:
         pkg.addon_saved_searches_price = body.addon_saved_searches_price
+    if body.addon_search_tiers is not None:
+        pkg.addon_search_tiers = body.addon_search_tiers
     if body.is_active is not None:
         pkg.is_active = body.is_active
 
