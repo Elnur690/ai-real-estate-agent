@@ -242,6 +242,11 @@ class IngestionService:
                         if details:
                             if details.get("phone_number"):
                                 item.phone_number = details["phone_number"]
+                            if details.get("price") and (not item.price or item.price == 0):
+                                item.price = details["price"]
+                                item.currency = details.get("currency", item.currency or "AZN")
+                            elif (not item.price or item.price == 0) and details.get("price_per_sqm") and item.area_sqm:
+                                item.price = round(details["price_per_sqm"] * item.area_sqm)
                             if details.get("seller_type"):
                                 item.seller_type = details["seller_type"]
                             if details.get("property_type"):
@@ -711,6 +716,13 @@ class IngestionService:
                 if details:
                     if details.get("phone_number") and not listing.phone_number:
                         listing.phone_number = details["phone_number"]
+                    if details.get("price") and (not listing.price or listing.price == 0):
+                        listing.price = details["price"]
+                        listing.currency = details.get("currency", listing.currency or "AZN")
+                    elif (not listing.price or listing.price == 0) and details.get("price_per_sqm") and listing.area_sqm:
+                        listing.price = round(details["price_per_sqm"] * listing.area_sqm)
+                    if details.get("price_per_sqm") and not listing.price_per_sqm:
+                        listing.price_per_sqm = details["price_per_sqm"]
                     if details.get("property_type"):
                         listing.property_type = details["property_type"]
                     if details.get("offer_type"):

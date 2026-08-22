@@ -145,16 +145,42 @@ class BinaAzScraper(BaseScraper):
                     is_makler = False
                     makler_score = 0.0
 
-                # 5. Extract Offer Type (sale vs rent vs daily_rent)
+                # 5. Extract Price & Price Per SQM from Detail Page
+                price = None
+                currency = "AZN"
+                price_per_sqm = None
+
+                for sp in soup.find_all(["span", "div"]):
+                    txt = sp.get_text(separator=" ", strip=True).replace('\xa0', ' ')
+                    if re.search(r'^\s*[\d\s]+\s*(?:AZN|₼|USD|\$)\s*$', txt):
+                        m_val = re.search(r'([\d\s]+)', txt)
+                        if m_val:
+                            val_clean = m_val.group(1).replace(" ", "").strip()
+                            if val_clean.isdigit():
+                                val_num = float(val_clean)
+                                if val_num > 0 and val_num != 2008 and (price is None or val_num > price):
+                                    price = val_num
+                                    if "$" in txt or "USD" in txt:
+                                        currency = "USD"
+                    elif 'AZN/m²' in txt or '₼/m²' in txt or 'USD/m²' in txt:
+                        m_sqm = re.search(r'([\d\s]+)\s*(?:AZN|₼|USD|\$)\/m²', txt)
+                        if m_sqm:
+                            val_clean = m_sqm.group(1).replace(" ", "").strip()
+                            if val_clean.isdigit():
+                                price_per_sqm = float(val_clean)
+
+                # 6. Extract Offer Type (sale vs rent vs daily_rent) strictly from H1 & breadcrumbs
                 detected_offer = "sale"
-                if any(k in h1_text or k in page_text_lower for k in ["günlük", "gunluk", "/ gün", "/gun", "sutkalıq", "sutkaliq"]):
+                if "günlük" in h1_text or "gunluk" in h1_text or "sutkalıq" in h1_text:
                     detected_offer = "daily_rent"
-                elif any(k in h1_text for k in ["icarə", "icare", "kirayə", "kiraye"]) or any(k in page_text_lower for k in ["icarəyə verilir", "kirayəyə verilir", "aylıq kirayə", "ayliq kiraye", "arendaya verilir", "kirayə verilir"]):
+                elif any(k in h1_text for k in ["icarə", "icare", "kirayə", "kiraye"]):
                     detected_offer = "rent"
                 elif "satılır" in h1_text:
                     detected_offer = "sale"
+                else:
+                    detected_offer = "sale"
 
-                # 6. Extract exact rooms if present
+                # 7. Extract exact rooms if present
                 rooms = None
                 rooms_m = re.search(r'(\d+)\s*otaq', f"{h1_text} {full_desc[:200].lower()}")
                 if rooms_m:
@@ -162,6 +188,9 @@ class BinaAzScraper(BaseScraper):
 
                 return {
                     "phone_number": phone,
+                    "price": price,
+                    "currency": currency,
+                    "price_per_sqm": price_per_sqm,
                     "full_description": full_desc,
                     "property_type": detected_prop,
                     "offer_type": detected_offer,
