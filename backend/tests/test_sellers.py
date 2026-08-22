@@ -118,6 +118,16 @@ async def test_seller_portal_packages_and_agent_registration(client: AsyncClient
     assert pkg_res.status_code == 201
     package_id = pkg_res.json()["package_id"]
 
+    # 2b. Seller updates their package (Edit package)
+    update_pkg_res = await client.put(f"/api/v1/sellers/me/packages/{package_id}", json={
+        "name": "VIP Agent 100 Pro",
+        "price": 120.0,
+        "max_searches": 25,
+        "feature_client_intake_bot": True
+    }, headers=seller_headers)
+    assert update_pkg_res.status_code == 200
+    assert update_pkg_res.json()["package_id"] == package_id
+
     # 3. Seller registers an Agent
     agent_res = await client.post("/api/v1/sellers/me/agents", json={
         "name": "Nurlan Agent",
@@ -128,13 +138,13 @@ async def test_seller_portal_packages_and_agent_registration(client: AsyncClient
     assert agent_res.status_code == 201
     assert agent_res.json()["name"] == "Nurlan Agent"
 
-    # 4. Verify Seller Balance & Profit (100 AZN * 78% [75% base + 3% Silver bonus] = 78 AZN)
+    # 4. Verify Seller Balance & Profit (120 AZN * 78% [75% base + 3% Silver bonus] = 93.6 AZN)
     dash_res = await client.get("/api/v1/sellers/me/dashboard", headers=seller_headers)
     assert dash_res.status_code == 200
     dash_data = dash_res.json()
-    assert dash_data["balance"] == 78.0
-    assert dash_data["total_earnings"] == 78.0
-    assert dash_data["total_sales_volume"] == 100.0
+    assert dash_data["balance"] == 93.6
+    assert dash_data["total_earnings"] == 93.6
+    assert dash_data["total_sales_volume"] == 120.0
     assert dash_data["total_agents"] == 1
 
     # 5. Strict System-Wide Uniqueness Test: Attempt to register SAME agent under another seller

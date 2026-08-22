@@ -696,7 +696,7 @@ export function SellerPortalView() {
           }`}
         >
           <Package className="w-4 h-4" />
-          <span>Paketlərim ({packages.length})</span>
+          <span>Paketlərim ({packages.length + 1})</span>
         </button>
 
         <button
@@ -817,22 +817,13 @@ export function SellerPortalView() {
               <h2 className="text-xl font-bold text-white">Paketlərim və Sınaq Təklifim</h2>
               <p className="text-xs text-slate-400">Agentləriniz üçün pulsuz sınaq şərtləri və fərdi ödənişli abunə paketləri qurun.</p>
             </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setIsTrialModalOpen(true)}
-                className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 rounded-xl text-sm font-bold shadow-lg shadow-indigo-500/10 transition"
-              >
-                <Gift className="w-4 h-4 text-indigo-400" />
-                <span>Sınaq Təklifini Tənzimlə</span>
-              </button>
-              <button
-                onClick={openAddPkgModal}
-                className="flex items-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/25 transition"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Yeni Paket Yarat</span>
-              </button>
-            </div>
+            <button
+              onClick={openAddPkgModal}
+              className="flex items-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/25 transition self-start sm:self-auto"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Yeni Paket Yarat</span>
+            </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1004,9 +995,27 @@ export function SellerPortalView() {
                   </div>
                 </div>
 
-                <div className="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                  <span className="text-slate-500">Qazancınız (%{dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70}):</span>
-                  <span className="font-bold text-emerald-400">+{((pkg.price * (dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70)) / 100).toFixed(1)} AZN</span>
+                <div className="mt-6 pt-4 border-t border-slate-800/80 space-y-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500">Qazancınız (%{dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70}):</span>
+                    <span className="font-bold text-emerald-400">+{((pkg.price * (dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70)) / 100).toFixed(1)} AZN</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => openEditPkgModal(pkg)}
+                      className="flex-1 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 hover:text-white border border-blue-500/30 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Paketi Redaktə Et</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeletePackage(pkg)}
+                      className="p-2 text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 rounded-xl transition"
+                      title="Paketi sil"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -2133,7 +2142,7 @@ export function SellerPortalView() {
                   disabled={submittingPkg}
                   className="w-1/2 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/25 transition disabled:opacity-50"
                 >
-                  {submittingPkg ? 'Saxlanılır...' : 'Yadda Saxla'}
+                  {submittingPkg ? 'Saxlanılır...' : (editingPkg ? 'Dəyişiklikləri Yadda Saxla' : 'Paket Yarat')}
                 </button>
               </div>
             </form>
