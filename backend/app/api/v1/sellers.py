@@ -382,229 +382,6 @@ async def create_seller_admin(
     }
 
 
-@router.put("/{seller_id}")
-async def update_seller_admin(
-    seller_id: int,
-    body: UpdateSellerRequest,
-    db: AsyncSession = Depends(get_db),
-    admin: User = Depends(get_current_admin)
-):
-    """Admin-only: Update seller details, commission %, rank, domain, or status."""
-    stmt = select(Seller).where(Seller.id == seller_id)
-    res = await db.execute(stmt)
-    seller = res.scalars().first()
-    if not seller:
-        raise HTTPException(status_code=404, detail="Satıcı tapılmadı")
-
-    if body.name is not None:
-        seller.name = body.name
-    if body.email is not None and body.email.strip():
-        clean_email = body.email.strip().lower()
-        if clean_email != seller.email:
-            # Check for email collision
-            chk_stmt = select(User).where(User.email == clean_email, User.id != seller.user_id)
-            chk_res = await db.execute(chk_stmt)
-            if chk_res.scalars().first():
-                raise HTTPException(status_code=400, detail="Bu email ilə artıq başqa istifadəçi mövcuddur.")
-            seller.email = clean_email
-    if body.phone is not None:
-        seller.phone = body.phone
-    if body.company_name is not None:
-        seller.company_name = body.company_name
-    if body.commission_rate is not None:
-        seller.commission_rate = max(0.0, min(100.0, body.commission_rate))
-    if body.rank is not None:
-        seller.rank = body.rank
-        from app.models.seller import SELLER_RANK_CONFIG
-        rank_info = SELLER_RANK_CONFIG.get(body.rank, {})
-        if rank_info.get("custom_domain_allowed", False):
-            seller.custom_domain_enabled = True
-
-    if body.status is not None:
-        seller.status = body.status
-    if body.custom_domain is not None:
-        clean_d = body.custom_domain.strip().lower().replace("https://", "").replace("http://", "").rstrip("/") if body.custom_domain else None
-        seller.custom_domain = clean_d
-        if clean_d:
-            if body.domain_status:
-                seller.domain_status = body.domain_status
-            elif seller.domain_status == "disabled":
-                seller.domain_status = "active" if seller.custom_domain_enabled else "pending_dns"
-        else:
-            seller.domain_status = "disabled"
-    if body.custom_domain_enabled is not None:
-        seller.custom_domain_enabled = body.custom_domain_enabled
-    if body.domain_status is not None:
-        seller.domain_status = body.domain_status
-    if body.custom_brand_title is not None:
-        seller.custom_brand_title = body.custom_brand_title
-    if body.custom_brand_logo is not None:
-        seller.custom_brand_logo = body.custom_brand_logo
-
-    # Update associated user
-    u_stmt = select(User).where(User.id == seller.user_id)
-    u_res = await db.execute(u_stmt)
-    user = u_res.scalars().first()
-    if user:
-        if body.name is not None:
-            user.name = body.name
-        if body.email is not None and body.email.strip():
-            user.email = body.email.strip().lower()
-        if body.phone is not None:
-            user.phone = body.phone
-        if body.password:
-            validate_strong_password(body.password)
-            user.password_hash = get_password_hash(body.password)
-
-    await db.commit()
-    await db.refresh(seller)
-    return {"message": "Satıcı məlumatları yeniləndi", "seller": {
-        "id": seller.id,
-        "name": seller.name,
-        "email": seller.email,
-        "commission_rate": seller.commission_rate,
-        "rank": seller.rank,
-        "status": seller.status,
-        "custom_domain": seller.custom_domain,
-        "custom_domain_enabled": seller.custom_domain_enabled,
-        "domain_status": seller.domain_status
-    }}
-
-
-@router.delete("/{seller_id}")
-async def delete_seller_admin(
-    seller_id: int,
-    db: AsyncSession = Depends(get_db),
-    admin: User = Depends(get_current_admin)
-):
-    """Admin-only: Delete a seller."""
-    stmt = select(Seller).where(Seller.id == seller_id)
-    res = await db.execute(stmt)
-    seller = res.scalars().first()
-    if not seller:
-        raise HTTPException(status_code=404, detail="Satıcı tapılmadı")
-
-    user_id = seller.user_id
-    await db.delete(seller)
-    
-    # Also delete user account
-    if user_id:
-        u_stmt = select(User).where(User.id == user_id)
-        u_res = await db.execute(u_stmt)
-        user = u_res.scalars().first()
-        if user:
-            await db.delete(user)
-
-    await db.commit()
-    return {"message": "Satıcı və hesabı silindi"}
-
-
-@router.get("/{seller_id}/agents")
-async def get_seller_agents_admin(
-    seller_id: int,
-    db: AsyncSession = Depends(get_db),
-    admin: User = Depends(get_current_admin)
-):
-    """Admin-only: View all agents belonging to a specific seller."""
-    stmt = select(Tenant).where(Tenant.seller_id == seller_id).order_by(Tenant.created_at.desc())
-    res = await db.execute(stmt)
-    agents = res.scalars().all()
-    return [{
-        "id": a.id,
-        "name": a.name,
-        "phone": a.phone,
-        "telegram_handle": a.telegram_handle,
-        "plan": a.plan,
-        "status": a.status,
-        "plan_expires_at": a.plan_expires_at.isoformat() if a.plan_expires_at else None,
-        "created_at": a.created_at.isoformat() if a.created_at else None
-    } for a in agents]
-
-
-@router.post("/{seller_id}/payout")
-async def process_seller_payout_admin(
-    seller_id: int,
-    body: PayoutRequest,
-    db: AsyncSession = Depends(get_db),
-    admin: User = Depends(get_current_admin)
-):
-    """Admin-only: Process a payout to a seller."""
-    stmt = select(Seller).where(Seller.id == seller_id)
-    res = await db.execute(stmt)
-    seller = res.scalars().first()
-    if not seller:
-        raise HTTPException(status_code=404, detail="Satıcı tapılmadı")
-
-    if body.amount <= 0:
-        raise HTTPException(status_code=400, detail="Ödəniş məbləği müsbət olmalıdır.")
-    if seller.balance < body.amount:
-        raise HTTPException(status_code=400, detail=f"Kifayət qədər balans yoxdur. Mövcud balans: {seller.balance} AZN")
-
-    seller.balance -= body.amount
-
-    # Record payout transaction
-    tx = SellerTransaction(
-        seller_id=seller.id,
-        tenant_id=0,
-        amount=body.amount,
-        commission_rate=seller.commission_rate,
-        seller_profit=-body.amount,
-        platform_fee=0.0,
-        type="payout",
-        description=body.description or f"Satıcıya ödənildi: {body.amount} AZN"
-    )
-    db.add(tx)
-    await db.commit()
-    await db.refresh(seller)
-    return {"message": "Ödəniş uğurla qeydə alındı", "new_balance": seller.balance}
-
-
-@router.post("/{seller_id}/settle-cash")
-async def settle_seller_cash_admin(
-    seller_id: int,
-    body: SettleCashRequest,
-    db: AsyncSession = Depends(get_db),
-    admin: User = Depends(get_current_admin)
-):
-    """
-    Admin-only: Record cash platform fee collection from a seller.
-    When a seller collects cash from agents, they owe the platform fee share to Admin.
-    Admin uses this endpoint to confirm receiving cash from the seller.
-    """
-    stmt = select(Seller).where(Seller.id == seller_id)
-    res = await db.execute(stmt)
-    seller = res.scalars().first()
-    if not seller:
-        raise HTTPException(status_code=404, detail="Satıcı tapılmadı")
-
-    if body.amount <= 0:
-        raise HTTPException(status_code=400, detail="Məbləğ müsbət olmalıdır.")
-
-    seller.platform_fee_settled = (getattr(seller, 'platform_fee_settled', 0.0) or 0.0) + body.amount
-    
-    # Record transaction
-    tx = SellerTransaction(
-        seller_id=seller.id,
-        amount=-body.amount,
-        type="cash_settlement",
-        description=f"Admin nağd təhvil aldı: {body.amount:.2f} AZN ({body.notes or 'Nağd hesablaşma'})"
-    )
-    db.add(tx)
-    await db.commit()
-    await db.refresh(seller)
-
-    total_platform_fee = max(0.0, round((seller.total_sales_volume or 0.0) - (seller.total_earnings or 0.0), 2))
-    pending_debt = max(0.0, round(total_platform_fee - seller.platform_fee_settled, 2))
-
-    return {
-        "message": "Nağd hesablaşma uğurla qeydə alındı",
-        "seller_id": seller.id,
-        "amount_settled": body.amount,
-        "total_settled": seller.platform_fee_settled,
-        "pending_platform_debt": pending_debt
-    }
-
-
 # ----------------- SELLER PORTAL ENDPOINTS (ISOLATED) -----------------
 
 @router.get("/me/dashboard")
@@ -1599,4 +1376,229 @@ async def action_seller_payout_admin(
         }
     else:
         raise HTTPException(status_code=400, detail="Yanlış əməliyyat. approve və ya reject seçin.")
+
+
+# ----------------- ADMIN PARAMETERIZED SELLER ENDPOINTS -----------------
+
+@router.put("/{seller_id}")
+async def update_seller_admin(
+    seller_id: int,
+    body: UpdateSellerRequest,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """Admin-only: Update seller details, commission %, rank, domain, or status."""
+    stmt = select(Seller).where(Seller.id == seller_id)
+    res = await db.execute(stmt)
+    seller = res.scalars().first()
+    if not seller:
+        raise HTTPException(status_code=404, detail="Satıcı tapılmadı")
+
+    if body.name is not None:
+        seller.name = body.name
+    if body.email is not None and body.email.strip():
+        clean_email = body.email.strip().lower()
+        if clean_email != seller.email:
+            # Check for email collision
+            chk_stmt = select(User).where(User.email == clean_email, User.id != seller.user_id)
+            chk_res = await db.execute(chk_stmt)
+            if chk_res.scalars().first():
+                raise HTTPException(status_code=400, detail="Bu email ilə artıq başqa istifadəçi mövcuddur.")
+            seller.email = clean_email
+    if body.phone is not None:
+        seller.phone = body.phone
+    if body.company_name is not None:
+        seller.company_name = body.company_name
+    if body.commission_rate is not None:
+        seller.commission_rate = max(0.0, min(100.0, body.commission_rate))
+    if body.rank is not None:
+        seller.rank = body.rank
+        from app.models.seller import SELLER_RANK_CONFIG
+        rank_info = SELLER_RANK_CONFIG.get(body.rank, {})
+        if rank_info.get("custom_domain_allowed", False):
+            seller.custom_domain_enabled = True
+
+    if body.status is not None:
+        seller.status = body.status
+    if body.custom_domain is not None:
+        clean_d = body.custom_domain.strip().lower().replace("https://", "").replace("http://", "").rstrip("/") if body.custom_domain else None
+        seller.custom_domain = clean_d
+        if clean_d:
+            if body.domain_status:
+                seller.domain_status = body.domain_status
+            elif seller.domain_status == "disabled":
+                seller.domain_status = "active" if seller.custom_domain_enabled else "pending_dns"
+        else:
+            seller.domain_status = "disabled"
+    if body.custom_domain_enabled is not None:
+        seller.custom_domain_enabled = body.custom_domain_enabled
+    if body.domain_status is not None:
+        seller.domain_status = body.domain_status
+    if body.custom_brand_title is not None:
+        seller.custom_brand_title = body.custom_brand_title
+    if body.custom_brand_logo is not None:
+        seller.custom_brand_logo = body.custom_brand_logo
+
+    # Update associated user
+    u_stmt = select(User).where(User.id == seller.user_id)
+    u_res = await db.execute(u_stmt)
+    user = u_res.scalars().first()
+    if user:
+        if body.name is not None:
+            user.name = body.name
+        if body.email is not None and body.email.strip():
+            user.email = body.email.strip().lower()
+        if body.phone is not None:
+            user.phone = body.phone
+        if body.password:
+            validate_strong_password(body.password)
+            user.password_hash = get_password_hash(body.password)
+
+    await db.commit()
+    await db.refresh(seller)
+    return {"message": "Satıcı məlumatları yeniləndi", "seller": {
+        "id": seller.id,
+        "name": seller.name,
+        "email": seller.email,
+        "commission_rate": seller.commission_rate,
+        "rank": seller.rank,
+        "status": seller.status,
+        "custom_domain": seller.custom_domain,
+        "custom_domain_enabled": seller.custom_domain_enabled,
+        "domain_status": seller.domain_status
+    }}
+
+
+@router.delete("/{seller_id}")
+async def delete_seller_admin(
+    seller_id: int,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """Admin-only: Delete a seller."""
+    stmt = select(Seller).where(Seller.id == seller_id)
+    res = await db.execute(stmt)
+    seller = res.scalars().first()
+    if not seller:
+        raise HTTPException(status_code=404, detail="Satıcı tapılmadı")
+
+    user_id = seller.user_id
+    await db.delete(seller)
+    
+    # Also delete user account
+    if user_id:
+        u_stmt = select(User).where(User.id == user_id)
+        u_res = await db.execute(u_stmt)
+        user = u_res.scalars().first()
+        if user:
+            await db.delete(user)
+
+    await db.commit()
+    return {"message": "Satıcı və hesabı silindi"}
+
+
+@router.get("/{seller_id}/agents")
+async def get_seller_agents_admin(
+    seller_id: int,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """Admin-only: View all agents belonging to a specific seller."""
+    stmt = select(Tenant).where(Tenant.seller_id == seller_id).order_by(Tenant.created_at.desc())
+    res = await db.execute(stmt)
+    agents = res.scalars().all()
+    return [{
+        "id": a.id,
+        "name": a.name,
+        "phone": a.phone,
+        "telegram_handle": a.telegram_handle,
+        "plan": a.plan,
+        "status": a.status,
+        "plan_expires_at": a.plan_expires_at.isoformat() if a.plan_expires_at else None,
+        "created_at": a.created_at.isoformat() if a.created_at else None
+    } for a in agents]
+
+
+@router.post("/{seller_id}/payout")
+async def process_seller_payout_admin(
+    seller_id: int,
+    body: PayoutRequest,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """Admin-only: Process a payout to a seller."""
+    stmt = select(Seller).where(Seller.id == seller_id)
+    res = await db.execute(stmt)
+    seller = res.scalars().first()
+    if not seller:
+        raise HTTPException(status_code=404, detail="Satıcı tapılmadı")
+
+    if body.amount <= 0:
+        raise HTTPException(status_code=400, detail="Ödəniş məbləği müsbət olmalıdır.")
+    if seller.balance < body.amount:
+        raise HTTPException(status_code=400, detail=f"Kifayət qədər balans yoxdur. Mövcud balans: {seller.balance} AZN")
+
+    seller.balance -= body.amount
+
+    # Record payout transaction
+    tx = SellerTransaction(
+        seller_id=seller.id,
+        tenant_id=0,
+        amount=body.amount,
+        commission_rate=seller.commission_rate,
+        seller_profit=-body.amount,
+        platform_fee=0.0,
+        type="payout",
+        description=body.description or f"Satıcıya ödənildi: {body.amount} AZN"
+    )
+    db.add(tx)
+    await db.commit()
+    await db.refresh(seller)
+    return {"message": "Ödəniş uğurla qeydə alındı", "new_balance": seller.balance}
+
+
+@router.post("/{seller_id}/settle-cash")
+async def settle_seller_cash_admin(
+    seller_id: int,
+    body: SettleCashRequest,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """
+    Admin-only: Record cash platform fee collection from a seller.
+    When a seller collects cash from agents, they owe the platform fee share to Admin.
+    Admin uses this endpoint to confirm receiving cash from the seller.
+    """
+    stmt = select(Seller).where(Seller.id == seller_id)
+    res = await db.execute(stmt)
+    seller = res.scalars().first()
+    if not seller:
+        raise HTTPException(status_code=404, detail="Satıcı tapılmadı")
+
+    if body.amount <= 0:
+        raise HTTPException(status_code=400, detail="Məbləğ müsbət olmalıdır.")
+
+    seller.platform_fee_settled = (getattr(seller, 'platform_fee_settled', 0.0) or 0.0) + body.amount
+    
+    # Record transaction
+    tx = SellerTransaction(
+        seller_id=seller.id,
+        amount=-body.amount,
+        type="cash_settlement",
+        description=f"Admin nağd təhvil aldı: {body.amount:.2f} AZN ({body.notes or 'Nağd hesablaşma'})"
+    )
+    db.add(tx)
+    await db.commit()
+    await db.refresh(seller)
+
+    total_platform_fee = max(0.0, round((seller.total_sales_volume or 0.0) - (seller.total_earnings or 0.0), 2))
+    pending_debt = max(0.0, round(total_platform_fee - seller.platform_fee_settled, 2))
+
+    return {
+        "message": "Nağd hesablaşma uğurla qeydə alındı",
+        "seller_id": seller.id,
+        "amount_settled": body.amount,
+        "total_settled": seller.platform_fee_settled,
+        "pending_platform_debt": pending_debt
+    }
 

@@ -156,6 +156,15 @@ async def test_seller_portal_packages_and_agent_registration(client: AsyncClient
     assert agent_res.status_code == 201
     assert agent_res.json()["name"] == "Nurlan Agent"
 
+    # 3b. Verify Seller can retrieve their agent list via GET /me/agents
+    my_agents_res = await client.get("/api/v1/sellers/me/agents", headers=seller_headers)
+    assert my_agents_res.status_code == 200
+    agents_data = my_agents_res.json()
+    assert len(agents_data) == 1
+    assert agents_data[0]["name"] == "Nurlan Agent"
+    assert "444 44 44" in agents_data[0]["phone"]
+    assert agents_data[0]["status"] == "active"
+
     # 4. Verify Seller Balance & Profit (120 AZN * 78% [75% base + 3% Silver bonus] = 93.6 AZN)
     dash_res = await client.get("/api/v1/sellers/me/dashboard", headers=seller_headers)
     assert dash_res.status_code == 200
