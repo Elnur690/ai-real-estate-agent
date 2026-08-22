@@ -10,6 +10,7 @@ from app.models.user import User
 from app.models.tenant import Tenant
 from app.models.seller import Seller, SellerPackage, SellerTransaction
 from app.api.v1.auth import get_password_hash
+from app.core.config import settings
 from app.core.security import validate_strong_password
 
 router = APIRouter(prefix="/sellers", tags=["Sellers"])
@@ -1127,6 +1128,13 @@ async def get_my_domain_settings(
     from app.models.seller import SELLER_RANK_CONFIG
     rank_info = SELLER_RANK_CONFIG.get(seller.rank, SELLER_RANK_CONFIG["Bronze"])
 
+    import socket
+    target_cname = getattr(settings, "CNAME_TARGET_DOMAIN", "realtor.erma.shop")
+    try:
+        resolved_server_ip = socket.gethostbyname(target_cname)
+    except Exception:
+        resolved_server_ip = getattr(settings, "SERVER_IP", "185.196.21.159")
+
     return {
         "custom_domain": seller.custom_domain,
         "custom_domain_enabled": seller.custom_domain_enabled,
@@ -1136,8 +1144,9 @@ async def get_my_domain_settings(
         "rank_allows_domain": rank_info.get("custom_domain_allowed", False) or seller.custom_domain_enabled,
         "dns_instructions": {
             "type": "CNAME",
-            "host": seller.custom_domain or "subdomain.yourbrand.az",
-            "target": "cname.realestateai.az",
+            "host": seller.custom_domain or "emlak.brendiniz.az",
+            "target": target_cname,
+            "server_ip": resolved_server_ip,
             "ttl": 300
         }
     }

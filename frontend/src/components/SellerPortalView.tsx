@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { 
   Store, Users, Package, DollarSign, Award, Plus, Edit3, Trash2, CheckCircle, 
   AlertTriangle, RefreshCw, X, Shield, Phone, Send, Sparkles, Check, ChevronRight, TrendingUp,
-  Globe, ExternalLink, Lock, Gift
+  Globe, ExternalLink, Lock, Gift, Copy
 } from 'lucide-react';
 import api from '../api';
 
@@ -127,6 +127,13 @@ export function SellerPortalView() {
   const [savingDomain, setSavingDomain] = useState(false);
   const [verifyingDns, setVerifyingDns] = useState(false);
   const [dnsResult, setDnsResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const handleCopy = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey(null), 2500);
+  };
 
   // Withdraw Modal State
   const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
@@ -1296,30 +1303,111 @@ export function SellerPortalView() {
 
                 {/* DNS Instructions Column */}
                 <div className="lg:col-span-5 space-y-4 bg-slate-950/60 p-5 rounded-2xl border border-slate-800/80">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-cyan-400" />
-                    <span>DNS Qoşulma Təlimatı</span>
-                  </h3>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-cyan-400" />
+                      <span>DNS Qoşulma Təlimatı (Real Məlumatlar)</span>
+                    </h3>
+                    <span className="text-[10px] text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20 font-bold">
+                      Canlı Server
+                    </span>
+                  </div>
                   <p className="text-xs text-slate-400 leading-relaxed">
-                    Domen provayderinizin (məs: Cloudflare, GoDaddy, Namecheap) DNS idarəetmə panelinə daxil olaraq aşağıdakı CNAME qeydini əlavə edin:
+                    Domen provayderinizin (məs: Cloudflare, GoDaddy, Namecheap, cPanel) DNS idarəetmə panelinə daxil olaraq aşağıdakı qeydlərdən birini əlavə edin:
                   </p>
 
-                  <div className="space-y-2 text-xs font-mono bg-slate-900 p-3.5 rounded-xl border border-slate-800">
-                    <div className="flex justify-between">
+                  {/* Option 1: CNAME (Recommended for subdomains) */}
+                  <div className="space-y-2 bg-slate-900/90 p-3.5 rounded-xl border border-slate-800 text-xs font-mono">
+                    <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5 font-sans">
+                      <span className="text-xs font-bold text-cyan-400">1. Subdomen üçün (Tövsiyə olunur)</span>
+                      <span className="text-[10px] text-slate-400 font-mono">Məs: emlak.brendiniz.az</span>
+                    </div>
+
+                    <div className="flex justify-between items-center py-1">
                       <span className="text-slate-500">Record Type:</span>
                       <span className="text-cyan-400 font-bold">CNAME</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Host / Name:</span>
-                      <span className="text-white font-bold">{domainHost || 'subdomain'}</span>
+
+                    <div className="flex justify-between items-center py-1">
+                      <span className="text-slate-500">Host / Ad:</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-white font-bold">{domainHost.split('.')[0] || 'subdomain'}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(domainHost.split('.')[0] || 'subdomain', 'cname_host')}
+                          className="p-1 text-slate-400 hover:text-white bg-slate-800 rounded transition"
+                          title="Kopyala"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+                        {copiedKey === 'cname_host' && <span className="text-[10px] text-emerald-400">Kopyalandı!</span>}
+                      </div>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Target / Value:</span>
-                      <span className="text-emerald-400 font-bold">cname.realestateai.az</span>
+
+                    <div className="flex justify-between items-center py-1">
+                      <span className="text-slate-500">Hədəf (Target):</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-emerald-400 font-bold">{domainSettings?.dns_instructions?.target || 'realtor.erma.shop'}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(domainSettings?.dns_instructions?.target || 'realtor.erma.shop', 'cname_target')}
+                          className="p-1 text-slate-400 hover:text-white bg-slate-800 rounded transition"
+                          title="Kopyala"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+                        {copiedKey === 'cname_target' && <span className="text-[10px] text-emerald-400">Kopyalandı!</span>}
+                      </div>
                     </div>
-                    <div className="flex justify-between">
+
+                    <div className="flex justify-between items-center py-0.5">
                       <span className="text-slate-500">TTL:</span>
                       <span className="text-slate-400">300 və ya Auto</span>
+                    </div>
+                  </div>
+
+                  {/* Option 2: A Record (For Apex / Root Domain) */}
+                  <div className="space-y-2 bg-slate-900/90 p-3.5 rounded-xl border border-slate-800 text-xs font-mono">
+                    <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5 font-sans">
+                      <span className="text-xs font-bold text-indigo-400">2. Əsas Kök Domen üçün (Apex Domain)</span>
+                      <span className="text-[10px] text-slate-400 font-mono">Məs: brendiniz.az</span>
+                    </div>
+
+                    <div className="flex justify-between items-center py-1">
+                      <span className="text-slate-500">Record Type:</span>
+                      <span className="text-indigo-400 font-bold">A</span>
+                    </div>
+
+                    <div className="flex justify-between items-center py-1">
+                      <span className="text-slate-500">Host / Ad:</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-white font-bold">@</span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy('@', 'a_host')}
+                          className="p-1 text-slate-400 hover:text-white bg-slate-800 rounded transition"
+                          title="Kopyala"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+                        {copiedKey === 'a_host' && <span className="text-[10px] text-emerald-400">Kopyalandı!</span>}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between items-center py-1">
+                      <span className="text-slate-500">IP Ünvanı (Server IP):</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-emerald-400 font-bold">{domainSettings?.dns_instructions?.server_ip || '185.196.21.159'}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(domainSettings?.dns_instructions?.server_ip || '185.196.21.159', 'a_ip')}
+                          className="p-1 text-slate-400 hover:text-white bg-slate-800 rounded transition"
+                          title="Kopyala"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+                        {copiedKey === 'a_ip' && <span className="text-[10px] text-emerald-400">Kopyalandı!</span>}
+                      </div>
                     </div>
                   </div>
 

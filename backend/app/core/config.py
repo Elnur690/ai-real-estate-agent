@@ -35,6 +35,10 @@ class Settings(BaseSettings):
         "*"
     ]
 
+    # DNS & White-label Target Settings
+    CNAME_TARGET_DOMAIN: str = os.getenv("CNAME_TARGET_DOMAIN", "realtor.erma.shop")
+    SERVER_IP: str = os.getenv("SERVER_IP", "185.196.21.159")
+
     # Database
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL", "sqlite+aiosqlite:///./realestate.db"
