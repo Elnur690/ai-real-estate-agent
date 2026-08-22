@@ -234,6 +234,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Security Middleware (OWASP Headers, Brute-Force Rate Limiter, DoS Protection)
+from app.core.security_middleware import SecurityHeadersAndRateLimitMiddleware
+app.add_middleware(SecurityHeadersAndRateLimitMiddleware)
+
 # CORS Middleware for React frontend
 app.add_middleware(
     CORSMiddleware,

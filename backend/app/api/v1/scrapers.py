@@ -11,7 +11,7 @@ router = APIRouter(prefix="/scrapers", tags=["Scrapers"])
 
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 class ListingSourceCreate(BaseModel):
     name: str
@@ -19,6 +19,8 @@ class ListingSourceCreate(BaseModel):
     url_or_handle: str
 
 class ListingSourceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     type: str
     name: str
@@ -27,9 +29,6 @@ class ListingSourceResponse(BaseModel):
     status: str
     last_scraped_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
 
 @router.get("/sources", response_model=List[ListingSourceResponse])
 async def list_sources(db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):

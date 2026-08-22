@@ -47,18 +47,26 @@ class SetupAdminRequest(BaseModel):
 
 @router.post("/setup-admin", response_model=TokenResponse)
 async def setup_admin(body: SetupAdminRequest, db: AsyncSession = Depends(get_db)):
-    """Initialize default SaaS Superadmin if none exists."""
+    """Initialize default SaaS Superadmin only if none exists."""
     stmt = select(User).where(User.role == "admin")
     res = await db.execute(stmt)
     existing_admin = res.scalars().first()
 
     if existing_admin:
-        token = create_access_token(existing_admin.id)
-        return TokenResponse(access_token=token, user_name=existing_admin.name, role=existing_admin.role)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Superadmin hesabı artıq quraşdırılıb. Zəhmət olmasa /auth/login vasitəsilə daxil olun."
+        )
+
+    if len(body.password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Təhlükəsizlik üçün şifrə minimum 8 simvoldan ibarət olmalıdır."
+        )
 
     admin_user = User(
-        name=body.name,
-        email=body.email,
+        name=body.name.strip(),
+        email=body.email.lower().strip(),
         role="admin",
         password_hash=get_password_hash(body.password)
     )

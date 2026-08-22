@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +25,8 @@ class CreatePaymentRequest(BaseModel):
     notes: Optional[str] = None
 
 class PaymentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     tenant_id: int
     amount: float
@@ -34,9 +36,6 @@ class PaymentResponse(BaseModel):
     received_by: Optional[int] = None
     received_at: Optional[datetime] = None
     notes: Optional[str] = None
-
-    class Config:
-        from_attributes = True
 
 @router.get("", response_model=List[PaymentResponse])
 async def list_payments(db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):

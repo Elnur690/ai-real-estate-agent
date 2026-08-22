@@ -1,9 +1,11 @@
 import os
 import secrets
 from typing import Optional
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(case_sensitive=True, extra="ignore", env_file=".env")
+
     PROJECT_NAME: str = "AI Real Estate Agent SaaS"
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str = os.getenv("SECRET_KEY", secrets.token_urlsafe(32))
@@ -59,10 +61,5 @@ class Settings(BaseSettings):
 
     # Gemini Fallback Key
     GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY", None)
-
-    class Config:
-        case_sensitive = True
-        extra = "ignore"
-        env_file = ".env"
 
 settings = Settings()
