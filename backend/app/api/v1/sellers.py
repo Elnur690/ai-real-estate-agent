@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import List, Optional, Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1117,10 +1117,11 @@ class UpdateMyDomainRequest(BaseModel):
 
 @router.get("/me/domain")
 async def get_my_domain_settings(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_auth: tuple[User, Optional[Seller]] = Depends(get_current_seller_user)
 ):
-    """Seller-only: Get custom domain details and DNS setup instructions."""
+    """Seller-only: Get custom domain details and DNS setup instructions dynamically."""
     user, seller = current_auth
     if not seller:
         raise HTTPException(status_code=403, detail="Satıcı profili tələb olunur.")
@@ -1128,8 +1129,34 @@ async def get_my_domain_settings(
     from app.models.seller import SELLER_RANK_CONFIG
     rank_info = SELLER_RANK_CONFIG.get(seller.rank, SELLER_RANK_CONFIG["Bronze"])
 
+    # 1. Check if Admin configured a custom system domain override in AppSettings
+    from app.models.setting import AppSettings
+    stmt_setting = select(AppSettings).where(AppSettings.key == "cname_target_domain")
+    res_setting = await db.execute(stmt_setting)
+    db_setting = res_setting.scalars().first()
+
+    if db_setting and db_setting.value.strip():
+        target_cname = db_setting.value.strip()
+    else:
+        # 2. Extract dynamically from incoming Request Host / X-Forwarded-Host
+        raw_host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+        clean_req_host = raw_host.split(":")[0].strip().lower()
+        
+        # If API host is requested (e.g. realtor-api.erma.shop -> realtor.erma.shop)
+        if clean_req_host.startswith("realtor-api."):
+            clean_req_host = clean_req_host.replace("realtor-api.", "realtor.", 1)
+        elif "-api." in clean_req_host:
+            clean_req_host = clean_req_host.replace("-api.", ".", 1)
+        elif clean_req_host.startswith("api."):
+            clean_req_host = clean_req_host.replace("api.", "", 1)
+
+        if clean_req_host and clean_req_host not in ["localhost", "127.0.0.1", "test", "testserver"]:
+            target_cname = clean_req_host
+        else:
+            target_cname = getattr(settings, "CNAME_TARGET_DOMAIN", "realtor.erma.shop")
+
+    # 3. Resolve actual Server IP dynamically
     import socket
-    target_cname = getattr(settings, "CNAME_TARGET_DOMAIN", "realtor.erma.shop")
     try:
         resolved_server_ip = socket.gethostbyname(target_cname)
     except Exception:
