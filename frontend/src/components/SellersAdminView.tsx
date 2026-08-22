@@ -98,6 +98,52 @@ export function SellersAdminView() {
   const [formBrandLogo, setFormBrandLogo] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Rank Bonus Settings Modal State
+  const [isRankBonusModalOpen, setIsRankBonusModalOpen] = useState(false);
+  const [bonusEnabled, setBonusEnabled] = useState(true);
+  const [bonusBronze, setBonusBronze] = useState<number>(0);
+  const [bonusSilver, setBonusSilver] = useState<number>(3);
+  const [bonusGold, setBonusGold] = useState<number>(5);
+  const [bonusPlatinum, setBonusPlatinum] = useState<number>(8);
+  const [bonusDiamond, setBonusDiamond] = useState<number>(10);
+  const [savingBonuses, setSavingBonuses] = useState(false);
+
+  const fetchRankBonuses = async () => {
+    try {
+      const res = await api.get('/sellers/admin/rank-bonuses');
+      setBonusEnabled(res.data.enabled ?? true);
+      setBonusBronze(res.data.bronze_bonus ?? 0);
+      setBonusSilver(res.data.silver_bonus ?? 3);
+      setBonusGold(res.data.gold_bonus ?? 5);
+      setBonusPlatinum(res.data.platinum_bonus ?? 8);
+      setBonusDiamond(res.data.diamond_bonus ?? 10);
+    } catch (err) {
+      console.error('Failed to fetch rank bonuses', err);
+    }
+  };
+
+  const handleSaveRankBonuses = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingBonuses(true);
+    try {
+      await api.post('/sellers/admin/rank-bonuses', {
+        enabled: bonusEnabled,
+        bronze_bonus: Number(bonusBronze),
+        silver_bonus: Number(bonusSilver),
+        gold_bonus: Number(bonusGold),
+        platinum_bonus: Number(bonusPlatinum),
+        diamond_bonus: Number(bonusDiamond)
+      });
+      setIsRankBonusModalOpen(false);
+      fetchSellers();
+      alert('Dərəcə bonusları uğurla yeniləndi!');
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Xəta baş verdi');
+    } finally {
+      setSavingBonuses(false);
+    }
+  };
+
   const fetchSellers = async () => {
     setLoading(true);
     setError(null);
@@ -307,6 +353,16 @@ export function SellersAdminView() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              fetchRankBonuses();
+              setIsRankBonusModalOpen(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-xl text-xs font-bold shadow-lg shadow-amber-500/10 transition"
+          >
+            <Award className="w-4 h-4 text-amber-400" />
+            <span>Dərəcə Bonuslarını Tənzimlə</span>
+          </button>
           <button
             onClick={fetchSellers}
             className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition"
@@ -1218,6 +1274,153 @@ export function SellersAdminView() {
                   className="w-1/2 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl text-xs shadow-lg shadow-emerald-600/25 transition disabled:opacity-50"
                 >
                   {settling ? 'Qeydə alınır...' : 'Təsdiqlə və Qeydə Al'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* RANK BONUS SETTINGS MODAL */}
+      {isRankBonusModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-2xl p-6 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <Award className="w-5 h-5 text-amber-400" />
+                <span>Satıcı Dərəcə Komissiya Bonusları</span>
+              </h3>
+              <button onClick={() => setIsRankBonusModalOpen(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveRankBonuses} className="space-y-4">
+              <div className="p-4 bg-slate-950/70 border border-slate-800 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-white block">Dərəcə Bonus Sistemi</span>
+                    <span className="text-[11px] text-slate-400">Satıcıların dərəcələrinə görə əlavə komissiya bonusu hesablanması</span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={bonusEnabled}
+                      onChange={(e) => setBonusEnabled(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                  </label>
+                </div>
+                <div className={`text-[11px] font-medium pt-1 ${bonusEnabled ? 'text-emerald-400' : 'text-slate-500'}`}>
+                  Status: {bonusEnabled ? '🟢 Bütün dərəcə bonusları aktivdir' : '⚪ Bütün dərəcə bonusları deaktivdir (0% əlavə olunur)'}
+                </div>
+              </div>
+
+              <div className={`space-y-3 ${!bonusEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
+                <p className="text-xs font-bold text-slate-300 uppercase tracking-wider">Hər Dərəcə üçün Əlavə Komissiya Bonusu (%)</p>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-3 bg-slate-950/50 border border-slate-800 rounded-xl space-y-1">
+                    <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                      <span>🥉 Bronze Bonusu (%)</span>
+                      <span className="text-[10px] text-slate-500">0 - 500 AZN</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="100"
+                      value={bonusBronze}
+                      onChange={(e) => setBonusBronze(parseFloat(e.target.value) || 0)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-white text-xs font-bold text-amber-400 focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+
+                  <div className="p-3 bg-slate-950/50 border border-slate-800 rounded-xl space-y-1">
+                    <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                      <span>🥈 Silver Bonusu (%)</span>
+                      <span className="text-[10px] text-slate-500">500+ AZN</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="100"
+                      value={bonusSilver}
+                      onChange={(e) => setBonusSilver(parseFloat(e.target.value) || 0)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-white text-xs font-bold text-slate-300 focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+
+                  <div className="p-3 bg-slate-950/50 border border-slate-800 rounded-xl space-y-1">
+                    <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                      <span>🥇 Gold Bonusu (%)</span>
+                      <span className="text-[10px] text-slate-500">2,000+ AZN</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="100"
+                      value={bonusGold}
+                      onChange={(e) => setBonusGold(parseFloat(e.target.value) || 0)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-white text-xs font-bold text-amber-300 focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+
+                  <div className="p-3 bg-slate-950/50 border border-slate-800 rounded-xl space-y-1">
+                    <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                      <span>💠 Platinum Bonusu (%)</span>
+                      <span className="text-[10px] text-slate-500">5,000+ AZN</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="100"
+                      value={bonusPlatinum}
+                      onChange={(e) => setBonusPlatinum(parseFloat(e.target.value) || 0)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-white text-xs font-bold text-cyan-400 focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+
+                  <div className="p-3 bg-slate-950/50 border border-slate-800 rounded-xl space-y-1 sm:col-span-2">
+                    <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                      <span>💎 Diamond Bonusu (%)</span>
+                      <span className="text-[10px] text-slate-500">10,000+ AZN VIP</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="100"
+                      value={bonusDiamond}
+                      onChange={(e) => setBonusDiamond(parseFloat(e.target.value) || 0)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-white text-xs font-bold text-purple-400 focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl text-[11px] text-slate-400 leading-relaxed">
+                💡 <strong>Misal:</strong> Əsas komissiyası %70 olan <strong>Diamond</strong> satıcının yekun qazanc payı: <span className="text-emerald-400 font-bold">%{70 + (bonusEnabled ? Number(bonusDiamond) : 0)}</span> olacaq.
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsRankBonusModalOpen(false)}
+                  className="w-1/2 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-xl text-xs transition"
+                >
+                  Ləğv et
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingBonuses}
+                  className="w-1/2 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-xl text-xs shadow-lg shadow-amber-500/25 transition disabled:opacity-50"
+                >
+                  {savingBonuses ? 'Saxlanılır...' : 'Bonusları Yadda Saxla'}
                 </button>
               </div>
             </form>

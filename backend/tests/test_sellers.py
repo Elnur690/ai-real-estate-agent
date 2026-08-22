@@ -742,4 +742,90 @@ async def test_dynamic_commission_rate_and_cash_settlement(client: AsyncClient, 
     assert dash_res2.json()["pending_platform_debt"] == 0.0
 
 
+@pytest.mark.asyncio
+async def test_admin_configurable_rank_bonuses(client: AsyncClient, test_db: AsyncSession):
+    # 1. Seed Admin
+    admin_user = User(
+        name="Bonus Admin",
+        email="bonusadmin@test.az",
+        phone="+994507777771",
+        role="admin",
+        password_hash=get_password_hash("admin123")
+    )
+    test_db.add(admin_user)
+    await test_db.commit()
+    await test_db.refresh(admin_user)
+
+    admin_token = create_access_token(admin_user.id)
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    # 2. Seed Gold Seller
+    seller_user = User(
+        name="Gold Seller Bonus Test",
+        email="goldseller@test.az",
+        phone="+994507777772",
+        role="seller",
+        password_hash=get_password_hash("sellerpass")
+    )
+    test_db.add(seller_user)
+    await test_db.commit()
+    await test_db.refresh(seller_user)
+
+    seller = Seller(
+        user_id=seller_user.id,
+        name="Gold Seller Bonus Test",
+        phone="+994507777772",
+        email="goldseller@test.az",
+        commission_rate=70.0,
+        rank="Gold",
+        balance=0.0
+    )
+    test_db.add(seller)
+    await test_db.commit()
+    await test_db.refresh(seller)
+
+    seller_token = create_access_token(seller_user.id)
+    seller_headers = {"Authorization": f"Bearer {seller_token}"}
+
+    # 3. Default Gold bonus is 5% -> effective commission 75%
+    dash_res = await client.get("/api/v1/sellers/me/dashboard", headers=seller_headers)
+    assert dash_res.status_code == 200
+    assert dash_res.json()["bonus_commission"] == 5.0
+    assert dash_res.json()["effective_commission_rate"] == 75.0
+
+    # 4. Admin updates Gold bonus to 12% and Diamond to 15%
+    update_res = await client.post("/api/v1/sellers/admin/rank-bonuses", json={
+        "enabled": True,
+        "bronze_bonus": 1.0,
+        "silver_bonus": 4.0,
+        "gold_bonus": 12.0,
+        "platinum_bonus": 14.0,
+        "diamond_bonus": 15.0
+    }, headers=admin_headers)
+    assert update_res.status_code == 200
+
+    # 5. Verify Gold seller dashboard now dynamically reflects 12% bonus -> effective 82%
+    dash_res2 = await client.get("/api/v1/sellers/me/dashboard", headers=seller_headers)
+    assert dash_res2.status_code == 200
+    assert dash_res2.json()["bonus_commission"] == 12.0
+    assert dash_res2.json()["effective_commission_rate"] == 82.0
+
+    # 6. Admin disables rank bonuses entirely
+    disable_res = await client.post("/api/v1/sellers/admin/rank-bonuses", json={
+        "enabled": False,
+        "bronze_bonus": 0.0,
+        "silver_bonus": 0.0,
+        "gold_bonus": 12.0,
+        "platinum_bonus": 14.0,
+        "diamond_bonus": 15.0
+    }, headers=admin_headers)
+    assert disable_res.status_code == 200
+
+    # 7. Verify Gold seller dashboard now shows 0% bonus -> effective 70%
+    dash_res3 = await client.get("/api/v1/sellers/me/dashboard", headers=seller_headers)
+    assert dash_res3.status_code == 200
+    assert dash_res3.json()["bonus_commission"] == 0.0
+    assert dash_res3.json()["effective_commission_rate"] == 70.0
+
+
 

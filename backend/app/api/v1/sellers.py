@@ -114,8 +114,113 @@ class SettleCashRequest(BaseModel):
     amount: float
     notes: Optional[str] = None
 
+class RankBonusesConfig(BaseModel):
+    enabled: bool = True
+    bronze_bonus: float = 0.0
+    silver_bonus: float = 3.0
+    gold_bonus: float = 5.0
+    platinum_bonus: float = 8.0
+    diamond_bonus: float = 10.0
+
+
+async def get_seller_rank_config_map(db: AsyncSession) -> dict:
+    """Returns the dynamic rank configuration map with admin configured bonuses and settings."""
+    from app.models.setting import AppSettings
+    from app.models.seller import SELLER_RANK_CONFIG
+    import copy
+
+    keys = [
+        "seller_rank_bonus_enabled",
+        "seller_rank_bonus_bronze",
+        "seller_rank_bonus_silver",
+        "seller_rank_bonus_gold",
+        "seller_rank_bonus_platinum",
+        "seller_rank_bonus_diamond"
+    ]
+    stmt = select(AppSettings).where(AppSettings.key.in_(keys))
+    res = await db.execute(stmt)
+    settings_map = {s.key: s.value for s in res.scalars().all()}
+
+    is_enabled = settings_map.get("seller_rank_bonus_enabled", "true").lower() in ["true", "1", "yes"]
+
+    rank_config = copy.deepcopy(SELLER_RANK_CONFIG)
+
+    for rank, conf in rank_config.items():
+        if not is_enabled:
+            conf["bonus_commission"] = 0.0
+        else:
+            key_name = f"seller_rank_bonus_{rank.lower()}"
+            if key_name in settings_map:
+                try:
+                    conf["bonus_commission"] = float(settings_map[key_name])
+                except (ValueError, TypeError):
+                    pass
+        conf["bonus_enabled"] = is_enabled
+
+    return rank_config
+
 
 # ----------------- ADMIN ENDPOINTS -----------------
+
+@router.get("/admin/rank-bonuses")
+async def get_rank_bonuses_admin(
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """Admin-only: Get rank bonuses configuration."""
+    from app.models.setting import AppSettings
+    stmt = select(AppSettings).where(AppSettings.key.like("seller_rank_bonus%"))
+    res = await db.execute(stmt)
+    settings_map = {s.key: s.value for s in res.scalars().all()}
+
+    is_enabled = settings_map.get("seller_rank_bonus_enabled", "true").lower() in ["true", "1", "yes"]
+
+    def _get_float(key, default):
+        try:
+            return float(settings_map.get(key, default))
+        except (ValueError, TypeError):
+            return default
+
+    return {
+        "enabled": is_enabled,
+        "bronze_bonus": _get_float("seller_rank_bonus_bronze", 0.0),
+        "silver_bonus": _get_float("seller_rank_bonus_silver", 3.0),
+        "gold_bonus": _get_float("seller_rank_bonus_gold", 5.0),
+        "platinum_bonus": _get_float("seller_rank_bonus_platinum", 8.0),
+        "diamond_bonus": _get_float("seller_rank_bonus_diamond", 10.0),
+    }
+
+
+@router.post("/admin/rank-bonuses")
+async def update_rank_bonuses_admin(
+    body: RankBonusesConfig,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_current_admin)
+):
+    """Admin-only: Update rank bonuses configuration or disable bonuses completely."""
+    from app.models.setting import AppSettings
+    updates = {
+        "seller_rank_bonus_enabled": "true" if body.enabled else "false",
+        "seller_rank_bonus_bronze": str(max(0.0, min(100.0, body.bronze_bonus))),
+        "seller_rank_bonus_silver": str(max(0.0, min(100.0, body.silver_bonus))),
+        "seller_rank_bonus_gold": str(max(0.0, min(100.0, body.gold_bonus))),
+        "seller_rank_bonus_platinum": str(max(0.0, min(100.0, body.platinum_bonus))),
+        "seller_rank_bonus_diamond": str(max(0.0, min(100.0, body.diamond_bonus))),
+    }
+
+    for key, val in updates.items():
+        stmt = select(AppSettings).where(AppSettings.key == key)
+        res = await db.execute(stmt)
+        setting = res.scalars().first()
+        if setting:
+            setting.value = val
+            setting.updated_by = admin.id
+        else:
+            db.add(AppSettings(key=key, value=val, updated_by=admin.id))
+
+    await db.commit()
+    return {"message": "Dərəcə bonusları uğurla yeniləndi", "config": body}
+
 
 @router.get("", response_model=List[dict])
 async def list_all_sellers_admin(
@@ -123,7 +228,7 @@ async def list_all_sellers_admin(
     admin: User = Depends(get_current_admin)
 ):
     """Admin-only: List all registered sellers with their agent counts, earnings, and domain configs."""
-    from app.models.seller import SELLER_RANK_CONFIG
+    rank_map = await get_seller_rank_config_map(db)
     stmt = select(Seller).order_by(Seller.created_at.desc())
     res = await db.execute(stmt)
     sellers = res.scalars().all()
@@ -140,7 +245,7 @@ async def list_all_sellers_admin(
         active_cnt_res = await db.execute(active_cnt_stmt)
         active_agents = active_cnt_res.scalar() or 0
 
-        rank_info = SELLER_RANK_CONFIG.get(s.rank, SELLER_RANK_CONFIG["Bronze"])
+        rank_info = rank_map.get(s.rank, rank_map.get("Bronze", {}))
 
         total_platform_fee = max(0.0, round((s.total_sales_volume or 0.0) - (s.total_earnings or 0.0), 2))
         platform_fee_settled = getattr(s, 'platform_fee_settled', 0.0) or 0.0
@@ -545,8 +650,8 @@ async def get_seller_dashboard(
         seller.rank = auto_rank
         await db.commit()
 
-    from app.models.seller import SELLER_RANK_CONFIG
-    rank_info = SELLER_RANK_CONFIG.get(seller.rank, SELLER_RANK_CONFIG["Bronze"])
+    rank_map = await get_seller_rank_config_map(db)
+    rank_info = rank_map.get(seller.rank, rank_map.get("Bronze", {}))
     bonus_commission = rank_info.get("bonus_commission", 0.0)
     effective_commission_rate = min(100.0, seller.commission_rate + bonus_commission)
 
@@ -771,8 +876,8 @@ async def register_my_agent(
 
     # 4. Calculate Commission & Financials if package has price
     if package and package.price > 0:
-        from app.models.seller import SELLER_RANK_CONFIG
-        rank_info = SELLER_RANK_CONFIG.get(seller.rank, SELLER_RANK_CONFIG["Bronze"])
+        rank_map = await get_seller_rank_config_map(db)
+        rank_info = rank_map.get(seller.rank, rank_map.get("Bronze", {}))
         bonus_pct = rank_info.get("bonus_commission", 0.0)
         effective_commission_pct = min(100.0, seller.commission_rate + bonus_pct)
 
