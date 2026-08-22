@@ -279,6 +279,39 @@ async def test_seller_package_minimum_price_and_free_trial_constraints(client: A
     assert agent_t.feature_aged_listings is True
     assert agent_t.addon_saved_searches == 5
 
+    # 7. Test: Seller customizes Free Trial settings (e.g. 5 days trial, 4 searches, AVM enabled)
+    trial_set_res = await client.post("/api/v1/sellers/me/trial-settings", json={
+        "free_trial_enabled": True,
+        "free_trial_duration_days": 5,
+        "free_trial_max_searches": 4,
+        "free_trial_max_locations": 3,
+        "free_trial_feature_makler": True,
+        "free_trial_feature_avm": True,
+        "free_trial_feature_social_brochure": True,
+        "free_trial_feature_multi_location": True
+    }, headers=seller_headers)
+    assert trial_set_res.status_code == 200
+
+    # 8. Test: Seller registers agent with Free Trial offer (is_trial=True)
+    trial_agent_res = await client.post("/api/v1/sellers/me/agents", json={
+        "name": "Trial Agent 1",
+        "phone": "+994508888890",
+        "is_trial": True
+    }, headers=seller_headers)
+    assert trial_agent_res.status_code == 201
+    trial_agent_id = trial_agent_res.json()["agent_id"]
+
+    # Verify Trial agent in DB
+    t_trial_res = await test_db.execute(select(Tenant).where(Tenant.id == trial_agent_id))
+    trial_agent = t_trial_res.scalars().first()
+    assert trial_agent is not None
+    assert trial_agent.plan == "Pulsuz Sınaq (5 Gün)"
+    assert trial_agent.feature_makler_detector is True
+    assert trial_agent.feature_avm_bargain_finder is True
+    assert trial_agent.feature_social_brochure is True
+    assert trial_agent.feature_multi_location is True
+    assert trial_agent.max_locations_per_search == 3
+
 
 @pytest.mark.asyncio
 async def test_admin_move_agent_between_sellers(client: AsyncClient, test_db: AsyncSession):

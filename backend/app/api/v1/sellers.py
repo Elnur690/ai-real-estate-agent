@@ -91,6 +91,17 @@ class RegisterSellerAgentRequest(BaseModel):
     whatsapp_number: Optional[str] = None
     preferred_channel: str = "telegram"
     package_id: Optional[int] = None
+    is_trial: bool = False
+
+class UpdateFreeTrialSettingsRequest(BaseModel):
+    free_trial_enabled: Optional[bool] = None
+    free_trial_duration_days: Optional[int] = None
+    free_trial_max_searches: Optional[int] = None
+    free_trial_max_locations: Optional[int] = None
+    free_trial_feature_makler: Optional[bool] = None
+    free_trial_feature_avm: Optional[bool] = None
+    free_trial_feature_social_brochure: Optional[bool] = None
+    free_trial_feature_multi_location: Optional[bool] = None
 
 class PayoutRequest(BaseModel):
     amount: float
@@ -547,6 +558,14 @@ async def get_seller_dashboard(
         "total_packages": total_packages,
         "min_package_price": min_price,
         "max_trial_days": max_trial_days,
+        "free_trial_enabled": seller.free_trial_enabled,
+        "free_trial_duration_days": seller.free_trial_duration_days,
+        "free_trial_max_searches": seller.free_trial_max_searches,
+        "free_trial_max_locations": seller.free_trial_max_locations,
+        "free_trial_feature_makler": seller.free_trial_feature_makler,
+        "free_trial_feature_avm": seller.free_trial_feature_avm,
+        "free_trial_feature_social_brochure": seller.free_trial_feature_social_brochure,
+        "free_trial_feature_multi_location": seller.free_trial_feature_multi_location,
         "custom_domain": seller.custom_domain,
         "custom_domain_enabled": seller.custom_domain_enabled,
         "domain_status": seller.domain_status,
@@ -645,9 +664,10 @@ async def register_my_agent(
                 detail="Bu agent artıq sistemdə qeydiyyatdan keçib və tətbiqdən istifadə edir."
             )
 
-    # 2. Check Package if assigned
+    # 2. Check Package if assigned OR Free Trial
     package = None
-    if body.package_id:
+    is_trial = body.is_trial or (body.package_id is None)
+    if not is_trial and body.package_id:
         p_stmt = select(SellerPackage).where(
             SellerPackage.id == body.package_id,
             SellerPackage.seller_id == seller.id,
@@ -661,7 +681,38 @@ async def register_my_agent(
     # 3. Create Tenant Agent
     from datetime import timedelta
     now_utc = datetime.now(timezone.utc)
-    expires_at = now_utc + timedelta(days=package.duration_days if package else 30)
+
+    if is_trial:
+        if not seller.free_trial_enabled:
+            raise HTTPException(status_code=400, detail="Satıcı pulsuz sınaq təklifini deaktiv edib. Zəhmət olmasa ödənişli paket seçin.")
+        trial_days = seller.free_trial_duration_days or 7
+        expires_at = now_utc + timedelta(days=trial_days)
+        agent_plan = f"Pulsuz Sınaq ({trial_days} Gün)"
+        f_makler = seller.free_trial_feature_makler
+        f_avm = seller.free_trial_feature_avm
+        f_brochure = seller.free_trial_feature_social_brochure
+        f_multiloc = seller.free_trial_feature_multi_location
+        max_locs = seller.free_trial_max_locations or 3
+        f_bot = False
+        f_backup = False
+        f_aged = False
+        aged_months = 12
+        addon_searches = 0
+        addon_searches_price = 0.0
+    else:
+        expires_at = now_utc + timedelta(days=package.duration_days if package else 30)
+        agent_plan = package.name if package else "starter"
+        f_makler = package.feature_makler_detector if package else True
+        f_avm = package.feature_avm_bargain_finder if package else True
+        f_brochure = package.feature_social_brochure if package else True
+        f_multiloc = package.feature_multi_location if package else True
+        max_locs = package.max_locations if package else 5
+        f_bot = package.feature_client_intake_bot if package else False
+        f_backup = package.feature_backup_service if package else False
+        f_aged = package.feature_aged_listings if package else False
+        aged_months = package.addon_aged_max_months if package else 12
+        addon_searches = package.addon_saved_searches if package else 0
+        addon_searches_price = package.addon_saved_searches_price if package else 0.0
 
     agent = Tenant(
         name=body.name,
@@ -670,22 +721,22 @@ async def register_my_agent(
         whatsapp_number=body.whatsapp_number or formatted_phone,
         preferred_channel=body.preferred_channel,
         seller_id=seller.id,
-        seller_package_id=package.id if package else None,
-        plan=package.name if package else "starter",
+        seller_package_id=package.id if (package and not is_trial) else None,
+        plan=agent_plan,
         status="active",
         plan_started_at=now_utc,
         plan_expires_at=expires_at,
-        feature_makler_detector=package.feature_makler_detector if package else True,
-        feature_avm_bargain_finder=package.feature_avm_bargain_finder if package else True,
-        feature_social_brochure=package.feature_social_brochure if package else True,
-        feature_multi_location=package.feature_multi_location if package else True,
-        max_locations_per_search=package.max_locations if package else 5,
-        feature_client_intake_bot=package.feature_client_intake_bot if package else False,
-        backup_enabled=package.feature_backup_service if package else False,
-        feature_aged_listings=package.feature_aged_listings if package else False,
-        addon_aged_max_months=package.addon_aged_max_months if package else 12,
-        addon_saved_searches=package.addon_saved_searches if package else 0,
-        addon_saved_searches_price=package.addon_saved_searches_price if package else 0.0
+        feature_makler_detector=f_makler,
+        feature_avm_bargain_finder=f_avm,
+        feature_social_brochure=f_brochure,
+        feature_multi_location=f_multiloc,
+        max_locations_per_search=max_locs,
+        feature_client_intake_bot=f_bot,
+        backup_enabled=f_backup,
+        feature_aged_listings=f_aged,
+        addon_aged_max_months=aged_months,
+        addon_saved_searches=addon_searches,
+        addon_saved_searches_price=addon_searches_price
     )
     db.add(agent)
     await db.commit()
@@ -737,6 +788,70 @@ async def register_my_agent(
         "plan": agent.plan,
         "status": agent.status
     }
+
+
+@router.get("/me/trial-settings")
+async def get_my_trial_settings(
+    db: AsyncSession = Depends(get_db),
+    current_auth: tuple[User, Optional[Seller]] = Depends(get_current_seller_user)
+):
+    """Seller-only: Get my current free trial offer configuration."""
+    user, seller = current_auth
+    if not seller:
+        raise HTTPException(status_code=403, detail="Satıcı profili tələb olunur.")
+    _, max_trial_days = await _get_seller_package_constraints(db)
+    return {
+        "free_trial_enabled": seller.free_trial_enabled,
+        "free_trial_duration_days": seller.free_trial_duration_days,
+        "free_trial_max_searches": seller.free_trial_max_searches,
+        "free_trial_max_locations": seller.free_trial_max_locations,
+        "free_trial_feature_makler": seller.free_trial_feature_makler,
+        "free_trial_feature_avm": seller.free_trial_feature_avm,
+        "free_trial_feature_social_brochure": seller.free_trial_feature_social_brochure,
+        "free_trial_feature_multi_location": seller.free_trial_feature_multi_location,
+        "admin_max_trial_days": max_trial_days
+    }
+
+
+@router.post("/me/trial-settings")
+async def update_my_trial_settings(
+    body: UpdateFreeTrialSettingsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_auth: tuple[User, Optional[Seller]] = Depends(get_current_seller_user)
+):
+    """Seller-only: Configure what capabilities and duration agents get during free trial."""
+    user, seller = current_auth
+    if not seller:
+        raise HTTPException(status_code=403, detail="Satıcı profili tələb olunur.")
+
+    _, max_trial_days = await _get_seller_package_constraints(db)
+
+    if body.free_trial_duration_days is not None:
+        if body.free_trial_duration_days <= 0 or body.free_trial_duration_days > max_trial_days:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Sınaq müddəti 1 ilə {max_trial_days} gün arasında olmalıdır."
+            )
+        seller.free_trial_duration_days = body.free_trial_duration_days
+
+    if body.free_trial_enabled is not None:
+        seller.free_trial_enabled = body.free_trial_enabled
+    if body.free_trial_max_searches is not None:
+        seller.free_trial_max_searches = max(1, min(20, body.free_trial_max_searches))
+    if body.free_trial_max_locations is not None:
+        seller.free_trial_max_locations = max(1, min(10, body.free_trial_max_locations))
+    if body.free_trial_feature_makler is not None:
+        seller.free_trial_feature_makler = body.free_trial_feature_makler
+    if body.free_trial_feature_avm is not None:
+        seller.free_trial_feature_avm = body.free_trial_feature_avm
+    if body.free_trial_feature_social_brochure is not None:
+        seller.free_trial_feature_social_brochure = body.free_trial_feature_social_brochure
+    if body.free_trial_feature_multi_location is not None:
+        seller.free_trial_feature_multi_location = body.free_trial_feature_multi_location
+
+    await db.commit()
+    await db.refresh(seller)
+    return {"message": "Pulsuz sınaq parametrləri yadda saxlanıldı"}
 
 
 @router.get("/me/packages", response_model=List[dict])

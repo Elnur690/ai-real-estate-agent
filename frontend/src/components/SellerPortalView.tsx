@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { 
   Store, Users, Package, DollarSign, Award, Plus, Edit3, Trash2, CheckCircle, 
   AlertTriangle, RefreshCw, X, Shield, Phone, Send, Sparkles, Check, ChevronRight, TrendingUp,
-  Globe, ExternalLink, Lock
+  Globe, ExternalLink, Lock, Gift
 } from 'lucide-react';
 import api from '../api';
 
@@ -35,6 +35,14 @@ export interface SellerDashboardData {
   total_packages: number;
   min_package_price?: number;
   max_trial_days?: number;
+  free_trial_enabled?: boolean;
+  free_trial_duration_days?: number;
+  free_trial_max_searches?: number;
+  free_trial_max_locations?: number;
+  free_trial_feature_makler?: boolean;
+  free_trial_feature_avm?: boolean;
+  free_trial_feature_social_brochure?: boolean;
+  free_trial_feature_multi_location?: boolean;
   custom_domain?: string;
   custom_domain_enabled?: boolean;
   domain_status?: string;
@@ -141,6 +149,18 @@ export function SellerPortalView() {
   const [agentError, setAgentError] = useState<string | null>(null);
   const [submittingAgent, setSubmittingAgent] = useState(false);
 
+  // Free Trial Offer Settings State
+  const [trialEnabled, setTrialEnabled] = useState(true);
+  const [trialDays, setTrialDays] = useState(7);
+  const [trialSearches, setTrialSearches] = useState(3);
+  const [trialLocations, setTrialLocations] = useState(3);
+  const [trialMakler, setTrialMakler] = useState(true);
+  const [trialAvm, setTrialAvm] = useState(true);
+  const [trialBrochure, setTrialBrochure] = useState(true);
+  const [trialMultiLocation, setTrialMultiLocation] = useState(true);
+  const [savingTrial, setSavingTrial] = useState(false);
+  const [trialSavedMsg, setTrialSavedMsg] = useState(false);
+
   // Package Modal State
   const [isAddPkgOpen, setIsAddPkgOpen] = useState(false);
   const [editingPkg, setEditingPkg] = useState<SellerPackageItem | null>(null);
@@ -173,9 +193,42 @@ export function SellerPortalView() {
         setDomainHost(res.data.custom_domain || '');
         setBrandTitle(res.data.custom_brand_title || '');
         setBrandLogo(res.data.custom_brand_logo || '');
+        setTrialEnabled(res.data.free_trial_enabled ?? true);
+        setTrialDays(res.data.free_trial_duration_days || 7);
+        setTrialSearches(res.data.free_trial_max_searches || 3);
+        setTrialLocations(res.data.free_trial_max_locations || 3);
+        setTrialMakler(res.data.free_trial_feature_makler ?? true);
+        setTrialAvm(res.data.free_trial_feature_avm ?? true);
+        setTrialBrochure(res.data.free_trial_feature_social_brochure ?? true);
+        setTrialMultiLocation(res.data.free_trial_feature_multi_location ?? true);
       }
     } catch (err) {
       console.error('Error fetching seller dashboard:', err);
+    }
+  };
+
+  const handleSaveTrialSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingTrial(true);
+    setTrialSavedMsg(false);
+    try {
+      await api.post('/sellers/me/trial-settings', {
+        free_trial_enabled: trialEnabled,
+        free_trial_duration_days: trialDays,
+        free_trial_max_searches: trialSearches,
+        free_trial_max_locations: trialLocations,
+        free_trial_feature_makler: trialMakler,
+        free_trial_feature_avm: trialAvm,
+        free_trial_feature_social_brochure: trialBrochure,
+        free_trial_feature_multi_location: trialMultiLocation
+      });
+      setTrialSavedMsg(true);
+      setTimeout(() => setTrialSavedMsg(false), 4000);
+      fetchDashboard();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Sınaq parametrlərini yadda saxlamaq mümkün olmadı');
+    } finally {
+      setSavingTrial(false);
     }
   };
 
@@ -322,19 +375,22 @@ export function SellerPortalView() {
     setAgentError(null);
     setSubmittingAgent(true);
     try {
+      const isTrial = agentPkgId === -1 || agentPkgId === undefined;
       await api.post('/sellers/me/agents', {
         name: agentName,
         phone: agentPhone,
         telegram_handle: agentTg || undefined,
         whatsapp_number: agentWhatsapp || undefined,
         preferred_channel: agentChannel,
-        package_id: agentPkgId
+        package_id: isTrial ? undefined : agentPkgId,
+        is_trial: isTrial
       });
       setIsAddAgentOpen(false);
       setAgentName('');
       setAgentPhone('');
       setAgentTg('');
       setAgentWhatsapp('');
+      setAgentPkgId(undefined);
       reloadAll();
     } catch (err: any) {
       setAgentError(err.response?.data?.detail || 'Xəta baş verdi');
@@ -746,11 +802,162 @@ export function SellerPortalView() {
 
       {/* TAB 2: PACKAGES */}
       {activeTab === 'packages' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
+        <div className="space-y-6">
+          {/* FREE TRIAL OFFER CONFIGURATION CARD */}
+          <div className="bg-gradient-to-r from-indigo-950/40 via-slate-900/80 to-slate-900/60 border border-indigo-500/20 rounded-3xl p-6 shadow-xl space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
+                  <Gift className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>Pulsuz Sınaq (Free Trial) Təklifi və Funksiyaları</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      trialEnabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
+                    }`}>
+                      {trialEnabled ? 'Aktivdir' : 'Deaktivdir'}
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Agentlərə təklif etdiyiniz pulsuz sınaq müddətini və bu müddətdə istifadə edə biləcəkləri imkanları fərdiləşdirin.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={trialEnabled}
+                    onChange={(e) => setTrialEnabled(e.target.checked)}
+                    className="rounded bg-slate-950 border-slate-800 text-indigo-600 focus:ring-0"
+                  />
+                  <span>Sınaq Təklifini Aktiv Saxla</span>
+                </label>
+              </div>
+            </div>
+
+            {trialEnabled && (
+              <form onSubmit={handleSaveTrialSettings} className="space-y-4 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Sınaq Müddəti (Gün) *</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max={dashboard?.max_trial_days || 14}
+                      value={trialDays}
+                      onChange={(e) => setTrialDays(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs font-semibold"
+                    />
+                    <span className="text-[10px] text-slate-500 mt-1 block">
+                      Admin maksimum limiti: {dashboard?.max_trial_days || 14} gün
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Axtarış Slotu Limiti *</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="20"
+                      value={trialSearches}
+                      onChange={(e) => setTrialSearches(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs font-semibold"
+                    />
+                    <span className="text-[10px] text-slate-500 mt-1 block">
+                      Sınaq zamanı aktiv axtarış sayı (Məs: 3)
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Məkan & Metro Limiti *</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={trialLocations}
+                      onChange={(e) => setTrialLocations(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs font-semibold"
+                    />
+                    <span className="text-[10px] text-slate-500 mt-1 block">
+                      Axtarışda seçilə bilən rayon/metro sayı (Məs: 3)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-800/60">
+                  <label className="text-xs font-bold text-slate-300 block mb-2">
+                    Sınaq Dövründə Agentin İstifadəsində Olan Funksiyalar
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
+                    <label className="p-2.5 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center gap-2 text-xs text-slate-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={trialMakler}
+                        onChange={(e) => setTrialMakler(e.target.checked)}
+                        className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
+                      />
+                      <span>AI Makler Detektoru</span>
+                    </label>
+
+                    <label className="p-2.5 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center gap-2 text-xs text-slate-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={trialAvm}
+                        onChange={(e) => setTrialAvm(e.target.checked)}
+                        className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
+                      />
+                      <span>AVM Bazar Fürsəti</span>
+                    </label>
+
+                    <label className="p-2.5 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center gap-2 text-xs text-slate-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={trialBrochure}
+                        onChange={(e) => setTrialBrochure(e.target.checked)}
+                        className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
+                      />
+                      <span>PDF Buklet Generator</span>
+                    </label>
+
+                    <label className="p-2.5 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center gap-2 text-xs text-slate-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={trialMultiLocation}
+                        onChange={(e) => setTrialMultiLocation(e.target.checked)}
+                        className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
+                      />
+                      <span>Çoxsaylı Məkan Axtarışı</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  {trialSavedMsg ? (
+                    <span className="text-xs text-emerald-400 font-bold flex items-center gap-1.5">
+                      <CheckCircle className="w-4 h-4" />
+                      <span>Sınaq parametrləri uğurla yadda saxlanıldı!</span>
+                    </span>
+                  ) : <span />}
+
+                  <button
+                    type="submit"
+                    disabled={savingTrial}
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-500/20 transition disabled:opacity-50"
+                  >
+                    {savingTrial ? 'Saxlanılır...' : 'Sınaq Parametrlərini Yadda Saxla'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between pt-2">
             <div>
-              <h2 className="text-lg font-bold text-white">Fərdi Abunə Paketlərim</h2>
-              <p className="text-xs text-slate-400">Öz agentləriniz üçün fərdi qiymət və imkanlara malik paketlər qurun.</p>
+              <h2 className="text-lg font-bold text-white">Ödənişli Abunə Paketlərim</h2>
+              <p className="text-xs text-slate-400">Öz agentləriniz üçün fərdi qiymət və imkanlara malik ödənişli paketlər qurun.</p>
             </div>
             <button
               onClick={openAddPkgModal}
@@ -1258,19 +1465,28 @@ export function SellerPortalView() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Təyin Ediləcək Paket *</label>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Təyin Ediləcək Plan / Paket *</label>
                 <select
-                  required
-                  value={agentPkgId}
+                  value={agentPkgId !== undefined ? agentPkgId : (trialEnabled ? -1 : (packages[0]?.id || 0))}
                   onChange={(e) => setAgentPkgId(Number(e.target.value))}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
                 >
+                  {trialEnabled && (
+                    <option value={-1}>
+                      🎁 Pulsuz Sınaq Təklifi ({trialDays} Günlük Aktivlik)
+                    </option>
+                  )}
                   {packages.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name} ({p.price} AZN / {p.period})
+                      💳 {p.name} ({p.price} AZN / {p.period === 'monthly' ? 'aylıq' : p.period})
                     </option>
                   ))}
                 </select>
+                {agentPkgId === -1 && (
+                  <span className="text-[11px] text-indigo-400 mt-1.5 block bg-indigo-500/10 p-2 rounded-lg border border-indigo-500/20">
+                    Agent {trialDays} gün müddətində pulsuz sınaqdan ({trialSearches} axtarış, {trialLocations} məkan) yararlanacaq.
+                  </span>
+                )}
               </div>
 
               <div className="pt-3 flex gap-3">

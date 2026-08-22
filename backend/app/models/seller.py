@@ -34,6 +34,16 @@ class Seller(Base):
     custom_brand_title: Mapped[str | None] = mapped_column(String(255), nullable=True)  # Custom SaaS App Title
     custom_brand_logo: Mapped[str | None] = mapped_column(String(500), nullable=True)  # Custom Logo URL
     
+    # Free Trial Offer configuration customizable by Seller (not a package, but a seller offer)
+    free_trial_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    free_trial_duration_days: Mapped[int] = mapped_column(Integer, default=7)
+    free_trial_max_searches: Mapped[int] = mapped_column(Integer, default=3)
+    free_trial_max_locations: Mapped[int] = mapped_column(Integer, default=3)
+    free_trial_feature_makler: Mapped[bool] = mapped_column(Boolean, default=True)
+    free_trial_feature_avm: Mapped[bool] = mapped_column(Boolean, default=True)
+    free_trial_feature_social_brochure: Mapped[bool] = mapped_column(Boolean, default=True)
+    free_trial_feature_multi_location: Mapped[bool] = mapped_column(Boolean, default=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
