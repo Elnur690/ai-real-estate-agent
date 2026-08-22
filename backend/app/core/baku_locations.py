@@ -6,7 +6,7 @@ BAKU_METRO_STATIONS: Dict[str, List[str]] = {
     "28 May": ["28 may", "28may", "28 may m", "may 28", "vağzal", "dilarə əliyeva", "28 mall", "28 mol"],
     "Gənclik": ["gənclik", "genclik", "gənclik m", "genclik m", "gənclik mall", "genclik mall", "zoopark", "tibb universiteti", "koroglu heykeli"],
     "Nəriman Nərimanov": ["nərimanov", "nerimanov", "n.nərimanov", "nərimanov m", "nerimanov m", "montin", "metropark", "life centre"],
-    "İnşaatçılar": ["inşaatçılar", "insaatcilar", "inşaatçılar m", "insaatcilar m", "qələbə dairəsi", "qelebe dairesi", "şərifzadə", "serifzade", "ats"],
+    "İnşaatçılar": ["inşaatçılar", "insaatcilar", "inşaatçılar m", "insaatcilar m", "qələbə dairəsi", "qelebe dairesi", "şərifzadə", "serifzade", "yasamal ats"],
     "20 Yanvar": ["20 yanvar", "20yanvar", "20 yanvar m", "velotrek", "onkoloji", "respublika xəstəxanası"],
     "Memar Əcəmi": ["əcəmi", "ecemi", "memar əcəmi", "memar ecemi", "əcəmi m", "ecemi m", "3-cü mkr", "4-cü mkr", "5-ci mkr"],
     "Nəsimi": ["nəsimi m", "nesimi m", "nəsimi metrosu", "nesimi metrosu", "zarifa aliyeva parki"],
@@ -167,10 +167,14 @@ def extract_all_metro_stations(text: str) -> List[str]:
     # Sort by position in text if multiple
     for station_name, aliases in BAKU_METRO_STATIONS.items():
         for alias in aliases:
-            pos = text_lower.find(alias)
-            if pos != -1:
-                if station_name not in found:
-                    found.append((pos, station_name))
+            if len(alias) <= 4:
+                pattern = r'(?<![a-zəıöğşçü0-9])' + re.escape(alias) + r'(?![a-zəıöğşçü0-9])'
+            else:
+                pattern = r'(?<![a-zəıöğşçü0-9])' + re.escape(alias)
+            m = re.search(pattern, text_lower)
+            if m:
+                if station_name not in [item[1] for item in found]:
+                    found.append((m.start(), station_name))
                 break
     found.sort(key=lambda x: x[0])
     return [name for _, name in found]
@@ -339,10 +343,14 @@ def extract_all_baku_settlements(text: str) -> List[str]:
     found = []
     for s_name, keywords in BAKU_SETTLEMENTS.items():
         for kw in keywords:
-            pos = text_lower.find(kw)
-            if pos != -1:
-                if s_name not in found:
-                    found.append((pos, s_name))
+            if len(kw) <= 4:
+                pattern = r'(?<![a-zəıöğşçü0-9])' + re.escape(kw) + r'(?![a-zəıöğşçü0-9])'
+            else:
+                pattern = r'(?<![a-zəıöğşçü0-9])' + re.escape(kw)
+            m = re.search(pattern, text_lower)
+            if m:
+                if s_name not in [item[1] for item in found]:
+                    found.append((m.start(), s_name))
                 break
     found.sort(key=lambda x: x[0])
     return [name for _, name in found]
@@ -360,10 +368,14 @@ def extract_all_baku_districts(text: str) -> List[str]:
     found = []
     for dist_name, keywords in BAKU_DISTRICTS.items():
         for kw in keywords:
-            pos = text_lower.find(kw)
-            if pos != -1:
-                if dist_name not in found:
-                    found.append((pos, dist_name))
+            if len(kw) <= 4:
+                pattern = r'(?<![a-zəıöğşçü0-9])' + re.escape(kw) + r'(?![a-zəıöğşçü0-9])'
+            else:
+                pattern = r'(?<![a-zəıöğşçü0-9])' + re.escape(kw)
+            m = re.search(pattern, text_lower)
+            if m:
+                if dist_name not in [item[1] for item in found]:
+                    found.append((m.start(), dist_name))
                 break
     found.sort(key=lambda x: x[0])
     return [name for _, name in found]
