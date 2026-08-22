@@ -9,6 +9,14 @@ const BAKU_DISTRICT_OPTIONS = [
   "Abşeron", "Sumqayıt", "Qaradağ", "Pirallahi"
 ];
 
+const BAKU_METRO_OPTIONS = [
+  "28 May", "Gənclik", "Nəriman Nərimanov", "Elmlər Akademiyası", "Nizami",
+  "İnşaatçılar", "20 Yanvar", "Memar Əcəmi", "Nəsimi", "Azadlıq prospekti",
+  "Dərnəgül", "İçərişəhər", "Sahil", "Xətai", "Cəfər Cabbarlı",
+  "Ulduz", "Koroğlu", "Qara Qarayev", "Neftçilər", "Xalqlar Dostluğu",
+  "Əhmədli", "Həzi Aslanov", "Avtovağzal", "8 Noyabr", "Xocəsən"
+];
+
 export const TenantsView: React.FC = () => {
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [sellers, setSellers] = useState<any[]>([]);
@@ -1473,7 +1481,7 @@ export const TenantsView: React.FC = () => {
                       <div className="font-medium text-emerald-400">#{s.id} {s.name}</div>
                       <div className="text-slate-300">{s.raw_criteria_text}</div>
                       <div className="text-slate-500">
-                        District: {s.district || 'Any'} | Price: {s.min_price || 0}-{s.max_price || 'Any'} AZN
+                        District: {s.district || 'Any'} {s.metro_station ? `• Metro: ${s.metro_station}${s.include_adjacent_metro ? ' (+ Qonşu stansiyalar)' : ''}` : ''} | Price: {s.min_price || 0}-{s.max_price || 'Any'} AZN
                       </div>
                     </div>
                     <button

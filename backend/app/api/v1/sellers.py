@@ -1016,3 +1016,206 @@ async def get_public_branding_by_domain(
         }
 
     return {"is_custom": False, "app_name": "RealEstate AI Agent", "logo_url": None}
+
+
+# ----------------- SELLER PAYOUT / WITHDRAWAL WORKFLOW -----------------
+
+class CreateSellerPayoutRequest(BaseModel):
+    amount: float
+    card_number: str
+    card_holder_name: str
+    iban: Optional[str] = None
+    notes: Optional[str] = None
+
+class ActionPayoutRequest(BaseModel):
+    action: str # "approve" | "pay" | "reject"
+    admin_notes: Optional[str] = None
+
+
+@router.post("/me/payouts")
+async def request_seller_payout(
+    body: CreateSellerPayoutRequest,
+    db: AsyncSession = Depends(get_db),
+    current_auth: tuple[User, Optional[Seller]] = Depends(get_current_seller_user)
+):
+    """Seller requests withdrawal of available balance to bank card."""
+    user, current_seller = current_auth
+    if not current_seller:
+        raise HTTPException(status_code=403, detail="Satıcı profili tələb olunur.")
+
+    if body.amount <= 0:
+        raise HTTPException(status_code=400, detail="Çıxarış məbləği müsbət olmalıdır.")
+    if body.amount > current_seller.balance:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Balansınızda kifayət qədər vəsait yoxdur (Mövcud balans: {current_seller.balance:.2f} AZN)."
+        )
+
+    from app.models.seller_payout import SellerPayoutRequest
+    payout = SellerPayoutRequest(
+        seller_id=current_seller.id,
+        amount=body.amount,
+        card_number=body.card_number.strip(),
+        card_holder_name=body.card_holder_name.strip(),
+        iban=body.iban.strip() if body.iban else None,
+        notes=body.notes,
+        status="pending"
+    )
+    db.add(payout)
+    await db.commit()
+    await db.refresh(payout)
+
+    # Notify admin via Telegram
+    from app.services.health_monitor import HealthMonitorService
+    await HealthMonitorService.send_admin_alert(
+        db,
+        title="Yeni Satıcı Çıxarış Tələbi",
+        message=(
+            f"👤 *Satıcı:* {current_seller.name} ({current_seller.company_name or 'Fərdi'})\n"
+            f"💰 *Məbləğ:* {payout.amount:.2f} AZN\n"
+            f"💳 *Kart:* `{payout.card_number}` ({payout.card_holder_name})\n"
+            f"📋 *Qeyd:* {payout.notes or 'Yoxdur'}"
+        )
+    )
+
+    return {
+        "status": "success",
+        "payout_id": payout.id,
+        "amount": payout.amount,
+        "message": "Çıxarış tələbiniz qeydə alındı və admin tərəfindən nəzərdən keçirilir."
+    }
+
+
+@router.get("/me/payouts")
+async def list_my_payouts(
+    db: AsyncSession = Depends(get_db),
+    current_auth: tuple[User, Optional[Seller]] = Depends(get_current_seller_user)
+):
+    """Seller views all their past and pending payout requests."""
+    user, current_seller = current_auth
+    if not current_seller:
+        raise HTTPException(status_code=403, detail="Satıcı profili tələb olunur.")
+    from app.models.seller_payout import SellerPayoutRequest
+    stmt = select(SellerPayoutRequest).where(SellerPayoutRequest.seller_id == current_seller.id).order_by(SellerPayoutRequest.created_at.desc())
+    res = await db.execute(stmt)
+    payouts = res.scalars().all()
+
+    return [
+        {
+            "id": p.id,
+            "amount": p.amount,
+            "card_number": p.card_number,
+            "card_holder_name": p.card_holder_name,
+            "iban": p.iban,
+            "status": p.status,
+            "notes": p.notes,
+            "admin_notes": p.admin_notes,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+            "processed_at": p.processed_at.isoformat() if p.processed_at else None
+        }
+        for p in payouts
+    ]
+
+
+@router.get("/admin/payouts")
+async def list_all_payouts_admin(
+    db: AsyncSession = Depends(get_db),
+    current_admin = Depends(get_current_admin)
+):
+    """Admin views all seller payout requests across the platform."""
+    from app.models.seller_payout import SellerPayoutRequest
+    stmt = select(SellerPayoutRequest).order_by(SellerPayoutRequest.created_at.desc())
+    res = await db.execute(stmt)
+    payouts = res.scalars().all()
+
+    out = []
+    for p in payouts:
+        s_stmt = select(Seller).where(Seller.id == p.seller_id)
+        s_res = await db.execute(s_stmt)
+        seller = s_res.scalars().first()
+
+        out.append({
+            "id": p.id,
+            "seller_id": p.seller_id,
+            "seller_name": seller.name if seller else "Naməlum",
+            "seller_company": seller.company_name if seller else None,
+            "seller_phone": seller.phone if seller else None,
+            "seller_balance": seller.balance if seller else 0.0,
+            "amount": p.amount,
+            "card_number": p.card_number,
+            "card_holder_name": p.card_holder_name,
+            "iban": p.iban,
+            "status": p.status,
+            "notes": p.notes,
+            "admin_notes": p.admin_notes,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+            "processed_at": p.processed_at.isoformat() if p.processed_at else None
+        })
+    return out
+
+
+@router.post("/admin/payouts/{payout_id}/action")
+async def action_seller_payout_admin(
+    payout_id: int,
+    body: ActionPayoutRequest,
+    db: AsyncSession = Depends(get_db),
+    current_admin = Depends(get_current_admin)
+):
+    """Admin approves/pays or rejects a seller payout request."""
+    from app.models.seller_payout import SellerPayoutRequest
+    stmt = select(SellerPayoutRequest).where(SellerPayoutRequest.id == payout_id)
+    res = await db.execute(stmt)
+    payout = res.scalars().first()
+    if not payout:
+        raise HTTPException(status_code=404, detail="Çıxarış tələbi tapılmadı.")
+
+    s_stmt = select(Seller).where(Seller.id == payout.seller_id)
+    s_res = await db.execute(s_stmt)
+    seller = s_res.scalars().first()
+    if not seller:
+        raise HTTPException(status_code=404, detail="Satıcı tapılmadı.")
+
+    if body.action.lower() in ["approve", "pay"]:
+        if payout.status == "paid":
+            raise HTTPException(status_code=400, detail="Bu çıxarış artıq ödənilib.")
+        if seller.balance < payout.amount:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Satıcının balansı kifayət etmir (Mövcud: {seller.balance:.2f} AZN, Tələb olunan: {payout.amount:.2f} AZN)."
+            )
+
+        seller.balance -= payout.amount
+        payout.status = "paid"
+        payout.admin_notes = body.admin_notes
+        payout.processed_at = datetime.now(timezone.utc)
+
+        # Record seller transaction
+        tx = SellerTransaction(
+            seller_id=seller.id,
+            amount=-payout.amount,
+            type="payout",
+            description=f"Kart çıxarışı #{payout.id}: {payout.card_number} ({payout.card_holder_name})"
+        )
+        db.add(tx)
+        await db.commit()
+
+        return {
+            "status": "success",
+            "message": f"{payout.amount:.2f} AZN məbləğində çıxarış təsdiqləndi və satıcı balansından çıxıldı.",
+            "new_balance": seller.balance
+        }
+
+    elif body.action.lower() == "reject":
+        payout.status = "rejected"
+        payout.admin_notes = body.admin_notes or "İmtina edildi"
+        payout.processed_at = datetime.now(timezone.utc)
+        await db.commit()
+
+        return {
+            "status": "success",
+            "message": "Çıxarış tələbi imtina edildi.",
+            "payout_status": "rejected"
+        }
+    else:
+        raise HTTPException(status_code=400, detail="Yanlış əməliyyat. approve və ya reject seçin.")
+

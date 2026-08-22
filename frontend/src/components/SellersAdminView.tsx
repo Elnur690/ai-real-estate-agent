@@ -40,8 +40,28 @@ export interface SellerAgentItem {
   created_at: string;
 }
 
+export interface AdminPayoutItem {
+  id: number;
+  seller_id: number;
+  seller_name: string;
+  seller_company?: string;
+  seller_phone?: string;
+  seller_balance: number;
+  amount: number;
+  card_number: string;
+  card_holder_name: string;
+  iban?: string;
+  status: string;
+  notes?: string;
+  admin_notes?: string;
+  created_at: string;
+  processed_at?: string;
+}
+
 export function SellersAdminView() {
+  const [activeTab, setActiveTab] = useState<'sellers' | 'payouts'>('sellers');
   const [sellers, setSellers] = useState<SellerItem[]>([]);
+  const [payouts, setPayouts] = useState<AdminPayoutItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,12 +92,35 @@ export function SellersAdminView() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get('/sellers');
-      setSellers(res.data);
+      const [sRes, pRes] = await Promise.all([
+        api.get('/sellers'),
+        api.get('/sellers/admin/payouts').catch(() => ({ data: [] }))
+      ]);
+      setSellers(sRes.data);
+      setPayouts(pRes.data || []);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Satıcıları yükləmək mümkün olmadı.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePayoutAction = async (payoutId: number, action: 'approve' | 'reject') => {
+    let adminNotes = '';
+    if (action === 'reject') {
+      const reason = prompt('İmtina səbəbini daxil edin:');
+      if (reason === null) return;
+      adminNotes = reason;
+    }
+    try {
+      await api.post(`/sellers/admin/payouts/${payoutId}/action`, {
+        action: action === 'approve' ? 'pay' : 'reject',
+        admin_notes: adminNotes || undefined
+      });
+      alert(action === 'approve' ? 'Çıxarış təsdiqləndi və satıcı balansından çıxıldı!' : 'Çıxarış tələbi imtina edildi.');
+      fetchSellers();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Xəta baş verdi.');
     }
   };
 
@@ -290,42 +333,69 @@ export function SellersAdminView() {
         </div>
       </div>
 
-      {/* Sellers List Table */}
-      <div className="bg-slate-900/60 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
-        <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <span>Satıcılar Siyahısı</span>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-800 text-slate-300">
-              {sellers.length}
-            </span>
-          </h2>
-        </div>
+      {/* Tabs Navigation */}
+      <div className="flex gap-2 p-1.5 bg-slate-900/80 rounded-2xl border border-slate-800 w-fit">
+        <button
+          onClick={() => setActiveTab('sellers')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition ${
+            activeTab === 'sellers'
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/20'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+          }`}
+        >
+          <Store className="w-4 h-4" />
+          <span>Satıcılar ({sellers.length})</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('payouts')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs transition ${
+            activeTab === 'payouts'
+              ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-500/20'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+          }`}
+        >
+          <span>🏧</span>
+          <span>Çıxarış Tələbləri ({payouts.filter(p => p.status === 'pending').length} gözləyir)</span>
+        </button>
+      </div>
 
-        {loading ? (
-          <div className="p-12 text-center text-slate-400">Yüklənir...</div>
-        ) : sellers.length === 0 ? (
-          <div className="p-12 text-center text-slate-400">Hələ heç bir satıcı qeydiyyatdan keçməyib.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-slate-800 bg-slate-950/40 text-slate-400 text-xs uppercase font-semibold">
-                  <th className="py-3.5 px-4">Satıcı / Şirkət</th>
-                  <th className="py-3.5 px-4">Fərdi Domen</th>
-                  <th className="py-3.5 px-4">Əlaqə</th>
-                  <th className="py-3.5 px-4">Komissiya %</th>
-                  <th className="py-3.5 px-4">Dərəcə</th>
-                  <th className="py-3.5 px-4">Agentlər</th>
-                  <th className="py-3.5 px-4">Balans / Qazanc</th>
-                  <th className="py-3.5 px-4">Status</th>
-                  <th className="py-3.5 px-4 text-right">Əməliyyatlar</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                {sellers.map((s) => (
-                  <tr key={s.id} className="hover:bg-slate-800/30 transition">
-                    <td className="py-4 px-4">
-                      <div className="font-semibold text-white">{s.name}</div>
+      {/* TAB 1: SELLERS LIST */}
+      {activeTab === 'sellers' && (
+        <div className="bg-slate-900/60 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
+          <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <span>Satıcılar Siyahısı</span>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-800 text-slate-300">
+                {sellers.length}
+              </span>
+            </h2>
+          </div>
+
+          {loading ? (
+            <div className="p-12 text-center text-slate-400">Yüklənir...</div>
+          ) : sellers.length === 0 ? (
+            <div className="p-12 text-center text-slate-400">Hələ heç bir satıcı qeydiyyatdan keçməyib.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-slate-800 bg-slate-950/40 text-slate-400 text-xs uppercase font-semibold">
+                    <th className="py-3.5 px-4">Satıcı / Şirkət</th>
+                    <th className="py-3.5 px-4">Fərdi Domen</th>
+                    <th className="py-3.5 px-4">Əlaqə</th>
+                    <th className="py-3.5 px-4">Komissiya %</th>
+                    <th className="py-3.5 px-4">Dərəcə</th>
+                    <th className="py-3.5 px-4">Agentlər</th>
+                    <th className="py-3.5 px-4">Balans / Qazanc</th>
+                    <th className="py-3.5 px-4">Status</th>
+                    <th className="py-3.5 px-4 text-right">Əməliyyatlar</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                  {sellers.map((s) => (
+                    <tr key={s.id} className="hover:bg-slate-800/30 transition">
+                      <td className="py-4 px-4">
+                        <div className="font-semibold text-white">{s.name}</div>
                       {s.company_name && (
                         <div className="text-xs text-slate-400">{s.company_name}</div>
                       )}
@@ -407,6 +477,107 @@ export function SellersAdminView() {
           </div>
         )}
       </div>
+      )}
+
+      {/* TAB 2: PAYOUT REQUESTS LIST */}
+      {activeTab === 'payouts' && (
+        <div className="bg-slate-900/60 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
+          <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <span>🏧</span>
+              <span>Satıcıların Pul Çıxarış Tələbləri</span>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-800 text-slate-300">
+                {payouts.length}
+              </span>
+            </h2>
+          </div>
+
+          {loading ? (
+            <div className="p-12 text-center text-slate-400">Yüklənir...</div>
+          ) : payouts.length === 0 ? (
+            <div className="p-12 text-center text-slate-400">Hələ heç bir çıxarış tələbi yoxdur.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-slate-800 bg-slate-950/40 text-slate-400 text-xs uppercase font-semibold">
+                    <th className="py-3.5 px-4">Satıcı / Şirkət</th>
+                    <th className="py-3.5 px-4">Çıxarış Məbləği</th>
+                    <th className="py-3.5 px-4">Bank Kartı</th>
+                    <th className="py-3.5 px-4">Kart Sahibi</th>
+                    <th className="py-3.5 px-4">Mövcud Balans</th>
+                    <th className="py-3.5 px-4">Status</th>
+                    <th className="py-3.5 px-4">Tarix</th>
+                    <th className="py-3.5 px-4 text-right">Əməliyyatlar</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                  {payouts.map((p) => (
+                    <tr key={p.id} className="hover:bg-slate-800/30 transition">
+                      <td className="py-4 px-4">
+                        <div className="font-semibold text-white">{p.seller_name}</div>
+                        {p.seller_company && <div className="text-xs text-slate-400">{p.seller_company}</div>}
+                        {p.seller_phone && <div className="text-[11px] text-slate-500 font-mono">{p.seller_phone}</div>}
+                      </td>
+                      <td className="py-4 px-4 font-black text-emerald-400 text-base">
+                        {p.amount.toLocaleString()} AZN
+                      </td>
+                      <td className="py-4 px-4 font-mono font-bold text-cyan-300">
+                        {p.card_number}
+                        {p.iban && <div className="text-[10px] text-slate-400 font-normal">{p.iban}</div>}
+                      </td>
+                      <td className="py-4 px-4 font-medium text-white">{p.card_holder_name}</td>
+                      <td className="py-4 px-4 text-xs font-semibold text-slate-300">
+                        {p.seller_balance?.toLocaleString()} AZN
+                      </td>
+                      <td className="py-4 px-4">
+                        {p.status === 'paid' && (
+                          <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold text-xs">
+                            🟢 Ödənildi
+                          </span>
+                        )}
+                        {p.status === 'pending' && (
+                          <span className="px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold text-xs">
+                            🟡 Gözləmədə
+                          </span>
+                        )}
+                        {p.status === 'rejected' && (
+                          <span className="px-2.5 py-1 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 font-semibold text-xs">
+                            🔴 İmtina edildi
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-4 px-4 text-xs text-slate-500">
+                        {new Date(p.created_at).toLocaleString('az-AZ')}
+                      </td>
+                      <td className="py-4 px-4 text-right">
+                        {p.status === 'pending' ? (
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => handlePayoutAction(p.id, 'approve')}
+                              className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-xl text-xs font-bold transition"
+                            >
+                              Təsdiqlə və Ödə
+                            </button>
+                            <button
+                              onClick={() => handlePayoutAction(p.id, 'reject')}
+                              className="px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 rounded-xl text-xs font-bold transition"
+                            >
+                              İmtina
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-500 italic">{p.admin_notes || 'Tamamlandı'}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ADD SELLER MODAL */}
       {isAddOpen && (

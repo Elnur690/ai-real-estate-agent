@@ -64,9 +64,30 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS is_makler BOOLEAN DEFAULT FALSE;"))
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS makler_score FLOAT DEFAULT 0.0;"))
         await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS is_first_posting BOOLEAN DEFAULT TRUE;"))
+        await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS duplicate_group_id VARCHAR(255);"))
+        await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS duplicate_count INTEGER DEFAULT 1;"))
+        await conn.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS duplicate_listings JSON DEFAULT '[]'::json;"))
+        await conn.execute(text("ALTER TABLE saved_searches ADD COLUMN IF NOT EXISTS include_adjacent_metro BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS seller_payout_requests (
+                id SERIAL PRIMARY KEY,
+                seller_id INTEGER NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
+                amount FLOAT NOT NULL,
+                card_number VARCHAR(50) NOT NULL,
+                card_holder_name VARCHAR(255) NOT NULL,
+                iban VARCHAR(100),
+                status VARCHAR(50) DEFAULT 'pending',
+                notes TEXT,
+                admin_notes TEXT,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                processed_at TIMESTAMP WITH TIME ZONE
+            );
+        """))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_listings_search_perf ON listings (is_active, district, offer_type, property_type, seller_type, rooms, price);"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_listings_makler_perf ON listings (district, rooms, area_sqm, price, created_at);"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_listings_phone_perf ON listings (phone_number);"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_listings_dup_grp ON listings (duplicate_group_id);"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_payout_seller_status ON seller_payout_requests (seller_id, status);"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_matches_tenant_search ON matches (tenant_id, saved_search_id, listing_id);"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_saved_searches_active ON saved_searches (is_active, tenant_id);"))
         await conn.execute(text("UPDATE listing_sources SET status = 'active' WHERE status = 'error';"))

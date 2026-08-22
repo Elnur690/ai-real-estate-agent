@@ -61,6 +61,11 @@ class Listing(Base):
     district_avg_sqm: Mapped[float | None] = mapped_column(Float, nullable=True)
     bargain_percentage: Mapped[float | None] = mapped_column(Float, nullable=True) # e.g. -15.0 for 15% below market
 
+    # 👥 Multi-Broker Duplicate Clustering
+    duplicate_group_id: Mapped[str | None] = mapped_column(String(255), index=True, nullable=True)
+    duplicate_count: Mapped[int] = mapped_column(Integer, default=1)
+    duplicate_listings: Mapped[list[Any] | None] = mapped_column(JSON, default=list)
+
     listing_url: Mapped[str] = mapped_column(String(1000), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     price_history: Mapped[list[Any] | None] = mapped_column(JSON, default=list)

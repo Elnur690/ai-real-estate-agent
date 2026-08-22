@@ -44,6 +44,8 @@ export interface SavedSearch {
   name: string;
   raw_criteria_text: string;
   district?: string;
+  metro_station?: string;
+  include_adjacent_metro?: boolean;
   min_price?: number;
   max_price?: number;
   min_rooms?: number;

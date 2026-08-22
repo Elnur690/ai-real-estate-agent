@@ -155,6 +155,10 @@ export const AppSettingsView: React.FC = () => {
   const [testResult, setTestResult] = useState<any>(null);
   const [testing, setTesting] = useState(false);
 
+  // Admin Telegram Alert State
+  const [testingAlert, setTestingAlert] = useState(false);
+  const [alertStatusMsg, setAlertStatusMsg] = useState<{ success: boolean; text: string } | null>(null);
+
   const taskTypes: TaskType[] = [
     { key: 'criteria_parsing', label: 'Criteria Parsing (Conversational Agent)', defaultProvider: 'gemini', defaultModel: 'gemini-3.5-flash' },
     { key: 'listing_parsing', label: 'Telegram Unformatted Listing Parser', defaultProvider: 'gemini', defaultModel: 'gemini-3.5-flash' },
@@ -527,6 +531,70 @@ export const AppSettingsView: React.FC = () => {
                 <span className="text-[11px] text-slate-500 mt-1 block">
                   Satıcının qurduğu 0 AZN pulsuz sınaq paketlərinin maksimum aktivlik müddəti.
                 </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-slate-800 space-y-4">
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <span className="p-1 bg-purple-500/10 rounded-lg text-purple-400">🚨</span>
+                <span>Admin Telegram Xəbərdarlıqları və Scraper Monitorinqi</span>
+              </h4>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Scraper bloklamaları (503/403), sayt strukturu dəyişiklikləri və satıcıların pul çıxarış tələbləri anında bu Telegram çatına göndərilir.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-slate-300 font-semibold block mb-1">
+                  Admin Telegram Chat ID (`admin_telegram_chat_id`)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="məs: 123456789"
+                    value={settingsMap['admin_telegram_chat_id'] || ''}
+                    onChange={(e) => setSettingsMap({ ...settingsMap, admin_telegram_chat_id: e.target.value })}
+                    className="flex-1 bg-dark-900 border border-slate-700/80 px-3.5 py-2.5 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                  />
+                  <button
+                    type="button"
+                    disabled={testingAlert || !settingsMap['admin_telegram_chat_id']}
+                    onClick={async () => {
+                      setTestingAlert(true);
+                      setAlertStatusMsg(null);
+                      try {
+                        const res = await api.post('/settings/test-admin-alert');
+                        setAlertStatusMsg({ success: true, text: res.data?.message || 'Sınaq bildirişi uğurla çatdırıldı!' });
+                      } catch (err: any) {
+                        setAlertStatusMsg({ success: false, text: err.response?.data?.detail || 'Xəta baş verdi.' });
+                      } finally {
+                        setTestingAlert(false);
+                      }
+                    }}
+                    className="px-4 py-2.5 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-300 hover:text-white rounded-xl text-xs font-semibold transition-all disabled:opacity-40"
+                  >
+                    {testingAlert ? 'Göndərilir...' : 'Sınaq Göndər'}
+                  </button>
+                </div>
+                {alertStatusMsg && (
+                  <div className={`mt-2 text-xs p-2.5 rounded-lg border ${alertStatusMsg.success ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-rose-500/10 border-rose-500/30 text-rose-300'}`}>
+                    {alertStatusMsg.text}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-dark-900/60 p-3.5 rounded-xl border border-slate-800 space-y-1.5 text-xs text-slate-300">
+                <div className="font-semibold text-purple-300 flex items-center gap-1.5">
+                  <span>ℹ️</span> <span>Telegram ID-ni necə tapmaq olar?</span>
+                </div>
+                <ol className="list-decimal list-inside text-[11px] text-slate-400 space-y-1">
+                  <li>Telegram-da <a href="https://t.me/userinfobot" target="_blank" rel="noreferrer" className="text-purple-400 underline font-mono">@userinfobot</a> botuna <code className="text-purple-300">/start</code> yazın və ID rəqəmlərinizi kopyalayın.</li>
+                  <li>Sistemin əsas botuna (məs: botunuza) daxil olub ən az 1 dəfə <code className="text-purple-300">/start</code> vurun.</li>
+                  <li>Kopyaladığınız rəqəmləri yuxarıdakı xanaya yazıb yadda saxlayın və <strong>"Sınaq Göndər"</strong> düyməsinə klikləyin.</li>
+                </ol>
               </div>
             </div>
           </div>

@@ -295,12 +295,14 @@ class IngestionService:
                 await db.commit()
                 await db.refresh(db_listing)
 
-                # Run Makler Detector & AVM valuation
+                # Run Makler Detector, AVM valuation, and Multi-Broker Duplicate Detector
                 from app.services.makler_detector import MaklerDetectorService
                 from app.services.avm_engine import AVMEngineService
+                from app.services.duplicate_detector import DuplicateDetectorService
 
                 db_listing = await MaklerDetectorService.analyze_listing(db, db_listing)
                 db_listing = await AVMEngineService.evaluate_listing_valuation(db, db_listing)
+                db_listing = await DuplicateDetectorService.analyze_and_group_duplicates(db, db_listing)
                 await db.commit()
                 return db_listing
         except Exception as e:
@@ -587,7 +589,8 @@ class IngestionService:
         # 6. Multi-Location (Settlements, District and Metro Stations) Check
         from app.core.baku_locations import (
             get_all_aliases_for_location, SETTLEMENT_TO_DISTRICT, METRO_TO_DISTRICT,
-            extract_baku_settlement, extract_metro_station, extract_baku_district
+            extract_baku_settlement, extract_metro_station, extract_baku_district,
+            METRO_ADJACENCY
         )
 
         target_districts = []
@@ -599,6 +602,14 @@ class IngestionService:
         if search.metro_station and search.metro_station.strip():
             parts = re.split(r'[,;/|\+]|\bvə\b|\bve\b|\bya da\b|\bor\b', search.metro_station, flags=re.IGNORECASE)
             target_metros = [p.strip() for p in parts if p.strip()]
+
+        if getattr(search, 'include_adjacent_metro', False) and target_metros:
+            expanded_metros = list(target_metros)
+            for m in target_metros:
+                for station_name, adjacents in METRO_ADJACENCY.items():
+                    if m.lower() in station_name.lower() or station_name.lower() in m.lower():
+                        expanded_metros.extend(adjacents)
+            target_metros = list(dict.fromkeys(expanded_metros))
 
         all_target_locations = list(dict.fromkeys(target_districts + target_metros))
 
@@ -864,6 +875,16 @@ class IngestionService:
 
                 makler_tag = "\n⚠️ *Makler Şübhəsi:* Böyük ehtimalla agentlik elanıdır." if (listing.makler_score and listing.makler_score >= 0.5) else ""
 
+                duplicate_tag = ""
+                if listing.duplicate_count and listing.duplicate_count > 1 and listing.duplicate_listings:
+                    dup_prices = [d.get("price") for d in listing.duplicate_listings if d.get("price")]
+                    if dup_prices:
+                        min_dup = min(dup_prices)
+                        max_dup = max(dup_prices)
+                        diff_val = max_dup - min_dup
+                        diff_str = f" ({int(diff_val):,} AZN fərq)" if diff_val > 0 else ""
+                        duplicate_tag = f"\n👥 *DUBLİKAT ELAN:* Bu mənzil {listing.duplicate_count} fərqli elanda {int(min_dup):,} - {int(max_dup):,} AZN aralığında paylaşılıb!{diff_str}"
+
                 # Search identifier context
                 search_title = search.name or search.raw_criteria_text or search.district or f"Axtarış #{search.id}"
                 search_header = f"🔎 *Axtarış:* #{search.id} - _{search_title[:55]}_\n"
@@ -977,7 +998,7 @@ class IngestionService:
                 msg_text = (
                     f"🔥 *YENİ UYĞUN ELAN! ({app_name})*\n"
                     f"{search_header}"
-                    f"🎯 *Uyğunluq:* %{int(score * 100)}{bargain_tag}{first_post_tag}{makler_tag}\n\n"
+                    f"🎯 *Uyğunluq:* %{int(score * 100)}{bargain_tag}{first_post_tag}{makler_tag}{duplicate_tag}\n\n"
                     f"🏠 *{clean_title}*\n"
                     f"🏷️ *Növ / Əməliyyat:* {prop_label} ({deal_label})\n"
                     f"{price_line}\n"

@@ -400,3 +400,180 @@ async def test_seller_rank_bonus_and_custom_domain(client: AsyncClient, test_db:
     assert brand_data["app_name"] == "Baku Emlak White-Label"
     assert brand_data["logo_url"] == "https://bakuemlak.az/logo.png"
 
+
+@pytest.mark.asyncio
+async def test_seller_payout_workflow_and_admin_approval(client: AsyncClient, test_db: AsyncSession):
+    """Test full seller withdrawal request, balance validation, and admin payout approval."""
+    # 1. Admin & Seller Setup
+    admin_u = User(name="Payout Admin", email="padmin@test.az", phone="+994509999920", role="admin", password_hash=get_password_hash("pass"))
+    seller_u = User(name="Payout Seller", email="pseller@test.az", phone="+994509999921", role="seller", password_hash=get_password_hash("pass"))
+    test_db.add_all([admin_u, seller_u])
+    await test_db.commit()
+
+    admin_headers = {"Authorization": f"Bearer {create_access_token(admin_u.id)}"}
+    seller_headers = {"Authorization": f"Bearer {create_access_token(seller_u.id)}"}
+
+    seller = Seller(
+        user_id=seller_u.id,
+        name="Payout Seller",
+        email="pseller@test.az",
+        phone="+994509999921",
+        balance=500.0,
+        status="active"
+    )
+    test_db.add(seller)
+    await test_db.commit()
+    await test_db.refresh(seller)
+
+    # 2. Seller attempts to withdraw 600 AZN (more than balance 500 AZN) -> FAILS (400)
+    over_res = await client.post("/api/v1/sellers/me/payouts", json={
+        "amount": 600.0,
+        "card_number": "4169 7388 0000 1111",
+        "card_holder_name": "PAYOUT SELLER"
+    }, headers=seller_headers)
+    assert over_res.status_code == 400
+    assert "kifayət qədər vəsait yoxdur" in over_res.json()["detail"]
+
+    # 3. Seller requests valid payout of 300 AZN -> SUCCEEDS (200)
+    valid_res = await client.post("/api/v1/sellers/me/payouts", json={
+        "amount": 300.0,
+        "card_number": "4169 7388 0000 1111",
+        "card_holder_name": "PAYOUT SELLER",
+        "notes": "BirBank Card"
+    }, headers=seller_headers)
+    assert valid_res.status_code == 200
+    payout_id = valid_res.json()["payout_id"]
+
+    # 4. Check seller's own payouts list
+    my_payouts_res = await client.get("/api/v1/sellers/me/payouts", headers=seller_headers)
+    assert my_payouts_res.status_code == 200
+    assert len(my_payouts_res.json()) == 1
+    assert my_payouts_res.json()[0]["status"] == "pending"
+
+    # 5. Admin lists all payouts
+    adm_payouts_res = await client.get("/api/v1/sellers/admin/payouts", headers=admin_headers)
+    assert adm_payouts_res.status_code == 200
+    assert any(p["id"] == payout_id for p in adm_payouts_res.json())
+
+    # 6. Admin approves payout -> seller balance deducted from 500 to 200
+    action_res = await client.post(f"/api/v1/sellers/admin/payouts/{payout_id}/action", json={
+        "action": "pay",
+        "admin_notes": "Paid via Kapital Bank"
+    }, headers=admin_headers)
+    assert action_res.status_code == 200
+    assert action_res.json()["new_balance"] == 200.0
+
+    # 7. Verify seller balance
+    dash_res = await client.get("/api/v1/sellers/me/dashboard", headers=seller_headers)
+    assert dash_res.json()["balance"] == 200.0
+
+
+@pytest.mark.asyncio
+async def test_duplicate_detector_and_adjacent_metro_matching(client: AsyncClient, test_db: AsyncSession):
+    """Test duplicate listing grouping and adjacent metro station matching."""
+    from app.services.duplicate_detector import DuplicateDetectorService
+    from app.services.ingestion import IngestionService
+    from app.models.listing import ListingSource, Listing
+    from app.models.saved_search import SavedSearch
+    from app.models.tenant import Tenant
+
+    # Create source
+    src = ListingSource(type="website", name="BinaAz", url_or_handle="https://bina.az")
+    test_db.add(src)
+    await test_db.commit()
+    await test_db.refresh(src)
+
+    # 1. Create first listing on bina.az (Elmlər, 3 rooms, 100 sqm, 150k AZN)
+    l1 = Listing(
+        source_id=src.id,
+        external_id="bina_101",
+        title="Elmlər metrosu 3 otaq",
+        district="Yasamal",
+        metro_station="Elmlər Akademiyası",
+        rooms=3,
+        area_sqm=100.0,
+        price=150000.0,
+        floor=5,
+        total_floors=16,
+        listing_url="https://bina.az/items/101",
+        is_active=True
+    )
+    test_db.add(l1)
+    await test_db.commit()
+    await test_db.refresh(l1)
+    await DuplicateDetectorService.analyze_and_group_duplicates(test_db, l1)
+    assert l1.duplicate_count == 1
+
+    # 2. Create second duplicate listing on tap.az (Same flat: Yasamal, 3 rooms, 101 sqm, 145k AZN)
+    l2 = Listing(
+        source_id=src.id,
+        external_id="tap_202",
+        title="Yasamal 3 otaq mənzil",
+        district="Yasamal",
+        metro_station="Elmlər Akademiyası",
+        rooms=3,
+        area_sqm=101.0,
+        price=145000.0,
+        floor=5,
+        total_floors=16,
+        listing_url="https://tap.az/items/202",
+        is_active=True
+    )
+    test_db.add(l2)
+    await test_db.commit()
+    await test_db.refresh(l2)
+    await DuplicateDetectorService.analyze_and_group_duplicates(test_db, l2)
+
+    # Assert grouping detected
+    assert l2.duplicate_count == 2
+    assert l2.duplicate_group_id is not None
+    assert len(l2.duplicate_listings) == 2
+
+    # 3. Test Adjacent Metro Matching
+    # Search specifies Nizami with include_adjacent_metro=True.
+    # Elmlər Akademiyası is an adjacent neighbor to Nizami!
+    tenant = Tenant(name="Metro Agent", phone="+994509999930", plan="starter")
+    test_db.add(tenant)
+    await test_db.commit()
+    await test_db.refresh(tenant)
+
+    search = SavedSearch(
+        tenant_id=tenant.id,
+        name="Nizami and adjacent search",
+        raw_criteria_text="Nizami metrosu 3 otaq",
+        metro_station="Nizami",
+        include_adjacent_metro=True,
+        min_rooms=3,
+        max_rooms=3,
+        is_active=True
+    )
+    test_db.add(search)
+    await test_db.commit()
+
+    # Match listing l1 (which has metro_station="Elmlər Akademiyası") against search for "Nizami"
+    is_match = IngestionService.is_strict_match(search, l1)
+    assert is_match is True
+
+
+@pytest.mark.asyncio
+async def test_health_monitor_admin_alert_endpoint(client: AsyncClient, test_db: AsyncSession):
+    """Test Admin Telegram setting and test alert trigger."""
+    admin_u = User(name="Alert Admin", email="alertadmin@test.az", phone="+994509999940", role="admin", password_hash=get_password_hash("pass"))
+    test_db.add(admin_u)
+    await test_db.commit()
+    headers = {"Authorization": f"Bearer {create_access_token(admin_u.id)}"}
+
+    # 1. Update settings with Admin Telegram Chat ID
+    await client.post("/api/v1/settings", json={
+        "settings": {
+            "admin_telegram_chat_id": "123456789",
+            "scraper_health_alerts_enabled": "true"
+        }
+    }, headers=headers)
+
+    # 2. Get settings to verify
+    s_res = await client.get("/api/v1/settings")
+    assert s_res.status_code == 200
+    assert s_res.json()["admin_telegram_chat_id"] == "123456789"
+
+

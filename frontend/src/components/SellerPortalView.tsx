@@ -79,12 +79,26 @@ export interface SellerTransactionItem {
   created_at: string;
 }
 
+export interface SellerPayoutItem {
+  id: number;
+  amount: number;
+  card_number: string;
+  card_holder_name: string;
+  iban?: string;
+  status: string;
+  notes?: string;
+  admin_notes?: string;
+  created_at: string;
+  processed_at?: string;
+}
+
 export function SellerPortalView() {
   const [activeTab, setActiveTab] = useState<'agents' | 'packages' | 'earnings' | 'domain'>('agents');
   const [dashboard, setDashboard] = useState<SellerDashboardData | null>(null);
   const [agents, setAgents] = useState<SellerAgent[]>([]);
   const [packages, setPackages] = useState<SellerPackageItem[]>([]);
   const [earnings, setEarnings] = useState<{ balance: number; total_earnings: number; transactions: SellerTransactionItem[] } | null>(null);
+  const [payouts, setPayouts] = useState<SellerPayoutItem[]>([]);
   const [domainSettings, setDomainSettings] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -95,6 +109,16 @@ export function SellerPortalView() {
   const [savingDomain, setSavingDomain] = useState(false);
   const [verifyingDns, setVerifyingDns] = useState(false);
   const [dnsResult, setDnsResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Withdraw Modal State
+  const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState<number>(0);
+  const [withdrawCard, setWithdrawCard] = useState('');
+  const [withdrawName, setWithdrawName] = useState('');
+  const [withdrawIban, setWithdrawIban] = useState('');
+  const [withdrawNotes, setWithdrawNotes] = useState('');
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
+  const [submittingWithdraw, setSubmittingWithdraw] = useState(false);
 
   // Agent Modal State
   const [isAddAgentOpen, setIsAddAgentOpen] = useState(false);
@@ -180,6 +204,15 @@ export function SellerPortalView() {
     }
   };
 
+  const fetchPayouts = async () => {
+    try {
+      const res = await api.get('/sellers/me/payouts');
+      setPayouts(res.data || []);
+    } catch (err) {
+      console.error('Error fetching payouts:', err);
+    }
+  };
+
   const reloadAll = async () => {
     setLoading(true);
     await Promise.all([
@@ -187,9 +220,37 @@ export function SellerPortalView() {
       fetchAgents(),
       fetchPackages(),
       fetchEarnings(),
+      fetchPayouts(),
       fetchDomainSettings()
     ]);
     setLoading(false);
+  };
+
+  const handleRequestPayout = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setWithdrawError(null);
+    setSubmittingWithdraw(true);
+    try {
+      await api.post('/sellers/me/payouts', {
+        amount: withdrawAmount,
+        card_number: withdrawCard,
+        card_holder_name: withdrawName,
+        iban: withdrawIban || undefined,
+        notes: withdrawNotes || undefined
+      });
+      setIsWithdrawOpen(false);
+      setWithdrawAmount(0);
+      setWithdrawCard('');
+      setWithdrawName('');
+      setWithdrawIban('');
+      setWithdrawNotes('');
+      alert('Çıxarış tələbiniz uğurla qeydə alındı!');
+      reloadAll();
+    } catch (err: any) {
+      setWithdrawError(err.response?.data?.detail || 'Çıxarış tələbi göndərilərkən xəta baş verdi.');
+    } finally {
+      setSubmittingWithdraw(false);
+    }
   };
 
   useEffect(() => {
@@ -739,50 +800,126 @@ export function SellerPortalView() {
 
       {/* TAB 3: EARNINGS & TRANSACTIONS */}
       {activeTab === 'earnings' && (
-        <div className="bg-slate-900/60 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
-          <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-bold text-white">Qazanc və Komissiya Tarixçəsi</h2>
-              <p className="text-xs text-slate-400">Agentlərinizin abunələrindən qazandığınız komissiya daxilolmaları.</p>
+        <div className="space-y-6">
+          <div className="bg-slate-900/60 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
+            <div className="p-5 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold text-white">Qazanc və Komissiya Tarixçəsi</h2>
+                <p className="text-xs text-slate-400">Agentlərinizin abunələrindən qazandığınız komissiya daxilolmaları.</p>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <span className="text-xs text-slate-400 block">Çıxarıla bilən Balans</span>
+                  <span className="text-xl font-black text-emerald-400">{dashboard?.balance.toLocaleString()} AZN</span>
+                </div>
+                <button
+                  onClick={() => {
+                    setWithdrawError(null);
+                    setWithdrawAmount(dashboard?.balance || 0);
+                    setIsWithdrawOpen(true);
+                  }}
+                  disabled={!dashboard?.balance || dashboard.balance <= 0}
+                  className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl text-xs shadow-lg shadow-emerald-600/20 transition disabled:opacity-40"
+                >
+                  💸 Balansı Çıxar
+                </button>
+              </div>
             </div>
-            <div className="text-right">
-              <span className="text-xs text-slate-400 block">Çıxarıla bilən Balans</span>
-              <span className="text-xl font-black text-emerald-400">{dashboard?.balance.toLocaleString()} AZN</span>
-            </div>
+
+            {!earnings || earnings.transactions.length === 0 ? (
+              <div className="p-12 text-center text-slate-400">Hələ heç bir əməliyyat qeydə alınmayıb.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-800 bg-slate-950/40 text-slate-400 text-xs uppercase font-semibold">
+                      <th className="py-3.5 px-4">Təsvir</th>
+                      <th className="py-3.5 px-4">Satış Məbləği</th>
+                      <th className="py-3.5 px-4">Komissiya %</th>
+                      <th className="py-3.5 px-4">Sizin Qazancınız</th>
+                      <th className="py-3.5 px-4">Platforma Haqqı</th>
+                      <th className="py-3.5 px-4">Tarix</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                    {earnings.transactions.map((t) => (
+                      <tr key={t.id} className="hover:bg-slate-800/30 transition">
+                        <td className="py-4 px-4 font-semibold text-white">{t.description || 'Abunə Satışı'}</td>
+                        <td className="py-4 px-4 font-medium">{t.amount} AZN</td>
+                        <td className="py-4 px-4 text-indigo-400 font-bold">%{t.commission_rate}</td>
+                        <td className={`py-4 px-4 font-black ${t.amount < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                          {t.amount < 0 ? `${t.seller_profit} AZN` : `+${t.seller_profit} AZN`}
+                        </td>
+                        <td className="py-4 px-4 text-slate-400">{t.platform_fee} AZN</td>
+                        <td className="py-4 px-4 text-xs text-slate-500">
+                          {new Date(t.created_at).toLocaleString('az-AZ')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
 
-          {!earnings || earnings.transactions.length === 0 ? (
-            <div className="p-12 text-center text-slate-400">Hələ heç bir əməliyyat qeydə alınmayıb.</div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-slate-800 bg-slate-950/40 text-slate-400 text-xs uppercase font-semibold">
-                    <th className="py-3.5 px-4">Təsvir</th>
-                    <th className="py-3.5 px-4">Satış Məbləği</th>
-                    <th className="py-3.5 px-4">Komissiya %</th>
-                    <th className="py-3.5 px-4">Sizin Qazancınız</th>
-                    <th className="py-3.5 px-4">Platforma Haqqı</th>
-                    <th className="py-3.5 px-4">Tarix</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                  {earnings.transactions.map((t) => (
-                    <tr key={t.id} className="hover:bg-slate-800/30 transition">
-                      <td className="py-4 px-4 font-semibold text-white">{t.description || 'Abunə Satışı'}</td>
-                      <td className="py-4 px-4 font-medium">{t.amount} AZN</td>
-                      <td className="py-4 px-4 text-indigo-400 font-bold">%{t.commission_rate}</td>
-                      <td className="py-4 px-4 font-black text-emerald-400">+{t.seller_profit} AZN</td>
-                      <td className="py-4 px-4 text-slate-400">{t.platform_fee} AZN</td>
-                      <td className="py-4 px-4 text-xs text-slate-500">
-                        {new Date(t.created_at).toLocaleString('az-AZ')}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* Payout History Sub-Table */}
+          <div className="bg-slate-900/60 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <span>🏧</span> <span>Çıxarış Tələblərim (Payout Requests)</span>
+                </h3>
+                <p className="text-xs text-slate-400">Bank kartınıza göndərilən balans çıxarışlarının cari statusu.</p>
+              </div>
             </div>
-          )}
+
+            {payouts.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 text-xs">Hələ heç bir çıxarış tələbi göndərilməyib.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-800 bg-slate-950/40 text-slate-400 text-xs uppercase font-semibold">
+                      <th className="py-3 px-4">Məbləğ</th>
+                      <th className="py-3 px-4">Bank Kartı</th>
+                      <th className="py-3 px-4">Kart Sahibi</th>
+                      <th className="py-3 px-4">Status</th>
+                      <th className="py-3 px-4">Admin Qeydi</th>
+                      <th className="py-3 px-4">Tarix</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 text-slate-300 text-xs">
+                    {payouts.map((p) => (
+                      <tr key={p.id} className="hover:bg-slate-800/30 transition">
+                        <td className="py-3.5 px-4 font-black text-white text-sm">{p.amount.toLocaleString()} AZN</td>
+                        <td className="py-3.5 px-4 font-mono text-cyan-400 font-semibold">{p.card_number}</td>
+                        <td className="py-3.5 px-4">{p.card_holder_name}</td>
+                        <td className="py-3.5 px-4">
+                          {p.status === 'paid' && (
+                            <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">
+                              🟢 Ödənildi
+                            </span>
+                          )}
+                          {p.status === 'pending' && (
+                            <span className="px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold">
+                              🟡 Gözləmədə
+                            </span>
+                          )}
+                          {p.status === 'rejected' && (
+                            <span className="px-2.5 py-1 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 font-semibold">
+                              🔴 İmtina edildi
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-400">{p.admin_notes || '-'}</td>
+                        <td className="py-3.5 px-4 text-slate-500">{new Date(p.created_at).toLocaleString('az-AZ')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -1187,6 +1324,109 @@ export function SellerPortalView() {
                   className="w-1/2 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/25 transition disabled:opacity-50"
                 >
                   {submittingPkg ? 'Saxlanılır...' : 'Yadda Saxla'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* WITHDRAWAL / PAYOUT REQUEST MODAL */}
+      {isWithdrawOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <span>💸</span> <span>Balansı Bank Kartına Çıxar</span>
+              </h3>
+              <button onClick={() => setIsWithdrawOpen(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {withdrawError && (
+              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-400">
+                {withdrawError}
+              </div>
+            )}
+
+            <form onSubmit={handleRequestPayout} className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">
+                  Çıxarış Məbləği (AZN) <span className="text-emerald-400 font-normal">(Mövcud balans: {dashboard?.balance.toLocaleString()} AZN)</span>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max={dashboard?.balance || 0}
+                  step="0.01"
+                  required
+                  value={withdrawAmount || ''}
+                  onChange={(e) => setWithdrawAmount(parseFloat(e.target.value) || 0)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">Bank Kart Nömrəsi (16 rəqəm)</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="4169 7388 1234 5678"
+                  value={withdrawCard}
+                  onChange={(e) => setWithdrawCard(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm font-mono text-cyan-300 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">Kart Sahibinin Adı və Soyadı</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="AD SOYAD (Məs: ELMİR MƏMMƏDOV)"
+                  value={withdrawName}
+                  onChange={(e) => setWithdrawName(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-white uppercase focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">IBAN / Hesab Nömrəsi (İstəyə bağlı)</label>
+                <input
+                  type="text"
+                  placeholder="AZ00AAAA00000000000000000000"
+                  value={withdrawIban}
+                  onChange={(e) => setWithdrawIban(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-300 focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1">Əlavə Qeyd (İstəyə bağlı)</label>
+                <textarea
+                  rows={2}
+                  placeholder="Məs: BirBank kartı"
+                  value={withdrawNotes}
+                  onChange={(e) => setWithdrawNotes(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="pt-2 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsWithdrawOpen(false)}
+                  className="w-1/2 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-xl text-xs transition"
+                >
+                  Ləğv et
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingWithdraw || !withdrawAmount || withdrawAmount <= 0}
+                  className="w-1/2 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold rounded-xl text-xs shadow-lg shadow-emerald-600/25 transition disabled:opacity-50"
+                >
+                  {submittingWithdraw ? 'Göndərilir...' : 'Təsdiqlə və Göndər'}
                 </button>
               </div>
             </form>

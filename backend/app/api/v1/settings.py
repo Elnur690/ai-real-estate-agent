@@ -30,6 +30,10 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
         out["seller_min_package_price"] = "29.0"
     if "seller_max_trial_days" not in out:
         out["seller_max_trial_days"] = "14"
+    if "admin_telegram_chat_id" not in out:
+        out["admin_telegram_chat_id"] = ""
+    if "scraper_health_alerts_enabled" not in out:
+        out["scraper_health_alerts_enabled"] = "true"
 
     return out
 
@@ -56,6 +60,34 @@ async def update_settings(body: UpdateSettingsRequest, db: AsyncSession = Depend
     return {"status": "success", "updated_keys": list(body.settings.keys())}
 
 
+@router.post("/test-admin-alert")
+async def test_admin_telegram_alert(
+    db: AsyncSession = Depends(get_db),
+    current_admin = Depends(get_current_admin)
+):
+    """Sends a live test notification to the configured Admin Telegram Chat ID."""
+    from app.services.health_monitor import HealthMonitorService
+    admin_chat_id = await HealthMonitorService.get_admin_telegram_chat_id(db)
+    if not admin_chat_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Admin Telegram Chat ID təyin edilməyib. Zəhmət olmasa əvvəlcə ID-ni daxil edib yadda saxlayın."
+        )
+
+    success = await HealthMonitorService.send_admin_alert(
+        db,
+        title="Admin Sınaq Bildirişi",
+        message="✅ Əla! RealEstate AI Monitorinq xidməti aktivdir. Bütün scraper xətaları və sistem bildirişləri bu çatda göstəriləcək."
+    )
+    if not success:
+        raise HTTPException(
+            status_code=500,
+            detail="Telegram bildirişi göndərilə bilmədi. Bot tokenini və ya Chat ID-ni yoxlayın (əmin olun ki, botda /start vurmusunuz)."
+        )
+
+    return {"status": "success", "message": f"Sınaq bildirişi {admin_chat_id} ünvanına uğurla çatdırıldı!"}
+
+
 @router.get("/backups")
 async def list_database_backups(current_admin = Depends(get_current_admin)):
     """List all available database backup snapshots."""
@@ -68,6 +100,7 @@ async def create_database_backup(current_admin = Depends(get_current_admin)):
     """Trigger an instant database backup snapshot."""
     from app.services.backup import BackupService
     result = BackupService.create_backup()
+    return result
     if not result.get("success"):
         raise HTTPException(status_code=500, detail=result.get("error", "Backup failed"))
     return result

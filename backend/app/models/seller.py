@@ -77,13 +77,13 @@ class SellerTransaction(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     seller_id: Mapped[int] = mapped_column(ForeignKey("sellers.id", ondelete="CASCADE"), index=True)
-    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     package_id: Mapped[int | None] = mapped_column(ForeignKey("seller_packages.id", ondelete="SET NULL"), nullable=True)
     
-    amount: Mapped[float] = mapped_column(Float, nullable=False)  # Gross amount paid by agent in AZN
-    commission_rate: Mapped[float] = mapped_column(Float, nullable=False)  # Commission rate % at time of sale
-    seller_profit: Mapped[float] = mapped_column(Float, nullable=False)  # Profit earned by seller in AZN
-    platform_fee: Mapped[float] = mapped_column(Float, nullable=False)  # Platform fee in AZN
+    amount: Mapped[float] = mapped_column(Float, nullable=False)  # Gross amount paid by agent or negative payout in AZN
+    commission_rate: Mapped[float | None] = mapped_column(Float, nullable=True)  # Commission rate % at time of sale
+    seller_profit: Mapped[float | None] = mapped_column(Float, nullable=True)  # Profit earned by seller in AZN
+    platform_fee: Mapped[float | None] = mapped_column(Float, nullable=True)  # Platform fee in AZN
     
     type: Mapped[str] = mapped_column(String(50), default="subscription_sale")  # subscription_sale | payout | adjustment
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)

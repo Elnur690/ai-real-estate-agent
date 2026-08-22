@@ -29,6 +29,7 @@ class SavedSearch(Base):
     min_months_on_market: Mapped[int | None] = mapped_column(Integer, nullable=True) # Historical lookback parameter (e.g. 3 for "3 aydan bəri")
 
     # Advanced Criteria Filters
+    include_adjacent_metro: Mapped[bool] = mapped_column(Boolean, default=False)
     not_first_last_floor: Mapped[bool] = mapped_column(Boolean, default=False)
     min_floor: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_floor: Mapped[int | None] = mapped_column(Integer, nullable=True)
