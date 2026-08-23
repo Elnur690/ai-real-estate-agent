@@ -740,5 +740,55 @@ def test_strict_match_nizami_district_does_not_match_sabuncu_ramana():
     assert IngestionService.is_strict_match(search, nizami_listing) is True
 
 
+def test_strict_match_nizami_district_vs_yasamal_nizami_metro():
+    """
+    Ensures that searching for Nizami district (Neftçilər, Qara Qarayev, Xalqlar)
+    does NOT match listings in Yasamal district even if near Nizami metro station.
+    Conversely, searching for Nizami metro station matches listings near Nizami metro in Yasamal.
+    """
+    district_search = SavedSearch(
+        tenant_id=1,
+        name="Axtarış: Nizami",
+        raw_criteria_text="Axtarış: Nizami",
+        district="Nizami",
+        seller_type="owner",
+        offer_type="rent",
+        property_type="apartment"
+    )
+
+    yasamal_nizami_metro_listing = Listing(
+        source_id=1,
+        external_id="bina_6396486",
+        title="4 otaqlı Mənzil (Nizami)",
+        description="6-cı paralelnidə, Caspian Plazanın tam yaxınlığında, Nizami m., Murtuza Muxtarov küç. 185, kirayə verilir",
+        listing_url="https://bina.az/items/6396486",
+        district="Yasamal",
+        metro_station="Nizami",
+        rooms=4,
+        price=1200.0,
+        offer_type="rent",
+        seller_type="owner",
+        makler_score=0.0,
+        building_type="new",
+        property_type="apartment"
+    )
+
+    # 1. District Search for Nizami must REJECT Yasamal listing at Nizami metro
+    assert IngestionService.is_strict_match(district_search, yasamal_nizami_metro_listing) is False
+
+    # 2. Metro Search for Nizami must MATCH Yasamal listing at Nizami metro
+    metro_search = SavedSearch(
+        tenant_id=1,
+        name="Axtarış: Nizami metrosu",
+        raw_criteria_text="Nizami metrosu 4 otaq",
+        metro_station="Nizami",
+        seller_type="owner",
+        offer_type="rent",
+        property_type="apartment"
+    )
+    assert IngestionService.is_strict_match(metro_search, yasamal_nizami_metro_listing) is True
+
+
+
 
 

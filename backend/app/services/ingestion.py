@@ -590,7 +590,7 @@ class IngestionService:
         from app.core.baku_locations import (
             get_all_aliases_for_location, SETTLEMENT_TO_DISTRICT, METRO_TO_DISTRICT,
             extract_baku_settlement, extract_metro_station, extract_baku_district,
-            METRO_ADJACENCY
+            METRO_ADJACENCY, BAKU_DISTRICTS
         )
 
         target_districts = []
@@ -629,13 +629,23 @@ class IngestionService:
                 valid_districts = set()
                 for td in target_districts:
                     td_clean = td.strip().lower()
-                    valid_districts.add(td_clean)
+                    
+                    # Direct match with administrative district
+                    for d_name in BAKU_DISTRICTS.keys():
+                        if d_name.lower() == td_clean or td_clean in d_name.lower():
+                            valid_districts.add(d_name.lower())
+
+                    # If td_clean was a settlement name (e.g. Badamdar -> Səbail, Masazır -> Abşeron)
                     for s_name, parent in SETTLEMENT_TO_DISTRICT.items():
                         if s_name.lower() == td_clean:
                             valid_districts.add(parent.lower())
-                    for m_name, parent in METRO_TO_DISTRICT.items():
-                        if m_name.lower() == td_clean:
-                            valid_districts.add(parent.lower())
+
+                    # If td_clean was a metro station name AND not an administrative district itself
+                    # (e.g. "Elmlər" -> Yasamal, "Neftçilər" -> Nizami, but NOT "Nizami" -> Yasamal when user specified district="Nizami")
+                    if not any(d_name.lower() == td_clean for d_name in BAKU_DISTRICTS.keys()):
+                        for m_name, parent in METRO_TO_DISTRICT.items():
+                            if m_name.lower() == td_clean:
+                                valid_districts.add(parent.lower())
 
                 # If the listing's district is known and does NOT match target districts, strictly reject
                 if effective_listing_dist and not any(vd == effective_listing_dist or vd in effective_listing_dist or effective_listing_dist in vd for vd in valid_districts):
@@ -647,17 +657,33 @@ class IngestionService:
             # 6.2 Location Verification against verified fields & known aliases
             matched_loc = False
             list_loc_text = f"{listing.district or ''} {listing.metro_station or ''} {list_settl or ''} {list_metro or ''} {listing.address_raw or ''}".lower()
-            for loc in all_target_locations:
-                loc_lower = loc.lower().strip()
-                # Direct match on location fields
-                if loc_lower in list_loc_text:
-                    matched_loc = True
-                    break
-                # Station, Settlement and District alias matches
-                aliases = get_all_aliases_for_location(loc)
-                if any(alias in list_loc_text for alias in aliases):
-                    matched_loc = True
-                    break
+
+            # Check target metros first if specified
+            if target_metros:
+                for tm in target_metros:
+                    tm_lower = tm.lower().strip()
+                    if listing.metro_station and (tm_lower == listing.metro_station.lower() or tm_lower in listing.metro_station.lower()):
+                        matched_loc = True
+                        break
+                    if list_metro and (tm_lower == list_metro.lower() or tm_lower in list_metro.lower()):
+                        matched_loc = True
+                        break
+                    aliases = get_all_aliases_for_location(tm, is_metro_focus=True)
+                    if any(alias in list_loc_text for alias in aliases):
+                        matched_loc = True
+                        break
+
+            # Check target districts if specified
+            if not matched_loc and target_districts:
+                for td in target_districts:
+                    td_lower = td.lower().strip()
+                    if td_lower in list_loc_text:
+                        matched_loc = True
+                        break
+                    aliases = get_all_aliases_for_location(td, is_metro_focus=False)
+                    if any(alias in list_loc_text for alias in aliases):
+                        matched_loc = True
+                        break
 
             if not matched_loc:
                 return False
@@ -940,7 +966,7 @@ class IngestionService:
                 inst_name = getattr(search, 'instance_name', None) or f"tenant_{tenant.id}"
 
                 # 1-Tap Speed-Dial and WhatsApp Direct Chat formatting
-                from app.core.baku_locations import extract_az_phone
+                from app.core.baku_locations import extract_az_phone, extract_baku_settlement
                 phone_info = extract_az_phone(listing.phone_number or f"{listing.title} {listing.description or ''} {listing.address_raw or ''}")
 
                 contact_line = ""
@@ -995,6 +1021,24 @@ class IngestionService:
                 else:
                     price_line = f"💰 *Qiymət:* {int(listing.price)} {listing.currency}" + (f" ({int(listing.price_per_sqm)} AZN/m²)" if listing.price_per_sqm else "")
 
+                # Location display with Landmark / Metro Station / Settlement / District
+                loc_parts = []
+                if listing.metro_station:
+                    loc_parts.append(f"{listing.metro_station} m.")
+                list_settl_disp = extract_baku_settlement(f"{listing.title or ''} {listing.description or ''} {listing.address_raw or ''}")
+                if list_settl_disp and (not listing.metro_station or list_settl_disp.lower() not in listing.metro_station.lower()):
+                    loc_parts.append(list_settl_disp)
+                
+                if listing.district:
+                    if loc_parts:
+                        loc_display = f"{', '.join(loc_parts)} ({listing.district})"
+                    else:
+                        loc_display = f"{listing.district}"
+                elif loc_parts:
+                    loc_display = ", ".join(loc_parts)
+                else:
+                    loc_display = listing.address_raw or 'Bakı'
+
                 msg_text = (
                     f"🔥 *YENİ UYĞUN ELAN! ({app_name})*\n"
                     f"{search_header}"
@@ -1002,7 +1046,7 @@ class IngestionService:
                     f"🏠 *{clean_title}*\n"
                     f"🏷️ *Növ / Əməliyyat:* {prop_label} ({deal_label})\n"
                     f"{price_line}\n"
-                    f"📍 *Məkan:* {listing.district or listing.address_raw or 'Bakı'}\n"
+                    f"📍 *Məkan:* {loc_display}\n"
                     f"📐 *Otaq / Sahə:* {listing.rooms or '-'} otaqlı | {listing.area_sqm or '-'} m²\n"
                     f"👤 *Satıcı:* {seller_str}\n"
                     f"{details_block}"

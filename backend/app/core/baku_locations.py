@@ -305,29 +305,41 @@ def get_bina_location_slug(district: Optional[str] = None, metro: Optional[str] 
                     slugs.append(slug)
     return list(dict.fromkeys(slugs))
 
-def get_all_aliases_for_location(loc_name: str) -> List[str]:
+def get_all_aliases_for_location(loc_name: str, is_metro_focus: bool = False) -> List[str]:
     """
     Returns comprehensive keywords & aliases for a search location.
     If loc_name is a district, includes all metro stations, settlements, and micro-locations situated within that district.
+    If is_metro_focus is True, prioritizes metro station keywords even if a district shares the same name (e.g. Nizami).
     """
     if not loc_name:
         return []
     
     loc_clean = loc_name.strip()
-    aliases = list(BAKU_SETTLEMENTS.get(loc_clean, [])) + list(BAKU_METRO_STATIONS.get(loc_clean, [])) + list(BAKU_DISTRICTS.get(loc_clean, []))
+    is_district = (not is_metro_focus) and any(d_name.lower() == loc_clean.lower() for d_name in BAKU_DISTRICTS.keys())
     
-    # If loc_clean is a District (e.g. Yasamal, Nəsimi), also pull all child settlements and metros
-    for s_name, parent_dist in SETTLEMENT_TO_DISTRICT.items():
-        if parent_dist.lower() == loc_clean.lower() or loc_clean.lower() in parent_dist.lower():
-            aliases.extend(BAKU_SETTLEMENTS.get(s_name, []))
-            aliases.append(s_name.lower())
-            
-    for m_name, parent_dist in METRO_TO_DISTRICT.items():
-        if parent_dist.lower() == loc_clean.lower() or loc_clean.lower() in parent_dist.lower():
-            aliases.extend(BAKU_METRO_STATIONS.get(m_name, []))
-            aliases.append(m_name.lower())
-            
-    aliases.append(loc_clean.lower())
+    aliases = []
+    if is_district:
+        # Match official district keywords
+        for d_name, d_aliases in BAKU_DISTRICTS.items():
+            if d_name.lower() == loc_clean.lower():
+                aliases.extend(d_aliases)
+        
+        # Add all child settlements belonging to this district
+        for s_name, parent_dist in SETTLEMENT_TO_DISTRICT.items():
+            if parent_dist.lower() == loc_clean.lower():
+                aliases.extend(BAKU_SETTLEMENTS.get(s_name, []))
+                aliases.append(s_name.lower())
+                
+        # Add all child metro stations belonging to this district
+        for m_name, parent_dist in METRO_TO_DISTRICT.items():
+            if parent_dist.lower() == loc_clean.lower():
+                aliases.extend(BAKU_METRO_STATIONS.get(m_name, []))
+                aliases.append(m_name.lower())
+    else:
+        # Non-district location (e.g. Metro station or Settlement)
+        aliases = list(BAKU_SETTLEMENTS.get(loc_clean, [])) + list(BAKU_METRO_STATIONS.get(loc_clean, []))
+        aliases.append(loc_clean.lower())
+
     return list(dict.fromkeys(aliases))
 
 def extract_baku_settlement(text: str) -> Optional[str]:
