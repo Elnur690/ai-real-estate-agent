@@ -438,7 +438,7 @@ def extract_az_phone(text: str) -> Optional[tuple[str, str]]:
     import re
     if not text:
         return None
-    matches = re.finditer(r'(?:\+?994\s*|0)?\s*\(?\s*(50|51|55|70|77|99|12|10)\s*\)?\s*[\s.-]?\s*(\d{3})\s*[\s.-]?\s*(\d{2})\s*[\s.-]?\s*(\d{2})', text)
+    matches = re.finditer(r'(?:\+?994\s*|0)?\s*\(?\s*(50|51|55|70|77|99|12|10|60|18)\s*\)?\s*[\s.-]?\s*(\d{3})\s*[\s.-]?\s*(\d{2})\s*[\s.-]?\s*(\d{2})', text)
     for m in matches:
         prefix, p1, p2, p3 = m.group(1), m.group(2), m.group(3), m.group(4)
         formatted = f"+994 {prefix} {p1} {p2} {p3}"

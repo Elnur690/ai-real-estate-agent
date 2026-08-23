@@ -75,7 +75,9 @@ class DuplicateDetectorService:
             # 3. Create or reuse Duplicate Group ID
             all_in_group = [listing] + matched_duplicates
             existing_group_ids = [l.duplicate_group_id for l in matched_duplicates if l.duplicate_group_id]
-            group_id = existing_group_ids[0] if existing_group_ids else f"dup_grp_{min(l.id for l in all_in_group)}"
+            valid_ids = [l.id for l in all_in_group if l.id is not None]
+            min_id = min(valid_ids) if valid_ids else (listing.external_id or "0")
+            group_id = existing_group_ids[0] if existing_group_ids else f"dup_grp_{min_id}"
 
             # 4. Serialize summary of duplicates
             group_data = []

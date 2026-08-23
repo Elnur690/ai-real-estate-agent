@@ -2,7 +2,7 @@ import re
 import json
 import logging
 from typing import Optional, Dict, Any, Tuple
-from sqlalchemy import select, update, func
+from sqlalchemy import select, update, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -702,17 +702,28 @@ class BotCommandHandler:
 
         # Check active search limit
         from app.models.plan import Plan
+        from app.models.seller import SellerPackage
         stmt_cnt = select(func.count(SavedSearch.id)).where(SavedSearch.tenant_id == tenant.id, SavedSearch.is_active == True)
         res_cnt = await db.execute(stmt_cnt)
         active_count = res_cnt.scalar() or 0
 
-        stmt_pl = select(Plan).where(Plan.code == tenant.plan)
-        res_pl = await db.execute(stmt_pl)
-        plan_obj = res_pl.scalars().first()
-
-        base_limit = getattr(plan_obj, 'max_saved_searches', 10) if plan_obj else {
-            "free": 3, "starter": 10, "pro": 30, "agency": 100, "enterprise": 500
-        }.get(tenant.plan, 10)
+        base_limit = 10
+        if tenant.seller_package_id:
+            stmt_pkg = select(SellerPackage).where(SellerPackage.id == tenant.seller_package_id)
+            res_pkg = await db.execute(stmt_pkg)
+            pkg_obj = res_pkg.scalars().first()
+            if pkg_obj and pkg_obj.max_searches:
+                base_limit = pkg_obj.max_searches
+        else:
+            stmt_pl = select(Plan).where(or_(Plan.code == tenant.plan, Plan.name == tenant.plan))
+            res_pl = await db.execute(stmt_pl)
+            plan_obj = res_pl.scalars().first()
+            if plan_obj and plan_obj.max_saved_searches:
+                base_limit = plan_obj.max_saved_searches
+            else:
+                base_limit = {
+                    "free": 3, "starter": 10, "pro": 30, "agency": 100, "enterprise": 500
+                }.get(tenant.plan, 10)
 
         total_limit = base_limit + (tenant.addon_saved_searches or 0)
 

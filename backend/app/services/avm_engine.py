@@ -30,26 +30,36 @@ class AVMEngineService:
         if not listing.district:
             return listing
 
-        # 2. Dynamic District Average Price per SQM (Separated strictly by Sale vs Monthly Rental)
+        # 2. Dynamic District Average Price per SQM (Separated strictly by Sale vs Monthly Rental & Property Type)
+        from sqlalchemy import and_
+        prop_type = listing.property_type or 'apartment'
+        base_conds = [
+            Listing.district == listing.district,
+            Listing.price_per_sqm > 0,
+            Listing.is_active == True
+        ]
         if offer_type in ['rent', 'kiraye', 'icare']:
-            stmt = select(func.avg(Listing.price_per_sqm)).where(
-                Listing.district == listing.district,
+            base_conds.extend([
                 Listing.offer_type == 'rent',
-                Listing.price_per_sqm > 0,
                 Listing.price >= 100,
-                Listing.price < 20000,
-                Listing.is_active == True
-            )
+                Listing.price < 20000
+            ])
         else:
-            stmt = select(func.avg(Listing.price_per_sqm)).where(
-                Listing.district == listing.district,
+            base_conds.extend([
                 Listing.offer_type == 'sale',
-                Listing.price_per_sqm > 0,
-                Listing.price >= 15000,
-                Listing.is_active == True
-            )
-        res = await db.execute(stmt)
+                Listing.price >= 15000
+            ])
+
+        # 1st attempt: Average for exact property type in district (e.g. apartment vs apartment)
+        stmt_prop = select(func.avg(Listing.price_per_sqm)).where(and_(*base_conds, Listing.property_type == prop_type))
+        res = await db.execute(stmt_prop)
         avg_sqm = res.scalar()
+
+        # Fallback: General district average if specific property type data is sparse
+        if not avg_sqm or avg_sqm <= 0:
+            stmt_gen = select(func.avg(Listing.price_per_sqm)).where(and_(*base_conds))
+            res = await db.execute(stmt_gen)
+            avg_sqm = res.scalar()
 
         if avg_sqm and avg_sqm > 0:
             district_avg = round(float(avg_sqm), 2)

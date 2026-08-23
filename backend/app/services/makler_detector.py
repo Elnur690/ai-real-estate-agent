@@ -100,7 +100,7 @@ class MaklerDetectorService:
         # Phone Number Multi-Listing Frequency Analysis (Mobile and Landlines)
         raw_phone_str = listing.phone_number or ""
         if not raw_phone_str:
-            phone_match = re.search(r'(\+?994|0)?\s*(50|51|55|70|77|99|10|12)\s*\d{3}\s*\d{2}\s*\d{2}', text_lower)
+            phone_match = re.search(r'(\+?994|0)?\s*(50|51|55|70|77|99|10|12|60|18)\s*\d{3}\s*\d{2}\s*\d{2}', text_lower)
             if phone_match:
                 raw_phone_str = phone_match.group()
 
