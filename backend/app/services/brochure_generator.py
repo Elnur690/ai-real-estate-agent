@@ -1,40 +1,37 @@
+import html
 import os
 import logging
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.listing import Listing
 from app.models.tenant import Tenant
-from reportlab.lib.pagesizes import letter
-from reportlab.lib import colors
-from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 
 logger = logging.getLogger(__name__)
 
 BROCHURE_DIR = Path("/app/brochures") if os.path.exists("/app") else Path(__file__).parent.parent.parent / "brochures"
 
-import html
-
-def setup_fonts() -> tuple[str, str]:
-    font_candidates = [
-        ('/System/Library/Fonts/Supplemental/Arial.ttf', '/System/Library/Fonts/Supplemental/Arial Bold.ttf'),
-        ('/Library/Fonts/Arial.ttf', '/Library/Fonts/Arial Bold.ttf'),
-        ('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf')
-    ]
-    for reg, bold in font_candidates:
-        if os.path.exists(reg):
-            try:
-                pdfmetrics.registerFont(TTFont('CustomAzFont', reg))
-                pdfmetrics.registerFont(TTFont('CustomAzFont-Bold', bold if os.path.exists(bold) else reg))
-                return ('CustomAzFont', 'CustomAzFont-Bold')
-            except Exception:
-                pass
+def setup_fonts():
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        font_candidates = [
+            ('/System/Library/Fonts/Supplemental/Arial.ttf', '/System/Library/Fonts/Supplemental/Arial Bold.ttf'),
+            ('/Library/Fonts/Arial.ttf', '/Library/Fonts/Arial Bold.ttf'),
+            ('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf')
+        ]
+        for reg, bold in font_candidates:
+            if os.path.exists(reg):
+                try:
+                    pdfmetrics.registerFont(TTFont('CustomAzFont', reg))
+                    pdfmetrics.registerFont(TTFont('CustomAzFont-Bold', bold if os.path.exists(bold) else reg))
+                    return ('CustomAzFont', 'CustomAzFont-Bold')
+                except Exception:
+                    pass
+    except Exception:
+        pass
     return ('Helvetica', 'Helvetica-Bold')
 
 class BrochureGeneratorService:
@@ -73,36 +70,49 @@ class BrochureGeneratorService:
         )
 
         # 2. PDF Brochure Generation
-        BROCHURE_DIR.mkdir(parents=True, exist_ok=True)
+        pdf_generated = False
         filename = f"brochure_listing_{listing_id}_tenant_{tenant_id}.pdf"
         filepath = BROCHURE_DIR / filename
+        brochure_url = f"https://app.realestate.az/brochures/{filename}"
 
-        doc = SimpleDocTemplate(str(filepath), pagesize=letter, rightMargin=0.5*inch, leftMargin=0.5*inch, topMargin=0.5*inch, bottomMargin=0.5*inch)
-        styles = getSampleStyleSheet()
+        try:
+            from reportlab.lib.pagesizes import letter
+            from reportlab.lib import colors
+            from reportlab.lib.units import inch
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
-        title_style = ParagraphStyle('BTitle', parent=styles['Heading1'], fontName=bold_font, fontSize=20, leading=24, textColor=colors.HexColor('#0F172A'), spaceAfter=8)
-        sub_style = ParagraphStyle('BSub', parent=styles['Normal'], fontName=reg_font, fontSize=10, leading=14, textColor=colors.HexColor('#475569'), spaceAfter=12)
-        body_style = ParagraphStyle('BBody', parent=styles['Normal'], fontName=reg_font, fontSize=10, leading=14, textColor=colors.HexColor('#334155'), spaceAfter=6)
+            BROCHURE_DIR.mkdir(parents=True, exist_ok=True)
+            doc = SimpleDocTemplate(str(filepath), pagesize=letter, rightMargin=0.5*inch, leftMargin=0.5*inch, topMargin=0.5*inch, bottomMargin=0.5*inch)
+            styles = getSampleStyleSheet()
 
-        elements = [
-            Paragraph(f"<b>{agent_name_escaped}</b> — Eksklüziv Əmlak Broşuru", sub_style),
-            Paragraph(title_escaped, title_style),
-            HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#0284C7'), spaceAfter=12),
-            Paragraph(f"<b>Qiymət:</b> {int(listing.price)} {listing.currency}", body_style),
-            Paragraph(f"<b>Məkan:</b> {html.escape(listing.district or 'Bakı')}", body_style),
-            Paragraph(f"<b>Otaq Sayı:</b> {listing.rooms or '-'} otaqlı", body_style),
-            Paragraph(f"<b>Sahə:</b> {listing.area_sqm or '-'} m²", body_style),
-            Paragraph(f"<b>Təsvir:</b> {desc_escaped}", body_style),
-            Spacer(1, 15),
-            Paragraph(f"<b>Əlaqədar Agent:</b> {agent_name_escaped} | <b>Tel:</b> {html.escape(agent_phone)}", title_style)
-        ]
+            title_style = ParagraphStyle('BTitle', parent=styles['Heading1'], fontName=bold_font, fontSize=20, leading=24, textColor=colors.HexColor('#0F172A'), spaceAfter=8)
+            sub_style = ParagraphStyle('BSub', parent=styles['Normal'], fontName=reg_font, fontSize=10, leading=14, textColor=colors.HexColor('#475569'), spaceAfter=12)
+            body_style = ParagraphStyle('BBody', parent=styles['Normal'], fontName=reg_font, fontSize=10, leading=14, textColor=colors.HexColor('#334155'), spaceAfter=6)
 
-        doc.build(elements)
-        logger.info(f"[BrochureGenerator] Generated brochure PDF: {filepath}")
+            elements = [
+                Paragraph(f"<b>{agent_name_escaped}</b> — Eksklüziv Əmlak Broşuru", sub_style),
+                Paragraph(title_escaped, title_style),
+                HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#0284C7'), spaceAfter=12),
+                Paragraph(f"<b>Qiymət:</b> {int(listing.price)} {listing.currency}", body_style),
+                Paragraph(f"<b>Məkan:</b> {html.escape(listing.district or 'Bakı')}", body_style),
+                Paragraph(f"<b>Otaq Sayı:</b> {listing.rooms or '-'} otaqlı", body_style),
+                Paragraph(f"<b>Sahə:</b> {listing.area_sqm or '-'} m²", body_style),
+                Paragraph(f"<b>Təsvir:</b> {desc_escaped}", body_style),
+                Spacer(1, 15),
+                Paragraph(f"<b>Əlaqədar Agent:</b> {agent_name_escaped} | <b>Tel:</b> {html.escape(agent_phone)}", title_style)
+            ]
+
+            doc.build(elements)
+            pdf_generated = True
+            logger.info(f"[BrochureGenerator] Generated brochure PDF: {filepath}")
+        except Exception as e:
+            logger.warning(f"[BrochureGenerator] PDF generation skipped/fallback ({e})")
 
         return {
             "success": True,
-            "filename": filename,
-            "pdf_path": str(filepath),
+            "filename": filename if pdf_generated else None,
+            "pdf_path": str(filepath) if pdf_generated else None,
+            "brochure_url": brochure_url if pdf_generated else None,
             "instagram_caption": instagram_caption
         }

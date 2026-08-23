@@ -197,10 +197,14 @@ class BotCommandHandler:
             from app.services.brochure_generator import BrochureGeneratorService
             res_b = await BrochureGeneratorService.generate_property_brochure(db, listing_id, tenant.id)
             if res_b.get("success"):
+                pdf_link_str = f"📎 [PDF Bukleti Yüklə / Aç]({res_b['brochure_url']})\n\n" if res_b.get("brochure_url") else ""
+                clean_caption = res_b.get("instagram_caption", "")
                 return (
-                    f"🏠 *Elan #{listing_id} üçün Sosial / PDF Buklet hazırdır!*\n\n"
-                    f"📎 [Bukleti Yüklə / Aç]({res_b['brochure_url']})\n\n"
-                    f"Bu bukleti birbaşa müştəriyə göndərə və ya çap edib təqdim edə bilərsiniz."
+                    f"🏠 *Elan #{listing_id} üçün Müştəri Təqdimatı Hazırdır!*\n\n"
+                    f"{pdf_link_str}"
+                    f"💬 *Müştəriyə göndərmək üçün təmiz mətn (Kopyalayın):*\n"
+                    f"```\n{clean_caption}\n```\n\n"
+                    f"💡 *Qeyd:* Orijinal portal linki və ev sahibinin nömrəsi silinib, yalnız sizin əlaqə məlumatlarınız daxil edilib."
                 )
             return f"Xəta: Elan #{listing_id} tapılmadı."
 

@@ -19,91 +19,151 @@ class LalafoAzScraper(BaseScraper):
 
         try:
             headers = get_random_headers(referer="https://lalafo.az/")
-            headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-                res = await client.get(url_or_handle, headers=headers)
-                if res.status_code == 200:
-                    soup = BeautifulSoup(res.text, "html.parser")
-                    links = soup.find_all("a", href=re.compile(r'/baku/ads/.*-id-(\d+)'))
-                    seen = set()
+            headers["Accept"] = "application/json, text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            
+            async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
+                # 1. Try Lalafo JSON search feed API first
+                api_url = "https://lalafo.az/api/search/v3/feed/details?expand=url&per-page=25&category_id=2043&city_id=103184"
+                try:
+                    api_res = await client.get(api_url, headers=headers)
+                    if api_res.status_code == 200 and "application/json" in api_res.headers.get("content-type", ""):
+                        data = api_res.json()
+                        feed_items = data.get("items", []) or []
+                        for item in feed_items:
+                            ext_id = str(item.get("id"))
+                            if not ext_id:
+                                continue
+                            raw_title = item.get("title") or ""
+                            raw_desc = item.get("description") or ""
+                            full_text = f"{raw_title} {raw_desc}"
+                            price = safe_float(item.get("price"), default=0.0)
+                            curr = item.get("currency") or "AZN"
+                            
+                            district = extract_baku_district(full_text)
+                            settlement = extract_baku_settlement(full_text)
+                            metro = extract_metro_station(full_text)
+                            
+                            if not district:
+                                if settlement and settlement in SETTLEMENT_TO_DISTRICT:
+                                    district = SETTLEMENT_TO_DISTRICT[settlement]
+                                elif metro and metro in METRO_TO_DISTRICT:
+                                    district = METRO_TO_DISTRICT[metro]
 
-                    for a in links:
-                        href = a.get('href', '')
-                        m = re.search(r'-id-(\d+)', href)
-                        if not m:
-                            continue
-                        ext_id = m.group(1)
-                        if ext_id in seen:
-                            continue
-                        seen.add(ext_id)
+                            from app.core.property_classifier import classify_property_and_offer
+                            item_url = item.get("url") or f"/baku/ads/item-id-{ext_id}"
+                            detected_offer, detected_prop, detected_seller = classify_property_and_offer(
+                                title=raw_title,
+                                description=raw_desc,
+                                url=item_url,
+                                raw_text=full_text
+                            )
 
-                        raw_text = a.get_text(separator=" | ", strip=True).replace('\xa0', ' ')
-                        raw_lower = raw_text.lower()
+                            items.append(RawListingItem(
+                                external_id=f"lalafo_{ext_id}",
+                                title=raw_title or f"Əmlak ({district or 'Bakı'})",
+                                description=raw_desc[:300] if raw_desc else f"Lalafo.az elanı #{ext_id}",
+                                price=price,
+                                currency=curr,
+                                district=district,
+                                metro_station=metro,
+                                rooms=None,
+                                area_sqm=None,
+                                building_type="new",
+                                seller_type=detected_seller,
+                                offer_type=detected_offer,
+                                property_type=detected_prop,
+                                listing_url=f"https://lalafo.az{item_url}" if item_url.startswith('/') else item_url
+                            ))
+                            if len(items) >= 25:
+                                break
+                except Exception as api_err:
+                    logger.debug(f"[LalafoAzScraper] API feed fallback to HTML ({api_err})")
 
-                        price_m = re.search(r'([\d\s]+)\s*(?:AZN|₼|manat)', raw_text) or re.search(r'([\d\s]+)\s*USD', raw_text)
-                        price = safe_float(price_m.group(1) if price_m else None, default=0.0)
+                # 2. Fallback to HTML scraping if API returned 0 items
+                if not items:
+                    res = await client.get(url_or_handle, headers=headers)
+                    if res.status_code == 200:
+                        soup = BeautifulSoup(res.text, "html.parser")
+                        links = soup.find_all("a", href=re.compile(r'/baku/ads/.*-id-(\d+)'))
+                        seen = set()
 
-                        rooms_m = re.search(r'(\d+)\s*-\s*otaql', href) or re.search(r'(\d+)\s*otaql', raw_text) or re.search(r'(\d+)\s*otaq', raw_text)
-                        rooms = int(rooms_m.group(1)) if rooms_m else None
+                        for a in links:
+                            href = a.get('href', '')
+                            m = re.search(r'-id-(\d+)', href)
+                            if not m:
+                                continue
+                            ext_id = m.group(1)
+                            if ext_id in seen:
+                                continue
+                            seen.add(ext_id)
 
-                        area_m = re.search(r'(\d+)\s*-\s*kv', href) or re.search(r'([\d.]+)\s*m²', raw_text)
-                        area = safe_optional_float(area_m.group(1) if area_m else None)
+                            raw_text = a.get_text(separator=" | ", strip=True).replace('\xa0', ' ')
+                            raw_lower = raw_text.lower()
 
-                        district = extract_baku_district(raw_text) or extract_baku_district(href) 
-                        settlement = extract_baku_settlement(raw_text) or extract_baku_settlement(href)
-                        metro = extract_metro_station(raw_text) or extract_metro_station(href)
+                            price_m = re.search(r'([\d\s]+)\s*(?:AZN|₼|manat)', raw_text) or re.search(r'([\d\s]+)\s*USD', raw_text)
+                            price = safe_float(price_m.group(1) if price_m else None, default=0.0)
 
-                        if not district:
-                            if settlement and settlement in SETTLEMENT_TO_DISTRICT:
-                                district = SETTLEMENT_TO_DISTRICT[settlement]
-                            elif metro and metro in METRO_TO_DISTRICT:
-                                district = METRO_TO_DISTRICT[metro]
+                            rooms_m = re.search(r'(\d+)\s*-\s*otaql', href) or re.search(r'(\d+)\s*otaql', raw_text) or re.search(r'(\d+)\s*otaq', raw_text)
+                            rooms = int(rooms_m.group(1)) if rooms_m else None
 
-                        is_rent = "kirayə" in raw_lower or "icarə" in raw_lower
-                        offer_type = "rent" if is_rent else "sale"
+                            area_m = re.search(r'(\d+)\s*-\s*kv', href) or re.search(r'([\d.]+)\s*m²', raw_text)
+                            area = safe_optional_float(area_m.group(1) if area_m else None)
 
-                        from app.core.property_classifier import classify_property_and_offer
-                        detected_offer, detected_prop, detected_seller = classify_property_and_offer(
-                            title="",
-                            description=raw_text,
-                            url=href,
-                            raw_text=raw_text
-                        )
+                            district = extract_baku_district(raw_text) or extract_baku_district(href) 
+                            settlement = extract_baku_settlement(raw_text) or extract_baku_settlement(href)
+                            metro = extract_metro_station(raw_text) or extract_metro_station(href)
 
-                        prop_label_map = {
-                            "apartment": "Mənzil",
-                            "house": "Həyət evi / Villa",
-                            "office": "Ofis",
-                            "commercial": "Obyekt",
-                            "land": "Torpaq sahəsi"
-                        }
-                        prop_name = prop_label_map.get(detected_prop, "Əmlak")
-                        loc_label = settlement or metro or district or 'Bakı'
-                        title = f"{rooms} otaqlı {prop_name} ({loc_label})" if rooms else f"{prop_name} ({loc_label})"
+                            if not district:
+                                if settlement and settlement in SETTLEMENT_TO_DISTRICT:
+                                    district = SETTLEMENT_TO_DISTRICT[settlement]
+                                elif metro and metro in METRO_TO_DISTRICT:
+                                    district = METRO_TO_DISTRICT[metro]
 
-                        bld_type = "old" if "köhnə" in raw_lower else "new"
+                            is_rent = "kirayə" in raw_lower or "icarə" in raw_lower
+                            offer_type = "rent" if is_rent else "sale"
 
-                        items.append(RawListingItem(
-                            external_id=f"lalafo_{ext_id}",
-                            title=title,
-                            description=f"Lalafo.az elanı: {raw_text[:200]}",
-                            price=price,
-                            currency="AZN",
-                            district=district,
-                            metro_station=metro,
-                            rooms=rooms,
-                            area_sqm=area,
-                            building_type=bld_type,
-                            seller_type=detected_seller,
-                            offer_type=detected_offer,
-                            property_type=detected_prop,
-                            listing_url=f"https://lalafo.az{href}" if href.startswith('/') else href
-                        ))
-                        if len(items) >= 25:
-                            break
+                            from app.core.property_classifier import classify_property_and_offer
+                            detected_offer, detected_prop, detected_seller = classify_property_and_offer(
+                                title="",
+                                description=raw_text,
+                                url=href,
+                                raw_text=raw_text
+                            )
+
+                            prop_label_map = {
+                                "apartment": "Mənzil",
+                                "house": "Həyət evi / Villa",
+                                "office": "Ofis",
+                                "commercial": "Obyekt",
+                                "land": "Torpaq sahəsi"
+                            }
+                            prop_name = prop_label_map.get(detected_prop, "Əmlak")
+                            loc_label = settlement or metro or district or 'Bakı'
+                            title = f"{rooms} otaqlı {prop_name} ({loc_label})" if rooms else f"{prop_name} ({loc_label})"
+
+                            bld_type = "old" if "köhnə" in raw_lower else "new"
+
+                            items.append(RawListingItem(
+                                external_id=f"lalafo_{ext_id}",
+                                title=title,
+                                description=f"Lalafo.az elanı: {raw_text[:200]}",
+                                price=price,
+                                currency="AZN",
+                                district=district,
+                                metro_station=metro,
+                                rooms=rooms,
+                                area_sqm=area,
+                                building_type=bld_type,
+                                seller_type=detected_seller,
+                                offer_type=detected_offer,
+                                property_type=detected_prop,
+                                listing_url=f"https://lalafo.az{href}" if href.startswith('/') else href
+                            ))
+                            if len(items) >= 25:
+                                break
 
         except Exception as e:
-            logger.warning(f"[LalafoAzScraper] Error scraping: {e}")
+            logger.info(f"[LalafoAzScraper] Lalafo temporary scrape status: {e}")
 
         logger.info(f"[LalafoAzScraper] Extracted {len(items)} listings.")
         return items
