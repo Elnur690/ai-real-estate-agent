@@ -1,3 +1,4 @@
+import os
 import re
 import json
 import logging
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
+from app.core.config import settings
 from app.models.tenant import Tenant
 from app.models.saved_search import SavedSearch
 from app.models.match import Match
@@ -208,6 +210,24 @@ class BotCommandHandler:
                 pdf_link_str = f"📎 [PDF Bukleti Yüklə / Aç]({res_b['brochure_url']})\n\n" if res_b.get("brochure_url") else ""
                 clean_caption = res_b.get("instagram_caption", "")
                 display_num = input_id
+                pdf_path = res_b.get("pdf_path")
+
+                # Direct document delivery if file exists on disk
+                dest_channel = channel or tenant.preferred_channel or "whatsapp"
+                dest_chat_id = sender_id or (tenant.whatsapp_number if dest_channel == "whatsapp" else tenant.telegram_chat_id)
+                inst_name = instance_name or f"tenant_{tenant.id}"
+
+                if pdf_path and os.path.exists(pdf_path) and dest_chat_id:
+                    try:
+                        if dest_channel == "telegram":
+                            from app.bot.telegram_adapter import send_telegram_document
+                            await send_telegram_document(dest_chat_id, pdf_path, caption=f"📄 Elan #{display_num} üçün PDF Buklet", filename=res_b.get("filename"))
+                        elif dest_channel == "whatsapp":
+                            from app.bot.whatsapp_adapter import WhatsAppAdapter
+                            await WhatsAppAdapter.send_document(dest_chat_id, pdf_path, caption=f"📄 Elan #{display_num} üçün PDF Buklet", filename=res_b.get("filename"), instance_name=inst_name)
+                    except Exception as e_doc:
+                        logger.warning(f"[CommandHandler] Direct PDF sending failed: {e_doc}")
+
                 return (
                     f"🏠 *Elan #{display_num} üçün Müştəri Təqdimatı Hazırdır!*\n\n"
                     f"{pdf_link_str}"
@@ -219,7 +239,7 @@ class BotCommandHandler:
 
         # Client Intake Bot Link (/intake, /link, /klient, /lead)
         if text_lower in ["/intake", "intake", "/link", "link", "/klient", "klient", "/lead", "lead"]:
-            base_url = "https://app.realestate.az"
+            base_url = (settings.FRONTEND_BASE_URL or "https://realtor.erma.shop").rstrip('/')
             intake_url = f"{base_url}/intake/{tenant.id}"
             return (
                 f"🤖 *Brendləşdirilmiş Müştəri Qəbul Linkiniz ({app_name}):*\n\n"

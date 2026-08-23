@@ -275,6 +275,12 @@ app.include_router(whatsapp.router, prefix=settings.API_V1_STR)
 app.include_router(analytics.router, prefix=settings.API_V1_STR)
 app.include_router(sellers.router, prefix=settings.API_V1_STR)
 
+# Serve generated PDF brochures statically
+from fastapi.staticfiles import StaticFiles
+from app.services.brochure_generator import BROCHURE_DIR
+BROCHURE_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/brochures", StaticFiles(directory=str(BROCHURE_DIR)), name="brochures")
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "app": settings.PROJECT_NAME}

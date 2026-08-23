@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     # DNS & White-label Target Settings
     CNAME_TARGET_DOMAIN: str = os.getenv("CNAME_TARGET_DOMAIN", "realtor.erma.shop")
     SERVER_IP: str = os.getenv("SERVER_IP", "185.196.21.159")
+    PUBLIC_BASE_URL: str = os.getenv("PUBLIC_BASE_URL", "https://realtor-api.erma.shop")
+    FRONTEND_BASE_URL: str = os.getenv("FRONTEND_BASE_URL", "https://realtor.erma.shop")
 
     # Database
     DATABASE_URL: str = os.getenv(

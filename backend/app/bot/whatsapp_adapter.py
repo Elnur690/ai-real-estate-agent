@@ -281,3 +281,41 @@ class WhatsAppAdapter:
         except Exception as e:
             logger.error(f"[WhatsAppAdapter] Failed to send media image via instance '{inst}': {e}")
             return False
+
+    @staticmethod
+    async def send_document(phone_number: str, document_path: str, caption: str = "", filename: Optional[str] = None, instance_name: Optional[str] = None) -> bool:
+        """Send a PDF or document via Evolution API."""
+        import base64
+        base_url = settings.EVOLUTION_API_URL or "http://evolution:8080"
+        if "localhost" in base_url or "127.0.0.1" in base_url:
+            base_url = "http://evolution:8080"
+        base_url = base_url.rstrip("/")
+
+        headers = {"Content-Type": "application/json"}
+        if settings.EVOLUTION_API_KEY:
+            headers["apikey"] = str(settings.EVOLUTION_API_KEY)
+
+        inst = await WhatsAppAdapter.resolve_active_instance(instance_name, base_url, headers)
+        clean_recipient = phone_number if "@g.us" in phone_number else phone_number.replace("+", "").replace(" ", "")
+
+        try:
+            with open(document_path, "rb") as doc_f:
+                b64_data = base64.b64encode(doc_f.read()).decode("utf-8")
+
+            url = f"{base_url}/message/sendMedia/{inst}"
+            body = {
+                "number": clean_recipient,
+                "mediatype": "document",
+                "mimetype": "application/pdf",
+                "caption": caption,
+                "fileName": filename or "buklet.pdf",
+                "media": b64_data
+            }
+
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.post(url, json=body, headers=headers)
+                return res.status_code in [200, 201]
+        except Exception as e:
+            logger.error(f"[WhatsAppAdapter] Failed to send document via instance '{inst}': {e}")
+            return False
+

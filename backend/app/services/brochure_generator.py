@@ -138,7 +138,9 @@ class BrochureGeneratorService:
         pdf_generated = False
         filename = f"brochure_listing_{listing_id}_tenant_{tenant_id}.pdf"
         filepath = BROCHURE_DIR / filename
-        brochure_url = f"https://app.realestate.az/brochures/{filename}"
+        from app.core.config import settings
+        base_domain = (settings.PUBLIC_BASE_URL or "https://realtor-api.erma.shop").rstrip('/')
+        brochure_url = f"{base_domain}/brochures/{filename}"
 
         try:
             from reportlab.lib.pagesizes import letter

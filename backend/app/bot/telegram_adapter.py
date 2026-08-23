@@ -90,6 +90,27 @@ async def send_telegram_media_group(chat_id: str, image_paths: list[str], captio
         return False
 
 
+async def send_telegram_document(chat_id: str, document_path: str, caption: str = "", filename: Optional[str] = None) -> bool:
+    """Send a PDF or document file directly to a Telegram chat."""
+    if not settings.TELEGRAM_BOT_TOKEN:
+        logger.warning("[TelegramAdapter] TELEGRAM_BOT_TOKEN not configured.")
+        return False
+    try:
+        from telegram import Bot
+        bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
+        with open(document_path, "rb") as doc_f:
+            await bot.send_document(
+                chat_id=chat_id,
+                document=doc_f,
+                filename=filename or os.path.basename(document_path),
+                caption=caption
+            )
+        return True
+    except Exception as e:
+        logger.error(f"[TelegramAdapter] Failed to send document to {chat_id}: {e}")
+        return False
+
+
 def build_telegram_app() -> Optional[Application]:
     if not settings.TELEGRAM_BOT_TOKEN:
         return None
