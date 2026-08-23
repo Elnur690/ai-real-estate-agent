@@ -632,6 +632,7 @@ async def get_my_agents(
             "feature_aged_listings": a.feature_aged_listings,
             "addon_aged_max_months": a.addon_aged_max_months,
             "addon_saved_searches": a.addon_saved_searches,
+            "addon_saved_searches_price": a.addon_saved_searches_price,
             "seller_package_id": a.seller_package_id,
             "created_at": a.created_at.isoformat() if a.created_at else None,
             "telegram_bot_url": tg_url,
@@ -1457,13 +1458,13 @@ async def delete_my_package(
 
     stmt = select(SellerPackage).where(SellerPackage.id == package_id, SellerPackage.seller_id == seller.id)
     res = await db.execute(stmt)
-    pkg = res.scalars().first()
     if not pkg:
         raise HTTPException(status_code=404, detail="Paket tapılmadı")
 
-    await db.delete(pkg)
+    # Soft-deactivate the package to safely preserve agent subscription records and transaction histories
+    pkg.is_active = False
     await db.commit()
-    return {"message": "Paket silindi"}
+    return {"message": "Paket uğurla deaktiv edildi"}
 
 
 @router.get("/me/earnings")
