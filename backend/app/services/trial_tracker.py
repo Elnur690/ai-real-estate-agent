@@ -25,10 +25,10 @@ class TrialTrackerService:
                 logger.error(f"[TrialTracker] Error sending WhatsApp expiry message to {target_num}: {e_wa}")
         elif tenant.telegram_chat_id:
             try:
-                from app.bot.telegram_adapter import telegram_adapter
-                await telegram_adapter.send_message(
+                from app.bot.telegram_adapter import send_telegram_notification
+                await send_telegram_notification(
                     chat_id=tenant.telegram_chat_id,
-                    message=msg
+                    message_text=msg
                 )
             except Exception as e_tg:
                 logger.error(f"[TrialTracker] Error sending Telegram expiry message to chat {tenant.telegram_chat_id}: {e_tg}")

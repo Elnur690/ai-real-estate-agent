@@ -1064,7 +1064,7 @@ class IngestionService:
                     f"{contact_line}"
                     f"🔗 [Elana keçid et]({listing.listing_url})\n\n"
                     f"💬 *Reaksiya bildirin:*\n"
-                    f"`Maraqlanıram {new_match.id}` | `Keç {new_match.id}` | `Satılıb {new_match.id}`"
+                    f"`Təqdimat {new_match.id}` | `Maraqlanıram {new_match.id}` | `Keç {new_match.id}` | `Satılıb {new_match.id}`"
                 )
 
                 if dest_channel == "telegram" and dest_chat_id:

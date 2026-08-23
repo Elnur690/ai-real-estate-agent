@@ -190,23 +190,32 @@ class BotCommandHandler:
                 return f"Axtarış #{search_id} aktiv edildi. ▶️"
             return f"⚠️ Axtarış #{search_id} sizin hesabınızda tapılmadı."
 
-        # Brochure & Social Kit Generation Command (/brochure <id>, /buklet <id>, /broşur <id>)
-        brochure_match = re.search(r'^(?:/brochure|brochure|/buklet|buklet|/broşur|broşur|/broshur|broshur)\s*#?\s*(\d+)', text_lower)
+        # Brochure & Social Kit Generation Command (/brochure <id>, /buklet <id>, /broşur <id>, /təqdimat <id>)
+        brochure_match = re.search(r'^(?:/brochure|brochure|/buklet|buklet|/broşur|broşur|/broshur|broshur|/təqdimat|təqdimat|/teqdimat|teqdimat)\s*#?\s*(\d+)', text_lower)
         if brochure_match:
-            listing_id = int(brochure_match.group(1))
+            input_id = int(brochure_match.group(1))
+            
+            # 1. First attempt resolving input_id as a Match ID for this tenant
+            stmt_m = select(Match.listing_id).where(Match.id == input_id, Match.tenant_id == tenant.id)
+            res_m = await db.execute(stmt_m)
+            matched_listing_id = res_m.scalar_one_or_none()
+            
+            target_listing_id = matched_listing_id if matched_listing_id else input_id
+
             from app.services.brochure_generator import BrochureGeneratorService
-            res_b = await BrochureGeneratorService.generate_property_brochure(db, listing_id, tenant.id)
+            res_b = await BrochureGeneratorService.generate_property_brochure(db, target_listing_id, tenant.id)
             if res_b.get("success"):
                 pdf_link_str = f"📎 [PDF Bukleti Yüklə / Aç]({res_b['brochure_url']})\n\n" if res_b.get("brochure_url") else ""
                 clean_caption = res_b.get("instagram_caption", "")
+                display_num = input_id
                 return (
-                    f"🏠 *Elan #{listing_id} üçün Müştəri Təqdimatı Hazırdır!*\n\n"
+                    f"🏠 *Elan #{display_num} üçün Müştəri Təqdimatı Hazırdır!*\n\n"
                     f"{pdf_link_str}"
                     f"💬 *Müştəriyə göndərmək üçün təmiz mətn (Kopyalayın):*\n"
                     f"```\n{clean_caption}\n```\n\n"
                     f"💡 *Qeyd:* Orijinal portal linki və ev sahibinin nömrəsi silinib, yalnız sizin əlaqə məlumatlarınız daxil edilib."
                 )
-            return f"Xəta: Elan #{listing_id} tapılmadı."
+            return f"Xəta: Elan #{input_id} tapılmadı."
 
         # Client Intake Bot Link (/intake, /link, /klient, /lead)
         if text_lower in ["/intake", "intake", "/link", "link", "/klient", "klient", "/lead", "lead"]:
@@ -309,30 +318,38 @@ class BotCommandHandler:
         reaction_match = re.search(r'^(maraqlanıram|maraqlaniram|keç|kec|satılıb|satilib)\s*(\d+)?', text_lower)
         if reaction_match:
             action = reaction_match.group(1)
-            match_id_str = reaction_match.group(2)
-            if match_id_str:
-                match_id = int(match_id_str)
-                status_map = {
-                    "maraqlanıram": "interested", "maraqlaniram": "interested",
-                    "keç": "skipped", "kec": "skipped",
-                    "satılıb": "expired", "satilib": "expired"
-                }
-                new_status = status_map.get(action, "sent")
-                stmt = update(Match).where(Match.id == match_id, Match.tenant_id == tenant.id).values(status=new_status)
-                await db.execute(stmt)
+            target_id_str = reaction_match.group(2)
+            if target_id_str:
+                input_id = int(target_id_str)
+                # Find match by Match.id or by Match.listing_id
+                stmt_m = select(Match).where(
+                    or_(
+                        and_(Match.id == input_id, Match.tenant_id == tenant.id),
+                        and_(Match.listing_id == input_id, Match.tenant_id == tenant.id)
+                    )
+                )
+                res_m = await db.execute(stmt_m)
+                match_obj = res_m.scalars().first()
 
-                if action in ["satılıb", "satilib"]:
-                    stmt_m = select(Match.listing_id).where(Match.id == match_id)
-                    res_m = await db.execute(stmt_m)
-                    lid = res_m.scalar_one_or_none()
-                    if lid:
+                if match_obj:
+                    status_map = {
+                        "maraqlanıram": "interested", "maraqlaniram": "interested",
+                        "keç": "skipped", "kec": "skipped",
+                        "satılıb": "expired", "satilib": "expired"
+                    }
+                    new_status = status_map.get(action, "sent")
+                    match_obj.status = new_status
+
+                    if action in ["satılıb", "satilib"] and match_obj.listing_id:
                         from app.models.listing import Listing
-                        await db.execute(update(Listing).where(Listing.id == lid).values(is_active=False))
+                        await db.execute(update(Listing).where(Listing.id == match_obj.listing_id).values(is_active=False))
 
-                await db.commit()
-                if action in ["satılıb", "satilib"]:
-                    return "Elan satılmış/deaktiv olaraq qeyd edildi və bazadan çıxarıldı. ❌"
-                return f"Elan statusu yeniləndi: *{new_status.capitalize()}* ✅"
+                    await db.commit()
+                    if action in ["satılıb", "satilib"]:
+                        return "Elan satılmış/deaktiv olaraq qeyd edildi və bazadan çıxarıldı. ❌"
+                    return f"Elan statusu yeniləndi: *{new_status.capitalize()}* ✅"
+                else:
+                    return f"⚠️ #{input_id} nömrəli bildiriş və ya elan hesabınızda tapılmadı."
 
         # 5. Fast-path Explicit Add Search Command (/yeni, /add, /new)
         if text_lower.startswith(("/yeni", "/add", "/new", "/axtar", "yeni axtarış", "yeni axtaris")):
@@ -966,6 +983,7 @@ class BotCommandHandler:
             f"▪️ `/pause <id>` — Axtarışı müvəqqəti dayandırmaq\n"
             f"▪️ `/resume <id>` — Dayandırılmış axtarışı yenidən aktiv etmək\n"
             f"▪️ `/since <gün>` və ya `/arxiv <ay>` — Bazar arxivində keçmiş aktiv elanları axtarmaq (nümunə: `/arxiv 3 Yasamal`)\n"
+            f"▪️ `/təqdimat <id>` (və ya `/brochure <id>`) — Elan üçün müştəriyə göndəriləcək təmiz mətn və PDF buklet hazırlamaq\n"
             f"▪️ `/status` — Abunə tarifiniz və istifadə müddətiniz\n"
             f"▪️ `/cancel` — Hazırkı axtarış qaralamasını ləğv etmək\n"
             f"▪️ `/help` — Bu təlimatı yenidən göstərmək\n\n"
@@ -973,8 +991,8 @@ class BotCommandHandler:
             f"▪️ `/pair_group` və ya `/bot_here` (və ya `bot qoş`) — Botu işçi WhatsApp qrupunuza aktivləşdirmək\n"
             f"▪️ `/unpair_group` (və ya `bot ayır`) — Botu WhatsApp qrupundan ayırmaq\n"
             f"*(Qrupda yaradılan axtarışların elanları birbaşa həmin qrupa, şəxsi çatdakılar isə şəxsi çata gəlir)*\n\n"
-            f"💬 *ELAN REAKSİYALARI:*\n"
-            f"• `Maraqlanıram <id>` | `Keç <id>` | `Satılıb <id>`"
+            f"💬 *ELAN REAKSİYALARI VƏ ƏMƏLİYYATLAR:*\n"
+            f"• `Təqdimat <id>` | `Maraqlanıram <id>` | `Keç <id>` | `Satılıb <id>`"
         )
 
     @staticmethod

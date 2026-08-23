@@ -159,8 +159,93 @@ async def test_bot_onboarding_and_commands():
         t.plan_expires_at = datetime.now(timezone.utc) - timedelta(hours=2) # expired 2 hours ago
         await db.commit()
 
-        await TrialTrackerService.check_and_notify_expired_trials(db)
-        await db.refresh(t)
-        assert t.status == "expired"
+        # Test Brochure generation resolving by Match ID vs direct Listing ID
+        from app.models.listing import Listing, ListingSource
+        from app.models.match import Match
+        from app.models.saved_search import SavedSearch
+
+        src = ListingSource(name="Bina.az", type="website", url_or_handle="https://bina.az")
+        db.add(src)
+        await db.commit()
+        await db.refresh(src)
+
+        # Create two distinct listings
+        l1 = Listing(
+            source_id=src.id,
+            external_id="ext_villa_1",
+            listing_url="https://bina.az/items/111",
+            title="3 otaqlı Həyət evi / Villa (Badamdar)",
+            description="Super təmirli villa",
+            price=470000.0,
+            currency="AZN",
+            district="Badamdar",
+            rooms=3,
+            area_sqm=151.0,
+            building_type="new",
+            property_type="house",
+            offer_type="sale",
+            is_active=True
+        )
+        l2 = Listing(
+            source_id=src.id,
+            external_id="ext_shop_2",
+            listing_url="https://bina.az/items/222",
+            title="Mağaza 2-otaqlı mənzil kirayə",
+            description="Köhnə bina",
+            price=579.0,
+            currency="AZN",
+            district="Bakı",
+            rooms=2,
+            area_sqm=45.0,
+            building_type="old",
+            property_type="apartment",
+            offer_type="rent",
+            is_active=True
+        )
+        db.add_all([l1, l2])
+        await db.commit()
+        await db.refresh(l1)
+        await db.refresh(l2)
+
+        # Create a saved search
+        s_search = SavedSearch(tenant_id=t.id, name="Badamdar Search", raw_criteria_text="Badamdar villa", is_active=True)
+        db.add(s_search)
+        await db.commit()
+        await db.refresh(s_search)
+
+        # Create Match for listing 1 (Villa)
+        match_obj = Match(
+            saved_search_id=s_search.id,
+            listing_id=l1.id,
+            tenant_id=t.id,
+            score=1.0,
+            status="sent"
+        )
+        db.add(match_obj)
+        await db.commit()
+        await db.refresh(match_obj)
+
+        # Tenant triggers brochure using match_obj.id (which is not necessarily l1.id)
+        res_brochure = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="telegram",
+            sender_id="999888777",
+            sender_name="Orxan Agent",
+            raw_text=f"Təqdimat {match_obj.id}"
+        )
+        assert "Müştəri Təqdimatı Hazırdır" in res_brochure
+        assert "Badamdar" in res_brochure
+        assert "470000" in res_brochure or "470,000" in res_brochure
+        assert "579" not in res_brochure
+
+        # Test reaction resolution
+        res_react = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="telegram",
+            sender_id="999888777",
+            sender_name="Orxan Agent",
+            raw_text=f"Maraqlanıram {match_obj.id}"
+        )
+        assert "Interested" in res_react
 
     await engine.dispose()

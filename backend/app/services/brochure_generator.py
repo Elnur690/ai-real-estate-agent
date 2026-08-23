@@ -53,21 +53,86 @@ class BrochureGeneratorService:
         agent_name = tenant.name if tenant else "Əmlak Agentliyi"
         agent_phone = tenant.phone if tenant else "+994501234567"
 
+        # Property type and deal classification
+        prop_map = {
+            "apartment": "Mənzil",
+            "house": "Həyət evi / Villa",
+            "villa": "Həyət evi / Villa",
+            "office": "Ofis",
+            "commercial": "Obyekt / Qeyri-yaşayış",
+            "land": "Torpaq sahəsi"
+        }
+        prop_type_val = getattr(listing, 'property_type', 'apartment') or 'apartment'
+        prop_label = prop_map.get(prop_type_val, "Mənzil")
+        offer_val = getattr(listing, 'offer_type', 'sale') or 'sale'
+
+        # Clean title to prevent duplicate price or portal artifacts
+        import re
+        clean_title = re.sub(r'\s*\d+\s*(?:AZN|₼|USD|\$|\/\s*ay|\/\s*gün)', '', listing.title or '').strip()
+        clean_title = re.sub(r'\s*\(?\s*satılır\s*\)?', '', clean_title, flags=re.I)
+        clean_title = re.sub(r'\s*\(?\s*icarə\s*\)?', '', clean_title, flags=re.I)
+        clean_title = re.sub(r'\s*,\s*$', '', clean_title).strip()
+        if not clean_title or len(clean_title) < 5:
+            loc_name = listing.district or listing.metro_station or 'Bakı'
+            clean_title = f"{listing.rooms or ''} otaqlı {prop_label} ({loc_name})".strip()
+
+        # Price formatting
+        if offer_val == 'daily_rent':
+            price_str = f"{int(listing.price)} {listing.currency} / gün (günlük)"
+        elif offer_val in ['rent', 'kiraye', 'icare']:
+            price_str = f"{int(listing.price)} {listing.currency} / ay (kirayə)"
+        else:
+            price_str = f"{int(listing.price)} {listing.currency}"
+
+        # Location formatting
+        loc_display = listing.district or listing.metro_station or listing.address_raw or "Bakı"
+        if listing.district and listing.metro_station:
+            loc_display = f"{listing.district} ({listing.metro_station} m.)"
+
+        # Building / Property classification line
+        type_line = ""
+        if prop_type_val in ["house", "villa"]:
+            type_line = "🏷️ Növ: Həyət evi / Villa"
+        elif prop_type_val in ["office", "commercial"]:
+            type_line = f"🏷️ Növ: {prop_label}"
+        elif prop_type_val == "land":
+            type_line = "🏷️ Növ: Torpaq sahəsi"
+        elif listing.building_type == "new":
+            type_line = "🏢 Bina: Yeni tikili"
+        elif listing.building_type == "old":
+            type_line = "🏢 Bina: Köhnə tikili"
+
+        type_block = f"{type_line}\n" if type_line else ""
+
+        # Floor line
+        floor_line = ""
+        if listing.floor and listing.total_floors:
+            floor_line = f"🏢 Mərtəbə: {listing.floor}/{listing.total_floors}\n"
+        elif listing.floor:
+            floor_line = f"🏢 Mərtəbə: {listing.floor}-ci mərtəbə\n"
+
+        # Dynamic hashtags
+        dist_tag = re.sub(r'\W+', '', (listing.district or 'baku').lower())
+        prop_tag = "villa" if prop_type_val in ["house", "villa"] else ("ofis" if prop_type_val == "office" else ("obyekt" if prop_type_val == "commercial" else ("torpaq" if prop_type_val == "land" else "menzil")))
+        deal_tag = "kiraye" if offer_val in ["rent", "daily_rent"] else "satilir"
+        hashtags = f"#emlak #baku #{deal_tag} #{prop_tag} #{dist_tag} #realestate"
+
+        # 1. Instagram / Client Sharing Text Generation
+        instagram_caption = (
+            f"🏠 {clean_title}\n\n"
+            f"💰 Qiymət: {price_str}\n"
+            f"📍 Məkan: {loc_display}\n"
+            f"📐 Otaq: {listing.rooms or '-'} otaqlı | Sahə: {listing.area_sqm or '-'} m²\n"
+            f"{type_block}"
+            f"{floor_line}\n"
+            f"📞 Əlaqə & Baxış üçün: {agent_phone} ({agent_name})\n\n"
+            f"{hashtags}"
+        )
+
         # Escaped text for ReportLab XML compliance
-        title_escaped = html.escape(listing.title or "Əmlak Elanı")
+        title_escaped = html.escape(clean_title)
         agent_name_escaped = html.escape(agent_name)
         desc_escaped = html.escape(listing.description or "Ətraflı məlumat üçün əlaqə saxlayın.")
-
-        # 1. Instagram Carousel Text Generation
-        instagram_caption = (
-            f"🏠 {listing.title}\n\n"
-            f"💰 Qiymət: {int(listing.price)} {listing.currency}\n"
-            f"📍 Məkan: {listing.district or 'Bakı'}\n"
-            f"📐 Otaq: {listing.rooms or '-'} otaqlı | Sahə: {listing.area_sqm or '-'} m²\n"
-            f"🏢 Bina: {'Yeni tikili' if listing.building_type == 'new' else 'Köhnə tikili'}\n\n"
-            f"📞 Əlaqə & Baxış üçün: {agent_phone} ({agent_name})\n\n"
-            f"#emlak #baku #bina #menzil #satilir #yasamal #realestate"
-        )
 
         # 2. PDF Brochure Generation
         pdf_generated = False
@@ -86,16 +151,16 @@ class BrochureGeneratorService:
             doc = SimpleDocTemplate(str(filepath), pagesize=letter, rightMargin=0.5*inch, leftMargin=0.5*inch, topMargin=0.5*inch, bottomMargin=0.5*inch)
             styles = getSampleStyleSheet()
 
-            title_style = ParagraphStyle('BTitle', parent=styles['Heading1'], fontName=bold_font, fontSize=20, leading=24, textColor=colors.HexColor('#0F172A'), spaceAfter=8)
+            title_style = ParagraphStyle('BTitle', parent=styles['Heading1'], fontName=bold_font, fontSize=18, leading=22, textColor=colors.HexColor('#0F172A'), spaceAfter=8)
             sub_style = ParagraphStyle('BSub', parent=styles['Normal'], fontName=reg_font, fontSize=10, leading=14, textColor=colors.HexColor('#475569'), spaceAfter=12)
             body_style = ParagraphStyle('BBody', parent=styles['Normal'], fontName=reg_font, fontSize=10, leading=14, textColor=colors.HexColor('#334155'), spaceAfter=6)
 
             elements = [
-                Paragraph(f"<b>{agent_name_escaped}</b> — Eksklüziv Əmlak Broşuru", sub_style),
+                Paragraph(f"<b>{agent_name_escaped}</b> — Eksklüziv Əmlak Təqdimatı", sub_style),
                 Paragraph(title_escaped, title_style),
                 HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#0284C7'), spaceAfter=12),
-                Paragraph(f"<b>Qiymət:</b> {int(listing.price)} {listing.currency}", body_style),
-                Paragraph(f"<b>Məkan:</b> {html.escape(listing.district or 'Bakı')}", body_style),
+                Paragraph(f"<b>Qiymət:</b> {price_str}", body_style),
+                Paragraph(f"<b>Məkan:</b> {html.escape(loc_display)}", body_style),
                 Paragraph(f"<b>Otaq Sayı:</b> {listing.rooms or '-'} otaqlı", body_style),
                 Paragraph(f"<b>Sahə:</b> {listing.area_sqm or '-'} m²", body_style),
                 Paragraph(f"<b>Təsvir:</b> {desc_escaped}", body_style),

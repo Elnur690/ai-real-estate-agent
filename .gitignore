@@ -61,5 +61,6 @@ ehthumbs.db
 Thumbs.db
 .vscode/
 .idea/
-*.swp
-*.swo
+# Brochures & Generated Media
+backend/brochures/
+brochures/
