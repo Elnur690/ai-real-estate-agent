@@ -835,6 +835,52 @@ def test_strict_match_nizami_street_vs_nizami_district():
     assert IngestionService.is_strict_match(nizami_street_search, nizami_street_listing) is True
 
 
+def test_strict_match_sahil_settlement_vs_sahil_metro():
+    """
+    Ensures that Sahil qəsəbəsi (Qaradağ) is strictly isolated from Sahil metrosu (Səbail).
+    """
+    sahil_qaradag_listing = Listing(
+        source_id=1,
+        external_id="bina_554433",
+        title="2 otaqlı Həyət Evi (Sahil qəs.)",
+        description="Qaradağ rayonu, Sahil qəsəbəsi, dəniz sahili yaxınlığında",
+        listing_url="https://bina.az/items/554433",
+        district="Qaradağ",
+        rooms=2,
+        price=65000.0,
+        offer_type="sale",
+        seller_type="owner",
+        makler_score=0.0,
+        building_type="old",
+        property_type="house"
+    )
+
+    # 1. Metro search for Sahil (Səbail) must REJECT Qaradağ listing
+    sahil_metro_search = SavedSearch(
+        tenant_id=1,
+        name="Axtarış: Sahil metrosu",
+        raw_criteria_text="Sahil metrosu",
+        metro_station="Sahil",
+        seller_type="owner",
+        offer_type="sale",
+        property_type="house"
+    )
+    assert IngestionService.is_strict_match(sahil_metro_search, sahil_qaradag_listing) is False
+
+    # 2. Qaradağ / Sahil settlement search must MATCH
+    sahil_settlement_search = SavedSearch(
+        tenant_id=1,
+        name="Axtarış: Sahil qəsəbəsi",
+        raw_criteria_text="Sahil qəsəbəsi",
+        district="Sahil qəsəbəsi",
+        seller_type="owner",
+        offer_type="sale",
+        property_type="house"
+    )
+    assert IngestionService.is_strict_match(sahil_settlement_search, sahil_qaradag_listing) is True
+
+
+
 
 
 

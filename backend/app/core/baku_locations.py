@@ -12,8 +12,8 @@ BAKU_METRO_STATIONS: Dict[str, List[str]] = {
     "Nəsimi": ["nəsimi m", "nesimi m", "nəsimi metrosu", "nesimi metrosu", "zarifa aliyeva parki"],
     "Azadlıq prospekti": ["azadlıq", "azadliq", "azadlıq m", "azadliq m", "azadlıq prospekti", "azadliq prospekti", "azadlıq metrosu", "azadliq metrosu", "8-ci mikrorayon", "8 ci mkr", "8-ci mkr", "7-ci mikrorayon", "7 ci mkr", "7-ci mkr"],
     "Dərnəgül": ["dərnəgül", "dernegul", "dərnəgül m", "dernegul m", "6-cı mkr", "6 ci mkr", "9-cu mkr", "9 ci mkr"],
-    "İçərişəhər": ["içərişəhər", "iceriseher", "içəri şəhər", "iceri seher", "içərişəhər m", "axundov bağı", "governor", "fountain square"],
-    "Sahil": ["sahil", "sahil m", "sahil metrosu", "bulvar", "tarqovi", "fəvvarələr", "torqoviy", "pedaqoji"],
+    "İçərişəhər": ["içərişəhər", "iceriseher", "içəri şəhər", "iceri seher", "içərişəhər m", "governor"],
+    "Sahil": ["sahil m", "sahil metrosu", "sahil stansiyası", "sahildə m", "sahilde m", "pedaqoji"],
     "Nizami": ["nizami m", "nizami metrosu", "qış parkı", "qis parki", "nizami kinoteatri", "beşmərtəbə"],
     "Xətai": ["xətai m", "xetai m", "xətai metrosu", "şah ismayıl xətai", "sah ismayil xetai", "ağ şəhər", "ag seher", "ali mehkeme"],
     "Cəfər Cabbarlı": ["cəfər cabbarlı", "cefer cabbarli", "c.cabbarlı"],
@@ -22,7 +22,7 @@ BAKU_METRO_STATIONS: Dict[str, List[str]] = {
     "Qara Qarayev": ["qara qarayev", "qarayev", "qara qarayev m", "qarayev m", "planet"],
     "Neftçilər": ["neftçilər", "neftciler", "neftçilər m", "neftciler m", "intertibb", "icra hakimiyyəti"],
     "Xalqlar Dostluğu": ["xalqlar", "xalqlar dostluğu", "xalqlar dostlugu", "xalqlar m", "laçın", "babək prospekti"],
-    "Əhmədli": ["əhmədli", "ehmedli", "əhmədli m", "ehmedli m", "sarayevo", "baku medical plaza"],
+    "Əhmədli": ["əhmədli m", "ehmedli m", "əhmədli metrosu", "ehmedli metrosu", "sarayevo", "baku medical plaza"],
     "Həzi Aslanov": ["həzi aslanov", "hezi aslanov", "aslanov", "aslanov m", "həzi aslanov m", "kvadratlar"],
     "Avtovağzal": ["avtovağzal", "avtovagzal", "avtovağzal m", "avtovagzal m", "beynəlxalq avtovağzal"],
     "8 Noyabr": ["8 noyabr", "8noyabr", "8 noyabr m", "8 noyabr metrosu", "hərbi hospital"],
@@ -116,7 +116,7 @@ BAKU_SETTLEMENTS: Dict[str, List[str]] = {
     "Digah": ["digah"],
     "Məmmədli": ["məmədli", "məhəmmədi", "mehemmedi", "mammedli"],
     "Lökbatan": ["lökbatan", "lokbatan", "lökbatanda", "sederek"],
-    "Sahil": ["sahil qəs", "sahil qes"],
+    "Sahil": ["sahil qəs", "sahil qes", "sahil qəsəbəsi", "sahil qesebesi", "sahil qəs.", "sahil qes."],
     "Qobustan": ["qobustan qəs", "qobustan qes"],
     "Ağ Şəhər": ["ağ şəhər", "ag seher", "white city", "baku white city"],
     "Port Baku": ["port baku", "port baki"],
@@ -196,7 +196,7 @@ SETTLEMENT_TO_DISTRICT: Dict[str, str] = {
     "Ağ Şəhər": "Xətai", "Əhmədli": "Xətai", "Həzi Aslanov": "Xətai", "NZS": "Xətai",
     "Montin": "Nərimanov", "Böyükşor": "Nərimanov",
     "Yeni Yasamal": "Yasamal",
-    "Lökbatan": "Qaradağ", "Sahil qəs.": "Qaradağ", "Qobustan": "Qaradağ", "Səngəçal": "Qaradağ",
+    "Lökbatan": "Qaradağ", "Sahil": "Qaradağ", "Sahil qəs.": "Qaradağ", "Sahil qəsəbəsi": "Qaradağ", "Qobustan": "Qaradağ", "Səngəçal": "Qaradağ",
     "Pirallahi": "Pirallahi", "Gürgən": "Pirallahi"
 }
 
@@ -337,6 +337,15 @@ def get_all_aliases_for_location(loc_name: str, is_metro_focus: bool = False) ->
             if parent_dist.lower() == loc_clean.lower():
                 aliases.extend(BAKU_METRO_STATIONS.get(m_name, []))
                 aliases.append(m_name.lower())
+    elif is_metro_focus:
+        # Metro station focus: return only metro aliases
+        for m_name, m_aliases in BAKU_METRO_STATIONS.items():
+            if m_name.lower() == loc_clean.lower():
+                aliases.extend(m_aliases)
+        if not aliases:
+            aliases = list(BAKU_METRO_STATIONS.get(loc_clean, []))
+        if loc_clean.lower() not in ["sahil", "nizami", "xətai", "nəsimi", "ulduz", "avtovağzal"]:
+            aliases.append(loc_clean.lower())
     else:
         # Non-district location (e.g. Metro station or Settlement)
         aliases = list(BAKU_SETTLEMENTS.get(loc_clean, [])) + list(BAKU_METRO_STATIONS.get(loc_clean, []))

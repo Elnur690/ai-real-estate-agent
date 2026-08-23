@@ -662,16 +662,27 @@ class IngestionService:
             if target_metros:
                 for tm in target_metros:
                     tm_lower = tm.lower().strip()
+                    # Find metro parent district for tm
+                    tm_parent = ""
+                    for m_name, parent in METRO_TO_DISTRICT.items():
+                        if m_name.lower() == tm_lower:
+                            tm_parent = parent.lower()
+                            break
+
+                    # If listing explicitly matches the metro station
                     if listing.metro_station and (tm_lower == listing.metro_station.lower() or tm_lower in listing.metro_station.lower()):
                         matched_loc = True
                         break
                     if list_metro and (tm_lower == list_metro.lower() or tm_lower in list_metro.lower()):
-                        matched_loc = True
-                        break
+                        m_parent = METRO_TO_DISTRICT.get(list_metro, '').lower()
+                        if not effective_listing_dist or not m_parent or effective_listing_dist == m_parent or m_parent in effective_listing_dist:
+                            matched_loc = True
+                            break
                     aliases = get_all_aliases_for_location(tm, is_metro_focus=True)
                     if any(alias in list_loc_text for alias in aliases):
-                        matched_loc = True
-                        break
+                        if not effective_listing_dist or not tm_parent or effective_listing_dist == tm_parent or tm_parent in effective_listing_dist:
+                            matched_loc = True
+                            break
 
             # Check target districts if specified
             if not matched_loc and target_districts:
