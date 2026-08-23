@@ -632,10 +632,10 @@ class IngestionService:
                     
                     # Direct match with administrative district
                     for d_name in BAKU_DISTRICTS.keys():
-                        if d_name.lower() == td_clean or td_clean in d_name.lower():
+                        if d_name.lower() == td_clean:
                             valid_districts.add(d_name.lower())
 
-                    # If td_clean was a settlement name (e.g. Badamdar -> Səbail, Masazır -> Abşeron)
+                    # If td_clean was a settlement name (e.g. Badamdar -> Səbail, Nizami küçəsi -> Səbail)
                     for s_name, parent in SETTLEMENT_TO_DISTRICT.items():
                         if s_name.lower() == td_clean:
                             valid_districts.add(parent.lower())
@@ -656,7 +656,7 @@ class IngestionService:
 
             # 6.2 Location Verification against verified fields & known aliases
             matched_loc = False
-            list_loc_text = f"{listing.district or ''} {listing.metro_station or ''} {list_settl or ''} {list_metro or ''} {listing.address_raw or ''}".lower()
+            list_loc_text = normalize_az_text(f"{listing.district or ''} {listing.metro_station or ''} {list_settl or ''} {list_metro or ''} {listing.address_raw or ''} {listing.title or ''} {listing.description or ''}").lower()
 
             # Check target metros first if specified
             if target_metros:

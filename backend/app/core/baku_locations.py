@@ -132,7 +132,9 @@ BAKU_SETTLEMENTS: Dict[str, List[str]] = {
     "6-cı mikrorayon": ["6-cı mikrorayon", "6 ci mikrorayon", "6-cı mkr", "6 ci mkr", "6mkr"],
     "7-ci mikrorayon": ["7-ci mikrorayon", "7 ci mikrorayon", "7-ci mkr", "7 ci mkr", "7mkr"],
     "8-ci mikrorayon": ["8-ci mikrorayon", "8 ci mikrorayon", "8-ci mkr", "8 ci mkr", "8mkr"],
-    "9-cu mikrorayon": ["9-cu mikrorayon", "9 cu mikrorayon", "9-cu mkr", "9 ci mkr", "9mkr"]
+    "9-cu mikrorayon": ["9-cu mikrorayon", "9 cu mikrorayon", "9-cu mkr", "9 ci mkr", "9mkr"],
+    "Nizami küçəsi": ["nizami küç", "nizami kuc", "nizami küçəsi", "nizami kucesi", "nizami k.", "nizami k-si", "nizami k-də", "nizami kəs", "nizami prospekti"],
+    "Torqovaya": ["torqovı", "torqovaya", "tarqovi", "tarqoviy", "torqovi", "fəvvarələr meydanı", "fevvareler meydani", "fountain square", "isr plaza"]
 }
 
 # Baku Adjacent Geographical Neighboring Districts
@@ -184,7 +186,7 @@ def extract_baku_settlement(text: str) -> Optional[str]:
     settlements = extract_all_baku_settlements(text)
 # Mapping of Settlements/Quarters to Parent Baku Administrative Districts
 SETTLEMENT_TO_DISTRICT: Dict[str, str] = {
-    "Badamdar": "Səbail", "Bayıl": "Səbail", "Şıxov": "Səbail",
+    "Badamdar": "Səbail", "Bayıl": "Səbail", "Şıxov": "Səbail", "Nizami küçəsi": "Səbail", "Torqovaya": "Səbail",
     "Bakıxanov": "Sabunçu", "Zabrat": "Sabunçu", "Maştağa": "Sabunçu", "Nardaran": "Sabunçu", "Bilgəh": "Sabunçu", "Pirşağı": "Sabunçu", "Kürdəxanı": "Sabunçu", "Balaxanı": "Sabunçu", "Ramana": "Sabunçu",
     "Qaraçuxur": "Suraxanı", "Yeni Günəşli": "Suraxanı", "Köhnə Günəşli": "Suraxanı", "Hövsan": "Suraxanı", "Əmircan": "Suraxanı", "Bülbülə": "Suraxanı", "Zığ": "Suraxanı",
     "Biləcəri": "Binəqədi", "Sulutəpə": "Binəqədi", "Rəsulzadə": "Binəqədi", "6-cı mikrorayon": "Binəqədi", "7-ci mikrorayon": "Binəqədi", "8-ci mikrorayon": "Binəqədi", "9-cu mikrorayon": "Binəqədi", "Binəqədi qəs.": "Binəqədi",

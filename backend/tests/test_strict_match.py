@@ -789,6 +789,53 @@ def test_strict_match_nizami_district_vs_yasamal_nizami_metro():
     assert IngestionService.is_strict_match(metro_search, yasamal_nizami_metro_listing) is True
 
 
+def test_strict_match_nizami_street_vs_nizami_district():
+    """
+    Ensures that Nizami küçəsi (Torqovaya / Fəvvarələr / Səbail) is recognized as a prime downtown micro-location,
+    and is strictly isolated from Nizami rayonu (Neftçilər, Qara Qarayev).
+    """
+    nizami_street_listing = Listing(
+        source_id=1,
+        external_id="bina_778899",
+        title="3 otaqlı Mənzil (Torqovaya)",
+        description="Səbail rayonu, Nizami küçəsi, Fəvvarələr meydanı yaxınlığında arxitektur bina",
+        listing_url="https://bina.az/items/778899",
+        district="Səbail",
+        rooms=3,
+        price=350000.0,
+        offer_type="sale",
+        seller_type="owner",
+        makler_score=0.0,
+        building_type="old",
+        property_type="apartment"
+    )
+
+    # Search for Nizami RAYONU must REJECT Nizami street listing in Səbail
+    nizami_district_search = SavedSearch(
+        tenant_id=1,
+        name="Axtarış: Nizami rayonu",
+        raw_criteria_text="Nizami rayonu 3 otaq",
+        district="Nizami",
+        seller_type="owner",
+        offer_type="sale",
+        property_type="apartment"
+    )
+    assert IngestionService.is_strict_match(nizami_district_search, nizami_street_listing) is False
+
+    # Search for Səbail / Nizami küçəsi must MATCH
+    nizami_street_search = SavedSearch(
+        tenant_id=1,
+        name="Axtarış: Nizami küçəsi",
+        raw_criteria_text="Nizami küçəsi 3 otaq",
+        district="Nizami küçəsi",
+        seller_type="owner",
+        offer_type="sale",
+        property_type="apartment"
+    )
+    assert IngestionService.is_strict_match(nizami_street_search, nizami_street_listing) is True
+
+
+
 
 
 
