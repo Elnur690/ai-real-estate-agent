@@ -107,7 +107,8 @@ async def get_whatsapp_qrcode(
             logger.warning(f"[WhatsApp API] Instance creation check notice: {e}")
 
         # Step 2: Set Webhook automatically
-        webhook_target = (body.webhook_url if body else None) or "https://realtor-api.erma.shop/api/v1/webhooks/whatsapp"
+        default_wh = f"{settings.PUBLIC_BASE_URL.rstrip('/')}/api/v1/webhooks/whatsapp"
+        webhook_target = (body.webhook_url if body else None) or default_wh
         webhook_url = f"{base_url}/webhook/set/{inst}"
         webhook_body = {
             "webhook": {
