@@ -55,6 +55,41 @@ async def send_telegram_notification(chat_id: str, message_text: str) -> bool:
         return False
 
 
+async def send_telegram_media_group(chat_id: str, image_paths: list[str], caption: str = "") -> bool:
+    """Send multiple clean photos as a Telegram Media Group Album."""
+    if not settings.TELEGRAM_BOT_TOKEN:
+        logger.warning("[TelegramAdapter] TELEGRAM_BOT_TOKEN not configured.")
+        return False
+    try:
+        from telegram import Bot, InputMediaPhoto
+        bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
+        
+        media = []
+        opened_files = []
+        for idx, path in enumerate(image_paths[:10]):
+            try:
+                f = open(path, "rb")
+                opened_files.append(f)
+                media_cap = caption if idx == 0 else None
+                media.append(InputMediaPhoto(media=f, caption=media_cap))
+            except Exception as e_file:
+                logger.warning(f"[TelegramAdapter] Failed to open image {path}: {e_file}")
+
+        try:
+            if media:
+                await bot.send_media_group(chat_id=chat_id, media=media)
+                return True
+        finally:
+            for f in opened_files:
+                try:
+                    f.close()
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.error(f"[TelegramAdapter] Failed to send media group to {chat_id}: {e}")
+        return False
+
+
 def build_telegram_app() -> Optional[Application]:
     if not settings.TELEGRAM_BOT_TOKEN:
         return None

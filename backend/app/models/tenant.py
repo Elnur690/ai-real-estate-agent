@@ -43,6 +43,12 @@ class Tenant(Base):
     addon_saved_searches: Mapped[int] = mapped_column(default=0) # Extra search slots purchased by agent
     addon_saved_searches_price: Mapped[float] = mapped_column(default=0.0) # Monthly price for search top-up add-on
 
+    # 🖼️ Watermark-Free Listing Photos Add-on & Quota
+    feature_watermark_free_images: Mapped[bool] = mapped_column(default=False)
+    addon_image_requests_limit: Mapped[int] = mapped_column(default=0)
+    addon_image_requests_used: Mapped[int] = mapped_column(default=0)
+    addon_image_requests_price: Mapped[float] = mapped_column(default=0.0)
+
     # 🎁 Referral System & Promo Code Reward Options
     referral_code: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True)
     referred_by_tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True)

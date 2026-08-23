@@ -21,6 +21,9 @@ class CreatePaymentRequest(BaseModel):
     payment_category: Optional[str] = "full" # "full" | "addon_only" | "plan_only" | "custom"
     include_aged_listings: Optional[bool] = None
     addon_aged_max_months: Optional[int] = 12
+    addon_saved_searches: Optional[int] = None
+    feature_watermark_free_images: Optional[bool] = None
+    addon_image_requests_limit: Optional[int] = None
     use_referral_balance: bool = True
     notes: Optional[str] = None
 
@@ -56,6 +59,8 @@ async def process_tenant_cash_payment(
     include_aged_listings: Optional[bool] = None,
     addon_aged_max_months: Optional[int] = 12,
     addon_saved_searches: Optional[int] = None,
+    feature_watermark_free_images: Optional[bool] = None,
+    addon_image_requests_limit: Optional[int] = None,
     use_referral_balance: bool = True,
     notes: Optional[str] = None
 ) -> Payment:
@@ -86,6 +91,8 @@ async def process_tenant_cash_payment(
         tenant.feature_multi_location = getattr(db_plan, 'feature_multi_location', True)
         tenant.max_locations_per_search = getattr(db_plan, 'max_locations_per_search', 5)
         tenant.backup_enabled = db_plan.backup_enabled
+        if getattr(db_plan, 'feature_watermark_free_images', False):
+            tenant.feature_watermark_free_images = True
 
     # Calculate period multiplier
     if days_covered == 365:
@@ -118,6 +125,18 @@ async def process_tenant_cash_payment(
         else:
             tenant.addon_saved_searches_price = 0.0
 
+    image_addon_fee = 0.0
+    if addon_image_requests_limit is not None:
+        tenant.addon_image_requests_limit = int(addon_image_requests_limit)
+        if addon_image_requests_limit > 0:
+            tenant.feature_watermark_free_images = True
+            image_addon_fee = round((addon_image_requests_limit / 25.0) * 10.0 * multiplier, 2)
+            tenant.addon_image_requests_price = image_addon_fee
+        else:
+            tenant.addon_image_requests_price = 0.0
+    if feature_watermark_free_images is not None:
+        tenant.feature_watermark_free_images = bool(feature_watermark_free_images)
+
     if category == "addon_only":
         # Addon only payment
         base_price = 0.0
@@ -144,9 +163,10 @@ async def process_tenant_cash_payment(
                 tenant.addon_aged_max_months = int(addon_aged_max_months)
         addon_label = f" + Aged Listings Addon ({tenant.addon_aged_max_months or 12} mo.)" if tenant.feature_aged_listings else ""
         search_label = f" + Extra {tenant.addon_saved_searches} Searches" if (tenant.addon_saved_searches and tenant.addon_saved_searches > 0) else ""
-        default_notes = f"Cash payment received for {plan_code.upper()} plan{addon_label}{search_label} ({days_covered} days coverage)"
+        image_label = f" + Extra {tenant.addon_image_requests_limit} Clean Images" if (tenant.addon_image_requests_limit and tenant.addon_image_requests_limit > 0) else ""
+        default_notes = f"Cash payment received for {plan_code.upper()} plan{addon_label}{search_label}{image_label} ({days_covered} days coverage)"
 
-    final_amount = amount if (amount is not None and amount > 0) else round(base_price + addon_fee + search_addon_fee, 2)
+    final_amount = amount if (amount is not None and amount > 0) else round(base_price + addon_fee + search_addon_fee + image_addon_fee, 2)
     pay_currency = currency or (db_plan.currency if db_plan else "AZN")
 
     # Referral bonus discount
@@ -212,16 +232,13 @@ async def record_cash_payment(body: CreatePaymentRequest, db: AsyncSession = Dep
             payment_category=body.payment_category,
             include_aged_listings=body.include_aged_listings,
             addon_aged_max_months=body.addon_aged_max_months,
+            addon_saved_searches=body.addon_saved_searches,
+            feature_watermark_free_images=body.feature_watermark_free_images,
+            addon_image_requests_limit=body.addon_image_requests_limit,
             use_referral_balance=body.use_referral_balance,
             notes=body.notes
         )
         return payment
-    except HTTPException:
-        raise
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).error(f"[Record Payment Error] Failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to record payment: {str(e)}")
     except HTTPException:
         raise
     except Exception as e:

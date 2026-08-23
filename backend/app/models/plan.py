@@ -38,6 +38,12 @@ class Plan(Base):
     addon_saved_searches_price: Mapped[float] = mapped_column(Float, default=10.0) # Price per pack in AZN
     addon_search_tiers: Mapped[list[dict] | None] = mapped_column(JSON, default=list) # e.g. [{"searches": 5, "price": 10.0}, {"searches": 10, "price": 18.0}]
 
+    # 🖼️ Watermark-Free Listing Photos Add-on & Quota
+    feature_watermark_free_images: Mapped[bool] = mapped_column(Boolean, default=False)
+    included_image_requests: Mapped[int] = mapped_column(Integer, default=0)
+    addon_image_requests_price: Mapped[float] = mapped_column(Float, default=10.0)
+    addon_image_tiers: Mapped[list[dict] | None] = mapped_column(JSON, default=list) # e.g. [{"images": 25, "price": 10.0}, {"images": 50, "price": 18.0}]
+
     backup_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

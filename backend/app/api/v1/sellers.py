@@ -71,6 +71,10 @@ class CreatePackageRequest(BaseModel):
     addon_saved_searches: int = 0
     addon_saved_searches_price: float = 10.0
     addon_search_tiers: Optional[List[Dict[str, Any]]] = None
+    feature_watermark_free_images: bool = False
+    included_image_requests: int = 0
+    addon_image_requests_price: float = 10.0
+    addon_image_tiers: Optional[List[Dict[str, Any]]] = None
 
 class UpdatePackageRequest(BaseModel):
     name: Optional[str] = None
@@ -93,6 +97,10 @@ class UpdatePackageRequest(BaseModel):
     addon_saved_searches: Optional[int] = None
     addon_saved_searches_price: Optional[float] = None
     addon_search_tiers: Optional[List[Dict[str, Any]]] = None
+    feature_watermark_free_images: Optional[bool] = None
+    included_image_requests: Optional[int] = None
+    addon_image_requests_price: Optional[float] = None
+    addon_image_tiers: Optional[List[Dict[str, Any]]] = None
     is_active: Optional[bool] = None
 
 class RegisterSellerAgentRequest(BaseModel):
@@ -108,6 +116,8 @@ class RegisterSellerAgentRequest(BaseModel):
     selected_aged_price: Optional[float] = None
     selected_extra_searches: Optional[int] = None
     selected_extra_searches_price: Optional[float] = None
+    selected_image_requests: Optional[int] = None
+    selected_image_price: Optional[float] = None
 
 class UpdateSellerAgentRequest(BaseModel):
     name: Optional[str] = None
@@ -126,6 +136,9 @@ class UpdateSellerAgentRequest(BaseModel):
     feature_aged_listings: Optional[bool] = None
     addon_aged_max_months: Optional[int] = None
     addon_saved_searches: Optional[int] = None
+    feature_watermark_free_images: Optional[bool] = None
+    addon_image_requests_limit: Optional[int] = None
+    addon_image_requests_used: Optional[int] = None
 
 class RenewSellerAgentRequest(BaseModel):
     package_id: Optional[int] = None
@@ -134,6 +147,8 @@ class RenewSellerAgentRequest(BaseModel):
     selected_aged_price: Optional[float] = None
     selected_extra_searches: Optional[int] = None
     selected_extra_searches_price: Optional[float] = None
+    selected_image_requests: Optional[int] = None
+    selected_image_price: Optional[float] = None
 
 class UpdateFreeTrialSettingsRequest(BaseModel):
     free_trial_enabled: Optional[bool] = None
@@ -144,6 +159,8 @@ class UpdateFreeTrialSettingsRequest(BaseModel):
     free_trial_feature_avm: Optional[bool] = None
     free_trial_feature_social_brochure: Optional[bool] = None
     free_trial_feature_multi_location: Optional[bool] = None
+    free_trial_feature_watermark_images: Optional[bool] = None
+    free_trial_image_requests: Optional[int] = None
 
 class PayoutRequest(BaseModel):
     amount: float
@@ -633,6 +650,10 @@ async def get_my_agents(
             "addon_aged_max_months": a.addon_aged_max_months,
             "addon_saved_searches": a.addon_saved_searches,
             "addon_saved_searches_price": a.addon_saved_searches_price,
+            "feature_watermark_free_images": getattr(a, 'feature_watermark_free_images', False),
+            "addon_image_requests_limit": getattr(a, 'addon_image_requests_limit', 0),
+            "addon_image_requests_used": getattr(a, 'addon_image_requests_used', 0),
+            "addon_image_requests_price": getattr(a, 'addon_image_requests_price', 0.0),
             "seller_package_id": a.seller_package_id,
             "created_at": a.created_at.isoformat() if a.created_at else None,
             "telegram_bot_url": tg_url,
@@ -685,7 +706,11 @@ async def get_my_agent_detail(
                 "max_searches": pkg.max_searches,
                 "max_locations": pkg.max_locations,
                 "addon_aged_tiers": pkg.addon_aged_tiers or [],
-                "addon_search_tiers": pkg.addon_search_tiers or []
+                "addon_search_tiers": pkg.addon_search_tiers or [],
+                "feature_watermark_free_images": getattr(pkg, 'feature_watermark_free_images', False),
+                "included_image_requests": getattr(pkg, 'included_image_requests', 0),
+                "addon_image_requests_price": getattr(pkg, 'addon_image_requests_price', 10.0),
+                "addon_image_tiers": getattr(pkg, 'addon_image_tiers', []) or []
             }
     else:
         # Check latest payment or global Plan price
@@ -742,6 +767,10 @@ async def get_my_agent_detail(
         "addon_aged_max_months": agent.addon_aged_max_months,
         "addon_saved_searches": agent.addon_saved_searches,
         "addon_saved_searches_price": agent.addon_saved_searches_price,
+        "feature_watermark_free_images": getattr(agent, 'feature_watermark_free_images', False),
+        "addon_image_requests_limit": getattr(agent, 'addon_image_requests_limit', 0),
+        "addon_image_requests_used": getattr(agent, 'addon_image_requests_used', 0),
+        "addon_image_requests_price": getattr(agent, 'addon_image_requests_price', 0.0),
         "seller_package_id": agent.seller_package_id,
         "package_data": pkg_data,
         "saved_searches_count": saved_searches_count,
@@ -828,6 +857,12 @@ async def update_my_agent(
         agent.addon_aged_max_months = body.addon_aged_max_months
     if body.addon_saved_searches is not None:
         agent.addon_saved_searches = body.addon_saved_searches
+    if body.feature_watermark_free_images is not None:
+        agent.feature_watermark_free_images = body.feature_watermark_free_images
+    if body.addon_image_requests_limit is not None:
+        agent.addon_image_requests_limit = body.addon_image_requests_limit
+    if body.addon_image_requests_used is not None:
+        agent.addon_image_requests_used = body.addon_image_requests_used
 
     await db.commit()
     await db.refresh(agent)
@@ -888,6 +923,16 @@ async def renew_my_agent(
             addon_searches = package.addon_saved_searches
             addon_searches_price = package.addon_saved_searches_price
 
+        # Image Add-on Handling
+        if body.selected_image_requests is not None and body.selected_image_requests > 0:
+            f_images = True
+            addon_images = int(body.selected_image_requests)
+            addon_images_price = float(body.selected_image_price or 0.0)
+        else:
+            f_images = getattr(package, 'feature_watermark_free_images', False)
+            addon_images = getattr(package, 'included_image_requests', 0)
+            addon_images_price = getattr(package, 'addon_image_requests_price', 0.0)
+
         agent.plan = package.name
         agent.seller_package_id = package.id
         agent.status = "active"
@@ -903,6 +948,10 @@ async def renew_my_agent(
         agent.addon_aged_max_months = aged_months
         agent.addon_saved_searches = addon_searches
         agent.addon_saved_searches_price = addon_searches_price
+        agent.feature_watermark_free_images = f_images
+        agent.addon_image_requests_limit = addon_images
+        agent.addon_image_requests_price = addon_images_price
+        agent.addon_image_requests_used = 0
 
         base_price = package.price
         pkg_tx_id = package.id
@@ -947,7 +996,8 @@ async def renew_my_agent(
 
         selected_aged_price = max(0.0, float(body.selected_aged_price or 0.0))
         selected_extra_searches_price = max(0.0, float(body.selected_extra_searches_price or 0.0))
-        gross_amount = round(base_price + selected_aged_price + selected_extra_searches_price, 2)
+        selected_image_price = max(0.0, float(body.selected_image_price or 0.0))
+        gross_amount = round(base_price + selected_aged_price + selected_extra_searches_price + selected_image_price, 2)
 
         seller_profit = round(gross_amount * (effective_commission_pct / 100.0), 2)
         platform_fee = round(gross_amount - seller_profit, 2)
@@ -1072,6 +1122,9 @@ async def register_my_agent(
         aged_months = 12
         addon_searches = 0
         addon_searches_price = 0.0
+        f_images = getattr(seller, 'free_trial_feature_watermark_images', False)
+        addon_images = getattr(seller, 'free_trial_image_requests', 5) if f_images else 0
+        addon_images_price = 0.0
     else:
         expires_at = now_utc + timedelta(days=package.duration_days if package else 30)
         agent_plan = package.name if package else "starter"
@@ -1099,6 +1152,16 @@ async def register_my_agent(
             addon_searches = package.addon_saved_searches if package else 0
             addon_searches_price = package.addon_saved_searches_price if package else 0.0
 
+        # Determine image requests addon
+        if body.selected_image_requests is not None and body.selected_image_requests > 0:
+            f_images = True
+            addon_images = int(body.selected_image_requests)
+            addon_images_price = float(body.selected_image_price or 0.0)
+        else:
+            f_images = getattr(package, 'feature_watermark_free_images', False) if package else False
+            addon_images = getattr(package, 'included_image_requests', 0) if package else 0
+            addon_images_price = getattr(package, 'addon_image_requests_price', 0.0) if package else 0.0
+
     agent = Tenant(
         name=body.name,
         phone=formatted_phone,
@@ -1121,7 +1184,11 @@ async def register_my_agent(
         feature_aged_listings=f_aged,
         addon_aged_max_months=aged_months,
         addon_saved_searches=addon_searches,
-        addon_saved_searches_price=addon_searches_price
+        addon_saved_searches_price=addon_searches_price,
+        feature_watermark_free_images=f_images,
+        addon_image_requests_limit=addon_images,
+        addon_image_requests_used=0,
+        addon_image_requests_price=addon_images_price
     )
     db.add(agent)
     await db.commit()
@@ -1137,7 +1204,8 @@ async def register_my_agent(
         # Dynamic Addon Pricing Calculation
         selected_aged_price = max(0.0, float(body.selected_aged_price or 0.0))
         selected_extra_searches_price = max(0.0, float(body.selected_extra_searches_price or 0.0))
-        gross_amount = round(package.price + selected_aged_price + selected_extra_searches_price, 2)
+        selected_image_price = max(0.0, float(body.selected_image_price or 0.0))
+        gross_amount = round(package.price + selected_aged_price + selected_extra_searches_price + selected_image_price, 2)
 
         seller_profit = round(gross_amount * (effective_commission_pct / 100.0), 2)
         platform_fee = round(gross_amount - seller_profit, 2)
@@ -1237,6 +1305,10 @@ async def update_my_trial_settings(
         seller.free_trial_feature_social_brochure = body.free_trial_feature_social_brochure
     if body.free_trial_feature_multi_location is not None:
         seller.free_trial_feature_multi_location = body.free_trial_feature_multi_location
+    if body.free_trial_feature_watermark_images is not None:
+        seller.free_trial_feature_watermark_images = body.free_trial_feature_watermark_images
+    if body.free_trial_image_requests is not None:
+        seller.free_trial_image_requests = max(0, min(50, body.free_trial_image_requests))
 
     await db.commit()
     await db.refresh(seller)
@@ -1280,6 +1352,10 @@ async def get_my_packages(
         "addon_saved_searches": p.addon_saved_searches,
         "addon_saved_searches_price": p.addon_saved_searches_price,
         "addon_search_tiers": p.addon_search_tiers or [],
+        "feature_watermark_free_images": getattr(p, 'feature_watermark_free_images', False),
+        "included_image_requests": getattr(p, 'included_image_requests', 0),
+        "addon_image_requests_price": getattr(p, 'addon_image_requests_price', 10.0),
+        "addon_image_tiers": getattr(p, 'addon_image_tiers', []) or [],
         "is_active": p.is_active,
         "created_at": p.created_at.isoformat() if p.created_at else None
     } for p in packages]
@@ -1360,6 +1436,10 @@ async def create_my_package(
         addon_saved_searches=body.addon_saved_searches,
         addon_saved_searches_price=body.addon_saved_searches_price,
         addon_search_tiers=body.addon_search_tiers or [],
+        feature_watermark_free_images=body.feature_watermark_free_images,
+        included_image_requests=body.included_image_requests,
+        addon_image_requests_price=body.addon_image_requests_price,
+        addon_image_tiers=body.addon_image_tiers or [],
         is_active=True
     )
     db.add(pkg)
@@ -1437,6 +1517,14 @@ async def update_my_package(
         pkg.addon_saved_searches_price = body.addon_saved_searches_price
     if body.addon_search_tiers is not None:
         pkg.addon_search_tiers = body.addon_search_tiers
+    if body.feature_watermark_free_images is not None:
+        pkg.feature_watermark_free_images = body.feature_watermark_free_images
+    if body.included_image_requests is not None:
+        pkg.included_image_requests = body.included_image_requests
+    if body.addon_image_requests_price is not None:
+        pkg.addon_image_requests_price = body.addon_image_requests_price
+    if body.addon_image_tiers is not None:
+        pkg.addon_image_tiers = body.addon_image_tiers
     if body.is_active is not None:
         pkg.is_active = body.is_active
 

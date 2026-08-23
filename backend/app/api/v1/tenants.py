@@ -34,6 +34,9 @@ class CreateTenantRequest(BaseModel):
     addon_aged_max_months: int = 12
     addon_saved_searches: int = 0
     addon_saved_searches_price: float = 0.0
+    feature_watermark_free_images: bool = False
+    addon_image_requests_limit: int = 0
+    addon_image_requests_price: float = 0.0
 
 class UpdateTenantRequest(BaseModel):
     name: Optional[str] = None
@@ -56,6 +59,10 @@ class UpdateTenantRequest(BaseModel):
     addon_aged_max_months: Optional[int] = None
     addon_saved_searches: Optional[int] = None
     addon_saved_searches_price: Optional[float] = None
+    feature_watermark_free_images: Optional[bool] = None
+    addon_image_requests_limit: Optional[int] = None
+    addon_image_requests_used: Optional[int] = None
+    addon_image_requests_price: Optional[float] = None
 
 class TenantResponse(BaseModel):
     id: int
@@ -84,6 +91,10 @@ class TenantResponse(BaseModel):
     feature_aged_listings: bool = False
     addon_aged_max_months: int = 12
     addon_saved_searches: int = 0
+    feature_watermark_free_images: bool = False
+    addon_image_requests_limit: int = 0
+    addon_image_requests_used: int = 0
+    addon_image_requests_price: float = 0.0
     active_searches_count: int = 0
     max_saved_searches: int = 10
     referral_code: Optional[str] = None

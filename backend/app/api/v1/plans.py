@@ -38,6 +38,10 @@ class PlanResponse(BaseModel):
     addon_saved_searches: int = 0
     addon_saved_searches_price: float = 10.0
     addon_search_tiers: Optional[List[dict]] = []
+    feature_watermark_free_images: bool = False
+    included_image_requests: int = 0
+    addon_image_requests_price: float = 10.0
+    addon_image_tiers: Optional[List[dict]] = []
     backup_enabled: bool
     subscriber_count: int = 0
 
@@ -66,6 +70,10 @@ class CreatePlanRequest(BaseModel):
     addon_saved_searches: int = 0
     addon_saved_searches_price: float = 10.0
     addon_search_tiers: Optional[List[dict]] = []
+    feature_watermark_free_images: bool = False
+    included_image_requests: int = 0
+    addon_image_requests_price: float = 10.0
+    addon_image_tiers: Optional[List[dict]] = []
     backup_enabled: bool = True
 
 
@@ -92,6 +100,10 @@ class UpdatePlanRequest(BaseModel):
     addon_saved_searches: Optional[int] = None
     addon_saved_searches_price: Optional[float] = None
     addon_search_tiers: Optional[List[dict]] = None
+    feature_watermark_free_images: Optional[bool] = None
+    included_image_requests: Optional[int] = None
+    addon_image_requests_price: Optional[float] = None
+    addon_image_tiers: Optional[List[dict]] = None
     backup_enabled: Optional[bool] = None
 
 
@@ -133,6 +145,10 @@ async def list_plans(db: AsyncSession = Depends(get_db)):
             addon_saved_searches=getattr(plan, 'addon_saved_searches', 0),
             addon_saved_searches_price=getattr(plan, 'addon_saved_searches_price', 10.0),
             addon_search_tiers=getattr(plan, 'addon_search_tiers', []) or [],
+            feature_watermark_free_images=getattr(plan, 'feature_watermark_free_images', False),
+            included_image_requests=getattr(plan, 'included_image_requests', 0),
+            addon_image_requests_price=getattr(plan, 'addon_image_requests_price', 10.0),
+            addon_image_tiers=getattr(plan, 'addon_image_tiers', []) or [],
             backup_enabled=plan.backup_enabled,
             subscriber_count=sub_count
         ))
@@ -179,6 +195,10 @@ async def create_plan(
         addon_saved_searches=body.addon_saved_searches,
         addon_saved_searches_price=body.addon_saved_searches_price,
         addon_search_tiers=body.addon_search_tiers or [],
+        feature_watermark_free_images=body.feature_watermark_free_images,
+        included_image_requests=body.included_image_requests,
+        addon_image_requests_price=body.addon_image_requests_price,
+        addon_image_tiers=body.addon_image_tiers or [],
         backup_enabled=body.backup_enabled
     )
     db.add(plan)
@@ -210,6 +230,10 @@ async def create_plan(
         addon_saved_searches=getattr(plan, 'addon_saved_searches', 0),
         addon_saved_searches_price=plan.addon_saved_searches_price,
         addon_search_tiers=getattr(plan, 'addon_search_tiers', []) or [],
+        feature_watermark_free_images=getattr(plan, 'feature_watermark_free_images', False),
+        included_image_requests=getattr(plan, 'included_image_requests', 0),
+        addon_image_requests_price=getattr(plan, 'addon_image_requests_price', 10.0),
+        addon_image_tiers=getattr(plan, 'addon_image_tiers', []) or [],
         backup_enabled=plan.backup_enabled,
         subscriber_count=0
     )
@@ -257,6 +281,10 @@ async def get_plan(
         addon_saved_searches=getattr(plan, 'addon_saved_searches', 0),
         addon_saved_searches_price=getattr(plan, 'addon_saved_searches_price', 10.0),
         addon_search_tiers=getattr(plan, 'addon_search_tiers', []) or [],
+        feature_watermark_free_images=getattr(plan, 'feature_watermark_free_images', False),
+        included_image_requests=getattr(plan, 'included_image_requests', 0),
+        addon_image_requests_price=getattr(plan, 'addon_image_requests_price', 10.0),
+        addon_image_tiers=getattr(plan, 'addon_image_tiers', []) or [],
         backup_enabled=plan.backup_enabled,
         subscriber_count=sub_count
     )
@@ -320,6 +348,14 @@ async def update_plan(
         plan.addon_saved_searches_price = body.addon_saved_searches_price
     if body.addon_search_tiers is not None:
         plan.addon_search_tiers = body.addon_search_tiers
+    if body.feature_watermark_free_images is not None:
+        plan.feature_watermark_free_images = body.feature_watermark_free_images
+    if body.included_image_requests is not None:
+        plan.included_image_requests = body.included_image_requests
+    if body.addon_image_requests_price is not None:
+        plan.addon_image_requests_price = body.addon_image_requests_price
+    if body.addon_image_tiers is not None:
+        plan.addon_image_tiers = body.addon_image_tiers
     if body.backup_enabled is not None:
         plan.backup_enabled = body.backup_enabled
 
@@ -340,6 +376,8 @@ async def update_plan(
         tenant_updates["max_locations_per_search"] = body.max_locations_per_search
     if body.feature_aged_listings is not None:
         tenant_updates["feature_aged_listings"] = body.feature_aged_listings
+    if body.feature_watermark_free_images is not None:
+        tenant_updates["feature_watermark_free_images"] = body.feature_watermark_free_images
     if body.backup_enabled is not None:
         tenant_updates["backup_enabled"] = body.backup_enabled
 
@@ -382,6 +420,10 @@ async def update_plan(
         addon_saved_searches=getattr(plan, 'addon_saved_searches', 0),
         addon_saved_searches_price=getattr(plan, 'addon_saved_searches_price', 10.0),
         addon_search_tiers=getattr(plan, 'addon_search_tiers', []) or [],
+        feature_watermark_free_images=getattr(plan, 'feature_watermark_free_images', False),
+        included_image_requests=getattr(plan, 'included_image_requests', 0),
+        addon_image_requests_price=getattr(plan, 'addon_image_requests_price', 10.0),
+        addon_image_tiers=getattr(plan, 'addon_image_tiers', []) or [],
         backup_enabled=plan.backup_enabled,
         subscriber_count=sub_count
     )

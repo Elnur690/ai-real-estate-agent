@@ -248,4 +248,89 @@ async def test_bot_onboarding_and_commands():
         )
         assert "Interested" in res_react
 
+        # 1. Test /paket showing photo packages
+        res_paket = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="telegram",
+            sender_id="999888777",
+            sender_name="Orxan Agent",
+            raw_text="/paket"
+        )
+        assert "Su Nişansız Foto Paketi" in res_paket
+        assert "/al foto 25" in res_paket
+
+        # 2. Test /al foto 25
+        res_al_foto = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="telegram",
+            sender_id="999888777",
+            sender_name="Orxan Agent",
+            raw_text="/al foto 25"
+        )
+        assert "SİFARİŞİNİZ QƏBUL EDİLDİ" in res_al_foto
+        assert "Su Nişansız Foto Limiti" in res_al_foto
+
+        # 3. Test /foto without entitlement
+        res_foto_locked = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="telegram",
+            sender_id="999888777",
+            sender_name="Orxan Agent",
+            raw_text=f"/foto {match_obj.id}"
+        )
+        assert "SU NİŞANSIZ FOTO ADD-ON" in res_foto_locked or "Foto Sorğu Limiti" in res_foto_locked
+
+        # 4. Grant entitlement and test /foto with photos
+        t.feature_watermark_free_images = True
+        t.addon_image_requests_limit = 10
+        t.addon_image_requests_used = 0
+        l1.photos = ["https://bina.az/example_photo.jpg"]
+        await db.commit()
+
+        # Mock clean image fetcher
+        from unittest.mock import patch
+        with patch("app.services.image_watermark_remover.ImageWatermarkRemoverService.fetch_and_clean_listing_images") as mock_clean:
+            mock_clean.return_value = ["/tmp/test_clean_1.jpg"]
+            with patch("app.bot.telegram_adapter.send_telegram_media_group") as mock_tg_group:
+                mock_tg_group.return_value = True
+                res_foto_ok = await BotCommandHandler.handle_incoming_message(
+                    db=db,
+                    channel="telegram",
+                    sender_id="999888777",
+                    sender_name="Orxan Agent",
+                    raw_text=f"/foto {match_obj.id}"
+                )
+                assert "təmiz şəkil göndərildi" in res_foto_ok.lower()
+                assert t.addon_image_requests_used == 1
+
+        # 5. Test /status shows photo quota
+        res_status = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="telegram",
+            sender_id="999888777",
+            sender_name="Orxan Agent",
+            raw_text="/status"
+        )
+        assert "Su nişansız foto" in res_status
+        assert "1 / 10" in res_status
+
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_opencv_watermark_cleaner():
+    import numpy as np
+    import cv2
+    from app.services.image_watermark_remover import ImageWatermarkRemoverService
+
+    # Create synthetic test image (white canvas with dark watermark logo text)
+    img = np.full((400, 600, 3), 240, dtype=np.uint8)
+    cv2.putText(img, "bina.az", (180, 200), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (50, 50, 50), 3)
+
+    _, encoded = cv2.imencode(".jpg", img)
+    raw_bytes = encoded.tobytes()
+
+    cleaned_bytes = ImageWatermarkRemoverService.clean_image_buffer(raw_bytes)
+    assert cleaned_bytes is not None
+    assert len(cleaned_bytes) > 0
+

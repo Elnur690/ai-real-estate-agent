@@ -43,6 +43,8 @@ class Seller(Base):
     free_trial_feature_avm: Mapped[bool] = mapped_column(Boolean, default=True)
     free_trial_feature_social_brochure: Mapped[bool] = mapped_column(Boolean, default=True)
     free_trial_feature_multi_location: Mapped[bool] = mapped_column(Boolean, default=True)
+    free_trial_feature_watermark_images: Mapped[bool] = mapped_column(Boolean, default=False)
+    free_trial_image_requests: Mapped[int] = mapped_column(Integer, default=5)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -86,6 +88,12 @@ class SellerPackage(Base):
     addon_saved_searches: Mapped[int] = mapped_column(Integer, default=0) # e.g. +5 extra searches
     addon_saved_searches_price: Mapped[float] = mapped_column(Float, default=10.0)
     addon_search_tiers: Mapped[list[dict] | None] = mapped_column(JSON, default=list) # e.g. [{"searches": 5, "price": 10.0}, {"searches": 10, "price": 18.0}]
+
+    # 🖼️ Watermark-Free Listing Photos Add-on & Quota
+    feature_watermark_free_images: Mapped[bool] = mapped_column(Boolean, default=False)
+    included_image_requests: Mapped[int] = mapped_column(Integer, default=0)
+    addon_image_requests_price: Mapped[float] = mapped_column(Float, default=10.0)
+    addon_image_tiers: Mapped[list[dict] | None] = mapped_column(JSON, default=list) # e.g. [{"images": 25, "price": 10.0}, {"images": 50, "price": 18.0}]
     
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

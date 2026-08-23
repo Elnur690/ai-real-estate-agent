@@ -245,3 +245,39 @@ class WhatsAppAdapter:
         except Exception as e:
             logger.error(f"[WhatsAppAdapter] HTTP exception sending message via instance '{inst}': {e}")
             return False
+
+    @staticmethod
+    async def send_media_image(phone_number: str, image_path: str, caption: str = "", instance_name: Optional[str] = None) -> bool:
+        """Send an image with caption via Evolution API."""
+        import base64
+        base_url = settings.EVOLUTION_API_URL or "http://evolution:8080"
+        if "localhost" in base_url or "127.0.0.1" in base_url:
+            base_url = "http://evolution:8080"
+        base_url = base_url.rstrip("/")
+
+        headers = {"Content-Type": "application/json"}
+        if settings.EVOLUTION_API_KEY:
+            headers["apikey"] = str(settings.EVOLUTION_API_KEY)
+
+        inst = await WhatsAppAdapter.resolve_active_instance(instance_name, base_url, headers)
+        clean_recipient = phone_number if "@g.us" in phone_number else phone_number.replace("+", "").replace(" ", "")
+
+        try:
+            with open(image_path, "rb") as img_f:
+                b64_data = base64.b64encode(img_f.read()).decode("utf-8")
+
+            url = f"{base_url}/message/sendMedia/{inst}"
+            body = {
+                "number": clean_recipient,
+                "mediatype": "image",
+                "mimetype": "image/jpeg",
+                "caption": caption,
+                "media": b64_data
+            }
+
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                res = await client.post(url, json=body, headers=headers)
+                return res.status_code in [200, 201]
+        except Exception as e:
+            logger.error(f"[WhatsAppAdapter] Failed to send media image via instance '{inst}': {e}")
+            return False

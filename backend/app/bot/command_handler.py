@@ -230,6 +230,133 @@ class BotCommandHandler:
                 f"3. Uyğun elan çıxan kimi sizə dərhal bildiriş gələcək. 🎯"
             )
 
+        # Watermark-Free Listing Photos Command (/foto <id>, /image <id>, /şəkil <id>, /sekil <id>)
+        photo_match = re.search(r'^(?:/foto|foto|/image|image|/şəkil|şəkil|/sekil|sekil)\s*#?\s*(\d+)', text_lower)
+        if photo_match:
+            input_id = int(photo_match.group(1))
+            
+            # Resolve Match ID or direct Listing ID
+            stmt_m = select(Match.listing_id).where(Match.id == input_id, Match.tenant_id == tenant.id)
+            res_m = await db.execute(stmt_m)
+            matched_listing_id = res_m.scalar_one_or_none()
+            target_listing_id = matched_listing_id if matched_listing_id else input_id
+
+            # Determine image limits & entitlements
+            from app.models.plan import Plan
+            from app.models.seller import SellerPackage, Seller
+            from app.models.listing import Listing
+
+            has_image_feature = tenant.feature_watermark_free_images
+            included_limit = 0
+            if tenant.seller_package_id:
+                stmt_sp = select(SellerPackage).where(SellerPackage.id == tenant.seller_package_id)
+                res_sp = await db.execute(stmt_sp)
+                sp_obj = res_sp.scalars().first()
+                if sp_obj:
+                    if sp_obj.feature_watermark_free_images:
+                        has_image_feature = True
+                    included_limit = sp_obj.included_image_requests or 0
+            else:
+                stmt_pl = select(Plan).where(or_(Plan.code == tenant.plan, Plan.name == tenant.plan))
+                res_pl = await db.execute(stmt_pl)
+                pl_obj = res_pl.scalars().first()
+                if pl_obj:
+                    if pl_obj.feature_watermark_free_images:
+                        has_image_feature = True
+                    included_limit = pl_obj.included_image_requests or 0
+
+            # Inherit from parent tenant if team member
+            if not has_image_feature and tenant.parent_tenant_id:
+                stmt_pt = select(Tenant).where(Tenant.id == tenant.parent_tenant_id)
+                res_pt = await db.execute(stmt_pt)
+                p_tenant = res_pt.scalars().first()
+                if p_tenant and p_tenant.feature_watermark_free_images:
+                    has_image_feature = True
+
+            total_image_limit = included_limit + (tenant.addon_image_requests_limit or 0)
+            used_images = tenant.addon_image_requests_used or 0
+
+            if not has_image_feature and total_image_limit <= 0:
+                return (
+                    f"🔒 *SU NİŞANSIZ FOTO ADD-ON (Watermark-Free Photos) — {app_name}*\n\n"
+                    f"Bu funksiya ilə elanların portallardakı bütün şəkillərini su nişanı (watermark) təmizlənmiş şəkildə əldə edə bilərsiniz.\n\n"
+                    f"📦 *Foto Paketləri:*\n"
+                    f"• *25 Elan Şəkli:* 10 AZN (`/al foto 25`)\n"
+                    f"• *50 Elan Şəkli:* 18 AZN (`/al foto 50`)\n"
+                    f"• *100 Elan Şəkli:* 30 AZN (`/al foto 100`)\n\n"
+                    f"Sifariş üçün yuxarıdakı əmrlərdən birini yazın və ya satıcınızla əlaqə saxlayın."
+                )
+
+            if used_images >= total_image_limit:
+                return (
+                    f"⚠️ *Foto Sorğu Limiti Dolub!* ({used_images}/{total_image_limit} elan istifadə edilib)\n\n"
+                    f"Yeni şəkillər əldə etmək üçün foto limitinizi artıra bilərsiniz:\n"
+                    f"• *+25 Elan Şəkli:* 10 AZN (`/al foto 25`)\n"
+                    f"• *+50 Elan Şəkli:* 18 AZN (`/al foto 50`)\n"
+                    f"• *+100 Elan Şəkli:* 30 AZN (`/al foto 100`)\n\n"
+                    f"Statusunuzu yoxlamaq üçün: `/status`"
+                )
+
+            stmt_l = select(Listing).where(Listing.id == target_listing_id)
+            res_l = await db.execute(stmt_l)
+            listing_obj = res_l.scalars().first()
+
+            if not listing_obj:
+                return f"Xəta: Elan #{input_id} tapılmadı."
+
+            photos = list(listing_obj.photos or [])
+            if not photos and listing_obj.external_id and "bina_" in listing_obj.external_id:
+                try:
+                    from app.scrapers.bina_az import BinaAzScraper
+                    details = await BinaAzScraper.fetch_item_details(listing_obj.external_id)
+                    if details and details.get("photos"):
+                        photos = details["photos"]
+                        listing_obj.photos = photos
+                        await db.commit()
+                except Exception as e:
+                    logger.debug(f"[CommandHandler] Live photo fetch error: {e}")
+
+            if not photos:
+                return f"⚠️ #{input_id} nömrəli elanda heç bir şəkil tapılmadı."
+
+            from app.services.image_watermark_remover import ImageWatermarkRemoverService
+            clean_paths = await ImageWatermarkRemoverService.fetch_and_clean_listing_images(
+                photos, listing_obj.id, max_images=6
+            )
+
+            if not clean_paths:
+                return f"⚠️ Şəkillər yüklənə bilmədi və ya portal serveri cavab vermir. Zəhmət olmasa bir az sonra yenidən cəhd edin."
+
+            # Deduct quota
+            tenant.addon_image_requests_used = used_images + 1
+            await db.commit()
+            remaining_quota = max(0, total_image_limit - tenant.addon_image_requests_used)
+
+            caption_header = (
+                f"🖼️ *Elan #{input_id} — Su Nişansız Şəkillər ({len(clean_paths)} ədəd)*\n\n"
+                f"🏠 {listing_obj.title}\n"
+                f"💰 Qiymət: {int(listing_obj.price)} {listing_obj.currency}\n"
+                f"📊 Qalan foto limitiniz: *{remaining_quota} elan*"
+            )
+
+            dest_channel = channel or tenant.preferred_channel or "whatsapp"
+            dest_chat_id = sender_id or (tenant.whatsapp_number if dest_channel == "whatsapp" else tenant.telegram_chat_id)
+            inst_name = instance_name or f"tenant_{tenant.id}"
+
+            if dest_channel == "telegram" and dest_chat_id:
+                from app.bot.telegram_adapter import send_telegram_media_group
+                await send_telegram_media_group(dest_chat_id, clean_paths, caption=caption_header)
+                return f"✅ Elan #{input_id} üçün {len(clean_paths)} ədəd təmiz şəkil göndərildi! (Qalan limit: {remaining_quota})"
+            elif dest_channel == "whatsapp" and dest_chat_id:
+                from app.bot.whatsapp_adapter import WhatsAppAdapter
+                for idx, cpath in enumerate(clean_paths):
+                    cap = caption_header if idx == 0 else ""
+                    await WhatsAppAdapter.send_media_image(dest_chat_id, cpath, caption=cap, instance_name=inst_name)
+                    await asyncio.sleep(0.3)
+                return f"✅ Elan #{input_id} üçün {len(clean_paths)} ədəd təmiz şəkil göndərildi! (Qalan limit: {remaining_quota})"
+
+            return f"✅ Elan #{input_id} üçün {len(clean_paths)} ədəd təmiz şəkil hazırlandı."
+
         # Search Limit & Aged Archive Top-Up Add-on Commands (/paket, /topup, /al)
         if text_lower in ["/paket", "paket", "/topup", "topup", "/limit", "limit"]:
             return (
@@ -242,19 +369,27 @@ class BotCommandHandler:
                 f"• *3 aylıq arxiv:* 15 AZN / ay (Sifariş üçün: `/al arxiv 3`)\n"
                 f"• *6 aylıq arxiv:* 25 AZN / ay (Sifariş üçün: `/al arxiv 6`)\n"
                 f"• *12 aylıq arxiv:* 40 AZN / ay (Sifariş üçün: `/al arxiv 12`)\n\n"
+                f"🔹 *Su Nişansız Foto Paketi (Watermark-Free Images):*\n"
+                f"• *25 Elan Şəkli:* 10 AZN / ay (Sifariş üçün: `/al foto 25`)\n"
+                f"• *50 Elan Şəkli:* 18 AZN / ay (Sifariş üçün: `/al foto 50`)\n"
+                f"• *100 Elan Şəkli:* 30 AZN / ay (Sifariş üçün: `/al foto 100`)\n\n"
                 f"💳 *Qeyd:* Sifariş verdikdən sonra ödəniş təsdiqlənən kimi xidmət dərhal aktivləşir."
             )
 
-        buy_match = re.search(r'^(?:/al|al)\s+(limit|arxiv)\s+(\d+)', text_lower)
+        buy_match = re.search(r'^(?:/al|al)\s+(limit|arxiv|foto)\s+(\d+)', text_lower)
         if buy_match:
             item_type, val_str = buy_match.group(1), int(buy_match.group(2))
             from app.models.payment import Payment
-            from datetime import timedelta
+            from datetime import datetime, timedelta, timezone
             
             if item_type == "limit":
                 pricing = {5: 10.0, 10: 18.0, 25: 40.0}
                 amount = pricing.get(val_str, float(val_str * 2.0))
                 desc = f"+{val_str} Əlavə Axtarış Limiti Add-on"
+            elif item_type == "foto":
+                pricing = {25: 10.0, 50: 18.0, 100: 30.0}
+                amount = pricing.get(val_str, float(val_str * 0.4))
+                desc = f"+{val_str} Su Nişansız Foto Limiti Add-on"
             else:
                 pricing = {3: 15.0, 6: 25.0, 12: 40.0, 24: 60.0}
                 amount = pricing.get(val_str, float(val_str * 4.0))
@@ -919,6 +1054,20 @@ class BotCommandHandler:
                 seller_name = seller.company_name or seller.name
                 seller_line = f"▪️ *Satıcı:* {seller_name} (📞 {seller.phone})\n"
 
+        # Image limits & quotas calculation
+        total_image_limit = (getattr(plan_obj, 'included_image_requests', 0) if plan_obj else 0) + (tenant.addon_image_requests_limit or 0)
+        if tenant.seller_package_id:
+            from app.models.seller import SellerPackage
+            stmt_sp = select(SellerPackage).where(SellerPackage.id == tenant.seller_package_id)
+            res_sp = await db.execute(stmt_sp)
+            sp_obj = res_sp.scalars().first()
+            if sp_obj and sp_obj.included_image_requests:
+                total_image_limit = sp_obj.included_image_requests + (tenant.addon_image_requests_limit or 0)
+
+        used_images = tenant.addon_image_requests_used or 0
+        remaining_images = max(0, total_image_limit - used_images)
+        image_status_line = f"▪️ *Su nişansız foto:* {used_images} / {total_image_limit} istifadə edilib ({remaining_images} qalıb) 🖼️\n" if total_image_limit > 0 else ""
+
         # Expiration notice with Seller contact
         expiry_notice = ""
         if is_expired:
@@ -944,7 +1093,8 @@ class BotCommandHandler:
             f"▪️ *Bitmə tarixi:* {expires}\n"
             f"{seller_line}"
             f"▪️ *Bildiriş kanalı:* {tenant.preferred_channel.capitalize()}\n"
-            f"▪️ *Axtarış limiti:* {active_searches} / {max_limit} istifadə edilib ({remaining} qalıb) 📊"
+            f"▪️ *Axtarış limiti:* {active_searches} / {max_limit} istifadə edilib ({remaining} qalıb) 📊\n"
+            f"{image_status_line}"
             f"{expiry_notice}"
         )
 
@@ -966,7 +1116,8 @@ class BotCommandHandler:
             f"🏗️ *Bina Növü:* 'Yeni tikili' və ya 'Köhnə tikili' qeyd edildikdə dəqiq seçilir, qeyd edilmədikdə hər iki bina növü aktiv olur.\n"
             f"🏷️ *Əməliyyat:* Satış və ya İcarə/Kirayə elanları.\n"
             f"👤 *Satıcı:* Yalnız Ev Sahibindən (makler və şirkət komissiyası filtrlənir) və ya Hamısı.\n"
-            f"⌛ *Bazar Arxivi (Aged Listings):* Uzun müddət satışda qalan elanlar (məs: `3 aydan bəri`, `2 aydır satışda olan`).\n\n"
+            f"⌛ *Bazar Arxivi (Aged Listings):* Uzun müddət satışda qalan elanlar (məs: `3 aydan bəri`, `2 aydır satışda olan`).\n"
+            f"🖼️ *Su Nişansız Şəkillər (Watermark Removal):* Portal su nişanları təmizlənmiş orijinal fotolar.\n\n"
             f"💡 *SİSTEMDƏN İSTİFADƏ QAYDASI (2 ASAN ADDIM):*\n"
             f"1️⃣ *Parametrləri yazın və ya səslə göndərin:* Axtardığınız kriteriyaları mətn və ya *Səsli Mesaj (Voice Note)* ilə bura göndərin.\n"
             f"   📌 *Nümunələr:*\n"
@@ -983,8 +1134,10 @@ class BotCommandHandler:
             f"▪️ `/pause <id>` — Axtarışı müvəqqəti dayandırmaq\n"
             f"▪️ `/resume <id>` — Dayandırılmış axtarışı yenidən aktiv etmək\n"
             f"▪️ `/since <gün>` və ya `/arxiv <ay>` — Bazar arxivində keçmiş aktiv elanları axtarmaq (nümunə: `/arxiv 3 Yasamal`)\n"
-            f"▪️ `/təqdimat <id>` (və ya `/brochure <id>`) — Elan üçün müştəriyə göndəriləcək təmiz mətn və PDF buklet hazırlamaq\n"
-            f"▪️ `/status` — Abunə tarifiniz və istifadə müddətiniz\n"
+            f"▪️ `/təqdimat <id>` (və ya `/brochure <id>`) — Müştəriyə göndəriləcək təmiz mətn və PDF buklet\n"
+            f"▪️ `/foto <id>` (və ya `/image <id>`) — Elanın su nişansız (watermark-free) təmiz şəkillərini yükləmək\n"
+            f"▪️ `/paket` — Əlavə axtarış, arxiv və foto limit paketləri\n"
+            f"▪️ `/status` — Abunə tarifiniz, bitmə vaxtı və foto/axtarış limitləriniz\n"
             f"▪️ `/cancel` — Hazırkı axtarış qaralamasını ləğv etmək\n"
             f"▪️ `/help` — Bu təlimatı yenidən göstərmək\n\n"
             f"👥 *WHATSAPP QRUP İSTİFADƏSİ:*\n"
@@ -992,7 +1145,7 @@ class BotCommandHandler:
             f"▪️ `/unpair_group` (və ya `bot ayır`) — Botu WhatsApp qrupundan ayırmaq\n"
             f"*(Qrupda yaradılan axtarışların elanları birbaşa həmin qrupa, şəxsi çatdakılar isə şəxsi çata gəlir)*\n\n"
             f"💬 *ELAN REAKSİYALARI VƏ ƏMƏLİYYATLAR:*\n"
-            f"• `Təqdimat <id>` | `Maraqlanıram <id>` | `Keç <id>` | `Satılıb <id>`"
+            f"• `Təqdimat <id>` | `Foto <id>` | `Maraqlanıram <id>` | `Keç <id>` | `Satılıb <id>`"
         )
 
     @staticmethod
