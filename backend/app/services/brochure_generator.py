@@ -13,25 +13,36 @@ logger = logging.getLogger(__name__)
 
 BROCHURE_DIR = Path("/app/brochures") if os.path.exists("/app") else Path(__file__).parent.parent.parent / "brochures"
 
-def setup_fonts():
+def setup_fonts() -> Tuple[str, str]:
     try:
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
+
+        app_fonts_dir = Path(__file__).parent.parent / "fonts"
         font_candidates = [
+            # 1. Bundled application fonts
+            (str(app_fonts_dir / "DejaVuSans.ttf"), str(app_fonts_dir / "DejaVuSans-Bold.ttf")),
+            (str(app_fonts_dir / "Arial.ttf"), str(app_fonts_dir / "Arial Bold.ttf")),
+            # 2. Linux / Debian / Docker system fonts
+            ('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'),
+            ('/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf', '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf'),
+            ('/usr/share/fonts/truetype/freefont/FreeSans.ttf', '/usr/share/fonts/truetype/freefont/FreeSansBold.ttf'),
+            # 3. macOS system fonts
             ('/System/Library/Fonts/Supplemental/Arial.ttf', '/System/Library/Fonts/Supplemental/Arial Bold.ttf'),
             ('/Library/Fonts/Arial.ttf', '/Library/Fonts/Arial Bold.ttf'),
-            ('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf')
+            ('/System/Library/Fonts/Supplemental/Arial Unicode.ttf', '/System/Library/Fonts/Supplemental/Arial Unicode.ttf')
         ]
         for reg, bold in font_candidates:
             if os.path.exists(reg):
                 try:
                     pdfmetrics.registerFont(TTFont('CustomAzFont', reg))
-                    pdfmetrics.registerFont(TTFont('CustomAzFont-Bold', bold if os.path.exists(bold) else reg))
+                    bold_file = bold if os.path.exists(bold) else reg
+                    pdfmetrics.registerFont(TTFont('CustomAzFont-Bold', bold_file))
                     return ('CustomAzFont', 'CustomAzFont-Bold')
-                except Exception:
-                    pass
-    except Exception:
-        pass
+                except Exception as e_reg:
+                    logger.debug(f"[BrochureGenerator] Font registration error for {reg}: {e_reg}")
+    except Exception as e:
+        logger.warning(f"[BrochureGenerator] setup_fonts error: {e}")
     return ('Helvetica', 'Helvetica-Bold')
 
 class BrochureGeneratorService:

@@ -7,11 +7,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies & Unicode fonts
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     curl \
+    fonts-dejavu-core \
+    fonts-freefont-ttf \
+    fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python packages
