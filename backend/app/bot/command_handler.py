@@ -486,7 +486,7 @@ class BotCommandHandler:
                     if success:
                         sent_count += 1
                     logger.info(f"[CommandHandler] WhatsApp photo {idx+1}/{len(clean_paths)} sent: {success} for listing #{input_id}")
-                    await asyncio.sleep(0.8)
+                    await asyncio.sleep(1.5)
                 return f"✅ Elan #{input_id} üçün {sent_count} ədəd təmiz şəkil göndərildi! (Qalan limit: {remaining_quota})"
 
             return f"✅ Elan #{input_id} üçün {len(clean_paths)} ədəd təmiz şəkil hazırlandı."

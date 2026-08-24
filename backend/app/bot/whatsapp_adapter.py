@@ -262,23 +262,35 @@ class WhatsAppAdapter:
             headers["apikey"] = str(settings.EVOLUTION_API_KEY)
 
         inst = await WhatsAppAdapter.resolve_active_instance(instance_name, base_url, headers)
-        clean_recipient = phone_number if "@g.us" in phone_number else phone_number.replace("+", "").replace(" ", "")
+        if "@g.us" in phone_number:
+            clean_recipient = phone_number
+        else:
+            clean_recipient = re.sub(r'\D', '', phone_number.split("@")[0])
 
         try:
             with open(image_path, "rb") as img_f:
                 b64_data = base64.b64encode(img_f.read()).decode("utf-8")
 
+            media_payload = f"data:image/jpeg;base64,{b64_data}" if not b64_data.startswith("data:") else b64_data
+            file_name = os.path.basename(image_path)
+
             url = f"{base_url}/message/sendMedia/{inst}"
             body = {
                 "number": clean_recipient,
                 "mediatype": "image",
+                "mediaType": "image",
                 "mimetype": "image/jpeg",
+                "mimeType": "image/jpeg",
                 "caption": caption,
-                "media": b64_data,
-                "fileName": os.path.basename(image_path)
+                "media": media_payload,
+                "fileName": file_name,
+                "options": {
+                    "delay": 1200,
+                    "presence": "composing"
+                }
             }
 
-            async with httpx.AsyncClient(timeout=25.0) as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 res = await client.post(url, json=body, headers=headers)
                 if res.status_code in [200, 201]:
                     try:
@@ -312,25 +324,50 @@ class WhatsAppAdapter:
             headers["apikey"] = str(settings.EVOLUTION_API_KEY)
 
         inst = await WhatsAppAdapter.resolve_active_instance(instance_name, base_url, headers)
-        clean_recipient = phone_number if "@g.us" in phone_number else phone_number.replace("+", "").replace(" ", "")
+        if "@g.us" in phone_number:
+            clean_recipient = phone_number
+        else:
+            clean_recipient = re.sub(r'\D', '', phone_number.split("@")[0])
 
         try:
             with open(document_path, "rb") as doc_f:
                 b64_data = base64.b64encode(doc_f.read()).decode("utf-8")
 
+            media_payload = f"data:application/pdf;base64,{b64_data}" if not b64_data.startswith("data:") else b64_data
+            doc_filename = filename or "buklet.pdf"
+
             url = f"{base_url}/message/sendMedia/{inst}"
             body = {
                 "number": clean_recipient,
                 "mediatype": "document",
+                "mediaType": "document",
                 "mimetype": "application/pdf",
+                "mimeType": "application/pdf",
                 "caption": caption,
-                "fileName": filename or "buklet.pdf",
-                "media": b64_data
+                "fileName": doc_filename,
+                "media": media_payload,
+                "options": {
+                    "delay": 1200,
+                    "presence": "composing"
+                }
             }
 
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 res = await client.post(url, json=body, headers=headers)
-                return res.status_code in [200, 201]
+                if res.status_code in [200, 201]:
+                    try:
+                        res_data = res.json()
+                        sent_id = res_data.get("key", {}).get("id")
+                        if sent_id:
+                            SENT_BOT_MESSAGE_IDS.add(sent_id)
+                            if len(SENT_BOT_MESSAGE_IDS) > 2000:
+                                SENT_BOT_MESSAGE_IDS.clear()
+                    except Exception:
+                        pass
+                    return True
+                else:
+                    logger.error(f"[WhatsAppAdapter] Failed to send document via instance '{inst}': status {res.status_code}, response: {res.text}")
+                    return False
         except Exception as e:
             logger.error(f"[WhatsAppAdapter] Failed to send document via instance '{inst}': {e}")
             return False
