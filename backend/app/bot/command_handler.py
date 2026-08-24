@@ -60,10 +60,40 @@ class BotCommandHandler:
         text_lower = raw_text_trimmed.lower()
         app_name = await get_app_name(db)
 
-        # 1. Resolve Tenant
+        # 1. Check for deep-link or manual agent binding (e.g. /start agent_5, /start 5, /bagla 5, /connect 5, /hesab 5)
+        bind_match = re.search(r'^(?:/start\s+(?:agent_)?|/bagla\s+|/connect\s+|/hesab\s+)(\d+)', text_lower)
+        if bind_match:
+            target_agent_id = int(bind_match.group(1))
+            stmt_target = select(Tenant).where(Tenant.id == target_agent_id)
+            res_target = await db.execute(stmt_target)
+            target_tenant = res_target.scalars().first()
+            if target_tenant:
+                if channel == "telegram":
+                    stmt_clear = update(Tenant).where(Tenant.telegram_chat_id == sender_id, Tenant.id != target_tenant.id).values(telegram_chat_id=None)
+                    await db.execute(stmt_clear)
+                    target_tenant.telegram_chat_id = sender_id
+                    if sender_name:
+                        target_tenant.telegram_handle = sender_name.lstrip("@")
+                elif channel == "whatsapp":
+                    clean_sender = sender_id.replace("+", "").replace(" ", "").split("@")[0]
+                    target_tenant.whatsapp_number = clean_sender
+                await db.commit()
+                await db.refresh(target_tenant)
+                tenant = target_tenant
+                return (
+                    f"✅ Xoş gəlmisiniz, *{tenant.name}*! Hesabınız bot-a uğurla bağlandı (Agent ID: #{tenant.id}). 🚀\n\n"
+                    f"▪️ *Cari Plan:* {tenant.plan}\n"
+                    f"▪️ *Kanal:* {channel.capitalize()}\n"
+                    f"▪️ *Hesab statusunu yoxlamaq:* `/status`\n"
+                    f"▪️ *Yeni axtarış yaratmaq:* `/yeni <şərtlər>`\n"
+                    f"▪️ *Şəkilləri əldə etmək:* `/foto <elan_id>`\n"
+                    f"▪️ *Kömək və menyu:* `/help`"
+                )
+
+        # 2. Resolve Tenant
         tenant = None
         if channel == "telegram":
-            stmt = select(Tenant).where(Tenant.telegram_chat_id == sender_id)
+            stmt = select(Tenant).where(Tenant.telegram_chat_id == sender_id).order_by(Tenant.id.desc())
             res = await db.execute(stmt)
             tenant = res.scalars().first()
 
@@ -75,6 +105,7 @@ class BotCommandHandler:
                 if matched_t:
                     matched_t.telegram_chat_id = sender_id
                     await db.commit()
+                    await db.refresh(matched_t)
                     tenant = matched_t
 
         elif channel == "whatsapp":
@@ -101,7 +132,12 @@ class BotCommandHandler:
                         break
 
         if not tenant:
-            return None
+            # Handle start/help for unlinked users
+            if text_lower in ["/start", "/help", "/kömək", "/komak", "kömək", "komak", "help", "menu", "menyu", "salam", "hi", "start"]:
+                return BotCommandHandler._get_start_message(app_name)
+            return await BotCommandHandler._handle_onboarding(
+                db, channel, sender_id, sender_name, raw_text_trimmed, app_name
+            )
 
         # 2. Strict Group Filtering for WhatsApp
         is_group = "@g.us" in sender_id
@@ -266,8 +302,10 @@ class BotCommandHandler:
             from app.models.seller import SellerPackage, Seller
             from app.models.listing import Listing
 
-            has_image_feature = tenant.feature_watermark_free_images
+            has_image_feature = bool(tenant.feature_watermark_free_images)
             included_limit = 0
+
+            # 1. Seller Package resolution (by ID or plan name under seller)
             if tenant.seller_package_id:
                 stmt_sp = select(SellerPackage).where(SellerPackage.id == tenant.seller_package_id)
                 res_sp = await db.execute(stmt_sp)
@@ -276,7 +314,25 @@ class BotCommandHandler:
                     if sp_obj.feature_watermark_free_images:
                         has_image_feature = True
                     included_limit = sp_obj.included_image_requests or 0
-            else:
+            elif tenant.seller_id:
+                stmt_sp = select(SellerPackage).where(SellerPackage.seller_id == tenant.seller_id, SellerPackage.name == tenant.plan)
+                res_sp = await db.execute(stmt_sp)
+                sp_obj = res_sp.scalars().first()
+                if sp_obj:
+                    if sp_obj.feature_watermark_free_images:
+                        has_image_feature = True
+                    included_limit = sp_obj.included_image_requests or 0
+                else:
+                    stmt_s = select(Seller).where(Seller.id == tenant.seller_id)
+                    res_s = await db.execute(stmt_s)
+                    seller_obj = res_s.scalars().first()
+                    if seller_obj and getattr(seller_obj, 'free_trial_feature_watermark_images', False):
+                        has_image_feature = True
+                        if getattr(seller_obj, 'free_trial_image_requests', 0):
+                            included_limit = max(included_limit, seller_obj.free_trial_image_requests)
+
+            # 2. SaaS Plan table resolution
+            if not included_limit:
                 stmt_pl = select(Plan).where(or_(Plan.code == tenant.plan, Plan.name == tenant.plan))
                 res_pl = await db.execute(stmt_pl)
                 pl_obj = res_pl.scalars().first()
@@ -285,15 +341,23 @@ class BotCommandHandler:
                         has_image_feature = True
                     included_limit = pl_obj.included_image_requests or 0
 
-            # Inherit from parent tenant if team member
-            if not has_image_feature and tenant.parent_tenant_id:
+            # 3. Inherit from parent tenant if team member
+            if tenant.parent_tenant_id:
                 stmt_pt = select(Tenant).where(Tenant.id == tenant.parent_tenant_id)
                 res_pt = await db.execute(stmt_pt)
                 p_tenant = res_pt.scalars().first()
-                if p_tenant and p_tenant.feature_watermark_free_images:
-                    has_image_feature = True
+                if p_tenant:
+                    if p_tenant.feature_watermark_free_images:
+                        has_image_feature = True
+                    if (p_tenant.addon_image_requests_limit or 0) > 0 and not (tenant.addon_image_requests_limit or 0):
+                        tenant.addon_image_requests_limit = p_tenant.addon_image_requests_limit
+                        tenant.addon_image_requests_used = p_tenant.addon_image_requests_used
 
-            total_image_limit = included_limit + (tenant.addon_image_requests_limit or 0)
+            addon_limit = tenant.addon_image_requests_limit or 0
+            if addon_limit > 0:
+                has_image_feature = True
+
+            total_image_limit = included_limit + addon_limit
             used_images = tenant.addon_image_requests_used or 0
 
             if not has_image_feature and total_image_limit <= 0:
@@ -1075,18 +1139,56 @@ class BotCommandHandler:
                 seller_line = f"▪️ *Satıcı:* {seller_name} (📞 {seller.phone})\n"
 
         # Image limits & quotas calculation
-        total_image_limit = (getattr(plan_obj, 'included_image_requests', 0) if plan_obj else 0) + (tenant.addon_image_requests_limit or 0)
+        has_image_feature = bool(tenant.feature_watermark_free_images)
+        included_limit = 0
         if tenant.seller_package_id:
             from app.models.seller import SellerPackage
             stmt_sp = select(SellerPackage).where(SellerPackage.id == tenant.seller_package_id)
             res_sp = await db.execute(stmt_sp)
             sp_obj = res_sp.scalars().first()
-            if sp_obj and sp_obj.included_image_requests:
-                total_image_limit = sp_obj.included_image_requests + (tenant.addon_image_requests_limit or 0)
+            if sp_obj:
+                if sp_obj.feature_watermark_free_images:
+                    has_image_feature = True
+                included_limit = sp_obj.included_image_requests or 0
+        elif tenant.seller_id:
+            from app.models.seller import SellerPackage
+            stmt_sp = select(SellerPackage).where(SellerPackage.seller_id == tenant.seller_id, SellerPackage.name == tenant.plan)
+            res_sp = await db.execute(stmt_sp)
+            sp_obj = res_sp.scalars().first()
+            if sp_obj:
+                if sp_obj.feature_watermark_free_images:
+                    has_image_feature = True
+                included_limit = sp_obj.included_image_requests or 0
+            elif seller and getattr(seller, 'free_trial_feature_watermark_images', False):
+                has_image_feature = True
+                if getattr(seller, 'free_trial_image_requests', 0):
+                    included_limit = max(included_limit, seller.free_trial_image_requests)
 
+        if not included_limit and plan_obj:
+            if plan_obj.feature_watermark_free_images:
+                has_image_feature = True
+            included_limit = plan_obj.included_image_requests or 0
+
+        # Inherit from parent tenant if team member
+        if tenant.parent_tenant_id:
+            stmt_pt = select(Tenant).where(Tenant.id == tenant.parent_tenant_id)
+            res_pt = await db.execute(stmt_pt)
+            p_tenant = res_pt.scalars().first()
+            if p_tenant:
+                if p_tenant.feature_watermark_free_images:
+                    has_image_feature = True
+                if (p_tenant.addon_image_requests_limit or 0) > 0 and not (tenant.addon_image_requests_limit or 0):
+                    tenant.addon_image_requests_limit = p_tenant.addon_image_requests_limit
+                    tenant.addon_image_requests_used = p_tenant.addon_image_requests_used
+
+        addon_limit = tenant.addon_image_requests_limit or 0
+        if addon_limit > 0:
+            has_image_feature = True
+
+        total_image_limit = included_limit + addon_limit
         used_images = tenant.addon_image_requests_used or 0
         remaining_images = max(0, total_image_limit - used_images)
-        image_status_line = f"▪️ *Su nişansız foto:* {used_images} / {total_image_limit} istifadə edilib ({remaining_images} qalıb) 🖼️\n" if total_image_limit > 0 else ""
+        image_status_line = f"▪️ *Su nişansız foto:* {used_images} / {total_image_limit} istifadə edilib ({remaining_images} qalıb) 🖼️\n" if (total_image_limit > 0 or has_image_feature) else ""
 
         # Expiration notice with Seller contact
         expiry_notice = ""
@@ -1107,6 +1209,7 @@ class BotCommandHandler:
 
         return (
             f"👤 *Hesab Məlumatları - {app_name}*\n\n"
+            f"▪️ *Agent ID:* #{tenant.id}\n"
             f"▪️ *Ad:* {tenant.name}\n"
             f"▪️ *Tarif / Paket:* {tenant.plan.capitalize()}\n"
             f"▪️ *Status:* {status_text}\n"

@@ -314,6 +314,41 @@ async def test_bot_onboarding_and_commands():
         assert "Su nişansız foto" in res_status
         assert "1 / 10" in res_status
 
+        # 6. Test deep-link binding /start agent_{id}
+        t2 = Tenant(
+            name="New Agent 2",
+            type="agent",
+            phone="+994509990022",
+            plan="pro",
+            status="active",
+            feature_watermark_free_images=True,
+            addon_image_requests_limit=25,
+            addon_image_requests_used=0
+        )
+        db.add(t2)
+        await db.commit()
+        await db.refresh(t2)
+
+        res_bind = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="telegram",
+            sender_id="999888777",
+            sender_name="Orxan Agent",
+            raw_text=f"/start agent_{t2.id}"
+        )
+        assert "uğurla bağlandı" in res_bind
+        assert f"Agent ID: #{t2.id}" in res_bind
+
+        res_status2 = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="telegram",
+            sender_id="999888777",
+            sender_name="Orxan Agent",
+            raw_text="/status"
+        )
+        assert f"#{t2.id}" in res_status2
+        assert "0 / 25" in res_status2
+
     await engine.dispose()
 
 
