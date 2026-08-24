@@ -195,7 +195,9 @@ class IngestionService:
             bina_params = [f"city_id=1", f"leased={leased_str}", f"category_id={cat_id}"]
             if is_owner:
                 bina_params.append("owner_type=owner")
-            bina_params.extend(rooms_params)
+            # Only attach rooms parameter for apartments and houses, not for commercial/office/land
+            if prop in ["apartment", "house"] and rooms_params:
+                bina_params.extend(rooms_params)
             bina_params.extend(price_params)
 
             bina_url = f"https://bina.az/items?{'&'.join(bina_params)}"
@@ -205,7 +207,7 @@ class IngestionService:
         loc_kw = search.district or search.metro_station or ""
         if loc_kw:
             loc_encoded = urllib.parse.quote(loc_kw)
-            tap_cat = "menziller" if prop == "apartment" else ("heyet-evleri-baglar-villalar" if prop == "house" else "ofisler" if prop == "office" else "torpaq" if prop == "land" else "")
+            tap_cat = "menziller" if prop == "apartment" else ("heyet-evleri-baglar-villalar" if prop == "house" else "ofisler" if prop == "office" else "obyektler" if prop == "commercial" else "torpaq" if prop == "land" else "")
             tap_url = f"https://tap.az/elanlar/dasinmaz-emlak/{tap_cat}?keywords={loc_encoded}" if tap_cat else f"https://tap.az/elanlar/dasinmaz-emlak?keywords={loc_encoded}"
             targets.append(("Tap.az Targeted", TapAzScraper(), tap_url))
 
@@ -578,13 +580,14 @@ class IngestionService:
             if listing.price and listing.price > search.max_price:
                 return False
 
-        # 5. Room Count
-        if search.min_rooms and search.min_rooms > 0:
-            if listing.rooms and listing.rooms < search.min_rooms:
-                return False
-        if search.max_rooms and search.max_rooms > 0:
-            if listing.rooms and listing.rooms > search.max_rooms:
-                return False
+        # 5. Room Count (Only enforce on residential apartments/houses; commercial open-space / shops are not restricted)
+        if search_prop not in ["commercial", "obyekt", "land"]:
+            if search.min_rooms and search.min_rooms > 0:
+                if listing.rooms and listing.rooms < search.min_rooms:
+                    return False
+            if search.max_rooms and search.max_rooms > 0:
+                if listing.rooms and listing.rooms > search.max_rooms:
+                    return False
 
         # 6. Multi-Location (Settlements, District and Metro Stations) Check
         from app.core.baku_locations import (
@@ -654,28 +657,17 @@ class IngestionService:
                     if not any(vd == settl_parent or vd == metro_parent for vd in valid_districts):
                         return False # Strict District Mismatch Rejection
 
-            # 6.2 Location Verification against verified fields & known aliases
+            # 6.2 Match any of the specific target locations (districts, settlements, or metro stations)
+            list_loc_text = f"{effective_listing_dist} {list_settl or ''} {list_metro or ''} {listing.address_raw or ''} {listing.title or ''} {listing.description or ''}".lower()
             matched_loc = False
-            list_loc_text = normalize_az_text(f"{listing.district or ''} {listing.metro_station or ''} {list_settl or ''} {list_metro or ''} {listing.address_raw or ''} {listing.title or ''} {listing.description or ''}").lower()
 
-            # Check target metros first if specified
+            # Check target metro stations if specified
             if target_metros:
                 for tm in target_metros:
                     tm_lower = tm.lower().strip()
-                    # Find metro parent district for tm
-                    tm_parent = ""
-                    for m_name, parent in METRO_TO_DISTRICT.items():
-                        if m_name.lower() == tm_lower:
-                            tm_parent = parent.lower()
-                            break
-
-                    # If listing explicitly matches the metro station
-                    if listing.metro_station and (tm_lower == listing.metro_station.lower() or tm_lower in listing.metro_station.lower()):
-                        matched_loc = True
-                        break
-                    if list_metro and (tm_lower == list_metro.lower() or tm_lower in list_metro.lower()):
-                        m_parent = METRO_TO_DISTRICT.get(list_metro, '').lower()
-                        if not effective_listing_dist or not m_parent or effective_listing_dist == m_parent or m_parent in effective_listing_dist:
+                    tm_parent = METRO_TO_DISTRICT.get(tm, "").lower()
+                    if list_metro and (tm_lower in list_metro.lower() or list_metro.lower() in tm_lower):
+                        if not effective_listing_dist or not tm_parent or effective_listing_dist == tm_parent or tm_parent in effective_listing_dist:
                             matched_loc = True
                             break
                     aliases = get_all_aliases_for_location(tm, is_metro_focus=True)
@@ -699,9 +691,11 @@ class IngestionService:
             if not matched_loc:
                 return False
 
-        # 7. Building Type
+        # 7. Building Type (Only applies to residential apartments/houses; commercial spaces, standalone buildings, and street-access shops are not bound by new/old residential building types)
         search_bld = (search.building_type or "any").lower().strip()
-        if search_bld in ["new", "yeni", "yeni tikili"]:
+        if search_prop in ["commercial", "obyekt", "office", "land"]:
+            pass
+        elif search_bld in ["new", "yeni", "yeni tikili"]:
             if listing.building_type and listing.building_type in ["old", "köhnə"]:
                 return False
         elif search_bld in ["old", "kohne", "köhnə", "köhnə tikili"]:
@@ -709,8 +703,6 @@ class IngestionService:
                 return False
 
         # 8. Historical Lookback / Maximum Archive Window Check
-        # If min_months is set (e.g. '3 aydan bəri'), it sets the archive search window (up to 3 months back).
-        # It must NEVER reject fresh incoming listings.
         max_months_window = getattr(search, 'min_months_on_market', None)
         if max_months_window and max_months_window > 0:
             now_utc = datetime.now(timezone.utc)
@@ -721,13 +713,14 @@ class IngestionService:
             if days_on_market > (max_months_window * 30 * 4):
                 return False
 
-        # 9. Floor Exclusion Check (e.g. 1st and top floors excluded)
+        # 9. Floor Exclusion Check (e.g. 1st and top floors excluded for apartments; commercial street-level / 1st floor spaces are never excluded)
         desc_lower = normalize_az_text(f"{listing.title} {listing.description or ''}")
-        if getattr(search, 'not_first_last_floor', False) and listing.floor:
-            if listing.floor == 1:
-                return False
-            if listing.total_floors and listing.floor == listing.total_floors:
-                return False
+        if search_prop not in ["commercial", "obyekt"]:
+            if getattr(search, 'not_first_last_floor', False) and listing.floor:
+                if listing.floor == 1:
+                    return False
+                if listing.total_floors and listing.floor == listing.total_floors:
+                    return False
 
         if getattr(search, 'min_floor', None) and listing.floor:
             if listing.floor < search.min_floor:

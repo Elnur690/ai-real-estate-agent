@@ -865,12 +865,13 @@ class BotCommandHandler:
             if prop == "apartment":
                 missing_fields.append("🚪 *Otaq sayı* (məsələn: 3 və ya 4 otaqlı)")
 
-        if bld == "new":
-            set_fields.append("• 🏢 *Bina növü:* Yalnız Yeni tikili")
-        elif bld == "old":
-            set_fields.append("• 🏢 *Bina növü:* Yalnız Köhnə tikili")
-        else:
-            set_fields.append("• 🏢 *Bina növü:* Hər ikisi (Yeni və Köhnə tikili)")
+        if prop not in ["commercial", "office", "land"]:
+            if bld == "new":
+                set_fields.append("• 🏢 *Bina növü:* Yalnız Yeni tikili")
+            elif bld == "old":
+                set_fields.append("• 🏢 *Bina növü:* Yalnız Köhnə tikili")
+            else:
+                set_fields.append("• 🏢 *Bina növü:* Hər ikisi (Yeni və Köhnə tikili)")
 
         if not_fl_floor:
             set_fields.append("• 🏢 *Mərtəbə tələbi:* 1-ci və sonuncu mərtəbələr istisna")

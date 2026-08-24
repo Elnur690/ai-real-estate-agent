@@ -98,7 +98,7 @@ def classify_property_and_offer(
     # 2. Classify Property Type
     if "ofis.az" in url_lower or any(u in url_lower for u in ["ofis", "ofisler", "office", "category_id=7", "/ofis/"]):
         property_type = "office"
-    elif any(u in url_lower for u in ["obyekt", "obyektler", "magaza", "restoran", "kommersiya", "category_id=10", "/obyekt/"]):
+    elif any(u in url_lower for u in ["obyekt", "obyektler", "magaza", "restoran", "kommersiya", "category_id=10", "/obyekt/", "ticarət", "ticaret"]):
         property_type = "commercial"
     elif any(u in url_lower for u in ["torpaq", "torpaqlar", "sot-", "category_id=9", "/torpaq/"]):
         property_type = "land"
@@ -106,7 +106,18 @@ def classify_property_and_offer(
         property_type = "house"
     elif any(k in full_text for k in ["ofis kimi", "ofis icarə", "ofis icare", "ofis üçün", "ofis ucun", "biznes mərkəzi", "biznes merkezi", "plazada ofis", "ofisdir", "ofis satılır", "ofis satilir", "ofis kirayə", "ofis kiraye"]):
         property_type = "office"
-    elif any(k in full_text for k in ["obyekt", "obyekt satılır", "obyekt icarə", "qeyri-yaşayış", "qeyri yasayis", "mağaza", "magaza", "restoran", "kafe", "klinika", "salon", "anbar", "istehsalat sahəsi", "istehsalat", "avtoyuma", "şadlıq sarayı", "pub"]):
+    elif any(k in full_text for k in [
+        "obyekt", "obyekt satılır", "obyekt satilir", "obyekt icarə", "obyekt icare", "obyekt kirayə", "obyekt kiraye",
+        "qeyri-yaşayış", "qeyri yasayis", "ticarət sahəsi", "ticaret sahesi", "ticarət obyekti", "ticaret obyekti",
+        "mağaza", "magaza", "dükkan", "dukkan", "market", "supermarket", "aptek", "apteka", "klinika", "stomatologiya",
+        "gözəllik salonu", "gozellik salonu", "bərbərxana", "berberxana", "salon", "restoran", "kafe", "pub", "lounge",
+        "çay evi", "cay evi", "dönərxana", "donerxana", "yeməkxana", "yemekxana", "fast food",
+        "anbar", "sklad", "istehsalat sahəsi", "istehsalat", "sex", "avtoyuma", "moyka", "avtoservis", "şadlıq sarayı", "sadliq sarayi",
+        "otel", "hostel", "şou-rum", "showroom", "vitraj", "vitrajlı", "yol kənarı", "yol kenari", "yol qırağı", "yol qiragi",
+        "küçəyə çıxış", "kuceye cixis", "birbaşa çıxış", "birbasa cixis", "girişi küçədən", "girisi kucedan",
+        "ayrıca tikili", "ayrica tikili", "sərbəst tikili", "serbest tikili", "özəl tikili", "ozel tikili",
+        "zirzəmi obyekt", "zirzemi obyekt", "yarı zirzəmi", "yari zirzemi", "padval obyekt", "1-ci mərtəbə obyekt", "1-ci mertebe obyekt"
+    ]):
         property_type = "commercial"
     elif any(k in full_text for k in ["torpaq sahəsi", "torpaq sahesi", "torpaq satılır", "torpaq satilir", "sot torpaq", "hektar"]):
         property_type = "land"

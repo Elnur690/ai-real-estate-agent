@@ -216,7 +216,12 @@ Extract structured JSON strictly with these exact keys:
             property_type = "villa"
         elif any(k in text_lower for k in ["ofis", "ofisə", "ofislər", "ofis kimi", "biznes mərkəzi"]):
             property_type = "office"
-        elif any(k in text_lower for k in ["obyekt", "mağaza", "magaza", "restoran", "kafe", "anbar", "qeyri-yaşayış"]):
+        elif any(k in text_lower for k in [
+            "obyekt", "mağaza", "magaza", "dükkan", "dukkan", "ticarət", "ticaret", "salon", "gözəllik salonu",
+            "bərbərxana", "restoran", "kafe", "pub", "anbar", "sklad", "istehsalat", "qeyri-yaşayış", "qeyri yasayis",
+            "vitraj", "vitrajlı", "yol kənarı", "yol kenari", "yol qırağı", "küçəyə çıxış", "kuceye cixis",
+            "birbaşa çıxış", "ayrıca tikili", "zirzəmi", "yarı zirzəmi", "moyka", "avtoyuma", "avtoservis"
+        ]):
             property_type = "commercial"
         elif any(k in text_lower for k in ["torpaq", "sot", "hektar"]):
             property_type = "land"
@@ -228,12 +233,13 @@ Extract structured JSON strictly with these exact keys:
         elif "agentlik" in text_lower or "makler" in text_lower:
             seller_type = "agency"
 
-        # Building type (Select exactly if mentioned, otherwise select both -> "any")
+        # Building type (For commercial, office, and land, default to "any")
         building_type = "any"
-        if any(k in text_lower for k in ["yeni tikili", "yeni bina", "novostroyka", "yeni tikilidə"]):
-            building_type = "new"
-        elif any(k in text_lower for k in ["köhnə tikili", "kohne tikili", "köhnə bina", "kohne bina", "leninqrad", "xruşovka", "stalinka", "fransız", "kiyev", "eksperimental"]):
-            building_type = "old"
+        if property_type not in ["commercial", "office", "land"]:
+            if any(k in text_lower for k in ["yeni tikili", "yeni bina", "novostroyka", "yeni tikilidə"]):
+                building_type = "new"
+            elif any(k in text_lower for k in ["köhnə tikili", "kohne tikili", "köhnə bina", "kohne bina", "leninqrad", "xruşovka", "stalinka", "fransız", "kiyev", "eksperimental"]):
+                building_type = "old"
 
         summary_parts = []
         if found_district:
