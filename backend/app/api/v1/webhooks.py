@@ -1,5 +1,5 @@
 from typing import Dict, Any
-from fastapi import APIRouter, Request, HTTPException, status
+from fastapi import APIRouter, Request, HTTPException, status, BackgroundTasks
 
 from app.core.config import settings
 from app.bot.whatsapp_adapter import WhatsAppAdapter
@@ -7,8 +7,8 @@ from app.bot.whatsapp_adapter import WhatsAppAdapter
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 
 @router.post("/whatsapp")
-async def whatsapp_webhook(request: Request):
-    """Receive Evolution API WhatsApp webhooks."""
+async def whatsapp_webhook(request: Request, background_tasks: BackgroundTasks):
+    """Receive Evolution API WhatsApp webhooks and process in background."""
     payload: Dict[str, Any] = await request.json()
 
     # Optional Webhook Secret Verification
@@ -27,8 +27,8 @@ async def whatsapp_webhook(request: Request):
         if token and token not in valid_tokens and not payload.get("instance"):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook secret signature")
 
-    response_text = await WhatsAppAdapter.process_webhook_payload(payload)
-    return {"status": "ok", "response_sent": response_text is not None}
+    background_tasks.add_task(WhatsAppAdapter.process_webhook_payload, payload)
+    return {"status": "ok", "queued": True}
 
 
 @router.post("/facebook")

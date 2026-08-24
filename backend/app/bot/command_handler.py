@@ -474,11 +474,14 @@ class BotCommandHandler:
                 from app.bot.whatsapp_adapter import WhatsAppAdapter
                 sent_count = 0
                 for idx, cpath in enumerate(clean_paths):
-                    cap = caption_header if idx == 0 else ""
+                    if idx == 0:
+                        cap = f"{caption_header}\n\n📸 Şəkil 1/{len(clean_paths)}"
+                    else:
+                        cap = f"📸 Elan #{input_id} — Şəkil {idx+1}/{len(clean_paths)}"
+                    
                     success = await WhatsAppAdapter.send_media_image(dest_chat_id, cpath, caption=cap, instance_name=inst_name)
                     if not success:
-                        # Retry once after 1.2s delay
-                        await asyncio.sleep(1.2)
+                        await asyncio.sleep(1.0)
                         success = await WhatsAppAdapter.send_media_image(dest_chat_id, cpath, caption=cap, instance_name=inst_name)
                     if success:
                         sent_count += 1
