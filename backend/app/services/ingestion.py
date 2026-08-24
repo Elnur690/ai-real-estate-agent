@@ -430,8 +430,8 @@ class IngestionService:
         total_scraped = 0
         total_matched = 0
 
-        # 3. High-Speed Concurrent Scrape with Bounded Concurrency Pool
-        sem = asyncio.Semaphore(6)
+        # 3. High-Speed Concurrent Scrape with Bounded Concurrency Pool (12 parallel workers)
+        sem = asyncio.Semaphore(12)
 
         async def fetch_source(s_id, s_name, scraper, url):
             async with sem:

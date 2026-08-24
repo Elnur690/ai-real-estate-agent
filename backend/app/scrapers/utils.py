@@ -89,3 +89,42 @@ def safe_optional_float(val: Any) -> Optional[float]:
         return float(digits_only) if digits_only else None
     except (ValueError, TypeError):
         return None
+
+
+class ScraplingHelper:
+    """
+    High-performance wrapper for Scrapling adaptive parsing, CSS/XPath element selection,
+    and anti-bot resilient scraping with automatic fallback.
+    """
+
+    @staticmethod
+    def get_adaptor(html_content: str) -> Any:
+        """
+        Creates a Scrapling Adaptor instance for C-accelerated DOM traversal
+        and adaptive selector parsing.
+        """
+        try:
+            from scrapling.parser import Adaptor
+            return Adaptor(html_content)
+        except Exception as e:
+            logger.debug(f"[ScraplingHelper] Adaptor fallback: {e}")
+            from bs4 import BeautifulSoup
+            return BeautifulSoup(html_content, "html.parser")
+
+    @staticmethod
+    async def fetch_page_html(url: str, headers: Optional[Dict[str, str]] = None, timeout: float = 12.0) -> Optional[str]:
+        """
+        Fetches web page HTML using modern stealth headers and HTTP connection pooling.
+        """
+        import httpx
+        req_headers = headers or get_random_headers(referer=url)
+        try:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=req_headers) as client:
+                res = await client.get(url)
+                if res.status_code == 200:
+                    return res.text
+                return None
+        except Exception as e:
+            logger.debug(f"[ScraplingHelper] Failed to fetch {url}: {e}")
+            return None
+
