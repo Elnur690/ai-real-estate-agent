@@ -66,6 +66,17 @@ class OfisAzScraper(BaseScraper):
                         loc_label = settlement or metro or district or 'Bakı'
                         title = f"{rooms} otaqlı Ofis ({loc_label})" if rooms else f"Ofis ({loc_label})"
 
+                        # Extract card photo
+                        card_photos = []
+                        if parent:
+                            img_el = parent.find("img")
+                            if img_el:
+                                src_val = img_el.get("src") or img_el.get("data-src")
+                                if src_val and "http" in src_val:
+                                    card_photos.append(src_val)
+                                elif src_val and src_val.startswith("/"):
+                                    card_photos.append(f"https://ofis.az{src_val}")
+
                         items.append(RawListingItem(
                             external_id=f"ofis_{ext_id}",
                             title=title,
@@ -80,7 +91,8 @@ class OfisAzScraper(BaseScraper):
                             seller_type="agency",
                             offer_type=offer_type,
                             property_type="office",
-                            listing_url=f"https://ofis.az{href}" if href.startswith('/') else href
+                            listing_url=f"https://ofis.az{href}" if href.startswith('/') else href,
+                            photos=card_photos
                         ))
                         if len(items) >= 25:
                             break

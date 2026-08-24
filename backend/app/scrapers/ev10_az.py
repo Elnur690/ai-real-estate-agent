@@ -81,6 +81,17 @@ class Ev10AzScraper(BaseScraper):
                         bld_type = "old" if "köhnə" in raw_text.lower() else "new"
                         clean_url = href if href.startswith("http") else f"https://ev10.az{href if href.startswith('/') else '/' + href}"
 
+                        # Extract card photo
+                        card_photos = []
+                        if parent:
+                            img_el = parent.find("img")
+                            if img_el:
+                                src_val = img_el.get("src") or img_el.get("data-src")
+                                if src_val and "http" in src_val:
+                                    card_photos.append(src_val)
+                                elif src_val and src_val.startswith("/"):
+                                    card_photos.append(f"https://ev10.az{src_val}")
+
                         items.append(RawListingItem(
                             external_id=f"ev10_{ext_id}",
                             title=title,
@@ -97,7 +108,8 @@ class Ev10AzScraper(BaseScraper):
                             seller_type=detected_seller,
                             offer_type=detected_offer,
                             property_type=detected_prop,
-                            listing_url=clean_url
+                            listing_url=clean_url,
+                            photos=card_photos
                         ))
                         if len(items) >= 25:
                             break

@@ -54,6 +54,18 @@ class IpotekaAzScraper(BaseScraper):
                         loc_label = settlement or metro or district or 'Bakı'
                         title = f"{rooms} otaqlı İpotekalı mənzil ({loc_label})" if rooms else f"İpotekalı mənzil ({loc_label})"
 
+                        # Extract card photo
+                        card_photos = []
+                        parent = a.find_parent("div") or a.find_parent("tr")
+                        if parent:
+                            img_el = parent.find("img")
+                            if img_el:
+                                src_val = img_el.get("src") or img_el.get("data-src")
+                                if src_val and "http" in src_val:
+                                    card_photos.append(src_val)
+                                elif src_val and src_val.startswith("/"):
+                                    card_photos.append(f"{self.BASE_URL}{src_val}")
+
                         items.append(RawListingItem(
                             external_id=f"ipoteka_{ext_id}",
                             title=title,
@@ -68,7 +80,8 @@ class IpotekaAzScraper(BaseScraper):
                             seller_type="agency",
                             offer_type="sale",
                             property_type="apartment",
-                            listing_url=f"{self.BASE_URL}{link}"
+                            listing_url=f"{self.BASE_URL}{link}",
+                            photos=card_photos
                         ))
         except Exception as e:
             logger.warning(f"[IpotekaAzScraper] Error scraping: {e}")

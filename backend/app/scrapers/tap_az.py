@@ -89,6 +89,15 @@ class TapAzScraper(BaseScraper):
 
                             bld_type = "old" if "köhnə" in raw_lower else "new"
 
+                            # Extract card photo
+                            card_photos = []
+                            img_el = a.find("img")
+                            if img_el:
+                                src_val = img_el.get("src") or img_el.get("data-src") or img_el.get("data-original")
+                                if src_val and ("uploads/" in src_val or "azstatic" in src_val or "tap.az" in src_val):
+                                    src_clean = src_val.replace('/thumbnail/', '/full/').replace('/f660x496/', '/full/')
+                                    card_photos.append(src_clean)
+
                             items.append(RawListingItem(
                                 external_id=f"tap_{ext_id}",
                                 title=title,
@@ -103,7 +112,8 @@ class TapAzScraper(BaseScraper):
                                 seller_type=detected_seller,
                                 offer_type=detected_offer,
                                 property_type=detected_prop,
-                                listing_url=f"https://tap.az{href}"
+                                listing_url=f"https://tap.az{href}",
+                                photos=card_photos
                             ))
                 except Exception as e:
                     logger.warning(f"[TapAzScraper] Error fetching from {target_url}: {e}")

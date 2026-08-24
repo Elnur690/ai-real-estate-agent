@@ -74,6 +74,17 @@ class VillaAzScraper(BaseScraper):
                         loc_label = settlement or metro or district or 'Bakı'
                         title = f"{rooms} otaqlı Villa/Bağ evi ({loc_label})" if rooms else f"Villa/Bağ evi ({loc_label})"
 
+                        # Extract card photo
+                        card_photos = []
+                        if parent:
+                            img_el = parent.find("img")
+                            if img_el:
+                                src_val = img_el.get("src") or img_el.get("data-src")
+                                if src_val and "http" in src_val:
+                                    card_photos.append(src_val)
+                                elif src_val and src_val.startswith("/"):
+                                    card_photos.append(f"{self.BASE_URL}{src_val}")
+
                         items.append(RawListingItem(
                             external_id=f"villa_{ext_id}",
                             title=title,
@@ -88,7 +99,8 @@ class VillaAzScraper(BaseScraper):
                             seller_type=detected_seller,
                             offer_type=detected_offer,
                             property_type="house",
-                            listing_url=f"{self.BASE_URL}{href}" if href.startswith('/') else href
+                            listing_url=f"{self.BASE_URL}{href}" if href.startswith('/') else href,
+                            photos=card_photos
                         ))
                         if len(items) >= 20:
                             break

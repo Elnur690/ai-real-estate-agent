@@ -76,6 +76,17 @@ class HomDomAzScraper(BaseScraper):
                         loc_label = settlement or metro or district or 'Bakı'
                         title = f"{rooms} otaqlı {prop_type.capitalize()} ({loc_label})"
 
+                        # Extract card photo
+                        card_photos = []
+                        if parent:
+                            img_el = parent.find("img")
+                            if img_el:
+                                src_val = img_el.get("src") or img_el.get("data-src")
+                                if src_val and "http" in src_val:
+                                    card_photos.append(src_val)
+                                elif src_val and src_val.startswith("/"):
+                                    card_photos.append(f"https://homdom.az{src_val}")
+
                         items.append(RawListingItem(
                             external_id=f"homdom_{ext_id}",
                             title=title,
@@ -90,7 +101,8 @@ class HomDomAzScraper(BaseScraper):
                             seller_type="agency",
                             offer_type=offer_type,
                             property_type=prop_type,
-                            listing_url=f"https://homdom.az/{href.lstrip('/')}"
+                            listing_url=f"https://homdom.az/{href.lstrip('/')}",
+                            photos=card_photos
                         ))
                         if len(items) >= 20:
                             break

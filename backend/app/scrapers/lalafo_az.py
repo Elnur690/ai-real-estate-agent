@@ -58,6 +58,17 @@ class LalafoAzScraper(BaseScraper):
                                 raw_text=full_text
                             )
 
+                            # Extract photos from JSON item
+                            item_photos = []
+                            if item.get("images"):
+                                for img_obj in item["images"]:
+                                    if isinstance(img_obj, dict) and img_obj.get("url"):
+                                        item_photos.append(img_obj["url"])
+                                    elif isinstance(img_obj, str):
+                                        item_photos.append(img_obj)
+                            elif item.get("image"):
+                                item_photos.append(item["image"])
+
                             items.append(RawListingItem(
                                 external_id=f"lalafo_{ext_id}",
                                 title=raw_title or f"Əmlak ({district or 'Bakı'})",
@@ -72,7 +83,8 @@ class LalafoAzScraper(BaseScraper):
                                 seller_type=detected_seller,
                                 offer_type=detected_offer,
                                 property_type=detected_prop,
-                                listing_url=f"https://lalafo.az{item_url}" if item_url.startswith('/') else item_url
+                                listing_url=f"https://lalafo.az{item_url}" if item_url.startswith('/') else item_url,
+                                photos=item_photos
                             ))
                             if len(items) >= 25:
                                 break
@@ -143,6 +155,14 @@ class LalafoAzScraper(BaseScraper):
 
                             bld_type = "old" if "köhnə" in raw_lower else "new"
 
+                            # Extract card photo
+                            card_photos = []
+                            img_el = a.find("img")
+                            if img_el:
+                                src_val = img_el.get("src") or img_el.get("data-src")
+                                if src_val and "http" in src_val:
+                                    card_photos.append(src_val)
+
                             items.append(RawListingItem(
                                 external_id=f"lalafo_{ext_id}",
                                 title=title,
@@ -157,7 +177,8 @@ class LalafoAzScraper(BaseScraper):
                                 seller_type=detected_seller,
                                 offer_type=detected_offer,
                                 property_type=detected_prop,
-                                listing_url=f"https://lalafo.az{href}" if href.startswith('/') else href
+                                listing_url=f"https://lalafo.az{href}" if href.startswith('/') else href,
+                                photos=card_photos
                             ))
                             if len(items) >= 25:
                                 break

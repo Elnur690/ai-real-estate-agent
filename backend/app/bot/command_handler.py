@@ -405,6 +405,7 @@ class BotCommandHandler:
                 if not photos and listing_obj.listing_url:
                     try:
                         import httpx
+                        from urllib.parse import urljoin
                         from bs4 import BeautifulSoup
                         headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
                         async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
@@ -414,13 +415,14 @@ class BotCommandHandler:
                                 page_imgs = []
                                 for tag in soup.find_all(['img', 'a', 'meta', 'div']):
                                     src = tag.get('src') or tag.get('data-src') or tag.get('data-full-src') or tag.get('href') or tag.get('content')
-                                    if src and ('uploads/' in src or 'azstatic' in src or 'bina.az' in src or 'turbo.az' in src or 'tap.az' in src) and any(ext in src.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
-                                        if not any(badge in src.lower() for badge in ['logo', 'icon', 'avatar', 'agency_logos', 'svg']):
-                                            page_imgs.append(src)
+                                    if src and any(ext in src.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                                        if not any(badge in src.lower() for badge in ['logo', 'icon', 'avatar', 'agency_logos', 'svg', 'banner', 'ad-']):
+                                            full_src = urljoin(listing_obj.listing_url, src)
+                                            page_imgs.append(full_src)
                                 for s in soup.find_all('script'):
                                     if s.string:
-                                        for match in re.findall(r'(https?://[^\s\"\'\(\)]+uploads/[^\s\"\'\(\)]+\.(?:jpg|jpeg|png|webp))', s.string):
-                                            if not any(badge in match.lower() for badge in ['logo', 'icon', 'avatar', 'agency_logos', 'svg']):
+                                        for match in re.findall(r'(https?://[^\s\"\'\(\)]+\.(?:jpg|jpeg|png|webp))', s.string):
+                                            if not any(badge in match.lower() for badge in ['logo', 'icon', 'avatar', 'agency_logos', 'svg', 'banner']):
                                                 page_imgs.append(match)
                                 
                                 clean_p = []

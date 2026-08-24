@@ -81,6 +81,17 @@ class EvOnlineAzScraper(BaseScraper):
 
                         bld_type = "old" if "köhnə" in raw_lower else "new"
 
+                        # Extract card photo
+                        card_photos = []
+                        if parent:
+                            img_el = parent.find("img")
+                            if img_el:
+                                src_val = img_el.get("src") or img_el.get("data-src")
+                                if src_val and "http" in src_val:
+                                    card_photos.append(src_val)
+                                elif src_val and src_val.startswith("/"):
+                                    card_photos.append(f"https://evonline.az{src_val}")
+
                         items.append(RawListingItem(
                             external_id=f"evonline_{ext_id}",
                             title=title,
@@ -95,7 +106,8 @@ class EvOnlineAzScraper(BaseScraper):
                             seller_type=detected_seller,
                             offer_type=detected_offer,
                             property_type=detected_prop,
-                            listing_url=f"https://evonline.az/{href.lstrip('/')}"
+                            listing_url=f"https://evonline.az/{href.lstrip('/')}",
+                            photos=card_photos
                         ))
                         if len(items) >= 20:
                             break
