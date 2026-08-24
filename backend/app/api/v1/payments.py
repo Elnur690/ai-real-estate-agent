@@ -130,6 +130,7 @@ async def process_tenant_cash_payment(
         tenant.addon_image_requests_limit = int(addon_image_requests_limit)
         if addon_image_requests_limit > 0:
             tenant.feature_watermark_free_images = True
+            tenant.addon_image_requests_used = 0
             image_addon_fee = round((addon_image_requests_limit / 25.0) * 10.0 * multiplier, 2)
             tenant.addon_image_requests_price = image_addon_fee
         else:

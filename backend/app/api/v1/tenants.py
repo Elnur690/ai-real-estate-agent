@@ -265,6 +265,8 @@ class TenantCashPaymentRequest(BaseModel):
     include_aged_listings: Optional[bool] = None
     addon_aged_max_months: Optional[int] = 12
     addon_saved_searches: Optional[int] = None
+    feature_watermark_free_images: Optional[bool] = None
+    addon_image_requests_limit: Optional[int] = None
     use_referral_balance: bool = True
     notes: Optional[str] = None
 
@@ -288,6 +290,8 @@ async def record_tenant_cash_payment(
         include_aged_listings=body.include_aged_listings,
         addon_aged_max_months=body.addon_aged_max_months,
         addon_saved_searches=body.addon_saved_searches,
+        feature_watermark_free_images=body.feature_watermark_free_images,
+        addon_image_requests_limit=body.addon_image_requests_limit,
         use_referral_balance=body.use_referral_balance,
         notes=body.notes
     )

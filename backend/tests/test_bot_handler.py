@@ -349,6 +349,40 @@ async def test_bot_onboarding_and_commands():
         assert f"#{t2.id}" in res_status2
         assert "0 / 25" in res_status2
 
+        # 7. Test cash payment endpoint with photo addon
+        from app.api.v1.tenants import record_tenant_cash_payment, TenantCashPaymentRequest
+        from app.models.user import User
+
+        admin_dummy = User(id=1, name="Admin", email="admin@test.com", password_hash="pw", role="admin")
+        pay_req = TenantCashPaymentRequest(
+            plan="starter",
+            duration_days=30,
+            amount_paid=49.0,
+            addon_image_requests_limit=50,
+            feature_watermark_free_images=True
+        )
+        pay_res = await record_tenant_cash_payment(
+            tenant_id=t2.id,
+            body=pay_req,
+            db=db,
+            current_admin=admin_dummy
+        )
+        assert pay_res["status"] == "success"
+
+        await db.refresh(t2)
+        assert t2.addon_image_requests_limit == 50
+        assert t2.feature_watermark_free_images is True
+        assert t2.addon_image_requests_used == 0
+
+        res_status3 = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="telegram",
+            sender_id="999888777",
+            sender_name="Orxan Agent",
+            raw_text="/status"
+        )
+        assert "0 / 50" in res_status3
+
     await engine.dispose()
 
 
