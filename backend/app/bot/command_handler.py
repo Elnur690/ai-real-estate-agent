@@ -1188,7 +1188,13 @@ class BotCommandHandler:
         total_image_limit = included_limit + addon_limit
         used_images = tenant.addon_image_requests_used or 0
         remaining_images = max(0, total_image_limit - used_images)
-        image_status_line = f"▪️ *Su nişansız foto:* {used_images} / {total_image_limit} istifadə edilib ({remaining_images} qalıb) 🖼️\n" if (total_image_limit > 0 or has_image_feature) else ""
+
+        if total_image_limit > 0:
+            image_status_line = f"▪️ *Su nişansız foto:* {used_images} / {total_image_limit} istifadə edilib ({remaining_images} qalıb) 🖼️\n"
+        elif has_image_feature:
+            image_status_line = f"▪️ *Su nişansız foto:* 0 / 0 istifadə edilib (Limit əlavə edin: `/al foto 25`) 🖼️\n"
+        else:
+            image_status_line = f"▪️ *Su nişansız foto:* Deaktiv 🔒 (Foto paketi: `/paket` və ya `/al foto 25`)\n"
 
         # Expiration notice with Seller contact
         expiry_notice = ""
