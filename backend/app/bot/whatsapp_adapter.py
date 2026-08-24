@@ -271,7 +271,8 @@ class WhatsAppAdapter:
             with open(image_path, "rb") as img_f:
                 b64_data = base64.b64encode(img_f.read()).decode("utf-8")
 
-            media_payload = f"data:image/jpeg;base64,{b64_data}" if not b64_data.startswith("data:") else b64_data
+            # Evolution API validator requires pure base64 string or URL
+            raw_b64 = b64_data.split(",")[-1] if "," in b64_data else b64_data
             file_name = os.path.basename(image_path)
 
             url = f"{base_url}/message/sendMedia/{inst}"
@@ -282,7 +283,7 @@ class WhatsAppAdapter:
                 "mimetype": "image/jpeg",
                 "mimeType": "image/jpeg",
                 "caption": caption,
-                "media": media_payload,
+                "media": raw_b64,
                 "fileName": file_name,
                 "options": {
                     "delay": 1200,
@@ -333,7 +334,7 @@ class WhatsAppAdapter:
             with open(document_path, "rb") as doc_f:
                 b64_data = base64.b64encode(doc_f.read()).decode("utf-8")
 
-            media_payload = f"data:application/pdf;base64,{b64_data}" if not b64_data.startswith("data:") else b64_data
+            raw_b64 = b64_data.split(",")[-1] if "," in b64_data else b64_data
             doc_filename = filename or "buklet.pdf"
 
             url = f"{base_url}/message/sendMedia/{inst}"
@@ -345,7 +346,7 @@ class WhatsAppAdapter:
                 "mimeType": "application/pdf",
                 "caption": caption,
                 "fileName": doc_filename,
-                "media": media_payload,
+                "media": raw_b64,
                 "options": {
                     "delay": 1200,
                     "presence": "composing"
