@@ -27,6 +27,10 @@ export interface PlanItem {
   addon_aged_listings_price?: number;
   addon_aged_max_months?: number;
   addon_aged_tiers?: Array<{ months: number; price: number }>;
+  feature_watermark_free_images?: boolean;
+  included_image_requests?: number;
+  addon_image_requests_price?: number;
+  addon_image_tiers?: Array<{ requests: number; price: number }>;
   backup_enabled: boolean;
   subscriber_count: number;
 }
@@ -71,6 +75,15 @@ export function PlansView() {
     { months: 3, price: 25 },
     { months: 6, price: 45 },
     { months: 12, price: 80 }
+  ]);
+
+  const [formWatermarkImages, setFormWatermarkImages] = useState(false);
+  const [formIncludedImageRequests, setFormIncludedImageRequests] = useState<number>(0);
+  const [formAddonImagePrice, setFormAddonImagePrice] = useState<number>(10);
+  const [formImageTiers, setFormImageTiers] = useState<Array<{ requests: number; price: number }>>([
+    { requests: 25, price: 10 },
+    { requests: 50, price: 18 },
+    { requests: 100, price: 30 }
   ]);
 
   const [submitting, setSubmitting] = useState(false);
@@ -121,6 +134,22 @@ export function PlansView() {
     setFormSearchTiers(updated);
   };
 
+  const handleAddImageTier = () => {
+    const nextRequests = formImageTiers.length > 0 ? formImageTiers[formImageTiers.length - 1].requests + 25 : 25;
+    const nextPrice = formImageTiers.length > 0 ? formImageTiers[formImageTiers.length - 1].price + 10 : 10;
+    setFormImageTiers([...formImageTiers, { requests: nextRequests, price: nextPrice }]);
+  };
+
+  const handleRemoveImageTier = (index: number) => {
+    setFormImageTiers(formImageTiers.filter((_, i) => i !== index));
+  };
+
+  const handleUpdateImageTier = (index: number, field: 'requests' | 'price', val: number) => {
+    const updated = [...formImageTiers];
+    updated[index] = { ...updated[index], [field]: val };
+    setFormImageTiers(updated);
+  };
+
   const openCreateModal = () => {
     setFormCode('');
     setFormName('');
@@ -153,6 +182,14 @@ export function PlansView() {
       { months: 3, price: 25 },
       { months: 6, price: 45 },
       { months: 12, price: 80 }
+    ]);
+    setFormWatermarkImages(false);
+    setFormIncludedImageRequests(0);
+    setFormAddonImagePrice(10);
+    setFormImageTiers([
+      { requests: 25, price: 10 },
+      { requests: 50, price: 18 },
+      { requests: 100, price: 30 }
     ]);
     setEditingPlan(null);
     setIsCreateOpen(true);
@@ -192,6 +229,14 @@ export function PlansView() {
       { months: 6, price: 45 },
       { months: 12, price: 80 }
     ]);
+    setFormWatermarkImages(!!plan.feature_watermark_free_images);
+    setFormIncludedImageRequests(plan.included_image_requests || 0);
+    setFormAddonImagePrice(plan.addon_image_requests_price || 10);
+    setFormImageTiers(plan.addon_image_tiers && plan.addon_image_tiers.length > 0 ? plan.addon_image_tiers : [
+      { requests: 25, price: 10 },
+      { requests: 50, price: 18 },
+      { requests: 100, price: 30 }
+    ]);
     setIsCreateOpen(true);
   };
 
@@ -224,6 +269,10 @@ export function PlansView() {
           addon_aged_listings_price: formAddonPrice,
           addon_aged_max_months: formAgedMaxMonths,
           addon_aged_tiers: formAgedTiers,
+          feature_watermark_free_images: formWatermarkImages,
+          included_image_requests: formIncludedImageRequests,
+          addon_image_requests_price: formAddonImagePrice,
+          addon_image_tiers: formImageTiers,
           backup_enabled: formBackup,
         });
       } else {
@@ -251,6 +300,10 @@ export function PlansView() {
           addon_aged_listings_price: formAddonPrice,
           addon_aged_max_months: formAgedMaxMonths,
           addon_aged_tiers: formAgedTiers,
+          feature_watermark_free_images: formWatermarkImages,
+          included_image_requests: formIncludedImageRequests,
+          addon_image_requests_price: formAddonImagePrice,
+          addon_image_tiers: formImageTiers,
           backup_enabled: formBackup,
         });
       }
@@ -460,6 +513,35 @@ export function PlansView() {
                         {plan.addon_aged_tiers.map((t, idx) => (
                           <span key={idx} className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
                             {t.months} ay ({t.price} ₼)
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        {plan.feature_watermark_free_images ? (
+                          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                        ) : (
+                          <X className="w-4 h-4 text-slate-600 shrink-0" />
+                        )}
+                        <span className={plan.feature_watermark_free_images ? 'text-slate-200' : 'text-slate-500 line-through'}>
+                          Su Nişansız Foto Add-on (Watermark-Free)
+                        </span>
+                      </div>
+                      {plan.included_image_requests && plan.included_image_requests > 0 ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-teal-500/15 text-teal-300 font-semibold">
+                          {plan.included_image_requests} Daxildir
+                        </span>
+                      ) : null}
+                    </div>
+                    {plan.feature_watermark_free_images && plan.addon_image_tiers && plan.addon_image_tiers.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pl-6">
+                        {plan.addon_image_tiers.map((t, idx) => (
+                          <span key={idx} className="text-[9px] px-1.5 py-0.5 rounded bg-teal-500/10 text-teal-300 border border-teal-500/20">
+                            +{t.requests} foto ({t.price} ₼)
                           </span>
                         ))}
                       </div>
@@ -852,6 +934,95 @@ export function PlansView() {
                               <button
                                 type="button"
                                 onClick={() => handleRemoveAgedTier(idx)}
+                                className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
+                                title="Sətiri Sil"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Watermark-Free Photos Multi-Tier Addon Section */}
+                <div className="p-3.5 bg-dark-900/60 border border-slate-800 rounded-2xl space-y-3 mt-2">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formWatermarkImages}
+                        onChange={(e) => setFormWatermarkImages(e.target.checked)}
+                        className="rounded accent-emerald-500"
+                      />
+                      <span className="font-bold text-teal-300 text-xs">Su Nişansız Şəkillər Add-on (Watermark-Free Photos)</span>
+                    </label>
+                    {formWatermarkImages && (
+                      <button
+                        type="button"
+                        onClick={handleAddImageTier}
+                        className="px-2.5 py-1 bg-teal-600/20 hover:bg-teal-600/30 text-teal-300 border border-teal-500/30 rounded-lg text-[11px] font-bold transition flex items-center gap-1"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>+ Sətir Əlavə Et</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {formWatermarkImages && (
+                    <div className="space-y-2.5 pt-1">
+                      <div className="flex items-center justify-between text-xs text-slate-400">
+                        <span>Paketə Daxil Olan Foto Sorğu Sayı:</span>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min="0"
+                            value={formIncludedImageRequests}
+                            onChange={(e) => setFormIncludedImageRequests(Number(e.target.value))}
+                            className="w-20 bg-dark-950 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs text-center font-bold"
+                            placeholder="Məs: 25"
+                          />
+                          <span>foto</span>
+                        </div>
+                      </div>
+
+                      {formImageTiers.length === 0 ? (
+                        <div className="text-[11px] text-slate-500 italic py-1">
+                          Foto sorğu paketi tarifi əlavə edilməyib. Yuxarıdakı düymə ilə əlavə foto paketləri təyin edin.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {formImageTiers.map((tier, idx) => (
+                            <div key={idx} className="flex items-center gap-2">
+                              <div className="flex-1 flex items-center gap-1.5 bg-dark-950 border border-slate-700/80 rounded-xl px-3 py-1.5">
+                                <span className="text-slate-400 text-xs font-bold">+</span>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={tier.requests}
+                                  onChange={(e) => handleUpdateImageTier(idx, 'requests', Number(e.target.value))}
+                                  className="w-full bg-transparent text-white text-xs font-bold focus:outline-none"
+                                  placeholder="Məs: 25"
+                                />
+                                <span className="text-slate-400 text-xs font-medium shrink-0">foto</span>
+                              </div>
+                              <div className="w-32 flex items-center gap-1.5 bg-dark-950 border border-slate-700/80 rounded-xl px-3 py-1.5">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.5"
+                                  value={tier.price}
+                                  onChange={(e) => handleUpdateImageTier(idx, 'price', Number(e.target.value))}
+                                  className="w-full bg-transparent text-teal-300 text-xs font-bold focus:outline-none"
+                                  placeholder="Qiymət"
+                                />
+                                <span className="text-slate-400 text-xs font-medium shrink-0">AZN</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveImageTier(idx)}
                                 className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
                                 title="Sətiri Sil"
                               >

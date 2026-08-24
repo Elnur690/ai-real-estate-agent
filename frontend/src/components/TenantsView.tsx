@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { UserPlus, Search, ShieldCheck, Clock, AlertCircle, Phone, MessageSquare, Plus, CheckCircle, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff, DollarSign, Edit3, Trash2, X, AlertTriangle, Users, MapPin, Store } from 'lucide-react';
+import { UserPlus, Search, ShieldCheck, Clock, AlertCircle, Phone, MessageSquare, Plus, CheckCircle, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff, DollarSign, Edit3, Trash2, X, AlertTriangle, Users, MapPin, Store, Sparkles } from 'lucide-react';
 import api from '../api';
 import { Tenant, SavedSearch } from '../types';
 
@@ -44,7 +44,9 @@ export const TenantsView: React.FC = () => {
     backup_frequency_days: 7,
     feature_aged_listings: false,
     addon_aged_max_months: 12,
-    addon_saved_searches: 0
+    addon_saved_searches: 0,
+    feature_watermark_free_images: false,
+    addon_image_requests_limit: 0
   });
 
   const [availablePlans, setAvailablePlans] = useState<any[]>([]);
@@ -76,7 +78,10 @@ export const TenantsView: React.FC = () => {
     backup_frequency_days: 7,
     feature_aged_listings: false,
     addon_aged_max_months: 12,
-    addon_saved_searches: 0
+    addon_saved_searches: 0,
+    feature_watermark_free_images: false,
+    addon_image_requests_limit: 0,
+    addon_image_requests_used: 0
   });
 
   // Delete Confirmation Modal State
@@ -98,6 +103,8 @@ export const TenantsView: React.FC = () => {
   const [cashIncludeAgedListings, setCashIncludeAgedListings] = useState<boolean>(false);
   const [cashAgedMaxMonths, setCashAgedMaxMonths] = useState<number>(12);
   const [cashExtraSearches, setCashExtraSearches] = useState<number>(0);
+  const [cashFeatureImages, setCashFeatureImages] = useState<boolean>(false);
+  const [cashExtraImages, setCashExtraImages] = useState<number>(0);
   const [cashNotes, setCashNotes] = useState<string>('');
 
   const loadTenants = async () => {
@@ -177,7 +184,10 @@ export const TenantsView: React.FC = () => {
       backup_frequency_days: t.backup_frequency_days || 7,
       feature_aged_listings: t.feature_aged_listings || false,
       addon_aged_max_months: t.addon_aged_max_months || 12,
-      addon_saved_searches: t.addon_saved_searches || 0
+      addon_saved_searches: t.addon_saved_searches || 0,
+      feature_watermark_free_images: t.feature_watermark_free_images || false,
+      addon_image_requests_limit: t.addon_image_requests_limit || 0,
+      addon_image_requests_used: t.addon_image_requests_used || 0
     });
   };
 
@@ -230,7 +240,9 @@ export const TenantsView: React.FC = () => {
         backup_frequency_days: 7,
         feature_aged_listings: false,
         addon_aged_max_months: 12,
-        addon_saved_searches: 0
+        addon_saved_searches: 0,
+        feature_watermark_free_images: false,
+        addon_image_requests_limit: 0
       });
       loadTenants();
     } catch (e: any) {
@@ -341,23 +353,26 @@ export const TenantsView: React.FC = () => {
     days: number, 
     includeAged: boolean, 
     extraSearches: number = cashExtraSearches,
-    category: string = paymentCategory
+    category: string = paymentCategory,
+    extraImages: number = cashExtraImages
   ) => {
     const planObj = availablePlans.find(p => p.code === planCode);
     const basePrice = planObj ? planObj.price : 29.0;
     const addonPrice = planObj?.addon_aged_listings_price !== undefined ? planObj.addon_aged_listings_price : 15.0;
     const searchPackPrice = planObj?.addon_saved_searches_price !== undefined ? planObj.addon_saved_searches_price : 10.0;
+    const imagePackPrice = planObj?.addon_image_requests_price !== undefined ? planObj.addon_image_requests_price : 10.0;
     const multiplier = days === 365 ? 10 : (days === 180 ? 5 : (days === 90 ? 2.7 : (days === 60 ? 2.0 : 1)));
 
     const agedFee = includeAged ? (addonPrice * multiplier) : 0;
     const searchFee = extraSearches > 0 ? ((extraSearches / 5.0) * searchPackPrice * multiplier) : 0;
+    const imageFee = extraImages > 0 ? ((extraImages / 25.0) * imagePackPrice * multiplier) : 0;
 
     if (category === 'addon_only') {
-      return Math.round(agedFee + searchFee);
+      return Math.round(agedFee + searchFee + imageFee);
     } else if (category === 'plan_only') {
       return Math.round(basePrice * multiplier);
     } else {
-      return Math.round((basePrice * multiplier) + agedFee + searchFee);
+      return Math.round((basePrice * multiplier) + agedFee + searchFee + imageFee);
     }
   };
 
@@ -368,6 +383,8 @@ export const TenantsView: React.FC = () => {
     const isAgedActive = defaultCategory === 'addon_only' ? true : !!t.feature_aged_listings;
     const maxMonths = t.addon_aged_max_months || 12;
     const extraSearches = t.addon_saved_searches || 0;
+    const isImageActive = defaultCategory === 'addon_only' ? true : !!t.feature_watermark_free_images;
+    const extraImages = t.addon_image_requests_limit || 0;
     
     setPaymentCategory(defaultCategory);
     setPaymentPlan(initialPlan);
@@ -375,8 +392,10 @@ export const TenantsView: React.FC = () => {
     setCashIncludeAgedListings(isAgedActive);
     setCashAgedMaxMonths(maxMonths);
     setCashExtraSearches(extraSearches);
+    setCashFeatureImages(isImageActive);
+    setCashExtraImages(extraImages);
 
-    const initialAmount = calculateCashTotal(initialPlan, 30, isAgedActive, extraSearches, defaultCategory);
+    const initialAmount = calculateCashTotal(initialPlan, 30, isAgedActive, extraSearches, defaultCategory, extraImages);
     setCashAmount(initialAmount);
     const notePrefix = defaultCategory === 'addon_only' 
       ? `Cash payment for Addons ONLY - ${t.name}`
@@ -389,18 +408,23 @@ export const TenantsView: React.FC = () => {
     days: number, 
     includeAged: boolean = cashIncludeAgedListings, 
     category: 'full' | 'addon_only' | 'plan_only' = paymentCategory,
-    extraSearches: number = cashExtraSearches
+    extraSearches: number = cashExtraSearches,
+    extraImages: number = cashExtraImages,
+    featureImages: boolean = cashFeatureImages
   ) => {
     setPaymentPlan(planCode);
     setCashDays(days);
     setCashIncludeAgedListings(includeAged);
     setPaymentCategory(category);
     setCashExtraSearches(extraSearches);
-    const calculatedAmount = calculateCashTotal(planCode, days, includeAged, extraSearches, category);
+    setCashExtraImages(extraImages);
+    setCashFeatureImages(featureImages);
+    const calculatedAmount = calculateCashTotal(planCode, days, includeAged, extraSearches, category, extraImages);
     setCashAmount(calculatedAmount);
     const label = category === 'addon_only' ? 'Addons Only' : `${planCode.toUpperCase()} Plan`;
     const searchTag = extraSearches > 0 ? ` + ${extraSearches} Searches` : '';
-    setCashNotes(`Cash payment for ${label}${searchTag} (${days} days)`);
+    const imgTag = extraImages > 0 ? ` + ${extraImages} Photos` : '';
+    setCashNotes(`Cash payment for ${label}${searchTag}${imgTag} (${days} days)`);
   };
 
   const handleRecordCashPayment = async (e: React.FormEvent) => {
@@ -415,6 +439,8 @@ export const TenantsView: React.FC = () => {
         include_aged_listings: paymentCategory === 'addon_only' ? true : (paymentCategory === 'plan_only' ? false : cashIncludeAgedListings),
         addon_aged_max_months: cashAgedMaxMonths,
         addon_saved_searches: cashExtraSearches,
+        feature_watermark_free_images: cashFeatureImages || (cashExtraImages > 0),
+        addon_image_requests_limit: cashExtraImages,
         notes: cashNotes
       });
       setPaymentModalTenant(null);
@@ -558,6 +584,12 @@ export const TenantsView: React.FC = () => {
                       <Search className="w-3 h-3" />
                       {t.active_searches_count || 0} / {t.max_saved_searches || 10} Searches
                     </div>
+                    {t.feature_watermark_free_images && (
+                      <div className="text-[11px] text-teal-400 font-mono flex items-center gap-1 mt-0.5">
+                        <Sparkles className="w-3 h-3" />
+                        {t.addon_image_requests_used || 0} / {t.addon_image_requests_limit || 0} Photos
+                      </div>
+                    )}
                     {t.type === 'agency' || maxSeats > 1 ? (
                       <div className="text-[11px] text-purple-400 flex items-center gap-1 mt-0.5">
                         <Users className="w-3 h-3" />
@@ -902,6 +934,47 @@ export const TenantsView: React.FC = () => {
                 </label>
               </div>
 
+              {/* Watermark-Free Photos Addon */}
+              <div className="p-2.5 bg-dark-800/80 rounded-xl border border-slate-700/60 space-y-2">
+                <label className="flex items-center justify-between cursor-pointer text-xs">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={editFormData.feature_watermark_free_images}
+                      onChange={(e) => setEditFormData({ ...editFormData, feature_watermark_free_images: e.target.checked })}
+                      className="rounded accent-emerald-500"
+                    />
+                    <span className="font-semibold text-teal-300">Su Nişansız Foto Add-on (Watermark-Free)</span>
+                  </div>
+                </label>
+                {editFormData.feature_watermark_free_images && (
+                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-700/50 text-xs">
+                    <div>
+                      <label className="text-slate-400 text-[11px] block mb-0.5">Top-up Limit (Foto)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editFormData.addon_image_requests_limit}
+                        onChange={(e) => setEditFormData({ ...editFormData, addon_image_requests_limit: Number(e.target.value) })}
+                        className="w-full bg-dark-900 border border-slate-700 rounded-lg px-2.5 py-1 text-white text-xs font-bold"
+                        placeholder="Məs: 25"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-slate-400 text-[11px] block mb-0.5">İstifadə Edilən</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editFormData.addon_image_requests_used}
+                        onChange={(e) => setEditFormData({ ...editFormData, addon_image_requests_used: Number(e.target.value) })}
+                        className="w-full bg-dark-900 border border-slate-700 rounded-lg px-2.5 py-1 text-white text-xs font-bold"
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="flex justify-end gap-3 pt-3">
                 <button
                   type="button"
@@ -1084,6 +1157,34 @@ export const TenantsView: React.FC = () => {
                     )}
                   </div>
                 </label>
+              </div>
+
+              {/* Watermark-Free Photos Addon */}
+              <div className="p-2.5 bg-dark-800/80 rounded-xl border border-slate-700/60 space-y-2">
+                <label className="flex items-center justify-between cursor-pointer text-xs">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={newTenant.feature_watermark_free_images}
+                      onChange={(e) => setNewTenant({ ...newTenant, feature_watermark_free_images: e.target.checked })}
+                      className="rounded accent-emerald-500"
+                    />
+                    <span className="font-semibold text-teal-300">Su Nişansız Foto Add-on (Watermark-Free)</span>
+                  </div>
+                </label>
+                {newTenant.feature_watermark_free_images && (
+                  <div className="pt-1 border-t border-slate-700/50 text-xs">
+                    <label className="text-slate-400 text-[11px] block mb-0.5">İlkin Foto Limiti (Sorğu Sayı)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={newTenant.addon_image_requests_limit}
+                      onChange={(e) => setNewTenant({ ...newTenant, addon_image_requests_limit: Number(e.target.value) })}
+                      className="w-full bg-dark-900 border border-slate-700 rounded-lg px-2.5 py-1 text-white text-xs font-bold"
+                      placeholder="Məs: 25"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end gap-3 pt-3">
@@ -1290,7 +1391,7 @@ export const TenantsView: React.FC = () => {
                       <button
                         type="button"
                         key={slots}
-                        onClick={() => handlePlanOrPeriodChange(paymentPlan, cashDays, cashIncludeAgedListings, paymentCategory, slots)}
+                        onClick={() => handlePlanOrPeriodChange(paymentPlan, cashDays, cashIncludeAgedListings, paymentCategory, slots, cashExtraImages, cashFeatureImages)}
                         className={`py-1.5 rounded-lg font-mono text-center transition-all ${
                           cashExtraSearches === slots
                             ? 'bg-cyan-500 text-dark-950 font-bold shadow-md'
@@ -1298,6 +1399,37 @@ export const TenantsView: React.FC = () => {
                         }`}
                       >
                         {slots === 0 ? '0 Slots' : `+${slots} Slots`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Watermark-Free Photos Add-on Option */}
+              {(paymentCategory === 'full' || paymentCategory === 'addon_only') && (
+                <div className="p-3 bg-dark-900/80 rounded-xl border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-teal-300 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Su Nişansız Foto Paketi (Watermark-Free)
+                    </span>
+                    <span className="text-[11px] text-teal-400 font-mono font-semibold">
+                      +{((availablePlans.find(p => p.code === paymentPlan)?.addon_image_requests_price) ?? 10)} AZN / +25 foto
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5 pt-1 text-xs">
+                    {[0, 25, 50, 100].map((requests) => (
+                      <button
+                        type="button"
+                        key={requests}
+                        onClick={() => handlePlanOrPeriodChange(paymentPlan, cashDays, cashIncludeAgedListings, paymentCategory, cashExtraSearches, requests, requests > 0)}
+                        className={`py-1.5 rounded-lg font-mono text-center transition-all ${
+                          cashExtraImages === requests
+                            ? 'bg-teal-500 text-dark-950 font-bold shadow-md'
+                            : 'bg-dark-800 text-slate-300 hover:bg-dark-700 border border-slate-700/60'
+                        }`}
+                      >
+                        {requests === 0 ? '0 Foto' : `+${requests} Foto`}
                       </button>
                     ))}
                   </div>
@@ -1379,7 +1511,7 @@ export const TenantsView: React.FC = () => {
               </div>
             </div>
 
-            {/* Saved Search Limits & Top-Up Add-on Box */}
+              {/* Saved Search Limits & Top-Up Add-on Box */}
             <div className="p-3 bg-dark-900 border border-cyan-500/30 rounded-xl space-y-2 text-xs">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-cyan-300 flex items-center gap-1.5">
@@ -1394,6 +1526,26 @@ export const TenantsView: React.FC = () => {
                 <div>Extra Add-on Slots: <strong className="text-teal-400 font-mono">+{selectedTenant.tenant.addon_saved_searches || 0} Slots</strong></div>
               </div>
             </div>
+
+            {/* Watermark-Free Photos Box */}
+            {selectedTenant.tenant.feature_watermark_free_images && (
+              <div className="p-3 bg-dark-900 border border-teal-500/30 rounded-xl space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-teal-300 flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4" /> Su Nişansız Şəkil Sorğuları
+                  </span>
+                  <span className="font-mono text-teal-400 font-bold bg-teal-500/10 px-2 py-0.5 rounded-lg border border-teal-500/20">
+                    {selectedTenant.tenant.addon_image_requests_used || 0} / {selectedTenant.tenant.addon_image_requests_limit || 0} İstifadə Edilib
+                  </span>
+                </div>
+                <div className="text-slate-300 text-[11px] pt-1 flex justify-between items-center">
+                  <span>Qalan Sorğu Limiti:</span>
+                  <strong className="text-emerald-400 font-mono">
+                    {Math.max(0, (selectedTenant.tenant.addon_image_requests_limit || 0) - (selectedTenant.tenant.addon_image_requests_used || 0))} Şəkil
+                  </strong>
+                </div>
+              </div>
+            )}
 
             {/* Agency Team Members Section */}
             {(selectedTenant.tenant.type === 'agency' || (selectedTenant.sub_agents && selectedTenant.sub_agents.length > 0)) && (

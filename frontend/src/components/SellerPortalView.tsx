@@ -45,6 +45,8 @@ export interface SellerDashboardData {
   free_trial_feature_avm?: boolean;
   free_trial_feature_social_brochure?: boolean;
   free_trial_feature_multi_location?: boolean;
+  free_trial_feature_watermark_images?: boolean;
+  free_trial_image_requests?: number;
   custom_domain?: string;
   custom_domain_enabled?: boolean;
   domain_status?: string;
@@ -78,6 +80,10 @@ export interface SellerAgent {
   addon_aged_max_months?: number;
   addon_saved_searches?: number;
   addon_saved_searches_price?: number;
+  feature_watermark_free_images?: boolean;
+  addon_image_requests_limit?: number;
+  addon_image_requests_used?: number;
+  addon_image_requests_price?: number;
   seller_package_id?: number;
   package_data?: any;
   saved_searches_count?: number;
@@ -110,6 +116,10 @@ export interface SellerPackageItem {
   addon_saved_searches: number;
   addon_saved_searches_price: number;
   addon_search_tiers: { searches: number; price: number }[];
+  feature_watermark_free_images?: boolean;
+  included_image_requests?: number;
+  addon_image_requests_price?: number;
+  addon_image_tiers?: { requests: number; price: number }[];
   is_active: boolean;
 }
 
@@ -193,6 +203,8 @@ export function SellerPortalView() {
   const [trialAvm, setTrialAvm] = useState(true);
   const [trialBrochure, setTrialBrochure] = useState(true);
   const [trialMultiLocation, setTrialMultiLocation] = useState(true);
+  const [trialWatermarkImages, setTrialWatermarkImages] = useState(true);
+  const [trialImageRequests, setTrialImageRequests] = useState(5);
   const [savingTrial, setSavingTrial] = useState(false);
   const [trialSavedMsg, setTrialSavedMsg] = useState(false);
 
@@ -219,6 +231,10 @@ export function SellerPortalView() {
   const [pkgAddonSearchesPrice, setPkgAddonSearchesPrice] = useState<number>(10);
   const [pkgAgedTiers, setPkgAgedTiers] = useState<{ months: number; price: number }[]>([]);
   const [pkgSearchTiers, setPkgSearchTiers] = useState<{ searches: number; price: number }[]>([]);
+  const [pkgWatermarkImages, setPkgWatermarkImages] = useState(false);
+  const [pkgIncludedImages, setPkgIncludedImages] = useState<number>(0);
+  const [pkgAddonImagesPrice, setPkgAddonImagesPrice] = useState<number>(10);
+  const [pkgImageTiers, setPkgImageTiers] = useState<{ requests: number; price: number }[]>([]);
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const [submittingPkg, setSubmittingPkg] = useState(false);
 
@@ -227,6 +243,8 @@ export function SellerPortalView() {
   const [agentSelectedAgedPrice, setAgentSelectedAgedPrice] = useState<number>(0);
   const [agentSelectedExtraSearches, setAgentSelectedExtraSearches] = useState<number>(0);
   const [agentSelectedExtraSearchesPrice, setAgentSelectedExtraSearchesPrice] = useState<number>(0);
+  const [agentSelectedImageRequests, setAgentSelectedImageRequests] = useState<number>(0);
+  const [agentSelectedImagePrice, setAgentSelectedImagePrice] = useState<number>(0);
 
   // Agent Detail & Management Modal State
   const [isAgentDetailOpen, setIsAgentDetailOpen] = useState(false);
@@ -251,6 +269,9 @@ export function SellerPortalView() {
   const [editAgentAged, setEditAgentAged] = useState(false);
   const [editAgentAgedMonths, setEditAgentAgedMonths] = useState(12);
   const [editAgentSearches, setEditAgentSearches] = useState(0);
+  const [editAgentWatermarkImages, setEditAgentWatermarkImages] = useState(false);
+  const [editAgentImageLimit, setEditAgentImageLimit] = useState(0);
+  const [editAgentImageUsed, setEditAgentImageUsed] = useState(0);
   const [savingAgentEdit, setSavingAgentEdit] = useState(false);
   const [agentEditError, setAgentEditError] = useState<string | null>(null);
   const [agentEditSuccessMsg, setAgentEditSuccessMsg] = useState<string | null>(null);
@@ -261,6 +282,8 @@ export function SellerPortalView() {
   const [renewAgedPrice, setRenewAgedPrice] = useState<number>(0);
   const [renewExtraSearches, setRenewExtraSearches] = useState<number>(0);
   const [renewExtraSearchesPrice, setRenewExtraSearchesPrice] = useState<number>(0);
+  const [renewImageRequests, setRenewImageRequests] = useState<number>(0);
+  const [renewImagePrice, setRenewImagePrice] = useState<number>(0);
   const [renewingAgent, setRenewingAgent] = useState(false);
   const [renewError, setRenewError] = useState<string | null>(null);
   const [renewSuccessMsg, setRenewSuccessMsg] = useState<string | null>(null);
@@ -281,6 +304,8 @@ export function SellerPortalView() {
         setTrialAvm(res.data.free_trial_feature_avm ?? true);
         setTrialBrochure(res.data.free_trial_feature_social_brochure ?? true);
         setTrialMultiLocation(res.data.free_trial_feature_multi_location ?? true);
+        setTrialWatermarkImages(res.data.free_trial_feature_watermark_images ?? true);
+        setTrialImageRequests(res.data.free_trial_image_requests || 5);
       }
     } catch (err) {
       console.error('Error fetching seller dashboard:', err);
@@ -300,7 +325,9 @@ export function SellerPortalView() {
         free_trial_feature_makler: trialMakler,
         free_trial_feature_avm: trialAvm,
         free_trial_feature_social_brochure: trialBrochure,
-        free_trial_feature_multi_location: trialMultiLocation
+        free_trial_feature_multi_location: trialMultiLocation,
+        free_trial_feature_watermark_images: trialWatermarkImages,
+        free_trial_image_requests: trialImageRequests
       });
       setTrialSavedMsg(true);
       setIsTrialModalOpen(false);
@@ -468,7 +495,9 @@ export function SellerPortalView() {
         selected_aged_months: agentSelectedAgedMonths > 0 ? agentSelectedAgedMonths : undefined,
         selected_aged_price: agentSelectedAgedPrice > 0 ? agentSelectedAgedPrice : undefined,
         selected_extra_searches: agentSelectedExtraSearches > 0 ? agentSelectedExtraSearches : undefined,
-        selected_extra_searches_price: agentSelectedExtraSearchesPrice > 0 ? agentSelectedExtraSearchesPrice : undefined
+        selected_extra_searches_price: agentSelectedExtraSearchesPrice > 0 ? agentSelectedExtraSearchesPrice : undefined,
+        selected_image_requests: agentSelectedImageRequests > 0 ? agentSelectedImageRequests : undefined,
+        selected_image_price: agentSelectedImagePrice > 0 ? agentSelectedImagePrice : undefined
       });
       setIsAddAgentOpen(false);
       setAgentName('');
@@ -480,6 +509,8 @@ export function SellerPortalView() {
       setAgentSelectedAgedPrice(0);
       setAgentSelectedExtraSearches(0);
       setAgentSelectedExtraSearchesPrice(0);
+      setAgentSelectedImageRequests(0);
+      setAgentSelectedImagePrice(0);
       reloadAll();
     } catch (err: any) {
       setAgentError(err.response?.data?.detail || 'Xəta baş verdi');
@@ -514,6 +545,9 @@ export function SellerPortalView() {
     setEditAgentAged(agent.feature_aged_listings ?? false);
     setEditAgentAgedMonths(agent.addon_aged_max_months || 12);
     setEditAgentSearches(agent.addon_saved_searches || 0);
+    setEditAgentWatermarkImages(agent.feature_watermark_free_images ?? false);
+    setEditAgentImageLimit(agent.addon_image_requests_limit || 0);
+    setEditAgentImageUsed(agent.addon_image_requests_used || 0);
 
     // Initialize renew fields (0 means keep current/transferred plan)
     const defaultPkgId = agent.seller_package_id || 0;
@@ -522,6 +556,8 @@ export function SellerPortalView() {
     setRenewAgedPrice(0);
     setRenewExtraSearches(0);
     setRenewExtraSearchesPrice(0);
+    setRenewImageRequests(0);
+    setRenewImagePrice(0);
 
     // Fetch fresh details with counts & QR URLs
     setLoadingAgentDetail(true);
@@ -545,6 +581,9 @@ export function SellerPortalView() {
         setEditAgentAged(res.data.feature_aged_listings ?? false);
         setEditAgentAgedMonths(res.data.addon_aged_max_months || 12);
         setEditAgentSearches(res.data.addon_saved_searches || 0);
+        setEditAgentWatermarkImages(res.data.feature_watermark_free_images ?? false);
+        setEditAgentImageLimit(res.data.addon_image_requests_limit || 0);
+        setEditAgentImageUsed(res.data.addon_image_requests_used || 0);
         if (res.data.seller_package_id) {
           setRenewPkgId(res.data.seller_package_id);
         } else {
@@ -582,7 +621,10 @@ export function SellerPortalView() {
         backup_enabled: editAgentBackup,
         feature_aged_listings: editAgentAged,
         addon_aged_max_months: editAgentAgedMonths,
-        addon_saved_searches: editAgentSearches
+        addon_saved_searches: editAgentSearches,
+        feature_watermark_free_images: editAgentWatermarkImages,
+        addon_image_requests_limit: editAgentImageLimit,
+        addon_image_requests_used: editAgentImageUsed
       });
 
       setAgentEditSuccessMsg('Agent məlumatları uğurla yeniləndi!');
@@ -612,7 +654,9 @@ export function SellerPortalView() {
         selected_aged_months: renewAgedMonths > 0 ? renewAgedMonths : undefined,
         selected_aged_price: renewAgedPrice > 0 ? renewAgedPrice : undefined,
         selected_extra_searches: renewExtraSearches > 0 ? renewExtraSearches : undefined,
-        selected_extra_searches_price: renewExtraSearchesPrice > 0 ? renewExtraSearchesPrice : undefined
+        selected_extra_searches_price: renewExtraSearchesPrice > 0 ? renewExtraSearchesPrice : undefined,
+        selected_image_requests: renewImageRequests > 0 ? renewImageRequests : undefined,
+        selected_image_price: renewImagePrice > 0 ? renewImagePrice : undefined
       });
 
       setRenewSuccessMsg(res.data.message || 'Abunə uğurla yeniləndi!');
@@ -651,7 +695,11 @@ export function SellerPortalView() {
         addon_aged_tiers: pkgAgedTiers,
         addon_saved_searches: pkgAddonSearches,
         addon_saved_searches_price: pkgAddonSearchesPrice,
-        addon_search_tiers: pkgSearchTiers
+        addon_search_tiers: pkgSearchTiers,
+        feature_watermark_free_images: pkgWatermarkImages,
+        included_image_requests: pkgIncludedImages,
+        addon_image_requests_price: pkgAddonImagesPrice,
+        addon_image_tiers: pkgImageTiers
       };
 
       if (editingPkg) {
@@ -701,6 +749,10 @@ export function SellerPortalView() {
     setPkgAddonSearchesPrice(10);
     setPkgAgedTiers([{ months: 3, price: 15 }, { months: 6, price: 25 }, { months: 12, price: 40 }]);
     setPkgSearchTiers([{ searches: 5, price: 10 }, { searches: 10, price: 18 }, { searches: 20, price: 30 }]);
+    setPkgWatermarkImages(false);
+    setPkgIncludedImages(0);
+    setPkgAddonImagesPrice(10);
+    setPkgImageTiers([{ requests: 25, price: 10 }, { requests: 50, price: 18 }, { requests: 100, price: 30 }]);
     setIsAddPkgOpen(true);
   };
 
@@ -726,6 +778,14 @@ export function SellerPortalView() {
     setPkgAddonSearchesPrice(pkg.addon_saved_searches_price ?? 10);
     setPkgAgedTiers(pkg.addon_aged_tiers || []);
     setPkgSearchTiers(pkg.addon_search_tiers || []);
+    setPkgWatermarkImages(pkg.feature_watermark_free_images ?? false);
+    setPkgIncludedImages(pkg.included_image_requests ?? 0);
+    setPkgAddonImagesPrice(pkg.addon_image_requests_price ?? 10);
+    setPkgImageTiers(pkg.addon_image_tiers && pkg.addon_image_tiers.length > 0 ? pkg.addon_image_tiers : [
+      { requests: 25, price: 10 },
+      { requests: 50, price: 18 },
+      { requests: 100, price: 30 }
+    ]);
     setIsAddPkgOpen(true);
   };
 
@@ -1055,6 +1115,11 @@ export function SellerPortalView() {
                                 ⚡ +{a.addon_saved_searches} axtarış
                               </span>
                             )}
+                            {a.feature_watermark_free_images && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-teal-500/10 text-teal-400 border border-teal-500/20">
+                                🖼️ {a.addon_image_requests_used || 0}/{a.addon_image_requests_limit || 0} foto
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="py-3.5 px-4">
@@ -1311,6 +1376,11 @@ export function SellerPortalView() {
                     {pkg.feature_aged_listings && (
                       <div className="flex items-center gap-2 text-amber-400 font-semibold bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-500/20">
                         <span>📦 Köhnə Elanlar Arxivi ({pkg.addon_aged_max_months || 12} ay) (+{pkg.addon_aged_listings_price} AZN)</span>
+                      </div>
+                    )}
+                    {pkg.feature_watermark_free_images && (
+                      <div className="flex items-center gap-2 text-teal-400 font-semibold bg-teal-500/10 px-2 py-1 rounded-lg border border-teal-500/20">
+                        <span>🖼️ Su Nişansız Foto ({pkg.included_image_requests || 0} daxildir)</span>
                       </div>
                     )}
                   </div>
@@ -1930,6 +2000,12 @@ export function SellerPortalView() {
                         <span>Köhnə Arxiv Elanlar ({selectedAgent.addon_aged_max_months || 12} ay)</span>
                       </div>
                     )}
+                    {selectedAgent.feature_watermark_free_images && (
+                      <div className="flex items-center gap-2 text-teal-400 col-span-2 font-medium">
+                        <span>✓</span>
+                        <span>Su Nişansız Şəkillər ({selectedAgent.addon_image_requests_used || 0} / {selectedAgent.addon_image_requests_limit || 0} foto istifadə edilib)</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -2055,9 +2131,10 @@ export function SellerPortalView() {
                   const currentPkg = isCustomPlan ? null : (packages.find(p => p.id === renewPkgId) || null);
                   const hasAgedTiers = currentPkg && currentPkg.addon_aged_tiers && currentPkg.addon_aged_tiers.length > 0;
                   const hasSearchTiers = currentPkg && currentPkg.addon_search_tiers && currentPkg.addon_search_tiers.length > 0;
+                  const hasImageTiers = currentPkg && currentPkg.feature_watermark_free_images && currentPkg.addon_image_tiers && currentPkg.addon_image_tiers.length > 0;
 
                   const basePrice = isCustomPlan ? (selectedAgent.plan_price ?? 50.0) : (currentPkg?.price ?? 0);
-                  const totalGross = basePrice + renewAgedPrice + renewExtraSearchesPrice;
+                  const totalGross = basePrice + renewAgedPrice + renewExtraSearchesPrice + renewImagePrice;
                   const commRate = dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70;
                   const sellerProfit = (totalGross * commRate) / 100;
 
@@ -2125,6 +2202,34 @@ export function SellerPortalView() {
                         </div>
                       )}
 
+                      {hasImageTiers && (
+                        <div>
+                          <label className="block text-xs font-semibold text-teal-300 mb-1">🖼️ Su Nişansız Foto Paketi</label>
+                          <select
+                            value={renewImageRequests}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              if (val === 0) {
+                                setRenewImageRequests(0);
+                                setRenewImagePrice(0);
+                              } else {
+                                const tier = currentPkg?.addon_image_tiers?.find(t => t.requests === val);
+                                setRenewImageRequests(val);
+                                setRenewImagePrice(tier?.price ?? 0);
+                              }
+                            }}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-teal-500"
+                          >
+                            <option value={0}>Yoxdur (Əlavə foto paketi seçilməyib)</option>
+                            {currentPkg?.addon_image_tiers?.map((t, i) => (
+                              <option key={i} value={t.requests}>
+                                +{t.requests} foto — +{t.price} AZN
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
                       {/* Renewal Price Summary */}
                       <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl space-y-1.5">
                         <div className="flex justify-between text-xs text-slate-300">
@@ -2141,6 +2246,12 @@ export function SellerPortalView() {
                           <div className="flex justify-between text-xs text-cyan-300">
                             <span>+{renewExtraSearches} axtarış:</span>
                             <span>+{renewExtraSearchesPrice.toFixed(2)} AZN</span>
+                          </div>
+                        )}
+                        {renewImagePrice > 0 && (
+                          <div className="flex justify-between text-xs text-teal-300">
+                            <span>+{renewImageRequests} foto:</span>
+                            <span>+{renewImagePrice.toFixed(2)} AZN</span>
                           </div>
                         )}
                         <div className="border-t border-emerald-500/30 pt-1.5 flex justify-between text-sm font-bold">
@@ -2312,6 +2423,45 @@ export function SellerPortalView() {
                       <span className="text-purple-300 font-medium">BaaS Data Backup</span>
                     </label>
                   </div>
+
+                  {/* Watermark-Free Photos Toggle & Limit in Edit Tab */}
+                  <div className="p-2.5 bg-slate-950/60 border border-slate-800 rounded-xl space-y-2">
+                    <label className="flex items-center justify-between cursor-pointer text-xs">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={editAgentWatermarkImages}
+                          onChange={(e) => setEditAgentWatermarkImages(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-teal-500"
+                        />
+                        <span className="text-teal-300 font-semibold">🖼️ Su Nişansız Şəkillər Add-on</span>
+                      </div>
+                    </label>
+                    {editAgentWatermarkImages && (
+                      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800 text-xs">
+                        <div>
+                          <label className="text-slate-400 text-[11px] block mb-0.5">Top-up Limit (Foto)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={editAgentImageLimit}
+                            onChange={(e) => setEditAgentImageLimit(Number(e.target.value))}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-white text-xs font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-slate-400 text-[11px] block mb-0.5">İstifadə Edilən</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={editAgentImageUsed}
+                            onChange={(e) => setEditAgentImageUsed(Number(e.target.value))}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-white text-xs font-bold"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="pt-2 flex gap-3">
@@ -2437,10 +2587,11 @@ export function SellerPortalView() {
                 if (!selectedPkg) return null;
                 const hasAgedTiers = selectedPkg.addon_aged_tiers && selectedPkg.addon_aged_tiers.length > 0;
                 const hasSearchTiers = selectedPkg.addon_search_tiers && selectedPkg.addon_search_tiers.length > 0;
-                if (!hasAgedTiers && !hasSearchTiers) return null;
+                const hasImageTiers = selectedPkg.feature_watermark_free_images && selectedPkg.addon_image_tiers && selectedPkg.addon_image_tiers.length > 0;
+                if (!hasAgedTiers && !hasSearchTiers && !hasImageTiers) return null;
 
                 const basePrice = selectedPkg.price;
-                const totalGross = basePrice + agentSelectedAgedPrice + agentSelectedExtraSearchesPrice;
+                const totalGross = basePrice + agentSelectedAgedPrice + agentSelectedExtraSearchesPrice + agentSelectedImagePrice;
                 const commRate = dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70;
                 const sellerProfit = (totalGross * commRate) / 100;
 
@@ -2508,6 +2659,35 @@ export function SellerPortalView() {
                       </div>
                     )}
 
+                    {/* Watermark-Free Photos Tier Selector */}
+                    {hasImageTiers && (
+                      <div>
+                        <label className="block text-xs font-semibold text-teal-300 mb-1">🖼️ Su Nişansız Foto Paketi</label>
+                        <select
+                          value={agentSelectedImageRequests}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            if (val === 0) {
+                              setAgentSelectedImageRequests(0);
+                              setAgentSelectedImagePrice(0);
+                            } else {
+                              const tier = selectedPkg.addon_image_tiers?.find(t => t.requests === val);
+                              setAgentSelectedImageRequests(val);
+                              setAgentSelectedImagePrice(tier?.price ?? 0);
+                            }
+                          }}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-teal-500"
+                        >
+                          <option value={0}>Yoxdur (Əlavə foto paketi seçilməyib)</option>
+                          {selectedPkg.addon_image_tiers?.map((t, i) => (
+                            <option key={i} value={t.requests}>
+                              +{t.requests} foto sorğusu — +{t.price} AZN
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
                     {/* Real-time Price Summary */}
                     <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl space-y-1.5">
                       <div className="flex justify-between text-xs text-slate-300">
@@ -2524,6 +2704,12 @@ export function SellerPortalView() {
                         <div className="flex justify-between text-xs text-cyan-300">
                           <span>⚡ +{agentSelectedExtraSearches} axtarış:</span>
                           <span className="font-medium">+{agentSelectedExtraSearchesPrice.toFixed(2)} AZN</span>
+                        </div>
+                      )}
+                      {agentSelectedImagePrice > 0 && (
+                        <div className="flex justify-between text-xs text-teal-300">
+                          <span>🖼️ +{agentSelectedImageRequests} foto:</span>
+                          <span className="font-medium">+{agentSelectedImagePrice.toFixed(2)} AZN</span>
                         </div>
                       )}
                       <div className="border-t border-emerald-500/30 pt-1.5 flex justify-between text-sm font-bold">
@@ -2790,6 +2976,37 @@ export function SellerPortalView() {
                         Agentə eyni axtarış tapşırığı daxilində birdən çox rayon və ya metro seçməyə imkan verir.
                       </p>
                     )}
+                  </div>
+
+                  {/* Watermark-Free Photos */}
+                  <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl space-y-1.5 col-span-1 sm:col-span-2">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-xs font-semibold text-teal-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={trialWatermarkImages}
+                          onChange={(e) => setTrialWatermarkImages(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-teal-500 focus:ring-0"
+                        />
+                        <span>🖼️ Su Nişansız Şəkillər Add-on</span>
+                      </label>
+                      {trialWatermarkImages && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px] text-slate-400">Sınaq Foto Limiti:</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="50"
+                            value={trialImageRequests}
+                            onChange={(e) => setTrialImageRequests(Number(e.target.value))}
+                            className="w-16 bg-slate-900 border border-slate-700 rounded-lg px-2 py-0.5 text-white text-xs text-center font-bold"
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      Sınaq müddətində agentlərə portal su nişanı silinmiş orijinal şəkilləri (/foto elan_id) əldə etmək üçün pulsuz limit verir.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -3253,6 +3470,93 @@ export function SellerPortalView() {
                       ))}
                       {pkgAgedTiers.length === 0 && (
                         <p className="text-[10px] text-slate-600 italic py-1">Heç bir arxiv pilləsi yoxdur.</p>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Add-on 3: Watermark-Free Image Requests Tiers */}
+                <div className="p-3 bg-teal-950/20 border border-teal-500/20 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 text-xs font-semibold text-teal-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={pkgWatermarkImages}
+                        onChange={(e) => setPkgWatermarkImages(e.target.checked)}
+                        className="rounded bg-slate-900 border-slate-700 text-teal-500 focus:ring-0"
+                      />
+                      <span>🖼️ Su Nişansız Şəkillər Add-on</span>
+                    </label>
+                    {pkgWatermarkImages && (
+                      <button
+                        type="button"
+                        onClick={() => setPkgImageTiers([...pkgImageTiers, { requests: 25, price: 10 }])}
+                        className="text-[11px] text-teal-400 hover:text-teal-300 px-2 py-0.5 rounded bg-teal-500/10 border border-teal-500/20"
+                      >
+                        + Sətr əlavə et
+                      </button>
+                    )}
+                  </div>
+                  {pkgWatermarkImages && (
+                    <>
+                      <div className="flex items-center justify-between text-xs text-slate-300 pt-1 pb-1">
+                        <span>Paketə Daxil Olan Foto Sorğu Sayı:</span>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min="0"
+                            value={pkgIncludedImages}
+                            onChange={(e) => setPkgIncludedImages(Number(e.target.value))}
+                            className="w-20 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-white text-xs text-center font-bold"
+                            placeholder="Məs: 25"
+                          />
+                          <span className="text-[11px] text-slate-500">foto</span>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-500">Əlavə foto paketləri (Top-up) üçün foto sayı və qiymət təyin edin.</p>
+                      {pkgImageTiers.map((tier, idx) => (
+                        <div key={idx} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                          <div>
+                            <label className="text-[10px] text-slate-400 block mb-0.5">+Foto Sayı</label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={tier.requests}
+                              onChange={(e) => {
+                                const copy = [...pkgImageTiers];
+                                copy[idx] = { ...copy[idx], requests: Number(e.target.value) };
+                                setPkgImageTiers(copy);
+                              }}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-white text-xs font-bold"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-400 block mb-0.5">Qiymət (AZN)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              value={tier.price}
+                              onChange={(e) => {
+                                const copy = [...pkgImageTiers];
+                                copy[idx] = { ...copy[idx], price: Number(e.target.value) };
+                                setPkgImageTiers(copy);
+                              }}
+                              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-white text-xs font-bold text-teal-400"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setPkgImageTiers(pkgImageTiers.filter((_, i) => i !== idx))}
+                            className="text-rose-400 hover:text-rose-300 p-1.5 rounded-lg hover:bg-rose-500/10"
+                            title="Sil"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                      {pkgImageTiers.length === 0 && (
+                        <p className="text-[10px] text-slate-600 italic py-1">Heç bir əlavə foto paketi pilləsi yoxdur.</p>
                       )}
                     </>
                   )}

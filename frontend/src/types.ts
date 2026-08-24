@@ -26,6 +26,10 @@ export interface Tenant {
   feature_aged_listings?: boolean;
   addon_aged_max_months?: number;
   addon_saved_searches?: number;
+  feature_watermark_free_images?: boolean;
+  addon_image_requests_limit?: number;
+  addon_image_requests_used?: number;
+  addon_image_requests_price?: number;
   active_searches_count?: number;
   max_saved_searches?: number;
   referral_code?: string;
