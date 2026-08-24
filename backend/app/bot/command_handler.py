@@ -472,11 +472,19 @@ class BotCommandHandler:
                 return f"✅ Elan #{input_id} üçün {len(clean_paths)} ədəd təmiz şəkil göndərildi! (Qalan limit: {remaining_quota})"
             elif dest_channel == "whatsapp" and dest_chat_id:
                 from app.bot.whatsapp_adapter import WhatsAppAdapter
+                sent_count = 0
                 for idx, cpath in enumerate(clean_paths):
                     cap = caption_header if idx == 0 else ""
-                    await WhatsAppAdapter.send_media_image(dest_chat_id, cpath, caption=cap, instance_name=inst_name)
-                    await asyncio.sleep(0.3)
-                return f"✅ Elan #{input_id} üçün {len(clean_paths)} ədəd təmiz şəkil göndərildi! (Qalan limit: {remaining_quota})"
+                    success = await WhatsAppAdapter.send_media_image(dest_chat_id, cpath, caption=cap, instance_name=inst_name)
+                    if not success:
+                        # Retry once after 1.2s delay
+                        await asyncio.sleep(1.2)
+                        success = await WhatsAppAdapter.send_media_image(dest_chat_id, cpath, caption=cap, instance_name=inst_name)
+                    if success:
+                        sent_count += 1
+                    logger.info(f"[CommandHandler] WhatsApp photo {idx+1}/{len(clean_paths)} sent: {success} for listing #{input_id}")
+                    await asyncio.sleep(0.8)
+                return f"✅ Elan #{input_id} üçün {sent_count} ədəd təmiz şəkil göndərildi! (Qalan limit: {remaining_quota})"
 
             return f"✅ Elan #{input_id} üçün {len(clean_paths)} ədəd təmiz şəkil hazırlandı."
 

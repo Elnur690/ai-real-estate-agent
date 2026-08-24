@@ -1,3 +1,4 @@
+import os
 import logging
 import asyncio
 import httpx
@@ -273,12 +274,26 @@ class WhatsAppAdapter:
                 "mediatype": "image",
                 "mimetype": "image/jpeg",
                 "caption": caption,
-                "media": b64_data
+                "media": b64_data,
+                "fileName": os.path.basename(image_path)
             }
 
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(timeout=25.0) as client:
                 res = await client.post(url, json=body, headers=headers)
-                return res.status_code in [200, 201]
+                if res.status_code in [200, 201]:
+                    try:
+                        res_data = res.json()
+                        sent_id = res_data.get("key", {}).get("id")
+                        if sent_id:
+                            SENT_BOT_MESSAGE_IDS.add(sent_id)
+                            if len(SENT_BOT_MESSAGE_IDS) > 2000:
+                                SENT_BOT_MESSAGE_IDS.clear()
+                    except Exception:
+                        pass
+                    return True
+                else:
+                    logger.error(f"[WhatsAppAdapter] Failed to send media image via instance '{inst}': status {res.status_code}, response: {res.text}")
+                    return False
         except Exception as e:
             logger.error(f"[WhatsAppAdapter] Failed to send media image via instance '{inst}': {e}")
             return False
