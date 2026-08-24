@@ -78,6 +78,7 @@ class HomDomAzScraper(BaseScraper):
 
                         # Extract card photo
                         card_photos = []
+                        parent = a.find_parent("div") or a.find_parent("tr") or a
                         if parent:
                             img_el = parent.find("img")
                             if img_el:
