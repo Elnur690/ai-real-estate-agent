@@ -389,16 +389,52 @@ class BotCommandHandler:
                 return f"Xəta: Elan #{input_id} tapılmadı."
 
             photos = list(listing_obj.photos or [])
-            if not photos and listing_obj.external_id and "bina_" in listing_obj.external_id:
-                try:
-                    from app.scrapers.bina_az import BinaAzScraper
-                    details = await BinaAzScraper.fetch_item_details(listing_obj.external_id)
-                    if details and details.get("photos"):
-                        photos = details["photos"]
-                        listing_obj.photos = photos
-                        await db.commit()
-                except Exception as e:
-                    logger.debug(f"[CommandHandler] Live photo fetch error: {e}")
+            if not photos:
+                # 1. Try BinaAzScraper if from bina.az
+                target_url_or_id = listing_obj.listing_url or listing_obj.external_id or ""
+                if "bina" in target_url_or_id:
+                    try:
+                        from app.scrapers.bina_az import BinaAzScraper
+                        details = await BinaAzScraper.fetch_item_details(target_url_or_id)
+                        if details and details.get("photos"):
+                            photos = details["photos"]
+                    except Exception as e:
+                        logger.debug(f"[CommandHandler] Bina live photo fetch error: {e}")
+
+                # 2. Universal fallback: Scrape images directly from listing_url
+                if not photos and listing_obj.listing_url:
+                    try:
+                        import httpx
+                        from bs4 import BeautifulSoup
+                        headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+                        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+                            r_page = await client.get(listing_obj.listing_url, headers=headers)
+                            if r_page.status_code == 200:
+                                soup = BeautifulSoup(r_page.text, "html.parser")
+                                page_imgs = []
+                                for tag in soup.find_all(['img', 'a', 'meta', 'div']):
+                                    src = tag.get('src') or tag.get('data-src') or tag.get('data-full-src') or tag.get('href') or tag.get('content')
+                                    if src and ('uploads/' in src or 'azstatic' in src or 'bina.az' in src or 'turbo.az' in src or 'tap.az' in src) and any(ext in src.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                                        if not any(badge in src.lower() for badge in ['logo', 'icon', 'avatar', 'agency_logos', 'svg']):
+                                            page_imgs.append(src)
+                                for s in soup.find_all('script'):
+                                    if s.string:
+                                        for match in re.findall(r'(https?://[^\s\"\'\(\)]+uploads/[^\s\"\'\(\)]+\.(?:jpg|jpeg|png|webp))', s.string):
+                                            if not any(badge in match.lower() for badge in ['logo', 'icon', 'avatar', 'agency_logos', 'svg']):
+                                                page_imgs.append(match)
+                                
+                                clean_p = []
+                                for p in page_imgs:
+                                    p_full = p.replace('/thumbnail/', '/full/').replace('/f660x496/', '/full/')
+                                    if p_full not in clean_p:
+                                        clean_p.append(p_full)
+                                photos = clean_p
+                    except Exception as e_gen:
+                        logger.debug(f"[CommandHandler] Universal live photo fetch error: {e_gen}")
+
+                if photos:
+                    listing_obj.photos = photos
+                    await db.commit()
 
             if not photos:
                 return f"⚠️ #{input_id} nömrəli elanda heç bir şəkil tapılmadı."

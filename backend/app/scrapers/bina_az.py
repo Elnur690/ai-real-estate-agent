@@ -177,14 +177,31 @@ class BinaAzScraper(BaseScraper):
                     detected_offer = "rent"
                 elif "satılır" in h1_text:
                     detected_offer = "sale"
-                else:
-                    detected_offer = "sale"
-
                 # 7. Extract exact rooms if present
                 rooms = None
                 rooms_m = re.search(r'(\d+)\s*otaq', f"{h1_text} {full_desc[:200].lower()}")
                 if rooms_m:
                     rooms = int(rooms_m.group(1))
+
+                # 8. Extract all Photos from Detail Page Gallery
+                item_photos = []
+                for tag in soup.find_all(['img', 'a', 'meta', 'div']):
+                    src = tag.get('src') or tag.get('data-src') or tag.get('data-full-src') or tag.get('href') or tag.get('content')
+                    if src and ('uploads/' in src or 'bina.az' in src or 'turbo.az' in src or 'tap.az' in src) and any(ext in src.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                        if not any(badge in src.lower() for badge in ['logo', 'icon', 'avatar', 'agency_logos', 'svg']):
+                            item_photos.append(src)
+
+                for s in soup.find_all('script'):
+                    if s.string:
+                        for match in re.findall(r'(https?://[^\s\"\'\(\)]+uploads/[^\s\"\'\(\)]+\.(?:jpg|jpeg|png|webp))', s.string):
+                            if not any(badge in match.lower() for badge in ['logo', 'icon', 'avatar', 'agency_logos', 'svg']):
+                                item_photos.append(match)
+
+                clean_photos = []
+                for p in item_photos:
+                    p_full = p.replace('/thumbnail/', '/full/').replace('/f660x496/', '/full/')
+                    if p_full not in clean_photos:
+                        clean_photos.append(p_full)
 
                 return {
                     "phone_number": phone,
@@ -198,7 +215,8 @@ class BinaAzScraper(BaseScraper):
                     "is_makler": is_makler,
                     "makler_score": makler_score,
                     "rooms": rooms,
-                    "owner_name": owner_name
+                    "owner_name": owner_name,
+                    "photos": clean_photos
                 }
         except Exception as e:
             logger.debug(f"[BinaAzScraper] Error fetching detail for item {ext_id}: {e}")
@@ -428,6 +446,16 @@ class BinaAzScraper(BaseScraper):
             phone_found = extract_az_phone(raw_text)
             extracted_phone = phone_found[1] if phone_found else None
 
+            # Extract card photo
+            card_photos = []
+            if c:
+                img_el = c.find("img")
+                if img_el:
+                    src_val = img_el.get("data-src") or img_el.get("src") or img_el.get("data-full-src")
+                    if src_val and ("uploads/" in src_val or "azstatic" in src_val or "bina.az" in src_val):
+                        src_clean = src_val.replace('/thumbnail/', '/full/').replace('/f660x496/', '/full/')
+                        card_photos.append(src_clean)
+
             clean_url = href if href.startswith("http") else f"https://bina.az{href}"
             items.append(RawListingItem(
                 external_id=f"bina_{ext_id}",
@@ -446,7 +474,8 @@ class BinaAzScraper(BaseScraper):
                 seller_type=seller_type,
                 offer_type=detected_offer,
                 property_type=detected_prop,
-                listing_url=clean_url
+                listing_url=clean_url,
+                photos=card_photos
             ))
 
         logger.info(f"[BinaAzScraper] Extracted {len(items)} listings across all categories.")
