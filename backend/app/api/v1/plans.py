@@ -114,11 +114,14 @@ async def list_plans(db: AsyncSession = Depends(get_db)):
     res = await db.execute(stmt)
     plans = res.scalars().all()
 
+    # Pre-fetch all subscriber counts grouped by plan in a single query
+    sub_counts_stmt = select(Tenant.plan, func.count(Tenant.id)).group_by(Tenant.plan)
+    sub_counts_res = await db.execute(sub_counts_stmt)
+    sub_counts_map = dict(sub_counts_res.all())
+
     response_list = []
     for plan in plans:
-        stmt_count = select(func.count(Tenant.id)).where(Tenant.plan == plan.code)
-        res_count = await db.execute(stmt_count)
-        sub_count = res_count.scalar() or 0
+        sub_count = sub_counts_map.get(plan.code, 0)
 
         response_list.append(PlanResponse(
             id=plan.id,

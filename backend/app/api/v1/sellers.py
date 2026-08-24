@@ -289,18 +289,19 @@ async def list_all_sellers_admin(
     res = await db.execute(stmt)
     sellers = res.scalars().all()
 
+    # Pre-fetch all agent counts grouped by seller_id in a single efficient query
+    from sqlalchemy import case
+    agent_cnt_stmt = select(
+        Tenant.seller_id,
+        func.count(Tenant.id).label("total_agents"),
+        func.count(case((Tenant.status == "active", Tenant.id), else_=None)).label("active_agents")
+    ).where(Tenant.seller_id.is_not(None)).group_by(Tenant.seller_id)
+    agent_cnt_res = await db.execute(agent_cnt_stmt)
+    agent_cnt_map = {row.seller_id: (row.total_agents, row.active_agents) for row in agent_cnt_res.all()}
+
     results = []
     for s in sellers:
-        # Count agents
-        agent_cnt_stmt = select(func.count(Tenant.id)).where(Tenant.seller_id == s.id)
-        agent_cnt_res = await db.execute(agent_cnt_stmt)
-        total_agents = agent_cnt_res.scalar() or 0
-
-        # Count active agents
-        active_cnt_stmt = select(func.count(Tenant.id)).where(Tenant.seller_id == s.id, Tenant.status == "active")
-        active_cnt_res = await db.execute(active_cnt_stmt)
-        active_agents = active_cnt_res.scalar() or 0
-
+        total_agents, active_agents = agent_cnt_map.get(s.id, (0, 0))
         rank_info = rank_map.get(s.rank, rank_map.get("Bronze", {}))
 
         total_platform_fee = max(0.0, round((s.total_sales_volume or 0.0) - (s.total_earnings or 0.0), 2))
@@ -590,29 +591,40 @@ async def get_my_agents(
     tg_bot_user = settings_map.get("telegram_bot_username", "baku_realestate_ai_bot").lstrip("@")
     wa_bot_phone = settings_map.get("whatsapp_bot_phone", "+994501234567").replace("+", "").replace(" ", "")
 
+    # Pre-fetch Seller Packages, Plans and Last Payments to eliminate N+1 queries
+    pkg_stmt = select(SellerPackage).where(SellerPackage.seller_id == seller.id)
+    pkg_res = await db.execute(pkg_stmt)
+    pkgs_map = {p.id: p for p in pkg_res.scalars().all()}
+
+    plan_stmt = select(Plan)
+    plan_res = await db.execute(plan_stmt)
+    plans_price_map = {}
+    for p in plan_res.scalars().all():
+        plans_price_map[p.code] = p.price
+        plans_price_map[p.name] = p.price
+
+    agent_ids = [a.id for a in agents]
+    last_payments_map = {}
+    if agent_ids:
+        pay_stmt = select(Payment.tenant_id, Payment.amount).where(Payment.tenant_id.in_(agent_ids)).order_by(Payment.received_at.asc())
+        pay_res = await db.execute(pay_stmt)
+        for row in pay_res.all():
+            last_payments_map[row.tenant_id] = row.amount
+
     results = []
     for a in agents:
-        # Load package info
         pkg_name = None
         pkg_price = 0.0
-        if a.seller_package_id:
-            p_stmt = select(SellerPackage).where(SellerPackage.id == a.seller_package_id)
-            p_res = await db.execute(p_stmt)
-            pkg = p_res.scalars().first()
-            if pkg:
-                pkg_name = pkg.name
-                pkg_price = pkg.price
+        if a.seller_package_id and a.seller_package_id in pkgs_map:
+            pkg = pkgs_map[a.seller_package_id]
+            pkg_name = pkg.name
+            pkg_price = pkg.price
         else:
-            # Check latest payment or global Plan price
-            last_pay_stmt = select(Payment.amount).where(Payment.tenant_id == a.id).order_by(Payment.received_at.desc())
-            last_pay_res = await db.execute(last_pay_stmt)
-            last_amount = last_pay_res.scalars().first()
+            last_amount = last_payments_map.get(a.id)
             if last_amount is not None and last_amount > 0:
                 pkg_price = last_amount
             else:
-                plan_stmt = select(Plan.price).where(or_(Plan.code == a.plan, Plan.name == a.plan))
-                plan_res = await db.execute(plan_stmt)
-                p_price = plan_res.scalars().first()
+                p_price = plans_price_map.get(a.plan)
                 if p_price is not None:
                     pkg_price = p_price
                 elif a.plan in ["pro", "agency"]:
