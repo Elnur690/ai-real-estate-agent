@@ -44,6 +44,14 @@ class Plan(Base):
     addon_image_requests_price: Mapped[float] = mapped_column(Float, default=10.0)
     addon_image_tiers: Mapped[list[dict] | None] = mapped_column(JSON, default=list) # e.g. [{"images": 25, "price": 10.0}, {"images": 50, "price": 18.0}]
 
+    # 🏷️ Promotional Sale & Discount Campaign Features for SaaS Plans
+    sale_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    sale_price: Mapped[float | None] = mapped_column(Float, nullable=True) # e.g. 29.0 AZN
+    sale_discount_percent: Mapped[float | None] = mapped_column(Float, nullable=True) # e.g. 20.0%
+    sale_type: Mapped[str] = mapped_column(String(50), default="permanent") # permanent | first_month | first_3_months | first_6_months | limited_time
+    sale_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sale_badge_label: Mapped[str | None] = mapped_column(String(100), nullable=True) # e.g. "🔥 25% Xüsusi Endirim"
+
     backup_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

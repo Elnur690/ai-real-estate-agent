@@ -31,6 +31,12 @@ export interface PlanItem {
   included_image_requests?: number;
   addon_image_requests_price?: number;
   addon_image_tiers?: Array<{ requests: number; price: number }>;
+  sale_enabled?: boolean;
+  sale_price?: number;
+  sale_discount_percent?: number;
+  sale_type?: string;
+  sale_expires_at?: string;
+  sale_badge_label?: string;
   backup_enabled: boolean;
   subscriber_count: number;
 }
@@ -85,6 +91,14 @@ export function PlansView() {
     { requests: 50, price: 18 },
     { requests: 100, price: 30 }
   ]);
+
+  // Promotional Sale State
+  const [formSaleEnabled, setFormSaleEnabled] = useState(false);
+  const [formSalePrice, setFormSalePrice] = useState<number | undefined>(undefined);
+  const [formSaleDiscountPercent, setFormSaleDiscountPercent] = useState<number | undefined>(undefined);
+  const [formSaleType, setFormSaleType] = useState<string>('permanent');
+  const [formSaleExpiresAt, setFormSaleExpiresAt] = useState<string>('');
+  const [formSaleBadgeLabel, setFormSaleBadgeLabel] = useState<string>('');
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -191,6 +205,12 @@ export function PlansView() {
       { requests: 50, price: 18 },
       { requests: 100, price: 30 }
     ]);
+    setFormSaleEnabled(false);
+    setFormSalePrice(undefined);
+    setFormSaleDiscountPercent(undefined);
+    setFormSaleType('permanent');
+    setFormSaleExpiresAt('');
+    setFormSaleBadgeLabel('');
     setEditingPlan(null);
     setIsCreateOpen(true);
   };
@@ -237,6 +257,12 @@ export function PlansView() {
       { requests: 50, price: 18 },
       { requests: 100, price: 30 }
     ]);
+    setFormSaleEnabled(plan.sale_enabled ?? false);
+    setFormSalePrice(plan.sale_price);
+    setFormSaleDiscountPercent(plan.sale_discount_percent);
+    setFormSaleType(plan.sale_type || 'permanent');
+    setFormSaleExpiresAt(plan.sale_expires_at ? plan.sale_expires_at.split('T')[0] : '');
+    setFormSaleBadgeLabel(plan.sale_badge_label || '');
     setIsCreateOpen(true);
   };
 
@@ -273,6 +299,12 @@ export function PlansView() {
           included_image_requests: formIncludedImageRequests,
           addon_image_requests_price: formAddonImagePrice,
           addon_image_tiers: formImageTiers,
+          sale_enabled: formSaleEnabled,
+          sale_price: formSaleEnabled ? formSalePrice : undefined,
+          sale_discount_percent: formSaleEnabled ? formSaleDiscountPercent : undefined,
+          sale_type: formSaleType,
+          sale_expires_at: formSaleExpiresAt ? new Date(formSaleExpiresAt).toISOString() : undefined,
+          sale_badge_label: formSaleBadgeLabel || undefined,
           backup_enabled: formBackup,
         });
       } else {
@@ -304,6 +336,12 @@ export function PlansView() {
           included_image_requests: formIncludedImageRequests,
           addon_image_requests_price: formAddonImagePrice,
           addon_image_tiers: formImageTiers,
+          sale_enabled: formSaleEnabled,
+          sale_price: formSaleEnabled ? formSalePrice : undefined,
+          sale_discount_percent: formSaleEnabled ? formSaleDiscountPercent : undefined,
+          sale_type: formSaleType,
+          sale_expires_at: formSaleExpiresAt ? new Date(formSaleExpiresAt).toISOString() : undefined,
+          sale_badge_label: formSaleBadgeLabel || undefined,
           backup_enabled: formBackup,
         });
       }
@@ -380,16 +418,60 @@ export function PlansView() {
                 </div>
 
                 {/* Plan Title & Pricing */}
+                {plan.sale_enabled && (
+                  <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                      <Sparkles className="w-3 h-3 text-rose-400" />
+                      <span>{plan.sale_badge_label || `🔥 ${plan.sale_discount_percent ? `${plan.sale_discount_percent}% ENDİRİM` : 'XÜSUSİ TƏKLİF'}`}</span>
+                    </span>
+                    {plan.sale_type === 'first_month' && (
+                      <span className="text-[9px] px-2 py-0.2 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/25 font-semibold">
+                        İlk 1 ay
+                      </span>
+                    )}
+                    {plan.sale_type === 'first_3_months' && (
+                      <span className="text-[9px] px-2 py-0.2 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/25 font-semibold">
+                        İlk 3 ay
+                      </span>
+                    )}
+                    {plan.sale_type === 'first_6_months' && (
+                      <span className="text-[9px] px-2 py-0.2 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/25 font-semibold">
+                        İlk 6 ay
+                      </span>
+                    )}
+                  </div>
+                )}
                 <h3 className="text-lg font-bold text-white mb-1">{plan.name}</h3>
                 <p className="text-xs text-slate-400 min-h-[36px] line-clamp-2 mb-4">{plan.description || 'No description provided.'}</p>
 
-                <div className="flex items-baseline gap-1 bg-dark-900/60 p-3 rounded-xl border border-slate-800/80 mb-5">
-                  <span className="text-2xl font-extrabold text-white">{plan.price}</span>
-                  <span className="text-sm font-semibold text-emerald-400">{plan.currency}</span>
-                  <span className="text-xs text-slate-400">
-                    / {plan.billing_period === 'daily' || plan.code === 'free' ? `${plan.trial_days || 7} Days Trial` : plan.billing_period}
-                  </span>
-                  <span className="ml-auto text-[11px] text-slate-400 font-medium">Max {plan.max_agents} Agents</span>
+                <div className="bg-dark-900/60 p-3 rounded-xl border border-slate-800/80 mb-5">
+                  <div className="flex items-baseline gap-1.5">
+                    {plan.sale_enabled && plan.sale_price !== undefined ? (
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-2xl font-extrabold text-emerald-400">{plan.sale_price}</span>
+                        <span className="text-sm font-semibold text-slate-500 line-through">{plan.price}</span>
+                        <span className="text-sm font-semibold text-emerald-400">{plan.currency}</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-2xl font-extrabold text-white">{plan.price}</span>
+                        <span className="text-sm font-semibold text-emerald-400">{plan.currency}</span>
+                      </div>
+                    )}
+                    <span className="text-xs text-slate-400">
+                      / {plan.billing_period === 'daily' || plan.code === 'free' ? `${plan.trial_days || 7} Days Trial` : plan.billing_period}
+                    </span>
+                    <span className="ml-auto text-[11px] text-slate-400 font-medium">Max {plan.max_agents} Agents</span>
+                  </div>
+                  {plan.sale_enabled && plan.sale_price !== undefined && (
+                    <span className="text-[10px] text-emerald-400/80 font-medium block mt-1">
+                      {plan.sale_type === 'first_month' && '⚡ İlk 1 ay endirimlə, sonrakı aylar standart tarif'}
+                      {plan.sale_type === 'first_3_months' && '⚡ İlk 3 ay endirimlə, sonrakı aylar standart tarif'}
+                      {plan.sale_type === 'first_6_months' && '⚡ İlk 6 ay endirimlə, sonrakı aylar standart tarif'}
+                      {plan.sale_type === 'limited_time' && plan.sale_expires_at && `⚡ Kampaniya bitmə: ${new Date(plan.sale_expires_at).toLocaleDateString('az-AZ')}`}
+                      {plan.sale_type === 'permanent' && '⚡ Bütün abunəlik müddəti üçün daimi endirim'}
+                    </span>
+                  )}
                 </div>
 
                 {/* Features Included Checklist */}
@@ -686,6 +768,128 @@ export function PlansView() {
                   </p>
                 </div>
               )}
+
+              {/* Promotional Sale & Campaign Settings */}
+              <div className="p-4 bg-gradient-to-br from-rose-950/30 via-dark-900 to-dark-900 border border-rose-500/30 rounded-2xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-rose-400" />
+                    <div>
+                      <h4 className="text-xs font-bold text-white">Xüsusi Endirim & Kampaniya Təklif Et</h4>
+                      <p className="text-[10px] text-slate-400">Agentləri cəlb etmək üçün faizlə və ya ilk aylara özəl endirim qurun.</p>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formSaleEnabled}
+                      onChange={(e) => {
+                        const enabled = e.target.checked;
+                        setFormSaleEnabled(enabled);
+                        if (enabled && !formSalePrice && !formSaleDiscountPercent) {
+                          const defPercent = 20;
+                          setFormSaleDiscountPercent(defPercent);
+                          setFormSalePrice(Math.round(formPrice * (1 - defPercent / 100)));
+                        }
+                      }}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-rose-600"></div>
+                  </label>
+                </div>
+
+                {formSaleEnabled && (
+                  <div className="space-y-3 pt-2 border-t border-rose-500/20 text-xs">
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1">Endirim Növü (Kampaniya Şərti)</label>
+                      <select
+                        value={formSaleType}
+                        onChange={(e) => setFormSaleType(e.target.value)}
+                        className="w-full bg-dark-900 border border-rose-500/40 rounded-xl px-3 py-2 text-white font-medium focus:outline-none focus:border-rose-400"
+                      >
+                        <option value="first_month">🔥 Yalnız İlk 1 Ay Endirimlə (1st Month Promo)</option>
+                        <option value="first_3_months">⚡ İlk 3 Ay Endirimlə (First 3 Months Sale)</option>
+                        <option value="first_6_months">⭐ İlk 6 Ay Endirimlə (First 6 Months)</option>
+                        <option value="permanent">♾️ Bütün Müddət Üçün Daimi Endirim</option>
+                        <option value="limited_time">⏳ Müddətli Kampaniya (Tarixə qədər)</option>
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-slate-300 font-semibold mb-1">Endirim Faizi (%)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="90"
+                          step="1"
+                          placeholder="Məs: 20%"
+                          value={formSaleDiscountPercent || ''}
+                          onChange={(e) => {
+                            const pct = Number(e.target.value);
+                            setFormSaleDiscountPercent(pct);
+                            if (pct > 0 && formPrice > 0) {
+                              setFormSalePrice(Math.round(formPrice * (1 - pct / 100)));
+                            }
+                          }}
+                          className="w-full bg-dark-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-rose-400"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-300 font-semibold mb-1">Endirimli Qiymət ({formCurrency})</label>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          placeholder="Məs: 39 AZN"
+                          value={formSalePrice || ''}
+                          onChange={(e) => {
+                            const pr = Number(e.target.value);
+                            setFormSalePrice(pr);
+                            if (pr > 0 && formPrice > 0) {
+                              setFormSaleDiscountPercent(Math.round(((formPrice - pr) / formPrice) * 100));
+                            }
+                          }}
+                          className="w-full bg-dark-900 border border-emerald-500/50 rounded-xl px-3 py-2 text-emerald-400 font-bold focus:outline-none focus:border-emerald-400"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-slate-300 font-semibold mb-1">Xüsusi Nişan Mətni (Könüllü)</label>
+                        <input
+                          type="text"
+                          placeholder="Məs: 🔥 YAZ ENDİRİMİ"
+                          value={formSaleBadgeLabel}
+                          onChange={(e) => setFormSaleBadgeLabel(e.target.value)}
+                          className="w-full bg-dark-900 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-rose-400"
+                        />
+                      </div>
+
+                      {formSaleType === 'limited_time' ? (
+                        <div>
+                          <label className="block text-slate-300 font-semibold mb-1">Kampaniya Bitmə Tarixi</label>
+                          <input
+                            type="date"
+                            value={formSaleExpiresAt}
+                            onChange={(e) => setFormSaleExpiresAt(e.target.value)}
+                            className="w-full bg-dark-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-rose-400"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex flex-col justify-center">
+                          <span className="text-[11px] text-slate-400">Faktiki Qiymət:</span>
+                          <span className="text-emerald-400 font-bold text-sm">
+                            {formSalePrice || formPrice} {formCurrency} / {formBillingPeriod}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">

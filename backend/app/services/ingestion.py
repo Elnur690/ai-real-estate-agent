@@ -2,7 +2,7 @@ import re
 import logging
 import asyncio
 from typing import List, Tuple, Any, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -381,17 +381,34 @@ class IngestionService:
                     loc_likes.append(Listing.description.ilike(f"%{alias}%"))
             conditions.append(or_(*loc_likes))
 
-        stmt_active = select(Listing).where(and_(*conditions)).order_by(Listing.id.desc()).limit(200)
+        # Only evaluate fresh DB listings (past 5 days) to avoid matching stale/sold listings
+        recency_cutoff = datetime.now(timezone.utc) - timedelta(days=5)
+        conditions.append(Listing.created_at >= recency_cutoff)
+
+        stmt_active = select(Listing).where(and_(*conditions)).order_by(Listing.id.desc()).limit(20)
         res_active = await db.execute(stmt_active)
         active_listings = res_active.scalars().all()
 
-        for l in active_listings:
-            try:
-                delivered += await IngestionService._evaluate_and_deliver_matches(
-                    db, l, target_search_id=search.id, enrich_live=False
-                )
-            except Exception as e:
-                logger.error(f"[IngestionService] Error evaluating listing #{l.id} in backfill: {e}")
+        from app.services.listing_reconciler import ListingReconcilerService
+        import httpx
+
+        async with httpx.AsyncClient(follow_redirects=True) as http_client:
+            for l in active_listings:
+                try:
+                    target_url = getattr(l, 'listing_url', None) or getattr(l, 'url', None)
+                    if target_url:
+                        is_live = await ListingReconcilerService.check_url_liveness(target_url, http_client)
+                        if not is_live:
+                            logger.info(f"[IngestionService] Backfill skipping & deactivating dead listing #{l.id} ({target_url})")
+                            l.is_active = False
+                            await db.commit()
+                            continue
+
+                    delivered += await IngestionService._evaluate_and_deliver_matches(
+                        db, l, target_search_id=search.id, enrich_live=False
+                    )
+                except Exception as e:
+                    logger.error(f"[IngestionService] Error evaluating listing #{l.id} in backfill: {e}")
 
         # Step 2: On-demand targeted scrape of Bina.az and Tap.az for this specific criteria
         targets = IngestionService.build_targeted_search_urls(search)

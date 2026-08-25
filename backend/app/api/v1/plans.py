@@ -42,6 +42,12 @@ class PlanResponse(BaseModel):
     included_image_requests: int = 0
     addon_image_requests_price: float = 10.0
     addon_image_tiers: Optional[List[dict]] = []
+    sale_enabled: bool = False
+    sale_price: Optional[float] = None
+    sale_discount_percent: Optional[float] = None
+    sale_type: str = "permanent"
+    sale_expires_at: Optional[str] = None
+    sale_badge_label: Optional[str] = None
     backup_enabled: bool
     subscriber_count: int = 0
 
@@ -74,6 +80,12 @@ class CreatePlanRequest(BaseModel):
     included_image_requests: int = 0
     addon_image_requests_price: float = 10.0
     addon_image_tiers: Optional[List[dict]] = []
+    sale_enabled: bool = False
+    sale_price: Optional[float] = None
+    sale_discount_percent: Optional[float] = None
+    sale_type: str = "permanent"
+    sale_expires_at: Optional[str] = None
+    sale_badge_label: Optional[str] = None
     backup_enabled: bool = True
 
 
@@ -104,6 +116,12 @@ class UpdatePlanRequest(BaseModel):
     included_image_requests: Optional[int] = None
     addon_image_requests_price: Optional[float] = None
     addon_image_tiers: Optional[List[dict]] = None
+    sale_enabled: Optional[bool] = None
+    sale_price: Optional[float] = None
+    sale_discount_percent: Optional[float] = None
+    sale_type: Optional[str] = None
+    sale_expires_at: Optional[str] = None
+    sale_badge_label: Optional[str] = None
     backup_enabled: Optional[bool] = None
 
 
@@ -152,6 +170,12 @@ async def list_plans(db: AsyncSession = Depends(get_db)):
             included_image_requests=getattr(plan, 'included_image_requests', 0),
             addon_image_requests_price=getattr(plan, 'addon_image_requests_price', 10.0),
             addon_image_tiers=getattr(plan, 'addon_image_tiers', []) or [],
+            sale_enabled=getattr(plan, 'sale_enabled', False),
+            sale_price=getattr(plan, 'sale_price', None),
+            sale_discount_percent=getattr(plan, 'sale_discount_percent', None),
+            sale_type=getattr(plan, 'sale_type', 'permanent'),
+            sale_expires_at=plan.sale_expires_at.isoformat() if getattr(plan, 'sale_expires_at', None) else None,
+            sale_badge_label=getattr(plan, 'sale_badge_label', None),
             backup_enabled=plan.backup_enabled,
             subscriber_count=sub_count
         ))
@@ -173,6 +197,15 @@ async def create_plan(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Plan code '{body.code}' already exists."
         )
+
+    # Calculate sale price & discount percent
+    final_sale_price = body.sale_price
+    final_discount_pct = body.sale_discount_percent
+    if body.sale_enabled:
+        if final_sale_price is None and final_discount_pct is not None and final_discount_pct > 0:
+            final_sale_price = round(body.price * (1 - final_discount_pct / 100.0), 2)
+        elif final_sale_price is not None and final_discount_pct is None and body.price > 0:
+            final_discount_pct = round(((body.price - final_sale_price) / body.price) * 100.0, 1)
 
     plan = Plan(
         code=body.code.lower().strip(),
@@ -202,6 +235,12 @@ async def create_plan(
         included_image_requests=body.included_image_requests,
         addon_image_requests_price=body.addon_image_requests_price,
         addon_image_tiers=body.addon_image_tiers or [],
+        sale_enabled=body.sale_enabled,
+        sale_price=final_sale_price,
+        sale_discount_percent=final_discount_pct,
+        sale_type=body.sale_type or "permanent",
+        sale_expires_at=body.sale_expires_at,
+        sale_badge_label=body.sale_badge_label,
         backup_enabled=body.backup_enabled
     )
     db.add(plan)
@@ -237,6 +276,12 @@ async def create_plan(
         included_image_requests=getattr(plan, 'included_image_requests', 0),
         addon_image_requests_price=getattr(plan, 'addon_image_requests_price', 10.0),
         addon_image_tiers=getattr(plan, 'addon_image_tiers', []) or [],
+        sale_enabled=getattr(plan, 'sale_enabled', False),
+        sale_price=getattr(plan, 'sale_price', None),
+        sale_discount_percent=getattr(plan, 'sale_discount_percent', None),
+        sale_type=getattr(plan, 'sale_type', 'permanent'),
+        sale_expires_at=plan.sale_expires_at.isoformat() if getattr(plan, 'sale_expires_at', None) else None,
+        sale_badge_label=getattr(plan, 'sale_badge_label', None),
         backup_enabled=plan.backup_enabled,
         subscriber_count=0
     )
@@ -288,6 +333,12 @@ async def get_plan(
         included_image_requests=getattr(plan, 'included_image_requests', 0),
         addon_image_requests_price=getattr(plan, 'addon_image_requests_price', 10.0),
         addon_image_tiers=getattr(plan, 'addon_image_tiers', []) or [],
+        sale_enabled=getattr(plan, 'sale_enabled', False),
+        sale_price=getattr(plan, 'sale_price', None),
+        sale_discount_percent=getattr(plan, 'sale_discount_percent', None),
+        sale_type=getattr(plan, 'sale_type', 'permanent'),
+        sale_expires_at=plan.sale_expires_at.isoformat() if getattr(plan, 'sale_expires_at', None) else None,
+        sale_badge_label=getattr(plan, 'sale_badge_label', None),
         backup_enabled=plan.backup_enabled,
         subscriber_count=sub_count
     )
@@ -359,8 +410,28 @@ async def update_plan(
         plan.addon_image_requests_price = body.addon_image_requests_price
     if body.addon_image_tiers is not None:
         plan.addon_image_tiers = body.addon_image_tiers
+    if body.sale_enabled is not None:
+        plan.sale_enabled = body.sale_enabled
+    if body.sale_price is not None:
+        plan.sale_price = body.sale_price
+    if body.sale_discount_percent is not None:
+        plan.sale_discount_percent = body.sale_discount_percent
+    if body.sale_type is not None:
+        plan.sale_type = body.sale_type
+    if body.sale_expires_at is not None:
+        from datetime import datetime as dt
+        plan.sale_expires_at = dt.fromisoformat(body.sale_expires_at) if body.sale_expires_at else None
+    if body.sale_badge_label is not None:
+        plan.sale_badge_label = body.sale_badge_label
     if body.backup_enabled is not None:
         plan.backup_enabled = body.backup_enabled
+
+    # Reconcile discount calculations
+    if plan.sale_enabled:
+        if body.sale_price is not None and body.sale_discount_percent is None and plan.price > 0:
+            plan.sale_discount_percent = round(((plan.price - plan.sale_price) / plan.price) * 100.0, 1)
+        elif body.sale_discount_percent is not None and body.sale_price is None:
+            plan.sale_price = round(plan.price * (1 - plan.sale_discount_percent / 100.0), 2)
 
     # Cascade updated feature permissions to all tenants currently on this plan
     from sqlalchemy import update as sa_update
@@ -419,14 +490,20 @@ async def update_plan(
         addon_aged_listings_price=getattr(plan, 'addon_aged_listings_price', 0.0),
         addon_aged_max_months=getattr(plan, 'addon_aged_max_months', 12),
         addon_aged_tiers=getattr(plan, 'addon_aged_tiers', []) or [],
-        max_saved_searches=getattr(plan, 'max_saved_searches', 10),
+        max_saved_searches=plan.max_saved_searches,
         addon_saved_searches=getattr(plan, 'addon_saved_searches', 0),
-        addon_saved_searches_price=getattr(plan, 'addon_saved_searches_price', 10.0),
+        addon_saved_searches_price=plan.addon_saved_searches_price,
         addon_search_tiers=getattr(plan, 'addon_search_tiers', []) or [],
         feature_watermark_free_images=getattr(plan, 'feature_watermark_free_images', False),
         included_image_requests=getattr(plan, 'included_image_requests', 0),
         addon_image_requests_price=getattr(plan, 'addon_image_requests_price', 10.0),
         addon_image_tiers=getattr(plan, 'addon_image_tiers', []) or [],
+        sale_enabled=getattr(plan, 'sale_enabled', False),
+        sale_price=getattr(plan, 'sale_price', None),
+        sale_discount_percent=getattr(plan, 'sale_discount_percent', None),
+        sale_type=getattr(plan, 'sale_type', 'permanent'),
+        sale_expires_at=plan.sale_expires_at.isoformat() if getattr(plan, 'sale_expires_at', None) else None,
+        sale_badge_label=getattr(plan, 'sale_badge_label', None),
         backup_enabled=plan.backup_enabled,
         subscriber_count=sub_count
     )

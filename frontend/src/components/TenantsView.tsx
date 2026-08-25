@@ -1098,7 +1098,7 @@ export const TenantsView: React.FC = () => {
                 >
                   {availablePlans.map((p) => (
                     <option key={p.id} value={p.code}>
-                      {p.name} ({p.price} {p.currency}) - {p.max_agents || 1} Seats
+                      {p.name} ({p.sale_enabled && p.sale_price !== undefined ? `${p.sale_price} AZN (🔥 Endirimlə, əvvəl ${p.price} AZN)` : `${p.price} ${p.currency}`}) - {p.max_agents || 1} Seats
                     </option>
                   ))}
                 </select>
@@ -1271,7 +1271,7 @@ export const TenantsView: React.FC = () => {
                   >
                     {availablePlans.map((p) => (
                       <option key={p.id} value={p.code}>
-                        {p.name} ({p.price} {p.currency}) - {p.max_agents || 1} Seats
+                        {p.name} ({p.sale_enabled && p.sale_price !== undefined ? `${p.sale_price} AZN (🔥 Endirimlə, əvvəl ${p.price} AZN)` : `${p.price} ${p.currency}`}) - {p.max_agents || 1} Seats
                       </option>
                     ))}
                   </select>
