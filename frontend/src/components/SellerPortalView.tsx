@@ -4,7 +4,7 @@ import {
   Store, Users, Package, DollarSign, Award, Plus, Edit3, Trash2, CheckCircle, 
   AlertTriangle, RefreshCw, X, Shield, Phone, Send, Sparkles, Check, ChevronRight, TrendingUp,
   Globe, ExternalLink, Lock, Gift, Copy, QrCode, Search, Zap, ShieldCheck, CheckCircle2,
-  Calendar, Layers, MessageSquare, Database, ArrowUpRight, Clock, Info
+  Calendar, Layers, MessageSquare, Database, ArrowUpRight, Clock, Info, Smartphone, KeyRound, Key
 } from 'lucide-react';
 import api from '../api';
 
@@ -148,7 +148,7 @@ export interface SellerPayoutItem {
 }
 
 export function SellerPortalView() {
-  const [activeTab, setActiveTab] = useState<'agents' | 'packages' | 'earnings' | 'domain'>('agents');
+  const [activeTab, setActiveTab] = useState<'agents' | 'packages' | 'earnings' | 'domain' | 'security'>('agents');
   const [dashboard, setDashboard] = useState<SellerDashboardData | null>(null);
   const [agents, setAgents] = useState<SellerAgent[]>([]);
   const [packages, setPackages] = useState<SellerPackageItem[]>([]);
@@ -156,6 +156,26 @@ export function SellerPortalView() {
   const [payouts, setPayouts] = useState<SellerPayoutItem[]>([]);
   const [domainSettings, setDomainSettings] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // 2FA Security State
+  const [totpStatus, setTotpStatus] = useState<{ enabled: boolean; backup_codes_count: number } | null>(null);
+  const [showTotpSetup, setShowTotpSetup] = useState(false);
+  const [totpSecret, setTotpSecret] = useState('');
+  const [otpauthUrl, setOtpauthUrl] = useState('');
+  const [totpCode, setTotpCode] = useState('');
+  const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  const [totpPassword, setTotpPassword] = useState('');
+  const [showDisableModal, setShowDisableModal] = useState(false);
+  const [totpLoading, setTotpLoading] = useState(false);
+  const [totpError, setTotpError] = useState<string | null>(null);
+  const [totpSuccess, setTotpSuccess] = useState<string | null>(null);
+
+  // Password change state
+  const [currPassword, setCurrPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
 
   // Custom Domain State
   const [domainHost, setDomainHost] = useState('');
@@ -393,6 +413,90 @@ export function SellerPortalView() {
     }
   };
 
+  const fetchTotpStatus = async () => {
+    try {
+      const res = await api.get('/auth/2fa/status');
+      setTotpStatus(res.data);
+    } catch (e) {
+      console.error('Error loading 2FA status:', e);
+    }
+  };
+
+  const handleStartTotpSetup = async () => {
+    setTotpLoading(true);
+    setTotpError(null);
+    setTotpSuccess(null);
+    try {
+      const res = await api.post('/auth/2fa/setup');
+      setTotpSecret(res.data.secret);
+      setOtpauthUrl(res.data.otpauth_url);
+      setShowTotpSetup(true);
+    } catch (e: any) {
+      setTotpError(e.response?.data?.detail || '2FA quraşdırmasını başlatmaq mümkün olmadı.');
+    } finally {
+      setTotpLoading(false);
+    }
+  };
+
+  const handleEnableTotp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTotpLoading(true);
+    setTotpError(null);
+    setTotpSuccess(null);
+    try {
+      const res = await api.post('/auth/2fa/enable', { code: totpCode });
+      setBackupCodes(res.data.backup_codes || []);
+      setShowTotpSetup(false);
+      setTotpCode('');
+      setTotpSuccess('İki mərhələli doğrulama (2FA) uğurla aktivləşdirildi! Ehtiyat kodlarınızı təhlükəsiz yerdə saxlayın.');
+      await fetchTotpStatus();
+    } catch (e: any) {
+      setTotpError(e.response?.data?.detail || '2FA təsdiq kodu yanlışdır.');
+    } finally {
+      setTotpLoading(false);
+    }
+  };
+
+  const handleDisableTotp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTotpLoading(true);
+    setTotpError(null);
+    setTotpSuccess(null);
+    try {
+      await api.post('/auth/2fa/disable', { password: totpPassword });
+      setShowDisableModal(false);
+      setTotpPassword('');
+      setBackupCodes([]);
+      setTotpSuccess('2FA uğurla deaktiv edildi.');
+      await fetchTotpStatus();
+    } catch (e: any) {
+      setTotpError(e.response?.data?.detail || 'Şifrə yanlışdır.');
+    } finally {
+      setTotpLoading(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+    setPasswordSuccess(null);
+    setSavingPassword(true);
+    try {
+      await api.put('/auth/profile', {
+        current_password: currPassword,
+        new_password: newPassword
+      });
+      setCurrPassword('');
+      setNewPassword('');
+      setPasswordSuccess('Hesab şifrəniz uğurla yeniləndi!');
+      setTimeout(() => setPasswordSuccess(null), 4000);
+    } catch (e: any) {
+      setPasswordError(e.response?.data?.detail || 'Şifrəni yeniləmək mümkün olmadı.');
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
   const reloadAll = async () => {
     setLoading(true);
     await Promise.all([
@@ -401,7 +505,8 @@ export function SellerPortalView() {
       fetchPackages(),
       fetchEarnings(),
       fetchPayouts(),
-      fetchDomainSettings()
+      fetchDomainSettings(),
+      fetchTotpStatus()
     ]);
     setLoading(false);
   };
@@ -1013,6 +1118,21 @@ export function SellerPortalView() {
         >
           <Globe className="w-4 h-4" />
           <span>Fərdi Domenim (White-label)</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('security')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition ${
+            activeTab === 'security'
+              ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20'
+              : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4" />
+          <span>Təhlükəsizlik & 2FA</span>
+          {totpStatus?.enabled && (
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          )}
         </button>
       </div>
 
@@ -1823,6 +1943,350 @@ export function SellerPortalView() {
           </div>
         </div>
       )}
+
+      {/* TAB 5: SECURITY & 2FA (TWO-FACTOR AUTHENTICATOR) */}
+      {activeTab === 'security' && (
+        <div className="space-y-6">
+          {/* Status Alerts */}
+          {totpError && (
+            <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between gap-3 shadow-lg">
+              <div className="flex items-center gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>{totpError}</span>
+              </div>
+              <button onClick={() => setTotpError(null)} className="text-rose-400 hover:text-white p-1">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {totpSuccess && (
+            <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center justify-between gap-3 shadow-lg">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{totpSuccess}</span>
+              </div>
+              <button onClick={() => setTotpSuccess(null)} className="text-emerald-400 hover:text-white p-1">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* 2FA Main Status & Configuration Card */}
+          <div className="bg-slate-900/80 p-6 rounded-3xl border border-slate-800 shadow-2xl space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shadow-inner">
+                  <Smartphone className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    İki Mərhələli Doğrulama (2FA Authenticator)
+                    {totpStatus?.enabled ? (
+                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-semibold flex items-center gap-1">
+                        <CheckCircle className="w-3 h-3" /> Aktivdir
+                      </span>
+                    ) : (
+                      <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 font-semibold flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" /> Deaktivdir
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Google Authenticator, Apple Passwords və ya 1Password ilə satıcı hesabınızı 100% qoruyun.
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                {totpStatus?.enabled ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowDisableModal(true)}
+                    className="px-4 py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-bold transition flex items-center gap-2"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>2FA Deaktiv Et</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleStartTotpSetup}
+                    disabled={totpLoading}
+                    className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>{totpLoading ? 'Yüklənir...' : '2FA Quraşdır və Aktivləşdir'}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 2FA Setup Flow with QR Code & Secret */}
+            {showTotpSetup && !totpStatus?.enabled && (
+              <div className="bg-slate-950/70 p-6 rounded-2xl border border-emerald-500/30 space-y-6 animate-in fade-in zoom-in duration-200">
+                <div className="border-b border-slate-800 pb-4 flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-bold text-emerald-400 flex items-center gap-2">
+                      <QrCode className="w-4 h-4" />
+                      Addım 1: QR Kodu Skan Edin
+                    </h4>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Telefonunuzun kamerası və ya Google Authenticator tətbiqi ilə aşağıdakı QR kodu oxudun.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowTotpSetup(false)}
+                    className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+                  {/* QR Code Container */}
+                  <div className="flex flex-col items-center justify-center p-5 bg-white rounded-2xl border border-slate-700 shadow-xl self-center max-w-[220px] mx-auto">
+                    {otpauthUrl && <QRCodeSVG value={otpauthUrl} size={180} />}
+                    <span className="text-[10px] text-slate-700 font-mono font-bold mt-2">RealEstate AI Authenticator</span>
+                  </div>
+
+                  {/* Secret Key & 6-digit Code Input Form */}
+                  <div className="space-y-4 text-xs">
+                    <div>
+                      <label className="text-slate-400 block mb-1 font-semibold">Və ya Gizli Açarı Manual Daxil Edin:</label>
+                      <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-2 rounded-xl">
+                        <span className="font-mono text-emerald-400 text-xs font-bold tracking-wider select-all truncate flex-1">
+                          {totpSecret}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(totpSecret, 'totp_secret')}
+                          className="p-1.5 text-slate-400 hover:text-white bg-slate-800 rounded-lg transition"
+                          title="Açarı Kopyala"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      {copiedKey === 'totp_secret' && (
+                        <span className="text-[10px] text-emerald-400 font-semibold mt-1 block">Açar kopyalandı!</span>
+                      )}
+                    </div>
+
+                    <form onSubmit={handleEnableTotp} className="space-y-3 pt-2">
+                      <div>
+                        <label className="text-slate-300 font-semibold block mb-1">
+                          Addım 2: Tətbiqdəki 6 Rəqəmli Kodu Daxil Edin:
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          maxLength={6}
+                          placeholder="Məs: 123456"
+                          value={totpCode}
+                          onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
+                          className="w-full bg-slate-900 border border-emerald-500/50 px-4 py-3 rounded-xl text-center text-lg font-mono tracking-widest text-emerald-400 font-bold placeholder-slate-600 focus:outline-none focus:border-emerald-400 shadow-inner"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={totpLoading || totpCode.length < 6}
+                        className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white rounded-xl font-bold transition shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                      >
+                        {totpLoading ? 'Təsdiqlənir...' : 'Təsdiqlə və 2FA-nı Aktivləşdir'}
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Backup Codes Display */}
+            {backupCodes.length > 0 && (
+              <div className="bg-slate-950/80 p-5 rounded-2xl border border-amber-500/30 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <div className="flex items-center gap-2">
+                    <Key className="w-4 h-4 text-amber-400" />
+                    <h5 className="text-xs font-bold text-amber-300">Ehtiyat Bərpa Kodları (Birdəfəlik)</h5>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(backupCodes.join('\n'), 'backup_codes')}
+                    className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white bg-slate-800 px-3 py-1.5 rounded-lg transition"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>{copiedKey === 'backup_codes' ? 'Kopyalandı!' : 'Hamısını Kopyala'}</span>
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Telefonunuzu itirdikdə və ya Authenticator tətbiqinə giriş olmadıqda hesabınıza daxil olmaq üçün bu kodları təhlükəsiz yerdə qeyd edin:
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-xs text-amber-400 bg-slate-900 p-3 rounded-xl border border-slate-800 text-center font-bold">
+                  {backupCodes.map((code, idx) => (
+                    <span key={idx} className="p-1 bg-slate-950 rounded select-all">{code}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 2FA Informational Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+              <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-2">
+                <div className="w-8 h-8 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+                  <span>📱</span>
+                </div>
+                <h5 className="text-xs font-bold text-white">Google Authenticator</h5>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Android və iOS üçün rəsmi pulsuz Google Authenticator ilə kodları hər 30 saniyədən bir sinxronlaşdırın.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-2">
+                <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+                  <span>🍎</span>
+                </div>
+                <h5 className="text-xs font-bold text-white">Apple Passwords / iCloud</h5>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  iPhone və Mac cihazlarında daxili Şifrələr bölməsində 2FA QR kodunu birbaşa skan edərək avtomatik doldurmadan istifadə edin.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-2">
+                <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                  <span>🛡️</span>
+                </div>
+                <h5 className="text-xs font-bold text-white">100% Hesab Qoruması</h5>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Şifrəniz ifşa olsa belə, 2FA aktiv olduqda heç kim hesabınıza və balansınıza icazəsiz daxil ola bilməz.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Password Change Card */}
+          <form onSubmit={handleUpdatePassword} className="bg-slate-900/80 p-6 rounded-3xl border border-slate-800 shadow-xl space-y-5">
+            <div>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-indigo-400" />
+                Satıcı Hesab Şifrəsini Yenilə
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Dashboard giriş təhlükəsizliyi üçün mütəmadi olaraq şifrənizi gücləndirin.
+              </p>
+            </div>
+
+            {passwordError && (
+              <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                <span>{passwordError}</span>
+              </div>
+            )}
+
+            {passwordSuccess && (
+              <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400" />
+                <span>{passwordSuccess}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">Cari Şifrəniz</label>
+                <div className="relative">
+                  <Lock className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-500" />
+                  <input
+                    type="password"
+                    required
+                    placeholder="Hazırkı şifrə"
+                    value={currPassword}
+                    onChange={(e) => setCurrPassword(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 pl-9 pr-3.5 py-2.5 rounded-xl text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-slate-300 font-semibold block mb-1">Yeni Güclü Şifrə</label>
+                <div className="relative">
+                  <Lock className="w-3.5 h-3.5 absolute left-3 top-3 text-slate-500" />
+                  <input
+                    type="password"
+                    required
+                    placeholder="Məs: SafePass2026!"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 pl-9 pr-3.5 py-2.5 rounded-xl text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-800 flex justify-end">
+              <button
+                type="submit"
+                disabled={savingPassword || !currPassword || !newPassword}
+                className="px-5 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-indigo-500/20 disabled:opacity-50"
+              >
+                {savingPassword ? 'Yenilənir...' : 'Şifrəni Yenilə'}
+              </button>
+            </div>
+          </form>
+
+          {/* Disable 2FA Password Modal */}
+          {showDisableModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+              <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-rose-400" />
+                    2FA-nı Deaktiv Etmək
+                  </h4>
+                  <button onClick={() => setShowDisableModal(false)} className="text-slate-400 hover:text-white p-1">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  2FA-nı söndürmək üçün cari hesab şifrənizi daxil edərək təsdiqləyin:
+                </p>
+
+                <form onSubmit={handleDisableTotp} className="space-y-3 text-xs">
+                  <div>
+                    <label className="text-slate-300 font-semibold block mb-1">Cari Hesab Şifrəsi</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Şifrəniz"
+                      value={totpPassword}
+                      onChange={(e) => setTotpPassword(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-800 px-3.5 py-2.5 rounded-xl text-white focus:outline-none focus:border-rose-500"
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowDisableModal(false)}
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-semibold"
+                    >
+                      Ləğv et
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={totpLoading || !totpPassword}
+                      className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold transition disabled:opacity-50"
+                    >
+                      {totpLoading ? 'Deaktiv edilir...' : '2FA-nı Söndür'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* AGENT DETAIL & MANAGEMENT MODAL (OVERVIEW, QR CONNECT, RENEW, EDIT) */}
       {isAgentDetailOpen && selectedAgent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
