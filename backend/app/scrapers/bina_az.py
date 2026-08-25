@@ -225,27 +225,29 @@ class BinaAzScraper(BaseScraper):
         else:
             # Primary comprehensive active feeds for Bina.az covering all categories & chronological stream
             urls_to_fetch = [
-                # 1. Master Chronological Real-Time Streams (all newest items)
-                "https://bina.az/items",
-                "https://bina.az/items?city_id=1&leased=false",
-                "https://bina.az/items?city_id=1&leased=true",
+                # 1. Master Chronological Real-Time Streams (all newest items, page 1 & 2)
+                "https://bina.az/items?sort_by=created_at_desc",
+                "https://bina.az/items?sort_by=created_at_desc&page=2",
+                "https://bina.az/items?city_id=1&leased=false&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&leased=false&sort_by=created_at_desc&page=2",
+                "https://bina.az/items?city_id=1&leased=true&sort_by=created_at_desc",
                 # 2. Direct Owner Feeds (Ev Sahibindən)
-                "https://bina.az/items?city_id=1&category_id=1&leased=false&owner_type=owner",
-                "https://bina.az/items?city_id=1&category_id=2&leased=false&owner_type=owner",
-                "https://bina.az/items?city_id=1&category_id=3&leased=false&owner_type=owner",
-                "https://bina.az/items?city_id=1&category_id=5&leased=false&owner_type=owner",
-                "https://bina.az/items?city_id=1&category_id=1&leased=true&owner_type=owner",
-                "https://bina.az/items?city_id=1&category_id=2&leased=true&owner_type=owner",
-                "https://bina.az/items?city_id=1&category_id=3&leased=true&owner_type=owner",
+                "https://bina.az/items?city_id=1&category_id=1&leased=false&owner_type=owner&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=2&leased=false&owner_type=owner&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=3&leased=false&owner_type=owner&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=5&leased=false&owner_type=owner&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=1&leased=true&owner_type=owner&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=2&leased=true&owner_type=owner&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=3&leased=true&owner_type=owner&sort_by=created_at_desc",
                 # 3. All Category Feeds (New build, Old build, Houses, Offices, Commercial, Land)
-                "https://bina.az/items?city_id=1&category_id=1&leased=false",
-                "https://bina.az/items?city_id=1&category_id=2&leased=false",
-                "https://bina.az/items?city_id=1&category_id=3&leased=false",
-                "https://bina.az/items?city_id=1&category_id=5&leased=false",
-                "https://bina.az/items?city_id=1&category_id=7&leased=false",
-                "https://bina.az/items?city_id=1&category_id=10&leased=false",
-                "https://bina.az/items?city_id=1&category_id=9&leased=false",
-                "https://bina.az/items?city_id=1&category_id=1&leased=true"
+                "https://bina.az/items?city_id=1&category_id=1&leased=false&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=2&leased=false&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=3&leased=false&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=5&leased=false&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=7&leased=false&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=10&leased=false&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=9&leased=false&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=1&leased=true&sort_by=created_at_desc"
             ]
 
         headers = get_random_headers(referer="https://bina.az/")

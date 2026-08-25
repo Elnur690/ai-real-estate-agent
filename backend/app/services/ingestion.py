@@ -192,7 +192,7 @@ class IngestionService:
 
         # Parameterized Targeted Query Feeds on Bina.az
         for cat_id in categories_to_query:
-            bina_params = [f"city_id=1", f"leased={leased_str}", f"category_id={cat_id}"]
+            bina_params = [f"city_id=1", f"leased={leased_str}", f"category_id={cat_id}", "sort_by=created_at_desc"]
             if is_owner:
                 bina_params.append("owner_type=owner")
             # Only attach rooms parameter for apartments and houses, not for commercial/office/land
@@ -203,12 +203,12 @@ class IngestionService:
             bina_url = f"https://bina.az/items?{'&'.join(bina_params)}"
             targets.append(("Bina.az Targeted", BinaAzScraper(), bina_url))
 
-        # 2. Tap.az Keyword Target
+        # 2. Tap.az Keyword Target (Newest First)
         loc_kw = search.district or search.metro_station or ""
         if loc_kw:
             loc_encoded = urllib.parse.quote(loc_kw)
             tap_cat = "menziller" if prop == "apartment" else ("heyet-evleri-baglar-villalar" if prop == "house" else "ofisler" if prop == "office" else "obyektler" if prop == "commercial" else "torpaq" if prop == "land" else "")
-            tap_url = f"https://tap.az/elanlar/dasinmaz-emlak/{tap_cat}?keywords={loc_encoded}" if tap_cat else f"https://tap.az/elanlar/dasinmaz-emlak?keywords={loc_encoded}"
+            tap_url = f"https://tap.az/elanlar/dasinmaz-emlak/{tap_cat}?keywords={loc_encoded}&order=new" if tap_cat else f"https://tap.az/elanlar/dasinmaz-emlak?keywords={loc_encoded}&order=new"
             targets.append(("Tap.az Targeted", TapAzScraper(), tap_url))
 
         return targets
