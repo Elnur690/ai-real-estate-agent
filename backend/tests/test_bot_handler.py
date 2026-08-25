@@ -462,6 +462,24 @@ async def test_bot_unrelated_message_handling():
         await db.refresh(t)
         assert t.draft_search_json is not None
 
+        # 3. Complex multi-metro station + lookback + price range prompt test
+        complex_prompt = "Nərmanov, Gənclik, 28 may , Elmlər və 20 yanvar metro stansiyalarina yaxın 150000 - 600000 Azn civarında bir başa sahibindən və başqa vasitəçilər tərəfdən az paylaşılan vəya heç paylaşılmayan  \"6aydan bəri\" çıxan elanları mənə bildir"
+        resp_complex = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="telegram",
+            sender_id="111223344",
+            sender_name="Test Agent",
+            raw_text=complex_prompt
+        )
+        assert "150,000 - 600,000 AZN" in resp_complex or "150000" in resp_complex
+        assert "28 May" in resp_complex
+        assert "20 Yanvar" in resp_complex
+        assert "Gənclik" in resp_complex
+        assert "Elmlər" in resp_complex
+        assert "Nəriman Nərimanov" in resp_complex
+        assert "Ev Sahibindən" in resp_complex
+
     await engine.dispose()
+
 
 

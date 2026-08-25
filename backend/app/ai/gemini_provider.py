@@ -161,10 +161,10 @@ Extract structured JSON strictly with these exact keys:
                     min_rooms = min(digits)
                     max_rooms = max(digits)
 
-        # Historical Lookback / Months on market (e.g. "3 aydan bəri", "3 aydır satışda", "2 ay əvvəldən")
+        # Historical Lookback / Months on market (e.g. "3 aydan bəri", "6aydan bəri", "3 aydır satışda", "2 ay əvvəldən")
         min_months_on_market = None
         lookback_match = re.search(
-            r'(\d+)\s*(?:aydan\s*bəri|aydan\s*beri|aydır\s*satışda|aydir\s*satisda|aydır\s*qalan|aydir\s*qalan|ay\s*əvvəldən|ay\s*evvelden|aylıq\s*arxiv|ayliq\s*arxiv|ay\s*bazar)',
+            r'["\'«»]?\s*(\d+)\s*(?:aydan\s*bəri|aydan\s*beri|aydır\s*satışda|aydir\s*satisda|aydır\s*qalan|aydir\s*qalan|ay\s*əvvəldən|ay\s*evvelden|aylıq\s*arxiv|ayliq\s*arxiv|ay\s*bazar|aydan|aydir)',
             text_lower
         )
         if lookback_match:
@@ -174,36 +174,69 @@ Extract structured JSON strictly with these exact keys:
         is_usd = any(c in text_lower for c in ["$", "usd", "dollar", "dolar"])
         rate = 1.70
 
-        # Prices (e.g., 100-150 min, 120000, 100k, $100k)
-        text_for_price = re.sub(r'\d+(?:\s*(?:-|–|,|\/|\bvə ya\b|\bya da\b|\bvə\b|\bve\b|\bya\b)\s*\d+)*\s*(?:otaq|otaqlı|otag)', '', text_lower)
-        if lookback_match:
-            text_for_price = re.sub(r'\d+\s*(?:aydan\s*bəri|aydan\s*beri|aydır\s*satışda|aydir\s*satisda|aydır\s*qalan|aydir\s*qalan|ay\s*əvvəldən|ay\s*evvelden|aylıq\s*arxiv|ayliq\s*arxiv|ay\s*bazar)', '', text_for_price)
+        # Prices (e.g., 100-150 min, 150000 - 600000, 120000, 100k, $100k)
+        text_for_price = text_lower
+
+        # 1. Strip numbers from metro names so "28 may", "20 yanvar", "8 noyabr" do not corrupt price range
+        for metro_num in ["28 may", "28may", "20 yanvar", "20yanvar", "8 noyabr", "8noyabr"]:
+            text_for_price = text_for_price.replace(metro_num, " ")
+
+        # 2. Strip micro-districts, massifs, floors, areas
+        text_for_price = re.sub(r'\d+\s*-(?:ci|cı|cü|cu)?\s*(?:mkr|mikrorayon|massiv|mərtəbə|mertebe|blok|etaj|sot|hektar)', ' ', text_for_price)
+
+        # 3. Strip room numbers
+        text_for_price = re.sub(r'\d+(?:\s*(?:-|–|,|\/|\bvə ya\b|\bya da\b|\bvə\b|\bve\b|\bya\b)\s*\d+)*\s*(?:otaq|otaqlı|otag|komnat|bed|room)', ' ', text_for_price)
+
+        # 4. Strip lookback string
+        text_for_price = re.sub(r'["\'«»]?\s*\d+\s*(?:aydan\s*bəri|aydan\s*beri|aydır\s*satışda|aydir\s*satisda|aydır\s*qalan|aydir\s*qalan|ay\s*əvvəldən|ay\s*evvelden|aylıq\s*arxiv|ayliq\s*arxiv|ay\s*bazar|aydan|aydir)["\'«»]?', ' ', text_for_price)
+
         min_price, max_price = None, None
         min_price_usd, max_price_usd = None, None
-        
-        matches = re.findall(r'(\d+)\s*(k|min)?', text_for_price)
-        parsed_prices = []
-        for val_str, mult in matches:
-            if not val_str: continue
-            val = int(val_str)
-            if mult in ["k", "min"] or (val < 1000 and ("min" in text_for_price or "k" in text_for_price)):
-                val *= 1000
-            parsed_prices.append(val)
 
-        if len(parsed_prices) >= 2:
-            p1, p2 = sorted(parsed_prices[:2])
+        # Try matching explicit price range (e.g. 150000 - 600000 AZN or 150-600 min)
+        range_match = re.search(
+            r'(\d+(?:\.\d+)?)\s*(k|min)?\s*(?:-|–|to|ila|ilə|və ya|dan|dən|\s+)\s*(\d+(?:\.\d+)?)\s*(k|min|milyon|mln|azn|₼|usd|\$|manat|dollar)?',
+            text_for_price
+        )
+        if range_match:
+            v1, m1, v2, m2 = range_match.groups()
+            p1, p2 = float(v1), float(v2)
+            has_k_or_min = (m1 in ["k", "min"] or m2 in ["k", "min"] or (p1 < 1000 and p2 < 1000 and ("min" in text_for_price or "k" in text_for_price)))
+            if p1 < 1000 and has_k_or_min:
+                p1 *= 1000
+            if p2 < 1000 and has_k_or_min:
+                p2 *= 1000
+
+            p_min, p_max = min(p1, p2), max(p1, p2)
             if is_usd:
-                min_price_usd, max_price_usd = float(p1), float(p2)
-                min_price, max_price = round(p1 * rate, 2), round(p2 * rate, 2)
+                min_price_usd, max_price_usd = p_min, p_max
+                min_price, max_price = round(p_min * rate, 2), round(p_max * rate, 2)
             else:
-                min_price, max_price = float(p1), float(p2)
-        elif len(parsed_prices) == 1:
-            p = parsed_prices[0]
-            if is_usd:
-                max_price_usd = float(p)
-                max_price = round(p * rate, 2)
-            else:
-                max_price = float(p)
+                min_price, max_price = p_min, p_max
+        else:
+            matches = re.findall(r'(\d+)\s*(k|min)?', text_for_price)
+            parsed_prices = []
+            for val_str, mult in matches:
+                if not val_str: continue
+                val = int(val_str)
+                if mult in ["k", "min"] or (val < 1000 and ("min" in text_for_price or "k" in text_for_price)):
+                    val *= 1000
+                parsed_prices.append(val)
+
+            if len(parsed_prices) >= 2:
+                p1, p2 = sorted(parsed_prices[:2])
+                if is_usd:
+                    min_price_usd, max_price_usd = float(p1), float(p2)
+                    min_price, max_price = round(p1 * rate, 2), round(p2 * rate, 2)
+                else:
+                    min_price, max_price = float(p1), float(p2)
+            elif len(parsed_prices) == 1:
+                p = parsed_prices[0]
+                if is_usd:
+                    max_price_usd = float(p)
+                    max_price = round(p * rate, 2)
+                else:
+                    max_price = float(p)
 
         # Offer / Deal Type
         offer_type = "sale"
@@ -228,10 +261,13 @@ Extract structured JSON strictly with these exact keys:
 
         # Seller type
         seller_type = "any"
-        if "sahibindən" in text_lower or "ev sahibindən" in text_lower or "sahibi" in text_lower:
+        if any(k in text_lower for k in ["sahibindən", "sahibinden", "ev sahibindən", "ev sahibinden", "bir başa sahibindən", "birbaşa sahibindən", "öz sahibindən", "oz sahibinden", "sahibi"]):
             seller_type = "owner"
-        elif "agentlik" in text_lower or "makler" in text_lower:
-            seller_type = "agency"
+        elif any(k in text_lower for k in ["agentlik", "makler", "vasitəçi", "vasiteci", "vasitəçilər", "vasiteciler"]):
+            if any(w in text_lower for w in ["az paylaşılan", "az paylasilan", "heç paylaşılmayan", "hec paylasilmayan", "olmayan", "olmasın", "olmasin", "vasitəçisiz", "vasitecisiz", "maklersiz"]):
+                seller_type = "owner"
+            else:
+                seller_type = "agency"
 
         # Building type (For commercial, office, and land, default to "any")
         building_type = "any"
