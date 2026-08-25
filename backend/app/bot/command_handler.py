@@ -614,14 +614,138 @@ class BotCommandHandler:
                 channel=channel, sender_id=sender_id, instance_name=instance_name
             )
 
-        # 7. Fallback Search Wizard for Arbitrary Natural Language Text
-        if len(raw_text_trimmed) >= 3:
-            return await BotCommandHandler._process_search_wizard(
-                db, tenant, raw_text_trimmed,
-                channel=channel, sender_id=sender_id, instance_name=instance_name
+        # 7. Fallback: Check if message is related to real estate / property search
+        if len(raw_text_trimmed) >= 2:
+            is_prop = BotCommandHandler._is_property_related_query(
+                raw_text_trimmed,
+                has_active_draft=bool(tenant.draft_search_json)
             )
+            if is_prop:
+                return await BotCommandHandler._process_search_wizard(
+                    db, tenant, raw_text_trimmed,
+                    channel=channel, sender_id=sender_id, instance_name=instance_name
+                )
+            else:
+                return BotCommandHandler._get_unrelated_message_response(app_name)
 
         return BotCommandHandler._get_start_message(app_name)
+
+    @staticmethod
+    def _get_unrelated_message_response(app_name: str) -> str:
+        """
+        Generates a clear, user-friendly guidance message when an incoming message
+        does not contain any property-related search criteria or commands.
+        """
+        return (
+            f"🤖 *Hörmətli istifadəçi!*\n\n"
+            f"Mən sizin *{app_name}* süni intellekt köməkçinizəm. Mən yalnız **daşınmaz əmlak** (mənzil, həyət evi/villa, ofis, kommersiya obyekti, torpaq) axtarışı və 19 portal üzrə yeni elanların dərhal çatdırılması üzrə ixtisaslaşmışam.\n\n"
+            f"Zəhmət olmasa yalnız axtarmaq istədiyiniz mənzil və ya əmlak parametrlərini yazın.\n\n"
+            f"📌 *Nümunə axtarışlar:*\n"
+            f"1️⃣ `Yasamalda və ya Elmlər metrosu yaxınlığında 3 otaqlı 120-160 min AZN yeni tikili`\n"
+            f"2️⃣ `Nərimanovda 2 otaqlı 600-800 AZN təmirli kirayə mənzil`\n\n"
+            f"💡 *İstədiyiniz əmlak tələbini sərbəst cümlə ilə yazın, ən uyğun elanları dərhal tapım!*"
+        )
+
+    @staticmethod
+    def _is_property_related_query(text: str, has_active_draft: bool = False) -> bool:
+        """
+        Determines whether the incoming user message is related to real estate/property search.
+        If not related, the system avoids creating/saving search drafts and guides the user.
+        """
+        if not text or len(text.strip()) < 2:
+            return False
+
+        text_lower = text.lower().strip()
+
+        # 1. Explicit search prefixes or commands
+        if any(text_lower.startswith(p) for p in ["/yeni", "/add", "/new", "/axtar", "yeni axtarış", "yeni axtaris", "/search", "axtar"]):
+            return True
+
+        # 2. Location detection (Districts, Settlements, Metros, Streets, Cities)
+        from app.core.baku_locations import extract_all_locations
+        locs = extract_all_locations(text)
+        if locs:
+            return True
+
+        # Check regional cities / regions in Azerbaijan
+        az_cities = [
+            "sumqayıt", "sumqayit", "xırdalan", "xirdalan", "abşeron", "abseron",
+            "gəncə", "gence", "mingəçevir", "mingecevir", "quba", "qusar", "qəbələ", "qebele",
+            "şamaxı", "samaxi", "ismayıllı", "ismayilli", "lənkəran", "lenkeran", "şəki", "seki",
+            "xaçmaz", "xacmaz", "naxçıvan", "naxcivan", "masazır", "masazir", "saray", "ceyranbatan",
+            "badamdar", "bilgəh", "bilgeh", "şüvəlan", "suvelan", "mərdəkan", "merdekan", "hövsan", "hovsan"
+        ]
+        if any(city in text_lower for city in az_cities):
+            return True
+
+        # 3. Property types & keywords (AZ, RU, EN)
+        prop_keywords = [
+            # AZ
+            "mənzil", "menzil", "ev", "evlər", "evler", "villa", "villalar", "həyət evi", "heyet evi",
+            "bağ evi", "bag evi", "bağ", "bag", "həyət", "heyet", "ofis", "ofislər", "ofisler",
+            "obyekt", "obyektlər", "obyektler", "torpaq", "torpaqlar", "torpaq sahəsi", "qeyri-yaşayış",
+            "qeyri yasayis", "apartament", "dupleks", "mansard", "novostroyka", "qaraj", "anbar", "depo",
+            "bina", "kommersiya", "plazan", "plaza", "rezidens", "residence", "kompleks", "sahə", "sahe",
+            # RU
+            "квартира", "квартиры", "квартиру", "дом", "дома", "вилла", "виллах", "дача", "дачи",
+            "офис", "офисы", "объект", "объекты", "участок", "земля", "новостройка", "новостройки",
+            "вторичка", "помещение", "коммерция", "гараж", "склад",
+            # EN
+            "apartment", "flat", "house", "villa", "cottage", "office", "commercial", "property",
+            "land", "plot", "real estate", "realty"
+        ]
+        for kw in prop_keywords:
+            if len(kw) <= 3:
+                if re.search(r'\b' + re.escape(kw) + r'\b', text_lower):
+                    return True
+            else:
+                if kw in text_lower:
+                    return True
+
+        # 4. Real estate transaction & attribute keywords (AZ, RU, EN)
+        trade_keywords = [
+            # AZ
+            "kirayə", "kiraye", "icarə", "icare", "arenda", "satış", "satis", "satılır", "satilir",
+            "satıram", "satiram", "almaq", "alıram", "aliram", "axtarıram", "axtariram", "lazımdır", "lazimdir",
+            "aylıq", "ayliq", "günlük", "gunluk", "kupça", "kupca", "çıxarış", "cixaris", "sənəd", "sened",
+            "ipoteka", "ipotekalı", "ipotekali", "ipotekaya", "təmirli", "temirli", "təmirsiz", "temirsiz",
+            "əla təmirli", "ela temirli", "podmayak", "pod mayak", "yeni tikili", "köhnə tikili", "kohne tikili",
+            "orta blok", "orta mərtəbə", "orta mertebe", "mertebe", "mərtəbə", "otaq", "otaqlı", "otaqli",
+            "kvadrat", "kv", "m²", "sot", "hektar", "aydan bəri", "aydan beri", "aydır satışda", "aydir satisda",
+            # RU
+            "аренда", "снять", "сдам", "сдается", "купить", "куплю", "продажа", "продается",
+            "ищу", "посуточно", "помесячно", "купчая", "ипотека", "ремонт", "комнат", "комнатная",
+            "этаж", "этаже", "соток", "сотки",
+            # EN
+            "rent", "rental", "lease", "sale", "buy", "purchase", "mortgage", "deed", "repaired",
+            "rooms", "bedroom", "floor", "sqm"
+        ]
+        for kw in trade_keywords:
+            if len(kw) <= 3:
+                if re.search(r'\b' + re.escape(kw) + r'\b', text_lower):
+                    return True
+            else:
+                if kw in text_lower:
+                    return True
+
+        # 5. Price & budget patterns (e.g. 150 min, 150000 AZN, $100k, 500-800 manat)
+        if re.search(r'\d+\s*(?:min|k|azn|₼|usd|\$|manat|dollar|minə|mine|mindən|minden)\b', text_lower):
+            return True
+
+        # 6. Room counts (e.g. "3 otaq", "2-otaqlı", "4 komnat", "2 bed")
+        if re.search(r'\d+\s*(?:otaq|otaqlı|otaqli|komnat|otag|bed|room)\b', text_lower):
+            return True
+
+        # 7. Area / floor specifications (e.g. "80 kv", "120 m2", "5-ci mərtəbə", "6 sot")
+        if re.search(r'\d+\s*(?:kv|kvadrat|m²|m2|sqm|sot|hektar|etaj|mərtəbə|mertebe)\b', text_lower):
+            return True
+
+        # 8. If user has an active draft and is providing conversational follow-ups
+        if has_active_draft:
+            if re.search(r'\b\d+\b', text_lower) or any(w in text_lower for w in ["hə", "bəli", "yox", "xeyr", "olsun", "olmasın", "yalnız", "ancaq", "təkcə"]):
+                return True
+
+        return False
 
     @staticmethod
     async def _handle_onboarding(

@@ -403,3 +403,65 @@ async def test_opencv_watermark_cleaner():
     assert cleaned_bytes is not None
     assert len(cleaned_bytes) > 0
 
+
+@pytest.mark.asyncio
+async def test_bot_unrelated_message_handling():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with async_session() as db:
+        t = Tenant(
+            name="Test Agent",
+            phone="+994501112233",
+            telegram_chat_id="111223344",
+            preferred_channel="telegram",
+            status="active",
+            plan="pro"
+        )
+        db.add(t)
+        await db.commit()
+
+        # 1. Unrelated general questions should NOT create drafts and should return guidance message with 2 examples
+        unrelated_queries = [
+            "Hava bu gün necədir?",
+            "Sabah saat neçədə görüşək?",
+            "Burada kofe var?",
+            "Maşın satırsınız?",
+            "Futbol oyunu nə vaxt başlayır?"
+        ]
+
+        for uq in unrelated_queries:
+            resp = await BotCommandHandler.handle_incoming_message(
+                db=db,
+                channel="telegram",
+                sender_id="111223344",
+                sender_name="Test Agent",
+                raw_text=uq
+            )
+            assert "daşınmaz əmlak" in resp.lower() or "yalnız" in resp.lower()
+            assert "nümunə axtarışlar" in resp.lower()
+            assert "yasamalda" in resp.lower()
+            assert "nərimanovda" in resp.lower()
+
+            await db.refresh(t)
+            assert t.draft_search_json is None
+
+        # 2. Property related search SHOULD activate search wizard preview
+        prop_query = "Yasamalda 3 otaqlı 150 min AZN yeni tikili mənzil"
+        resp_prop = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="telegram",
+            sender_id="111223344",
+            sender_name="Test Agent",
+            raw_text=prop_query
+        )
+        assert "axtarış parametrlərinin ön baxışı" in resp_prop.lower() or "təsdiq" in resp_prop.lower()
+        await db.refresh(t)
+        assert t.draft_search_json is not None
+
+    await engine.dispose()
+
+
