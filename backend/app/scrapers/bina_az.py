@@ -183,32 +183,9 @@ class BinaAzScraper(BaseScraper):
                 if rooms_m:
                     rooms = int(rooms_m.group(1))
 
-                # 8. Extract all Photos from Detail Page Gallery
-                item_photos = []
-                for tag in soup.find_all(True):
-                    for attr in ['src', 'data-src', 'data-full-src', 'data-original', 'data-lazy-src', 'href', 'content', 'srcset', 'data-srcset']:
-                        val = tag.get(attr)
-                        if not val:
-                            continue
-                        parts = [v.strip().split()[0] for v in val.split(',') if v.strip()]
-                        for p in parts:
-                            if any(ext in p.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
-                                if ('uploads/' in p or 'bina.az' in p or 'turbo.az' in p or 'tap.az' in p or 'azstatic' in p):
-                                    item_photos.append(p)
-
-                for s in soup.find_all('script'):
-                    if s.string:
-                        for match in re.findall(r'(https?://[^\s\"\'\(\)\<\>\[\]\{\}]+(?:uploads|azstatic|bina|tap)[^\s\"\'\(\)\<\>\[\]\{\}]+\.(?:jpg|jpeg|png|webp))', s.string, re.I):
-                            item_photos.append(match)
-
-                clean_photos = []
-                bad_badges = ['logo', 'icon', 'avatar', 'agency_logos', 'agency_logo', 'svg', 'banner', 'static/assets', 'default_', 'placeholder']
-                for p in item_photos:
-                    if any(b in p.lower() for b in bad_badges):
-                        continue
-                    p_full = p.replace('/thumbnail/', '/full/').replace('/f660x496/', '/full/').replace('/f550x410/', '/full/').replace('/f220x165/', '/full/').replace('/small/', '/large/').replace('/thumb/', '/large/')
-                    if p_full not in clean_photos:
-                        clean_photos.append(p_full)
+                # 8. Extract all Photos from Detail Page Gallery via ScraplingHelper
+                from app.scrapers.utils import ScraplingHelper
+                clean_photos = ScraplingHelper.extract_all_photos(r.text, base_url="https://bina.az")
 
                 return {
                     "phone_number": phone,
