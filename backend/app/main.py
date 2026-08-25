@@ -96,6 +96,12 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS addon_saved_searches INTEGER DEFAULT 0;"))
         await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS addon_saved_searches_price FLOAT DEFAULT 10.0;"))
         await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS addon_search_tiers JSON DEFAULT '[]'::json;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS sale_enabled BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS sale_price FLOAT;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS sale_discount_percent FLOAT;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS sale_type VARCHAR(50) DEFAULT 'permanent';"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS sale_expires_at TIMESTAMP WITH TIME ZONE;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS sale_badge_label VARCHAR(100);"))
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS seller_payout_requests (
                 id SERIAL PRIMARY KEY,

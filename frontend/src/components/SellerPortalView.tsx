@@ -120,6 +120,12 @@ export interface SellerPackageItem {
   included_image_requests?: number;
   addon_image_requests_price?: number;
   addon_image_tiers?: { requests: number; price: number }[];
+  sale_enabled?: boolean;
+  sale_price?: number;
+  sale_discount_percent?: number;
+  sale_type?: string;
+  sale_expires_at?: string;
+  sale_badge_label?: string;
   is_active: boolean;
 }
 
@@ -255,6 +261,15 @@ export function SellerPortalView() {
   const [pkgIncludedImages, setPkgIncludedImages] = useState<number>(0);
   const [pkgAddonImagesPrice, setPkgAddonImagesPrice] = useState<number>(10);
   const [pkgImageTiers, setPkgImageTiers] = useState<{ requests: number; price: number }[]>([]);
+  
+  // Package Promotional Sale State
+  const [pkgSaleEnabled, setPkgSaleEnabled] = useState(false);
+  const [pkgSalePrice, setPkgSalePrice] = useState<number | undefined>(undefined);
+  const [pkgSaleDiscountPercent, setPkgSaleDiscountPercent] = useState<number | undefined>(undefined);
+  const [pkgSaleType, setPkgSaleType] = useState<string>('permanent');
+  const [pkgSaleExpiresAt, setPkgSaleExpiresAt] = useState<string>('');
+  const [pkgSaleBadgeLabel, setPkgSaleBadgeLabel] = useState<string>('');
+  
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
   const [submittingPkg, setSubmittingPkg] = useState(false);
 
@@ -804,7 +819,13 @@ export function SellerPortalView() {
         feature_watermark_free_images: pkgWatermarkImages,
         included_image_requests: pkgIncludedImages,
         addon_image_requests_price: pkgAddonImagesPrice,
-        addon_image_tiers: pkgImageTiers
+        addon_image_tiers: pkgImageTiers,
+        sale_enabled: pkgSaleEnabled,
+        sale_price: pkgSaleEnabled ? pkgSalePrice : undefined,
+        sale_discount_percent: pkgSaleEnabled ? pkgSaleDiscountPercent : undefined,
+        sale_type: pkgSaleType,
+        sale_expires_at: pkgSaleExpiresAt ? new Date(pkgSaleExpiresAt).toISOString() : undefined,
+        sale_badge_label: pkgSaleBadgeLabel || undefined
       };
 
       if (editingPkg) {
@@ -858,6 +879,12 @@ export function SellerPortalView() {
     setPkgIncludedImages(0);
     setPkgAddonImagesPrice(10);
     setPkgImageTiers([{ requests: 25, price: 10 }, { requests: 50, price: 18 }, { requests: 100, price: 30 }]);
+    setPkgSaleEnabled(false);
+    setPkgSalePrice(undefined);
+    setPkgSaleDiscountPercent(undefined);
+    setPkgSaleType('permanent');
+    setPkgSaleExpiresAt('');
+    setPkgSaleBadgeLabel('');
     setIsAddPkgOpen(true);
   };
 
@@ -891,6 +918,12 @@ export function SellerPortalView() {
       { requests: 50, price: 18 },
       { requests: 100, price: 30 }
     ]);
+    setPkgSaleEnabled(pkg.sale_enabled ?? false);
+    setPkgSalePrice(pkg.sale_price);
+    setPkgSaleDiscountPercent(pkg.sale_discount_percent);
+    setPkgSaleType(pkg.sale_type || 'permanent');
+    setPkgSaleExpiresAt(pkg.sale_expires_at ? pkg.sale_expires_at.split('T')[0] : '');
+    setPkgSaleBadgeLabel(pkg.sale_badge_label || '');
     setIsAddPkgOpen(true);
   };
 
@@ -1419,6 +1452,29 @@ export function SellerPortalView() {
                 <div className="space-y-4">
                   <div className="flex items-start justify-between">
                     <div>
+                      {pkg.sale_enabled && (
+                        <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                            <Sparkles className="w-3 h-3 text-rose-400" />
+                            <span>{pkg.sale_badge_label || `🔥 ${pkg.sale_discount_percent ? `${pkg.sale_discount_percent}% ENDİRİM` : 'XÜSUSİ TƏKLİF'}`}</span>
+                          </span>
+                          {pkg.sale_type === 'first_month' && (
+                            <span className="text-[9px] px-2 py-0.2 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/25 font-semibold">
+                              İlk 1 ay
+                            </span>
+                          )}
+                          {pkg.sale_type === 'first_3_months' && (
+                            <span className="text-[9px] px-2 py-0.2 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/25 font-semibold">
+                              İlk 3 ay
+                            </span>
+                          )}
+                          {pkg.sale_type === 'first_6_months' && (
+                            <span className="text-[9px] px-2 py-0.2 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/25 font-semibold">
+                              İlk 6 ay
+                            </span>
+                          )}
+                        </div>
+                      )}
                       <h3 className="text-xl font-bold text-white">{pkg.name}</h3>
                       <p className="text-xs text-slate-400 mt-0.5">{pkg.description || 'Fərdi agent paketi'}</p>
                     </div>
@@ -1439,8 +1495,27 @@ export function SellerPortalView() {
                   </div>
 
                   <div className="pt-2">
-                    <span className="text-3xl font-black text-white">{pkg.price} AZN</span>
-                    <span className="text-xs text-slate-400 ml-1.5">/ {pkg.period === 'monthly' ? 'aylıq' : pkg.period}</span>
+                    {pkg.sale_enabled && pkg.sale_price !== undefined ? (
+                      <div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-3xl font-black text-emerald-400">{pkg.sale_price} AZN</span>
+                          <span className="text-sm font-bold text-slate-500 line-through">{pkg.price} AZN</span>
+                          <span className="text-xs text-slate-400 ml-1">/ {pkg.period === 'monthly' ? 'aylıq' : pkg.period}</span>
+                        </div>
+                        <span className="text-[10px] text-emerald-400/80 font-medium block mt-0.5">
+                          {pkg.sale_type === 'first_month' && '⚡ İlk 1 ay endirimlə, sonrakı aylar standart qiymət'}
+                          {pkg.sale_type === 'first_3_months' && '⚡ İlk 3 ay endirimlə, sonrakı aylar standart qiymət'}
+                          {pkg.sale_type === 'first_6_months' && '⚡ İlk 6 ay endirimlə, sonrakı aylar standart qiymət'}
+                          {pkg.sale_type === 'limited_time' && pkg.sale_expires_at && `⚡ Kampaniya bitmə tarixi: ${new Date(pkg.sale_expires_at).toLocaleDateString('az-AZ')}`}
+                          {pkg.sale_type === 'permanent' && '⚡ Bütün abunəlik müddəti üçün daimi endirim'}
+                        </span>
+                      </div>
+                    ) : (
+                      <div>
+                        <span className="text-3xl font-black text-white">{pkg.price} AZN</span>
+                        <span className="text-xs text-slate-400 ml-1.5">/ {pkg.period === 'monthly' ? 'aylıq' : pkg.period}</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-2 text-xs text-slate-300 pt-2 border-t border-slate-800">
@@ -3563,9 +3638,131 @@ export function SellerPortalView() {
                     Sizin Komissiya Payınız (%{dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70}):
                   </span>
                   <span className="font-bold text-emerald-400 text-sm">
-                    +{((pkgPrice * (dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70)) / 100).toFixed(1)} AZN
+                    +{((((pkgSaleEnabled && pkgSalePrice) ? pkgSalePrice : pkgPrice) * (dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70)) / 100).toFixed(1)} AZN
                   </span>
                 </div>
+              </div>
+
+              {/* Promotional Sale & Discount Settings */}
+              <div className="p-4 bg-gradient-to-br from-rose-950/30 via-slate-950/60 to-slate-950/40 border border-rose-500/30 rounded-2xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-rose-400" />
+                    <div>
+                      <h4 className="text-xs font-bold text-white">Xüsusi Endirim & Kampaniya Təklif Et</h4>
+                      <p className="text-[10px] text-slate-400">Agentləri cəlb etmək üçün faizlə və ya ilk aylara özəl endirim qurun.</p>
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={pkgSaleEnabled}
+                      onChange={(e) => {
+                        const enabled = e.target.checked;
+                        setPkgSaleEnabled(enabled);
+                        if (enabled && !pkgSalePrice && !pkgSaleDiscountPercent) {
+                          const defPercent = 20;
+                          setPkgSaleDiscountPercent(defPercent);
+                          setPkgSalePrice(Math.round(pkgPrice * (1 - defPercent / 100)));
+                        }
+                      }}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-rose-600"></div>
+                  </label>
+                </div>
+
+                {pkgSaleEnabled && (
+                  <div className="space-y-3 pt-2 border-t border-rose-500/20 text-xs">
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1">Endirim Növü (Kampaniya Şərti)</label>
+                      <select
+                        value={pkgSaleType}
+                        onChange={(e) => setPkgSaleType(e.target.value)}
+                        className="w-full bg-slate-900 border border-rose-500/40 rounded-xl px-3 py-2 text-white font-medium focus:outline-none focus:border-rose-400"
+                      >
+                        <option value="first_month">🔥 Yalnız İlk 1 Ay Endirimlə (1st Month Promo)</option>
+                        <option value="first_3_months">⚡ İlk 3 Ay Endirimlə (First 3 Months Sale)</option>
+                        <option value="first_6_months">⭐ İlk 6 Ay Endirimlə (First 6 Months)</option>
+                        <option value="permanent">♾️ Bütün Müddət Üçün Daimi Endirim</option>
+                        <option value="limited_time">⏳ Müddətli Kampaniya (Tarixə qədər)</option>
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-slate-300 font-semibold mb-1">Endirim Faizi (%)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="90"
+                          step="1"
+                          placeholder="Məs: 20%"
+                          value={pkgSaleDiscountPercent || ''}
+                          onChange={(e) => {
+                            const pct = Number(e.target.value);
+                            setPkgSaleDiscountPercent(pct);
+                            if (pct > 0 && pkgPrice > 0) {
+                              setPkgSalePrice(Math.round(pkgPrice * (1 - pct / 100)));
+                            }
+                          }}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-rose-400"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-slate-300 font-semibold mb-1">Endirimli Qiymət (AZN)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          placeholder="Məs: 39 AZN"
+                          value={pkgSalePrice || ''}
+                          onChange={(e) => {
+                            const pr = Number(e.target.value);
+                            setPkgSalePrice(pr);
+                            if (pr > 0 && pkgPrice > 0) {
+                              setPkgSaleDiscountPercent(Math.round(((pkgPrice - pr) / pkgPrice) * 100));
+                            }
+                          }}
+                          className="w-full bg-slate-900 border border-emerald-500/50 rounded-xl px-3 py-2 text-emerald-400 font-bold focus:outline-none focus:border-emerald-400"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-slate-300 font-semibold mb-1">Xüsusi Nişan Mətni (Könüllü)</label>
+                        <input
+                          type="text"
+                          placeholder="Məs: 🔥 YAZ ENDİRİMİ"
+                          value={pkgSaleBadgeLabel}
+                          onChange={(e) => setPkgSaleBadgeLabel(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-rose-400"
+                        />
+                      </div>
+
+                      {pkgSaleType === 'limited_time' ? (
+                        <div>
+                          <label className="block text-slate-300 font-semibold mb-1">Kampaniya Bitmə Tarixi</label>
+                          <input
+                            type="date"
+                            value={pkgSaleExpiresAt}
+                            onChange={(e) => setPkgSaleExpiresAt(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-rose-400"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex flex-col justify-center">
+                          <span className="text-[11px] text-slate-400">Endirimli Xalis Qazanc:</span>
+                          <span className="text-emerald-400 font-bold text-sm">
+                            +{(((pkgSalePrice || pkgPrice) * (dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70)) / 100).toFixed(1)} AZN
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

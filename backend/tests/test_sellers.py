@@ -877,4 +877,83 @@ async def test_admin_configurable_rank_bonuses(client: AsyncClient, test_db: Asy
     assert dash_res3.json()["effective_commission_rate"] == 70.0
 
 
+@pytest.mark.asyncio
+async def test_seller_package_promotional_sale_and_discount(client: AsyncClient, test_db: AsyncSession):
+    # 1. Seed Seller User & Seller Profile
+    seller_user = User(
+        name="Promo Seller",
+        email="promoseller@baku.az",
+        phone="+994508889900",
+        role="seller",
+        password_hash=get_password_hash("seller123")
+    )
+    test_db.add(seller_user)
+    await test_db.commit()
+    await test_db.refresh(seller_user)
+
+    seller = Seller(
+        user_id=seller_user.id,
+        name="Promo Seller",
+        email="promoseller@baku.az",
+        phone="+994508889900",
+        commission_rate=70.0,
+        rank="Bronze"
+    )
+    test_db.add(seller)
+    await test_db.commit()
+    await test_db.refresh(seller)
+
+    seller_token = create_access_token(seller_user.id)
+    seller_headers = {"Authorization": f"Bearer {seller_token}"}
+
+    # 2. Create a package with 20% promotional discount (Original: 50 AZN -> Sale: 40 AZN)
+    create_res = await client.post("/api/v1/sellers/me/packages", json={
+        "name": "Super Start Promo",
+        "price": 50.0,
+        "description": "20% endirimlə ilk ay paketi",
+        "period": "monthly",
+        "duration_days": 30,
+        "max_searches": 10,
+        "max_locations": 5,
+        "sale_enabled": True,
+        "sale_discount_percent": 20.0,
+        "sale_type": "first_month",
+        "sale_badge_label": "🔥 20% İLK AY ENDİRİMİ"
+    }, headers=seller_headers)
+    assert create_res.status_code == 201
+    pkg_id = create_res.json()["package_id"]
+
+    # 3. Fetch packages and verify promotional calculations
+    list_res = await client.get("/api/v1/sellers/me/packages", headers=seller_headers)
+    assert list_res.status_code == 200
+    pkgs = list_res.json()
+    assert len(pkgs) == 1
+    p = pkgs[0]
+    assert p["sale_enabled"] is True
+    assert p["sale_price"] == 40.0
+    assert p["sale_discount_percent"] == 20.0
+    assert p["sale_type"] == "first_month"
+    assert p["sale_badge_label"] == "🔥 20% İLK AY ENDİRİMİ"
+
+    # 4. Register an agent with this discounted package
+    reg_res = await client.post("/api/v1/sellers/me/agents", json={
+        "name": "Promo Agent 1",
+        "phone": "+994507771122",
+        "package_id": pkg_id,
+        "is_trial": False
+    }, headers=seller_headers)
+    assert reg_res.status_code == 201
+    agent_id = reg_res.json()["agent_id"]
+
+    # 5. Verify transaction & seller earnings reflect 40 AZN sale price (70% commission = 28 AZN profit, 12 AZN platform fee)
+    tx_stmt = select(SellerTransaction).where(SellerTransaction.tenant_id == agent_id)
+    tx_res = await test_db.execute(tx_stmt)
+    tx = tx_res.scalars().first()
+    assert tx is not None
+    assert tx.amount == 40.0
+    assert tx.seller_profit == 28.0
+    assert tx.platform_fee == 12.0
+
+
+
 

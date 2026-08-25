@@ -75,6 +75,12 @@ class CreatePackageRequest(BaseModel):
     included_image_requests: int = 0
     addon_image_requests_price: float = 10.0
     addon_image_tiers: Optional[List[Dict[str, Any]]] = None
+    sale_enabled: bool = False
+    sale_price: Optional[float] = None
+    sale_discount_percent: Optional[float] = None
+    sale_type: str = "permanent"
+    sale_expires_at: Optional[datetime] = None
+    sale_badge_label: Optional[str] = None
 
 class UpdatePackageRequest(BaseModel):
     name: Optional[str] = None
@@ -101,6 +107,12 @@ class UpdatePackageRequest(BaseModel):
     included_image_requests: Optional[int] = None
     addon_image_requests_price: Optional[float] = None
     addon_image_tiers: Optional[List[Dict[str, Any]]] = None
+    sale_enabled: Optional[bool] = None
+    sale_price: Optional[float] = None
+    sale_discount_percent: Optional[float] = None
+    sale_type: Optional[str] = None
+    sale_expires_at: Optional[datetime] = None
+    sale_badge_label: Optional[str] = None
     is_active: Optional[bool] = None
 
 class RegisterSellerAgentRequest(BaseModel):
@@ -966,6 +978,8 @@ async def renew_my_agent(
         agent.addon_image_requests_used = 0
 
         base_price = package.price
+        if getattr(package, 'sale_enabled', False) and getattr(package, 'sale_price', None) is not None and package.sale_price > 0:
+            base_price = package.sale_price
         pkg_tx_id = package.id
         desc_plan = f"Paket Yenilənməsi: {agent.name} ({package.name})"
     else:
@@ -1213,11 +1227,15 @@ async def register_my_agent(
         bonus_pct = rank_info.get("bonus_commission", 0.0)
         effective_commission_pct = min(100.0, seller.commission_rate + bonus_pct)
 
+        effective_pkg_price = package.price
+        if getattr(package, 'sale_enabled', False) and getattr(package, 'sale_price', None) is not None and package.sale_price > 0:
+            effective_pkg_price = package.sale_price
+
         # Dynamic Addon Pricing Calculation
         selected_aged_price = max(0.0, float(body.selected_aged_price or 0.0))
         selected_extra_searches_price = max(0.0, float(body.selected_extra_searches_price or 0.0))
         selected_image_price = max(0.0, float(body.selected_image_price or 0.0))
-        gross_amount = round(package.price + selected_aged_price + selected_extra_searches_price + selected_image_price, 2)
+        gross_amount = round(effective_pkg_price + selected_aged_price + selected_extra_searches_price + selected_image_price, 2)
 
         seller_profit = round(gross_amount * (effective_commission_pct / 100.0), 2)
         platform_fee = round(gross_amount - seller_profit, 2)
@@ -1368,6 +1386,12 @@ async def get_my_packages(
         "included_image_requests": getattr(p, 'included_image_requests', 0),
         "addon_image_requests_price": getattr(p, 'addon_image_requests_price', 10.0),
         "addon_image_tiers": getattr(p, 'addon_image_tiers', []) or [],
+        "sale_enabled": getattr(p, 'sale_enabled', False),
+        "sale_price": getattr(p, 'sale_price', None),
+        "sale_discount_percent": getattr(p, 'sale_discount_percent', None),
+        "sale_type": getattr(p, 'sale_type', 'permanent'),
+        "sale_expires_at": p.sale_expires_at.isoformat() if getattr(p, 'sale_expires_at', None) else None,
+        "sale_badge_label": getattr(p, 'sale_badge_label', None),
         "is_active": p.is_active,
         "created_at": p.created_at.isoformat() if p.created_at else None
     } for p in packages]
@@ -1426,6 +1450,15 @@ async def create_my_package(
             detail=f"Paket qiyməti minimum {min_price:.2f} AZN olmalıdır. Satıcılar pulsuz sınaq paketi yarada bilməz."
         )
 
+    # Calculate sale price & discount percent
+    final_sale_price = body.sale_price
+    final_discount_pct = body.sale_discount_percent
+    if body.sale_enabled:
+        if final_sale_price is None and final_discount_pct is not None and final_discount_pct > 0:
+            final_sale_price = round(body.price * (1 - final_discount_pct / 100.0), 2)
+        elif final_sale_price is not None and final_discount_pct is None and body.price > 0:
+            final_discount_pct = round(((body.price - final_sale_price) / body.price) * 100.0, 1)
+
     pkg = SellerPackage(
         seller_id=seller.id,
         name=body.name,
@@ -1452,6 +1485,12 @@ async def create_my_package(
         included_image_requests=body.included_image_requests,
         addon_image_requests_price=body.addon_image_requests_price,
         addon_image_tiers=body.addon_image_tiers or [],
+        sale_enabled=body.sale_enabled,
+        sale_price=final_sale_price,
+        sale_discount_percent=final_discount_pct,
+        sale_type=body.sale_type or "permanent",
+        sale_expires_at=body.sale_expires_at,
+        sale_badge_label=body.sale_badge_label,
         is_active=True
     )
     db.add(pkg)
@@ -1537,8 +1576,27 @@ async def update_my_package(
         pkg.addon_image_requests_price = body.addon_image_requests_price
     if body.addon_image_tiers is not None:
         pkg.addon_image_tiers = body.addon_image_tiers
+    if body.sale_enabled is not None:
+        pkg.sale_enabled = body.sale_enabled
+    if body.sale_price is not None:
+        pkg.sale_price = body.sale_price
+    if body.sale_discount_percent is not None:
+        pkg.sale_discount_percent = body.sale_discount_percent
+    if body.sale_type is not None:
+        pkg.sale_type = body.sale_type
+    if body.sale_expires_at is not None:
+        pkg.sale_expires_at = body.sale_expires_at
+    if body.sale_badge_label is not None:
+        pkg.sale_badge_label = body.sale_badge_label
     if body.is_active is not None:
         pkg.is_active = body.is_active
+
+    # Reconcile discount calculations
+    if pkg.sale_enabled:
+        if body.sale_price is not None and body.sale_discount_percent is None and pkg.price > 0:
+            pkg.sale_discount_percent = round(((pkg.price - pkg.sale_price) / pkg.price) * 100.0, 1)
+        elif body.sale_discount_percent is not None and body.sale_price is None:
+            pkg.sale_price = round(pkg.price * (1 - pkg.sale_discount_percent / 100.0), 2)
 
     await db.commit()
     await db.refresh(pkg)
