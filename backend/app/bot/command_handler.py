@@ -390,52 +390,64 @@ class BotCommandHandler:
                 return f"Xəta: Elan #{input_id} tapılmadı."
 
             photos = list(listing_obj.photos or [])
-            if not photos:
+            if len(photos) <= 1:
                 # 1. Try BinaAzScraper if from bina.az
                 target_url_or_id = listing_obj.listing_url or listing_obj.external_id or ""
                 if "bina" in target_url_or_id:
                     try:
                         from app.scrapers.bina_az import BinaAzScraper
                         details = await BinaAzScraper.fetch_item_details(target_url_or_id)
-                        if details and details.get("photos"):
+                        if details and details.get("photos") and len(details["photos"]) > len(photos):
                             photos = details["photos"]
                     except Exception as e:
                         logger.debug(f"[CommandHandler] Bina live photo fetch error: {e}")
 
                 # 2. Universal fallback: Scrape images directly from listing_url
-                if not photos and listing_obj.listing_url:
+                if len(photos) <= 1 and listing_obj.listing_url:
                     try:
                         import httpx
                         from urllib.parse import urljoin
                         from bs4 import BeautifulSoup
-                        headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-                        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+                        headers = {
+                            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                            "Referer": "https://bina.az/"
+                        }
+                        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
                             r_page = await client.get(listing_obj.listing_url, headers=headers)
                             if r_page.status_code == 200:
                                 soup = BeautifulSoup(r_page.text, "html.parser")
                                 page_imgs = []
-                                for tag in soup.find_all(['img', 'a', 'meta', 'div']):
-                                    src = tag.get('src') or tag.get('data-src') or tag.get('data-full-src') or tag.get('href') or tag.get('content')
-                                    if src and any(ext in src.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
-                                        if not any(badge in src.lower() for badge in ['logo', 'icon', 'avatar', 'agency_logos', 'svg', 'banner', 'ad-']):
-                                            full_src = urljoin(listing_obj.listing_url, src)
-                                            page_imgs.append(full_src)
+                                for tag in soup.find_all(True):
+                                    for attr in ['src', 'data-src', 'data-full-src', 'data-original', 'data-lazy-src', 'href', 'content', 'srcset', 'data-srcset']:
+                                        val = tag.get(attr)
+                                        if not val:
+                                            continue
+                                        parts = [v.strip().split()[0] for v in val.split(',') if v.strip()]
+                                        for p in parts:
+                                            if any(ext in p.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                                                full_src = urljoin(listing_obj.listing_url, p)
+                                                page_imgs.append(full_src)
+
                                 for s in soup.find_all('script'):
                                     if s.string:
-                                        for match in re.findall(r'(https?://[^\s\"\'\(\)]+\.(?:jpg|jpeg|png|webp))', s.string):
-                                            if not any(badge in match.lower() for badge in ['logo', 'icon', 'avatar', 'agency_logos', 'svg', 'banner']):
-                                                page_imgs.append(match)
+                                        for match in re.findall(r'(https?://[^\s\"\'\(\)\<\>\[\]\{\}]+\.(?:jpg|jpeg|png|webp))', s.string, re.I):
+                                            page_imgs.append(match)
                                 
+                                bad_badges = ['logo', 'icon', 'avatar', 'agency_logos', 'agency_logo', 'svg', 'banner', 'static/assets', 'default_', 'placeholder']
                                 clean_p = []
                                 for p in page_imgs:
-                                    p_full = p.replace('/thumbnail/', '/full/').replace('/f660x496/', '/full/')
+                                    if any(badge in p.lower() for badge in bad_badges):
+                                        continue
+                                    p_full = p.replace('/thumbnail/', '/full/').replace('/f660x496/', '/full/').replace('/f550x410/', '/full/').replace('/f220x165/', '/full/').replace('/small/', '/large/').replace('/thumb/', '/large/')
                                     if p_full not in clean_p:
                                         clean_p.append(p_full)
-                                photos = clean_p
+
+                                if len(clean_p) > len(photos):
+                                    photos = clean_p
                     except Exception as e_gen:
                         logger.debug(f"[CommandHandler] Universal live photo fetch error: {e_gen}")
 
-                if photos:
+                if photos and len(photos) > len(listing_obj.photos or []):
                     listing_obj.photos = photos
                     await db.commit()
 

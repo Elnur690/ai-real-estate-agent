@@ -793,6 +793,8 @@ class IngestionService:
                         listing.rooms = details["rooms"]
                     if details.get("full_description") and len(details["full_description"]) > len(listing.description or ""):
                         listing.description = details["full_description"]
+                    if details.get("photos") and len(details["photos"]) > len(listing.photos or []):
+                        listing.photos = details["photos"]
 
                     # Sanity check: Baku apartments/houses with price <= 400 are daily or monthly rentals, not sale
                     if getattr(listing, 'price', 0) and listing.price <= 400 and getattr(listing, 'offer_type', 'sale') == 'sale':
