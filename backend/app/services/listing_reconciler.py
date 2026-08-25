@@ -70,7 +70,7 @@ class ListingReconcilerService:
                         Listing.created_at <= min_age,
                         Listing.created_at >= max_age
                     )
-                    .order_by(Listing.created_at.asc())
+                    .order_by(Listing.last_seen_at.asc())
                     .limit(batch_size)
                 )
                 res = await db.execute(stmt)
@@ -89,6 +89,7 @@ class ListingReconcilerService:
                             continue
                         checked += 1
                         is_active = await ListingReconcilerService.check_url_liveness(target_url, client)
+                        item.last_seen_at = datetime.now(timezone.utc)
                         if not is_active:
                             item.is_active = False
                             deactivated += 1
@@ -96,8 +97,7 @@ class ListingReconcilerService:
                         # Gentle pacing between checks
                         await asyncio.sleep(0.3)
 
-                if deactivated > 0:
-                    await db.commit()
+                await db.commit()
 
                 return {"checked": checked, "deactivated": deactivated}
             except Exception as e:

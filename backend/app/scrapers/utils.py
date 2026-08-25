@@ -64,15 +64,37 @@ async def polite_delay(min_seconds: float = 1.0, max_seconds: float = 2.5) -> No
 
 
 def safe_float(val: Any, default: float = 0.0) -> float:
-    """Safely parse float from string or regex match without throwing ValueError on empty/whitespace."""
+    """
+    Safely parse float from string, handle localized thousands separators
+    (e.g. '150 000', '150.000', '1.500.000', '150,000') and decimals ('92.5', '110,4').
+    """
     if val is None:
         return default
     if isinstance(val, (int, float)):
         return float(val)
     val_str = str(val).replace('\xa0', ' ').strip()
-    digits_only = re.sub(r'[^\d.]', '', val_str.replace(',', '.'))
+    val_clean = re.sub(r'[^\d.,\s]', '', val_str).strip()
+    if not val_clean:
+        return default
+
+    # If spaces are used as thousand separators (e.g. "150 000" or "1 500 000")
+    if " " in val_clean:
+        val_clean = val_clean.replace(" ", "")
+
+    # Multiple dots or commas (e.g. "1.500.000" or "1,500,000")
+    if val_clean.count(".") > 1:
+        val_clean = val_clean.replace(".", "")
+    if val_clean.count(",") > 1:
+        val_clean = val_clean.replace(",", "")
+
+    # Single dot or comma: determine if thousand separator (followed by 3 digits) or decimal
+    if re.search(r'[\.,]\d{3}$', val_clean):
+        val_clean = re.sub(r'[\.,]', '', val_clean)
+    else:
+        val_clean = val_clean.replace(',', '.')
+
     try:
-        return float(digits_only) if digits_only else default
+        return float(val_clean) if val_clean else default
     except (ValueError, TypeError):
         return default
 
@@ -83,12 +105,8 @@ def safe_optional_float(val: Any) -> Optional[float]:
         return None
     if isinstance(val, (int, float)):
         return float(val)
-    val_str = str(val).replace('\xa0', ' ').strip()
-    digits_only = re.sub(r'[^\d.]', '', val_str.replace(',', '.'))
-    try:
-        return float(digits_only) if digits_only else None
-    except (ValueError, TypeError):
-        return None
+    parsed = safe_float(val, default=0.0)
+    return parsed if parsed > 0.0 else None
 
 
 class ScraplingHelper:

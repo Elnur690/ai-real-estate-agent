@@ -239,7 +239,7 @@ async def create_plan(
         sale_price=final_sale_price,
         sale_discount_percent=final_discount_pct,
         sale_type=body.sale_type or "permanent",
-        sale_expires_at=body.sale_expires_at,
+        sale_expires_at=(datetime.fromisoformat(body.sale_expires_at) if body.sale_expires_at else None),
         sale_badge_label=body.sale_badge_label,
         backup_enabled=body.backup_enabled
     )
@@ -420,7 +420,10 @@ async def update_plan(
         plan.sale_type = body.sale_type
     if body.sale_expires_at is not None:
         from datetime import datetime as dt
-        plan.sale_expires_at = dt.fromisoformat(body.sale_expires_at) if body.sale_expires_at else None
+        try:
+            plan.sale_expires_at = dt.fromisoformat(body.sale_expires_at) if body.sale_expires_at else None
+        except (ValueError, TypeError):
+            plan.sale_expires_at = None
     if body.sale_badge_label is not None:
         plan.sale_badge_label = body.sale_badge_label
     if body.backup_enabled is not None:

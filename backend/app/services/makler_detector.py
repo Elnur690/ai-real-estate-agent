@@ -106,8 +106,8 @@ class MaklerDetectorService:
 
         if raw_phone_str:
             raw_digits = re.sub(r'\D', '', raw_phone_str)
-            phone_suffix = raw_digits[-7:] if len(raw_digits) >= 7 else raw_digits
-            if phone_suffix:
+            if len(raw_digits) >= 7:
+                phone_suffix = raw_digits[-7:]
                 stmt_count = select(func.count(Listing.id)).where(
                     Listing.id != listing.id,
                     (Listing.phone_number.like(f"%{phone_suffix}%")) |

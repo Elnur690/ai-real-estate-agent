@@ -19,8 +19,12 @@ class TapAzScraper(BaseScraper):
         seen = set()
 
         urls_to_fetch = [url_or_handle] if ("?" in url_or_handle or not url_or_handle.endswith("tap.az/elanlar/dasinmaz-emlak")) else [
-            "https://tap.az/elanlar/dasinmaz-emlak",
-            "https://tap.az/elanlar/dasinmaz-emlak/menziller"
+            "https://tap.az/elanlar/dasinmaz-emlak?order=new",
+            "https://tap.az/elanlar/dasinmaz-emlak/menziller?order=new",
+            "https://tap.az/elanlar/dasinmaz-emlak/heyet-evleri-baglar-villalar?order=new",
+            "https://tap.az/elanlar/dasinmaz-emlak/ofisler?order=new",
+            "https://tap.az/elanlar/dasinmaz-emlak/obyektler?order=new",
+            "https://tap.az/elanlar/dasinmaz-emlak/torpaq?order=new"
         ]
 
         headers = get_random_headers(referer="https://tap.az/")
