@@ -508,6 +508,7 @@ class IngestionService:
         """
         from app.core.property_classifier import (
             AGENCY_KEYWORDS, OWNER_KEYWORDS, COMMISSION_REGEX,
+            INVENTORY_CODE_REGEX, MULTI_INVENTORY_REGEX,
             RENTAL_KEYWORDS, SALE_KEYWORDS, normalize_az_text
         )
 
@@ -582,8 +583,13 @@ class IngestionService:
                 return False
             if listing.seller_type != "owner":
                 return False
-            text_agency_check = re.sub(r'\b(?:vasitəçisiz|vasitecisiz|maklersiz|vasitəçi yoxdur|makler deyiləm)\b', ' [GENUINE_OWNER_FLAG] ', listing_text)
-            if any(kw in text_agency_check for kw in AGENCY_KEYWORDS) or bool(COMMISSION_REGEX.search(text_agency_check)):
+            text_agency_check = re.sub(r'\b(?:vasitəçisiz|vasitecisiz|maklersiz|vasitəçi yoxdur|vasiteci yoxdur|vasitəçi deyiləm|vasiteci deyilem|vasitəçi deyil|vasiteci deyil|makler deyiləm|makler deyilem|makler deyil|maklerlər narahat etməsin|maklerler narahat etmesin|vasitəçilər narahat etməsin|vasiteciler narahat etmesin)\b', ' [GENUINE_OWNER_FLAG] ', listing_text)
+            if (
+                any(kw in text_agency_check for kw in AGENCY_KEYWORDS) or
+                bool(COMMISSION_REGEX.search(text_agency_check)) or
+                bool(INVENTORY_CODE_REGEX.search(text_agency_check)) or
+                bool(MULTI_INVENTORY_REGEX.search(text_agency_check))
+            ):
                 return False
         elif search_seller in ["agent", "agency", "makler"]:
             if listing.seller_type == "owner" and not getattr(listing, 'is_makler', False):
@@ -895,7 +901,8 @@ class IngestionService:
                 await db.refresh(new_match)
                 matches_count += 1
 
-                seller_str = "Ev Sahibindən" if listing.seller_type == "owner" else "Vasitəçidən/Agentlikdən"
+                is_genuine_owner = (listing.seller_type == "owner") and not getattr(listing, 'is_makler', False) and ((listing.makler_score or 0.0) < 0.30)
+                seller_str = "Ev Sahibindən" if is_genuine_owner else "Vasitəçidən/Agentlikdən"
                 bld_str = "Yeni tikili" if listing.building_type == "new" else ("Köhnə tikili" if listing.building_type == "old" else "")
 
                 deal_label = "İcarə / Kirayə" if getattr(listing, 'offer_type', 'sale') == 'rent' else ("Günlük Kirayə" if getattr(listing, 'offer_type', 'sale') == 'daily_rent' else "Satış")
@@ -945,21 +952,24 @@ class IngestionService:
                 has_ipoteka_tag = "İpotekaya yararlıdır" if any(k in desc_text_lower for k in ["ipoteka: var", "ipotekaya yararlı", "ipotekaya yararli", "ipoteka var"]) else None
                 has_temir_tag = "Təmirli" if any(k in desc_text_lower for k in ["təmir: var", "temir: var", "təmirli", "temirli", "əla təmirli"]) else None
 
-                # Published Date Formatting
+                # Published Date Formatting in Baku Timezone (UTC+4, AZT)
+                baku_tz = timezone(timedelta(hours=4))
+                now_baku = now_utc.astimezone(baku_tz)
                 pub_date = listing.created_at or now_utc
                 if pub_date.tzinfo is None:
                     pub_date = pub_date.replace(tzinfo=timezone.utc)
-                delta_days = (now_utc.date() - pub_date.date()).days
+                pub_date_baku = pub_date.astimezone(baku_tz)
+                delta_days = (now_baku.date() - pub_date_baku.date()).days
 
                 if delta_days == 0:
-                    date_str = f"Bugün ({pub_date.strftime('%H:%M')})"
+                    date_str = f"Bugün ({pub_date_baku.strftime('%H:%M')})"
                 elif delta_days == 1:
-                    date_str = f"Dünən ({pub_date.strftime('%H:%M')})"
+                    date_str = f"Dünən ({pub_date_baku.strftime('%H:%M')})"
                 elif delta_days < 30:
-                    date_str = f"{delta_days} gün əvvəl ({pub_date.strftime('%d.%m.%Y')})"
+                    date_str = f"{delta_days} gün əvvəl ({pub_date_baku.strftime('%d.%m.%Y')})"
                 else:
                     months = delta_days // 30
-                    date_str = f"~{months} ay əvvəl ({pub_date.strftime('%d.%m.%Y')})"
+                    date_str = f"~{months} ay əvvəl ({pub_date_baku.strftime('%d.%m.%Y')})"
 
                 extra_details = []
                 if floor_str:

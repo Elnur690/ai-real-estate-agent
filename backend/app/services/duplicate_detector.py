@@ -103,13 +103,32 @@ class DuplicateDetectorService:
             listing.duplicate_count = total_count
             listing.duplicate_listings = group_data
 
+            # If multi-broker postings exist with different phone numbers, different prices, or agency flags,
+            # this property is being actively brokered across multiple agents.
+            unique_phones = {l.phone_number for l in all_in_group if l.phone_number}
+            unique_prices = {l.price for l in all_in_group if l.price}
+            is_multi_broker = (
+                len(unique_phones) > 1 or
+                len(unique_prices) > 1 or
+                any(l.seller_type == "agency" or l.is_makler for l in all_in_group)
+            )
+
+            if is_multi_broker:
+                listing.is_makler = True
+                listing.seller_type = "agency"
+                listing.makler_score = 1.0
+
             # Update other listings in group
             for c in matched_duplicates:
                 c.duplicate_group_id = group_id
                 c.duplicate_count = total_count
                 c.duplicate_listings = group_data
+                if is_multi_broker:
+                    c.is_makler = True
+                    c.seller_type = "agency"
+                    c.makler_score = 1.0
 
-            logger.info(f"[DuplicateDetector] Grouped Listing #{listing.id} into group {group_id} ({total_count} duplicates detected)")
+            logger.info(f"[DuplicateDetector] Grouped Listing #{listing.id} into group {group_id} ({total_count} duplicates detected, multi_broker={is_multi_broker})")
             return listing
 
         except Exception as e:

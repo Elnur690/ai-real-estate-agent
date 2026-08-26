@@ -112,38 +112,87 @@ class BinaAzScraper(BaseScraper):
                     detected_prop = "apartment"
 
                 # 4. Extract Seller Type & Agency Status from Page
-                owner_region_el = soup.find(class_='product-owner__info-region') or soup.find(class_=re.compile(r'product-owner__info|seller_region|author-region', re.I))
+                owner_region_el = (
+                    soup.find(class_='product-owner__info-region') or
+                    soup.find(class_=re.compile(r'product-owner__info-region|seller_region|author-region', re.I)) or
+                    soup.find(class_=re.compile(r'product-owner__info-type|author-type|product-author__type', re.I)) or
+                    soup.find(class_=re.compile(r'product-owner__type|seller-type', re.I))
+                )
                 owner_region_text = owner_region_el.get_text(strip=True).lower() if owner_region_el else ""
 
                 owner_name_el = soup.find(class_='product-owner__info-name') or soup.find(class_=re.compile(r'owner__info-name|author-name', re.I))
                 owner_name = owner_name_el.get_text(strip=True) if owner_name_el else ""
 
-                # Distinguish specific profile links (e.g. /agentlikler/123) from the site navbar link (/agentlikler)
-                has_specific_agency_link = bool(
-                    soup.find("a", href=re.compile(r'/agentlikler/\d+|/shops/\w+|/companies/\d+|/complexes/\d+'))
-                    or soup.find(class_=re.compile(r'author-agency|items-i-agency', re.I))
-                )
-                
-                has_commission = any(k in page_text_lower for k in ["ofis haqqı", "ofis haqqi", "xidmət haqqı", "xidmet haqqi", "komissiya:"])
-                has_owner_badge = "mülkiyyətçi" in page_text_lower or "sahibindən" in page_text_lower
-                has_agent_badge = ("vasitəçi" in page_text_lower or "agentlik" in page_text_lower) and not any(k in page_text_lower for k in ["vasitəçilər zəng vurmasın", "vasiteciler narahat etmesin", "vasitəçi yoxdur", "makler narahat etməsin", "maklersiz"])
+                # Check all author / seller containers on the page
+                author_elements = soup.find_all(class_=re.compile(r'product-owner__info|product-owner|product-author|product-sidebar|product-contacts', re.I))
+                author_texts = [el.get_text(separator=" ", strip=True).lower() for el in author_elements]
+                combined_author_text = " ".join(author_texts)
 
-                if has_specific_agency_link or has_commission:
+                # Check parameters list for seller row (e.g. "Elanın tipi: Vasitəçi" or "Satıcı: Vasitəçi")
+                param_elements = soup.find_all(class_=re.compile(r'param|property|item_parameters', re.I))
+                param_text = " ".join(p.get_text(separator=" ", strip=True).lower() for p in param_elements)
+
+                # Distinguish specific profile links (e.g. /vasiteciler/123, /agentlikler/123, /agents/123)
+                has_specific_agency_link = bool(
+                    soup.find("a", href=re.compile(r'/agentlikler/\d+|/vasiteciler/\d+|/agents/\d+|/shops/\w+|/companies/\d+|/complexes/\d+|/users/\d+'))
+                    or soup.find(class_=re.compile(r'author-agency|items-i-agency|product-owner__info-agency', re.I))
+                )
+
+                # Check scripts or JSON payloads on the page for agency indicators
+                script_agency_flag = False
+                for script in soup.find_all("script"):
+                    if script.string and any(k in script.string.lower() for k in ['"is_agency":true', '"is_agent":true', '"seller_type":"agency"', '"user_type":"agent"', '"is_vasiteci":true']):
+                        script_agency_flag = True
+                        break
+
+                from app.core.property_classifier import (
+                    AGENCY_KEYWORDS, OWNER_KEYWORDS, COMMISSION_REGEX,
+                    INVENTORY_CODE_REGEX, MULTI_INVENTORY_REGEX, normalize_az_text
+                )
+
+                norm_desc = normalize_az_text(full_desc)
+                desc_for_agency = re.sub(
+                    r'\b(?:vasitəçisiz|vasitecisiz|maklersiz|vasitəçi yoxdur|vasiteci yoxdur|vasitəçi deyiləm|vasiteci deyilem|vasitəçi deyil|vasiteci deyil|makler deyiləm|makler deyilem|makler deyil|maklerlər narahat etməsin|maklerler narahat etmesin|vasitəçilər narahat etməsin|vasiteciler narahat etmesin)\b',
+                    ' [GENUINE_OWNER_FLAG] ',
+                    norm_desc
+                )
+
+                has_agency_kw = (
+                    any(kw in desc_for_agency for kw in AGENCY_KEYWORDS) or
+                    bool(COMMISSION_REGEX.search(desc_for_agency)) or
+                    bool(INVENTORY_CODE_REGEX.search(desc_for_agency)) or
+                    bool(MULTI_INVENTORY_REGEX.search(desc_for_agency))
+                )
+
+                is_author_agent = (
+                    has_specific_agency_link or
+                    script_agency_flag or
+                    any(k in owner_region_text for k in ["vasitəçi", "vasiteci", "agent", "agentlik", "şirkət", "sirket", "rieltor", "makler"]) or
+                    any(k in combined_author_text for k in ["vasitəçi (agent)", "vasiteci (agent)", "vasitəçi", "vasiteci", "agentlik", "şirkət"]) or
+                    any(k in param_text for k in ["vasitəçi", "vasiteci", "agent", "agentlik"])
+                )
+
+                is_author_owner = (
+                    ("mülkiyyətçi" in owner_region_text or "sahibindən" in owner_region_text) and
+                    not is_author_agent
+                )
+
+                if is_author_agent or has_agency_kw:
                     seller_type = "agency"
                     is_makler = True
                     makler_score = 1.0
-                elif has_owner_badge or "mülkiyyətçi" in owner_region_text:
+                elif is_author_owner:
                     seller_type = "owner"
                     is_makler = False
                     makler_score = 0.0
-                elif has_agent_badge or "vasitəçi" in owner_region_text:
+                elif any(k in norm_desc for k in OWNER_KEYWORDS):
+                    seller_type = "owner"
+                    is_makler = False
+                    makler_score = 0.0
+                else:
                     seller_type = "agency"
                     is_makler = True
                     makler_score = 0.8
-                else:
-                    seller_type = "owner"
-                    is_makler = False
-                    makler_score = 0.0
 
                 # 5. Extract Price & Price Per SQM from Detail Page
                 price = None
@@ -383,7 +432,7 @@ class BinaAzScraper(BaseScraper):
             # 7. Seller Type (Bina.az Agency Tag Detection)
             has_agency_badge = bool(
                 c and (
-                    c.find("a", href=re.compile(r'/agentlikler|/complexes|/companies|/shops')) 
+                    c.find("a", href=re.compile(r'/agentlikler|/vasiteciler|/complexes|/companies|/shops')) 
                     or c.find(class_=re.compile(r'agency|shop|complex|developer|broker|company|rieltor|items-i-agency', re.I))
                     or c.find("img", src=re.compile(r'agency|logo|shop', re.I))
                 )
@@ -391,11 +440,17 @@ class BinaAzScraper(BaseScraper):
 
             if "owner_type=owner" in target_url:
                 seller_type = "owner"
-            elif has_agency_badge or any(kw in raw_lower for kw in ["agentlik", "kompleks", "vasitəçi", "makler", "şirkət", "komissiya", "ofis haqqı"]):
+            elif has_agency_badge:
                 seller_type = "agency"
             else:
-                # Genuine individual / owner on Bina.az
-                seller_type = "owner"
+                from app.core.property_classifier import classify_property_and_offer
+                _, _, detected_seller = classify_property_and_offer(
+                    title="",
+                    description=raw_text,
+                    url=href,
+                    raw_text=raw_text
+                )
+                seller_type = detected_seller
 
             # 8. Title construction without repeating price
             prop_label_map = {

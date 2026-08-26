@@ -7,25 +7,58 @@ def normalize_az_text(text: Optional[str]) -> str:
         return ""
     return text.replace("İ", "i").replace("I", "ı").lower().replace("\u0307", "")
 
-# Agency / Broker Detection Keywords
+# Agency / Broker Detection Keywords (Comprehensive Azerbaijani Real Estate Vocabulary)
 AGENCY_KEYWORDS = [
     "agentlik", "agentliyi", "daşınmaz əmlak", "dasinmaz emlak",
     "əmlak şirkəti", "emlak sirketi", "əmlak ofisi", "emlak ofisi",
     "şirkət", "sirket", "şirkəti", "sirketi", "agent", "vasitəçi (agent)", "vasiteci (agent)",
     "vasitəçi", "vasiteci", "vasitəçilik", "vasitecilik",
+    "şirkətin xidmət haqqı", "sirketin xidmet haqqi", "agentliyin xidmət haqqı", "agentliyin xidmet haqqi",
+    "şirkətin zəhmət haqqı", "sirketin zehmet haqqi", "zəhmət haqqı", "zehmet haqqi",
     "ofis haqqı", "ofis haqqi", "ofis haqq", "ofis faizi",
-    "xidmət haqqı", "xidmet haqqi", "xidmət haqq", "xidmet haqq",
-    "komissiya", "komissiyası", "komisiya", "makler", "makler haqqı",
+    "xidmət haqqı", "xidmet haqqi", "xidmət haqq", "xidmet haqq", "xidmət faizi", "xidmet faizi",
+    "komissiya", "komissiyası", "komisiya", "komisiyası", "komissiya haqqı", "komissiya haqqi",
+    "komissiya məbləği", "komissiya meblegi", "komissiya ödənişi", "komissiya odenisi",
+    "makler", "makler haqqı", "makler haqqi", "makler faizi",
+    "vasitəçi haqqı", "vasiteci haqqi", "vasitəçilik haqqı", "vasitecilik haqqi",
+    "göstərmə haqqı", "gosterme haqqi", "göstərilmə haqqı", "gosterilme haqqi",
+    "baxış haqqı", "baxis haqqi", "baxış ödənişlidir", "baxis odenislidir", "baxış üçün ödəniş", "baxis ucun odenis",
     "rieltor", "realtor", "əmlakçı", "emlakci",
-    "şirkətimiz", "filialımız", "elanlarımız",
+    "ofisimiz", "ofisimizə", "ofisimize", "ofisə buyurun", "ofise buyurun", "ofis ünvanımız", "ofis unvanimiz",
+    "şirkətimiz", "filialımız", "agentliyimiz", "əmlak şirkətimiz", "emlak sirketimiz",
+    "satış meneceri", "satis meneceri", "müştəri xidmətləri", "musteri xidmetleri",
+    "alğı-satqı ofisi", "alqi-satqi ofisi", "alğı satqı ofisi", "kirayə ofisi", "kiraye ofisi",
+    "başqa variantlar", "basqa variantlar", "başqa variant", "basqa variant",
+    "digər variantlar", "diger variantlar", "digər variant", "diger variant",
+    "əlavə variantlar", "elave variantlar", "əlavə variant", "elave variant",
+    "çoxlu variantlar", "coxlu variantlar", "çox sayda variant", "cox sayda variant",
+    "hər büdcəyə", "her budceye", "hər qiymətə", "her qiymete", "hər zövqə", "her zovqe",
+    "əlimizdə başqa", "elimizde basqa", "əlimizdə hər cür", "elimizde her cur", "əlimizdə çox", "elimizde cox",
+    "başqa evlər də var", "basqa evler de var", "başqa mənzillər də var", "basqa menziller de var",
+    "elanlarımıza baxmaq üçün", "elanlarimiza baxmaq ucun",
+    "istifadəçinin bütün elanları", "istifadecinin butun elanlari", "istifadəçinin elanları", "istifadecinin elanlari",
+    "bütün elanlarımız", "butun elanlarimiz", "digər elanlarımız", "diger elanlarimiz", "elanlarımız", "elanlarimiz",
+    "baza nömrəsi", "baza nomresi", "baza nömrə", "baza nomre", "baza kodu",
     "1% ofis", "1% xidmət", "1% xidmet", "2% ofis", "2% xidmət", "2% xidmet",
     "faizlə", "faizle", "depozit tələb", "1-ci ay", "aylıq komissiya"
 ]
 
-# Commission Percentage Regex Patterns (e.g., 20% ofis haqqı, 30% vasitəçi, 1% xidmət)
+# Inventory tracking codes commonly used by real estate agencies in Baku (e.g., Kod: 1234, Elan kodu: 5678, Kod-452)
+INVENTORY_CODE_REGEX = re.compile(
+    r'\b(?:kod|elan kodu|obyekt kodu|ev kodu|mənzil kodu|menzil kodu|baza kodu|baza nömrəsi|baza nomresi|qeydiyyat nömrəsi|qeydiyyat nomresi)\s*[:№#\-\s]+\s*[a-zA-Z0-9_\-\.\/]+',
+    re.IGNORECASE
+)
+
+# Multi-inventory advertising pitches by agencies
+MULTI_INVENTORY_REGEX = re.compile(
+    r'\b(?:başqa|basqa|digər|diger|əlavə|elave)\s+(?:variant|variantlar|elan|elanlar|ev|evlər|evler|mənzil|mənzillər|menziller|təklif|teklif)\s+(?:də\s+)?(?:var|mövcuddur|movcuddur|təklif|teklif|edirik|olunur)\b',
+    re.IGNORECASE
+)
+
+# Commission Percentage Regex Patterns (e.g., 20% ofis haqqı, 30% vasitəçi, 1% xidmət, 2% şirkət haqqı)
 COMMISSION_REGEX = re.compile(
-    r'(?:\b(?:1|2|3|4|5|10|15|20|25|30|40|50)\s*%\s*(?:ofis|xidmət|xidmet|komissiya|faiz|makler|agentlik|vasitəçi|vasiteci))|'
-    r'(?:(?:ofis|xidmət|xidmet|komissiya|makler|agentlik|vasitəçi|vasiteci)\s*(?:haqqı|haqqi|faizi|ödənişi)?\s*[:=-]?\s*(?:1|2|3|4|5|10|15|20|25|30|40|50)\s*%)',
+    r'(?:\b(?:1|2|3|4|5|10|15|20|25|30|40|50)\s*%\s*(?:ofis|xidmət|xidmet|komissiya|komisiya|faiz|makler|agentlik|vasitəçi|vasiteci|şirkət|sirket|zəhmət|zehmet|haqq))|'
+    r'(?:(?:ofis|xidmət|xidmet|komissiya|komisiya|makler|agentlik|vasitəçi|vasiteci|şirkət|sirket|zəhmət|zehmet)\s*(?:haqqı|haqqi|faizi|ödənişi|odenisi)?\s*[:=-]?\s*(?:1|2|3|4|5|10|15|20|25|30|40|50)\s*%)',
     re.IGNORECASE
 )
 
@@ -38,7 +71,8 @@ OWNER_KEYWORDS = [
     "öz əmlakımdır", "oz emlakimdir", "vasitəçisiz", "vasitecisiz",
     "vasitəçi deyiləm", "vasiteci deyilem", "vasitəçi deyil", "vasiteci deyil",
     "makler deyiləm", "makler deyilem", "makler deyil",
-    "maklersiz", "maklerlər narahat etməsin", "maklerler narahat etmesin"
+    "maklersiz", "maklerlər narahat etməsin", "maklerler narahat etmesin",
+    "vasitəçilər narahat etməsin", "vasiteciler narahat etmesin"
 ]
 
 # Rental / Deal Type Keywords
@@ -72,7 +106,7 @@ def classify_property_and_offer(
     - seller_type: 'agency' | 'owner'
     """
     url_lower = (url or "").lower()
-    full_text = f"{title or ''} {description or ''} {url_lower} {raw_text or ''}".lower()
+    full_text = normalize_az_text(f"{title or ''} {description or ''} {url_lower} {raw_text or ''}")
 
     # 1. Classify Offer Type (Sale vs Rent vs Daily Rent)
     is_daily_url = any(u in url_lower for u in ["gunluk", "günlük", "sutkaliq", "sutkaliq", "/gun", "/gün", "-gunluk-", "-günlük-"])
@@ -127,21 +161,24 @@ def classify_property_and_offer(
         property_type = "apartment"
 
     # 3. Classify Seller Type (Agency vs Owner)
-    # Mask genuine owner negations (e.g. 'vasitəçisiz', 'vasitəçi deyiləm', 'maklersiz') to prevent false positive matches on 'vasitəçi'/'makler'
+    # Mask genuine owner negations (e.g. 'vasitəçisiz', 'vasitəçi deyiləm', 'maklersiz', 'maklerlər narahat etməsin')
     text_for_agency_check = re.sub(
-        r'\b(?:vasitəçisiz|vasitecisiz|maklersiz|vasitəçi yoxdur|vasiteci yoxdur|vasitəçi deyiləm|vasiteci deyilem|vasitəçi deyil|vasiteci deyil|makler deyiləm|makler deyilem|makler deyil|maklerlər narahat etməsin|maklerler narahat etmesin)\b',
+        r'\b(?:vasitəçisiz|vasitecisiz|maklersiz|vasitəçi yoxdur|vasiteci yoxdur|vasitəçi deyiləm|vasiteci deyilem|vasitəçi deyil|vasiteci deyil|makler deyiləm|makler deyilem|makler deyil|maklerlər narahat etməsin|maklerler narahat etmesin|vasitəçilər narahat etməsin|vasiteciler narahat etmesin)\b',
         ' [GENUINE_OWNER_FLAG] ',
         full_text
     )
-    has_agency_kw = any(kw in text_for_agency_check for kw in AGENCY_KEYWORDS) or bool(COMMISSION_REGEX.search(text_for_agency_check))
+    has_agency_kw = (
+        any(kw in text_for_agency_check for kw in AGENCY_KEYWORDS) or
+        bool(COMMISSION_REGEX.search(text_for_agency_check)) or
+        bool(INVENTORY_CODE_REGEX.search(text_for_agency_check)) or
+        bool(MULTI_INVENTORY_REGEX.search(text_for_agency_check))
+    )
     has_owner_kw = any(kw in full_text for kw in OWNER_KEYWORDS) or "owner_type=owner" in url_lower or "sahibinden" in url_lower
 
     # Agency keywords strictly override owner claims
     if has_agency_kw:
         seller_type = "agency"
     elif has_owner_kw:
-        seller_type = "owner"
-    elif existing_seller_type == "owner":
         seller_type = "owner"
     else:
         # In Azerbaijani real estate portals, unmarked listings without verified owner claims are agencies

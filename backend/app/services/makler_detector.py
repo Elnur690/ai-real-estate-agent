@@ -15,9 +15,12 @@ class MaklerDetectorService:
         1. First-Posting Verification: Checks if the exact same property was posted earlier by an agency/other user.
         2. Makler Disguise Score (0.0 to 1.0): Evaluates seller authenticity.
         """
-        from app.core.property_classifier import classify_property_and_offer, AGENCY_KEYWORDS, OWNER_KEYWORDS, COMMISSION_REGEX
+        from app.core.property_classifier import (
+            classify_property_and_offer, AGENCY_KEYWORDS, OWNER_KEYWORDS,
+            COMMISSION_REGEX, INVENTORY_CODE_REGEX, MULTI_INVENTORY_REGEX, normalize_az_text
+        )
 
-        text_lower = f"{listing.title or ''} {listing.description or ''} {listing.address_raw or ''} {listing.listing_url or ''}".lower()
+        text_lower = normalize_az_text(f"{listing.title or ''} {listing.description or ''} {listing.address_raw or ''} {listing.listing_url or ''}")
         score = 0.0
 
         # Run Property, Offer, and Seller classifier
@@ -32,8 +35,25 @@ class MaklerDetectorService:
         listing.offer_type = detected_offer
         listing.property_type = detected_prop
 
-        has_agency_kw = any(kw in text_lower for kw in AGENCY_KEYWORDS) or bool(COMMISSION_REGEX.search(text_lower))
-        has_owner_kw = any(kw in text_lower for kw in OWNER_KEYWORDS) or "owner_type=owner" in (listing.listing_url or "").lower() or (listing.seller_type == "owner")
+        # Mask genuine owner negations to prevent false positives
+        text_for_agency_check = re.sub(
+            r'\b(?:vasitəçisiz|vasitecisiz|maklersiz|vasitəçi yoxdur|vasiteci yoxdur|vasitəçi deyiləm|vasiteci deyilem|vasitəçi deyil|vasiteci deyil|makler deyiləm|makler deyilem|makler deyil|maklerlər narahat etməsin|maklerler narahat etmesin|vasitəçilər narahat etməsin|vasiteciler narahat etmesin)\b',
+            ' [GENUINE_OWNER_FLAG] ',
+            text_lower
+        )
+
+        has_agency_kw = (
+            any(kw in text_for_agency_check for kw in AGENCY_KEYWORDS) or
+            bool(COMMISSION_REGEX.search(text_for_agency_check)) or
+            bool(INVENTORY_CODE_REGEX.search(text_for_agency_check)) or
+            bool(MULTI_INVENTORY_REGEX.search(text_for_agency_check)) or
+            (detected_seller == "agency")
+        )
+        has_owner_kw = (
+            any(kw in text_lower for kw in OWNER_KEYWORDS) or
+            "owner_type=owner" in (listing.listing_url or "").lower() or
+            "sahibinden" in (listing.listing_url or "").lower()
+        )
 
         # Agency / Broker signals strictly take precedence over "sahibindən"
         if has_agency_kw:
@@ -47,7 +67,7 @@ class MaklerDetectorService:
             listing.is_makler = False
             listing.makler_score = 0.0
         else:
-            listing.seller_type = detected_seller or listing.seller_type or "owner"
+            listing.seller_type = detected_seller or "agency"
             listing.is_makler = (listing.seller_type == "agency")
             listing.makler_score = 1.0 if (listing.seller_type == "agency") else 0.0
 
@@ -122,6 +142,17 @@ class MaklerDetectorService:
                     listing.is_makler = True
                     listing.makler_score = 1.0
                     logger.info(f"[MaklerDetector] Listing #{listing.id} shares phone {phone_suffix} with {phone_listings_count} other listings in database. Classified as AGENCY.")
+
+                    # Also update sibling listings sharing this phone number to agency
+                    from sqlalchemy import update
+                    await db.execute(
+                        update(Listing)
+                        .where(
+                            (Listing.phone_number.like(f"%{phone_suffix}%")) |
+                            (Listing.description.like(f"%{phone_suffix}%"))
+                        )
+                        .values(seller_type="agency", is_makler=True, makler_score=1.0)
+                    )
 
         listing.makler_score = max(0.0, min(1.0, round(score, 2)))
         return listing
