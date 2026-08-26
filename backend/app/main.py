@@ -108,6 +108,23 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS sale_type VARCHAR(50) DEFAULT 'permanent';"))
         await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS sale_expires_at TIMESTAMP WITH TIME ZONE;"))
         await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS sale_badge_label VARCHAR(100);"))
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS quiet_hours_enabled BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS quiet_hours_start VARCHAR(10) DEFAULT '23:30';"))
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS quiet_hours_end VARCHAR(10) DEFAULT '08:30';"))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS agent_phones (
+                id SERIAL PRIMARY KEY,
+                phone_clean VARCHAR(50) UNIQUE NOT NULL,
+                phone_raw VARCHAR(50),
+                agency_name VARCHAR(255),
+                listing_count INTEGER DEFAULT 1,
+                is_blocked_makler BOOLEAN DEFAULT TRUE,
+                source VARCHAR(100) DEFAULT 'makler_detector',
+                first_seen_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                last_seen_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            );
+        """))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_agent_phones_clean ON agent_phones (phone_clean);"))
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS seller_payout_requests (
                 id SERIAL PRIMARY KEY,

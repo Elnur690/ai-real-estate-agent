@@ -12,6 +12,7 @@ from app.models.promo_code import PromoCode
 from app.models.plan import Plan
 from app.models.seller import Seller, SellerPackage, SellerTransaction
 from app.models.seller_payout import SellerPayoutRequest
+from app.models.agent_phone import AgentPhone
 
 __all__ = [
     "Base",
@@ -31,5 +32,6 @@ __all__ = [
     "Seller",
     "SellerPackage",
     "SellerTransaction",
-    "SellerPayoutRequest"
+    "SellerPayoutRequest",
+    "AgentPhone"
 ]
