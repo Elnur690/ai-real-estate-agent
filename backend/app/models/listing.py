@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Any
-from sqlalchemy import String, Float, Integer, Boolean, Text, DateTime, ForeignKey, JSON
+from sqlalchemy import String, Float, Integer, Boolean, Text, DateTime, ForeignKey, JSON, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
@@ -22,6 +22,10 @@ class ListingSource(Base):
 
 class Listing(Base):
     __tablename__ = "listings"
+    __table_args__ = (
+        Index("idx_listings_matching_perf", "is_active", "seller_type", "offer_type", "property_type", "district", "price"),
+        Index("idx_listings_phone_lookup", "phone_number"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     source_id: Mapped[int] = mapped_column(ForeignKey("listing_sources.id", ondelete="CASCADE"), nullable=False)

@@ -1,6 +1,7 @@
 import re
 import logging
 import asyncio
+import urllib.parse
 from typing import List, Tuple, Any, Optional
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, update
@@ -287,6 +288,103 @@ class IngestionService:
         return {}
 
     @staticmethod
+    def get_adaptive_polling_interval() -> int:
+        """Returns optimal polling interval in seconds based on Baku peak activity hours (09:00 - 22:00 AZT)."""
+        baku_tz = timezone(timedelta(hours=4))
+        now_baku = datetime.now(timezone.utc).astimezone(baku_tz)
+        if 9 <= now_baku.hour < 22:
+            return 35  # Peak daytime frequency: 35 seconds
+        return 180  # Off-peak night frequency: 3 minutes
+
+    @staticmethod
+    async def _deliver_price_drop_alerts(
+        db: AsyncSession,
+        listing: Listing,
+        old_price: float,
+        new_price: float,
+        price_diff: float,
+        drop_percent: float
+    ) -> int:
+        """Dispatches immediate Price Drop notifications to active searches matching the discounted listing."""
+        stmt = select(SavedSearch).where(SavedSearch.is_active == True)
+        res = await db.execute(stmt)
+        searches = res.scalars().all()
+        delivered = 0
+
+        for search in searches:
+            if not IngestionService.is_strict_match(search, listing):
+                continue
+
+            tenant = await db.get(Tenant, search.tenant_id)
+            if not tenant or tenant.status != "active":
+                continue
+
+            # Check if match already recorded
+            stmt_m = select(Match).where(Match.saved_search_id == search.id, Match.listing_id == listing.id)
+            res_m = await db.execute(stmt_m)
+            existing_match = res_m.scalars().first()
+
+            if not existing_match:
+                new_match = Match(
+                    saved_search_id=search.id,
+                    listing_id=listing.id,
+                    tenant_id=tenant.id,
+                    score=1.0,
+                    delivered_at=datetime.now(timezone.utc),
+                    delivery_channel=tenant.preferred_channel,
+                    status="sent"
+                )
+                db.add(new_match)
+                await db.commit()
+                await db.refresh(new_match)
+                match_id = new_match.id
+            else:
+                match_id = existing_match.id
+
+            is_genuine_owner = (listing.seller_type == "owner") and not getattr(listing, 'is_makler', False) and ((listing.makler_score or 0.0) < 0.30)
+            seller_str = "Ev Sahibindən" if is_genuine_owner else "Vasitəçidən/Agentlikdən"
+
+            deal_label = "İcarə / Kirayə" if getattr(listing, 'offer_type', 'sale') == 'rent' else ("Günlük Kirayə" if getattr(listing, 'offer_type', 'sale') == 'daily_rent' else "Satış")
+            prop_map = {
+                "apartment": "Mənzil",
+                "house": "Həyət evi / Villa",
+                "office": "Ofis",
+                "commercial": "Obyekt / Qeyri-yaşayış",
+                "land": "Torpaq sahəsi"
+            }
+            prop_label = prop_map.get(getattr(listing, 'property_type', 'apartment'), "Mənzil")
+            search_title = search.name or search.raw_criteria_text or search.district or f"Axtarış #{search.id}"
+
+            drop_tag = f"📉 *QİYMƏT ENDİRİMİ!* ({int(old_price):,} AZN ➡️ {int(new_price):,} AZN — *{int(price_diff):,} AZN / {drop_percent}% Endirim*)\n"
+            search_header = f"🔎 *Axtarış:* #{search.id} - _{search_title[:55]}_\n"
+            msg = (
+                f"{drop_tag}"
+                f"{search_header}\n"
+                f"🏠 *{listing.rooms or ''} otaqlı {prop_label} ({listing.district or 'Bakı'})*\n"
+                f"🏷️ *Növ / Əməliyyat:* {prop_label} ({deal_label})\n"
+                f"💰 *Yeni Qiymət:* {int(new_price):,} {listing.currency or 'AZN'}\n"
+                f"📍 *Məkan:* {listing.metro_station or listing.district or 'Bakı'}\n"
+                f"📐 *Otaq / Sahə:* {listing.rooms or '-'} otaqlı | {listing.area_sqm or '-'} m²\n"
+                f"👤 *Satıcı:* {seller_str}\n\n"
+                f"🔗 [Elana keçid et]({listing.listing_url})\n\n"
+                f"💬 *Reaksiya bildirin:*\n"
+                f"`Təqdimat {match_id}` | `Foto {match_id}` | `Maraqlanıram {match_id}` | `Keç {match_id}`"
+            )
+
+            dest_channel = getattr(search, 'channel', None) or tenant.preferred_channel or "telegram"
+            dest_chat_id = getattr(search, 'destination_chat_id', None) or tenant.telegram_chat_id or tenant.whatsapp_number
+            inst_name = getattr(search, 'instance_name', None) or f"tenant_{tenant.id}"
+
+            if dest_channel == "whatsapp" and dest_chat_id:
+                await WhatsAppAdapter.send_text(dest_chat_id, msg, inst_name)
+                delivered += 1
+            elif dest_chat_id:
+                await send_telegram_notification(tenant.telegram_chat_id or dest_chat_id, msg)
+                delivered += 1
+
+        return delivered
+
+    @staticmethod
     async def _ingest_single_raw_item(db: AsyncSession, item: RawListingItem, source_id: int = 1) -> Optional[Listing]:
         """Ingests, deduplicates with In-Memory Cache, and runs Makler + AVM analysis."""
         try:
@@ -298,7 +396,10 @@ class IngestionService:
             await CacheManager.mark_external_id_seen(item.external_id)
 
             if existing_listing:
-                if item.price < existing_listing.price:
+                if item.price and existing_listing.price and item.price < existing_listing.price:
+                    old_price = existing_listing.price
+                    price_diff = old_price - item.price
+                    drop_percent = round((price_diff / old_price) * 100, 1)
                     history = existing_listing.price_history or []
                     history.append({
                         "old_price": existing_listing.price,
@@ -307,6 +408,15 @@ class IngestionService:
                     })
                     existing_listing.price_history = history
                     existing_listing.price = item.price
+                    existing_listing.last_seen_at = datetime.now(timezone.utc)
+                    await db.commit()
+
+                    # Trigger Price Drop Alerts to matching subscribers
+                    await IngestionService._deliver_price_drop_alerts(
+                        db, existing_listing, old_price, item.price, price_diff, drop_percent
+                    )
+                    return existing_listing
+
                 existing_listing.last_seen_at = datetime.now(timezone.utc)
                 await db.commit()
                 return existing_listing
@@ -967,6 +1077,36 @@ class IngestionService:
             existing_match = res_m.scalars().first()
 
             if not existing_match and score >= 0.70:
+                # 🌙 Quiet Hours Check (Baku Timezone UTC+4)
+                if getattr(tenant, 'quiet_hours_enabled', False):
+                    baku_tz = timezone(timedelta(hours=4))
+                    now_baku_dt = datetime.now(timezone.utc).astimezone(baku_tz)
+                    now_hm = now_baku_dt.strftime("%H:%M")
+                    q_start = tenant.quiet_hours_start or "23:30"
+                    q_end = tenant.quiet_hours_end or "08:30"
+                    is_quiet = False
+                    if q_start > q_end:
+                        if now_hm >= q_start or now_hm < q_end:
+                            is_quiet = True
+                    else:
+                        if q_start <= now_hm < q_end:
+                            is_quiet = True
+
+                    if is_quiet:
+                        new_match = Match(
+                            saved_search_id=search.id,
+                            listing_id=listing.id,
+                            tenant_id=tenant.id,
+                            score=score,
+                            delivered_at=datetime.now(timezone.utc),
+                            delivery_channel=tenant.preferred_channel,
+                            status="queued_quiet_hours"
+                        )
+                        db.add(new_match)
+                        await db.commit()
+                        matches_count += 1
+                        continue
+
                 new_match = Match(
                     saved_search_id=search.id,
                     listing_id=listing.id,
@@ -1013,13 +1153,19 @@ class IngestionService:
 
                 duplicate_tag = ""
                 if listing.duplicate_count and listing.duplicate_count > 1 and listing.duplicate_listings:
-                    dup_prices = [d.get("price") for d in listing.duplicate_listings if d.get("price")]
+                    sorted_dups = sorted(listing.duplicate_listings, key=lambda x: x.get("price") or 0)
+                    dup_prices = [d.get("price") for d in sorted_dups if d.get("price")]
                     if dup_prices:
                         min_dup = min(dup_prices)
                         max_dup = max(dup_prices)
                         diff_val = max_dup - min_dup
                         diff_str = f" ({int(diff_val):,} AZN fərq)" if diff_val > 0 else ""
-                        duplicate_tag = f"\n👥 *DUBLİKAT ELAN:* Bu mənzil {listing.duplicate_count} fərqli elanda {int(min_dup):,} - {int(max_dup):,} AZN aralığında paylaşılıb!{diff_str}"
+                        cheapest_item = sorted_dups[0]
+                        cheapest_url = cheapest_item.get("url") or listing.listing_url
+                        duplicate_tag = (
+                            f"\n👥 *DUBLİKAT ELAN:* Bu mənzil {listing.duplicate_count} fərqli elanda {int(min_dup):,} - {int(max_dup):,} AZN aralığında paylaşılıb!{diff_str}\n"
+                            f"🟢 *Ən ucuz elan:* [{int(min_dup):,} AZN - Keçid]({cheapest_url})"
+                        )
 
                 # Search identifier context
                 search_title = search.name or search.raw_criteria_text or search.district or f"Axtarış #{search.id}"
@@ -1063,6 +1209,13 @@ class IngestionService:
                 if has_temir_tag:
                     extra_details.append(f"🛠️ *Təmir:* {has_temir_tag}")
                 extra_details.append(f"🗓️ *Paylaşılma tarixi:* {date_str}")
+
+                # 🗺️ Interactive Map / Google Maps Link
+                if listing.latitude and listing.longitude:
+                    extra_details.append(f"📍 *Xəritədə bax:* [Google Maps](https://www.google.com/maps/search/?api=1&query={listing.latitude},{listing.longitude})")
+                elif listing.address_raw and len(listing.address_raw) > 5:
+                    encoded_addr = urllib.parse.quote_plus(listing.address_raw)
+                    extra_details.append(f"📍 *Xəritədə bax:* [Google Maps](https://www.google.com/maps/search/?api=1&query={encoded_addr})")
 
                 details_block = "\n".join(extra_details) + "\n\n" if extra_details else "\n"
 

@@ -4,16 +4,30 @@ from datetime import datetime, timezone
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.listing import Listing
+from app.models.agent_phone import AgentPhone
 
 logger = logging.getLogger(__name__)
 
 class MaklerDetectorService:
     @staticmethod
+    async def inspect_photo_watermarks(listing: Listing) -> bool:
+        """
+        Fast inspection of listing photo paths and metadata for agency watermarks, logos, or agency stamps.
+        """
+        photos = listing.photos or []
+        for p in photos[:4]:
+            p_str = str(p).lower()
+            if any(k in p_str for k in ['agent', 'agency', 'realtor', 'makler', 'watermark', 'logo', 'sirket', 'emlak_ofisi', 'baza']):
+                return True
+        return False
+
+    @staticmethod
     async def analyze_listing(db: AsyncSession, listing: Listing) -> Listing:
         """
         Analyzes a newly scraped listing for:
-        1. First-Posting Verification: Checks if the exact same property was posted earlier by an agency/other user.
-        2. Makler Disguise Score (0.0 to 1.0): Evaluates seller authenticity.
+        1. Instant O(1) AgentPhone Directory lookup.
+        2. First-Posting Verification: Checks if the exact same property was posted earlier by an agency/other user.
+        3. Makler Disguise Score (0.0 to 1.0): Evaluates seller authenticity and photo watermarks.
         """
         from app.core.property_classifier import (
             classify_property_and_offer, AGENCY_KEYWORDS, OWNER_KEYWORDS,
@@ -22,6 +36,32 @@ class MaklerDetectorService:
 
         text_lower = normalize_az_text(f"{listing.title or ''} {listing.description or ''} {listing.address_raw or ''} {listing.listing_url or ''}")
         score = 0.0
+
+        # Step 0: Fast O(1) lookup in persistent AgentPhone directory
+        raw_phone_str = listing.phone_number or ""
+        if not raw_phone_str:
+            phone_match = re.search(r'(\+?994|0)?\s*(50|51|55|70|77|99|10|12|60|18)\s*\d{3}\s*\d{2}\s*\d{2}', text_lower)
+            if phone_match:
+                raw_phone_str = phone_match.group()
+
+        if raw_phone_str:
+            clean_digits = re.sub(r'\D', '', raw_phone_str)
+            if len(clean_digits) >= 7:
+                phone_key = clean_digits[-9:] if len(clean_digits) >= 9 else clean_digits
+                try:
+                    stmt_agent = select(AgentPhone).where(AgentPhone.phone_clean.like(f"%{phone_key}%"))
+                    res_agent = await db.execute(stmt_agent)
+                    agent_record = res_agent.scalars().first()
+                    if agent_record and agent_record.is_blocked_makler:
+                        listing.seller_type = "agency"
+                        listing.is_makler = True
+                        listing.makler_score = 1.0
+                        agent_record.listing_count += 1
+                        agent_record.last_seen_at = datetime.now(timezone.utc)
+                        logger.info(f"[MaklerDetector] Listing #{listing.id} matched verified AgentPhone #{agent_record.id} ({agent_record.phone_clean}). Instantly flagged as AGENCY.")
+                        return listing
+                except Exception as e:
+                    logger.debug(f"[MaklerDetector] AgentPhone check notice: {e}")
 
         # Run Property, Offer, and Seller classifier
         detected_offer, detected_prop, detected_seller = classify_property_and_offer(
@@ -35,6 +75,9 @@ class MaklerDetectorService:
         listing.offer_type = detected_offer
         listing.property_type = detected_prop
 
+        # Check Photo Watermarks & Agency stamps
+        has_photo_watermark = await MaklerDetectorService.inspect_photo_watermarks(listing)
+
         # Mask genuine owner negations to prevent false positives
         text_for_agency_check = re.sub(
             r'\b(?:vasitəçisiz|vasitecisiz|maklersiz|vasitəçi yoxdur|vasiteci yoxdur|vasitəçi deyiləm|vasiteci deyilem|vasitəçi deyil|vasiteci deyil|makler deyiləm|makler deyilem|makler deyil|maklerlər narahat etməsin|maklerler narahat etmesin|vasitəçilər narahat etməsin|vasiteciler narahat etmesin)\b',
@@ -47,6 +90,7 @@ class MaklerDetectorService:
             bool(COMMISSION_REGEX.search(text_for_agency_check)) or
             bool(INVENTORY_CODE_REGEX.search(text_for_agency_check)) or
             bool(MULTI_INVENTORY_REGEX.search(text_for_agency_check)) or
+            has_photo_watermark or
             (detected_seller == "agency")
         )
         has_owner_kw = (
@@ -153,6 +197,31 @@ class MaklerDetectorService:
                         )
                         .values(seller_type="agency", is_makler=True, makler_score=1.0)
                     )
+
+        # Step 3: Register phone in AgentPhone table if identified as Agency / Makler
+        if (listing.seller_type == "agency" or listing.is_makler) and raw_phone_str:
+            clean_d = re.sub(r'\D', '', raw_phone_str)
+            if len(clean_d) >= 7:
+                p_key = clean_d[-9:] if len(clean_d) >= 9 else clean_d
+                try:
+                    stmt_find = select(AgentPhone).where(AgentPhone.phone_clean.like(f"%{p_key}%"))
+                    res_find = await db.execute(stmt_find)
+                    existing_entry = res_find.scalars().first()
+                    if not existing_entry:
+                        new_agent_phone = AgentPhone(
+                            phone_clean=clean_d,
+                            phone_raw=listing.phone_number or raw_phone_str,
+                            agency_name=listing.district or "Agency",
+                            listing_count=1,
+                            is_blocked_makler=True,
+                            source="makler_detector"
+                        )
+                        db.add(new_agent_phone)
+                    else:
+                        existing_entry.listing_count += 1
+                        existing_entry.last_seen_at = datetime.now(timezone.utc)
+                except Exception as e:
+                    logger.debug(f"[MaklerDetector] Error registering AgentPhone: {e}")
 
         listing.makler_score = max(0.0, min(1.0, round(score, 2)))
         return listing

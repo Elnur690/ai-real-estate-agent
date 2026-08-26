@@ -3,8 +3,20 @@ import random
 import logging
 import re
 from typing import Dict, Optional, Any, List
+import httpx
 
 logger = logging.getLogger(__name__)
+
+_SHARED_CLIENT: Optional[httpx.AsyncClient] = None
+
+def get_shared_client() -> httpx.AsyncClient:
+    """Returns a singleton, high-throughput AsyncClient with connection pooling and keepalive."""
+    global _SHARED_CLIENT
+    if _SHARED_CLIENT is None or _SHARED_CLIENT.is_closed:
+        limits = httpx.Limits(max_keepalive_connections=50, max_connections=150, keepalive_expiry=30.0)
+        timeout = httpx.Timeout(12.0, connect=5.0)
+        _SHARED_CLIENT = httpx.AsyncClient(limits=limits, timeout=timeout, follow_redirects=True)
+    return _SHARED_CLIENT
 
 USER_AGENTS = [
     # macOS Chrome

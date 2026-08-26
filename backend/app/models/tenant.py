@@ -25,6 +25,11 @@ class Tenant(Base):
     telegram_chat_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     digest_mode: Mapped[str] = mapped_column(String(20), default="instant")  # instant | hourly | daily
 
+    # 🌙 Quiet Hours / Gecə Rejimi (e.g. 23:30 to 08:30 AZT)
+    quiet_hours_enabled: Mapped[bool] = mapped_column(default=False)
+    quiet_hours_start: Mapped[str] = mapped_column(String(10), default="23:30")
+    quiet_hours_end: Mapped[str] = mapped_column(String(10), default="08:30")
+
     # Backup-as-a-Service Plan Options
     backup_enabled: Mapped[bool] = mapped_column(default=False)
     backup_frequency_days: Mapped[int] = mapped_column(default=7)  # 1 (daily) | 7 (weekly) | 30 (monthly)
