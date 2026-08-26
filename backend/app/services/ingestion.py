@@ -215,7 +215,9 @@ class IngestionService:
 
     @staticmethod
     async def _fetch_details_for_item(external_id: str, listing_url: str = "") -> dict:
-        """Dispatches detail fetching to the appropriate portal scraper (Bina.az, YeniEmlak.az, Tap.az)."""
+        """Dispatches detail fetching to the appropriate portal scraper (Bina.az, YeniEmlak.az, Tap.az, RahatEmlak.az, Lalafo.az)."""
+        from app.scrapers.rahatemlak_az import RahatEmlakAzScraper
+        from app.scrapers.lalafo_az import LalafoAzScraper
         ext_clean = (external_id or "").lower()
         url_clean = (listing_url or "").lower()
         try:
@@ -225,6 +227,10 @@ class IngestionService:
                 return await YeniEmlakAzScraper.fetch_item_details(listing_url or external_id)
             elif "tap_" in ext_clean or "tap.az" in url_clean:
                 return await TapAzScraper.fetch_item_details(listing_url or external_id)
+            elif "rahatemlak_" in ext_clean or "rahatemlak.az" in url_clean:
+                return await RahatEmlakAzScraper.fetch_item_details(listing_url or external_id)
+            elif "lalafo_" in ext_clean or "lalafo.az" in url_clean:
+                return await LalafoAzScraper.fetch_item_details(listing_url or external_id)
         except Exception as e:
             logger.debug(f"[IngestionService] Error in _fetch_details_for_item ({external_id}): {e}")
         return {}

@@ -13,6 +13,47 @@ from app.core.baku_locations import (
 logger = logging.getLogger(__name__)
 
 class LalafoAzScraper(BaseScraper):
+    @staticmethod
+    async def fetch_item_details(item_id_or_url: str) -> dict:
+        """Fetches full item details from Lalafo.az including real seller type and phone."""
+        clean_url = str(item_id_or_url).strip()
+        m = re.search(r'(\d+)', clean_url)
+        if not m:
+            return {}
+        ext_id = m.group(1)
+        api_url = f"https://lalafo.az/api/search/v3/feed/details/{ext_id}"
+
+        headers = get_random_headers(referer="https://lalafo.az/")
+        headers["Accept"] = "application/json"
+        try:
+            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+                res = await client.get(api_url, headers=headers)
+                if res.status_code == 200 and "application/json" in res.headers.get("content-type", ""):
+                    data = res.json()
+                    raw_desc = data.get("description") or ""
+                    user_obj = data.get("user") or {}
+                    is_business = bool(user_obj.get("is_business") or user_obj.get("is_shop") or user_obj.get("account_type") == "business")
+
+                    from app.core.property_classifier import classify_property_and_offer
+                    offer, prop, seller = classify_property_and_offer(
+                        title=data.get("title") or "",
+                        description=raw_desc,
+                        url=f"https://lalafo.az/baku/ads/{ext_id}"
+                    )
+                    if is_business:
+                        seller = "agency"
+
+                    return {
+                        "phone_number": data.get("mobile") or data.get("phone"),
+                        "full_description": raw_desc,
+                        "seller_type": seller,
+                        "is_makler": seller == "agency",
+                        "makler_score": 1.0 if seller == "agency" else 0.0
+                    }
+        except Exception as e:
+            logger.debug(f"[LalafoAzScraper] Error fetching detail for {clean_url}: {e}")
+        return {}
+
     async def scrape_source(self, url_or_handle: str = "https://lalafo.az/baku/nedvizhimost") -> List[RawListingItem]:
         logger.info(f"[LalafoAzScraper] Fetching listings from {url_or_handle}")
         items: List[RawListingItem] = []
@@ -57,6 +98,9 @@ class LalafoAzScraper(BaseScraper):
                                 url=item_url,
                                 raw_text=full_text
                             )
+                            user_obj = item.get("user") or {}
+                            if bool(user_obj.get("is_business") or user_obj.get("is_shop") or user_obj.get("account_type") == "business"):
+                                detected_seller = "agency"
 
                             # Extract photos from JSON item
                             item_photos = []
