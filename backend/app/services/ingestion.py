@@ -215,9 +215,16 @@ class IngestionService:
 
     @staticmethod
     async def _fetch_details_for_item(external_id: str, listing_url: str = "") -> dict:
-        """Dispatches detail fetching to the appropriate portal scraper (Bina.az, YeniEmlak.az, Tap.az, RahatEmlak.az, Lalafo.az)."""
+        """Dispatches detail fetching to portal-specific scrapers or the universal portal extractor for all 17 sources."""
         from app.scrapers.rahatemlak_az import RahatEmlakAzScraper
         from app.scrapers.lalafo_az import LalafoAzScraper
+        from app.scrapers.utils import get_random_headers
+        from app.core.baku_locations import extract_az_phone
+        from app.core.property_classifier import (
+            AGENCY_KEYWORDS, OWNER_KEYWORDS, COMMISSION_REGEX,
+            INVENTORY_CODE_REGEX, MULTI_INVENTORY_REGEX, normalize_az_text
+        )
+
         ext_clean = (external_id or "").lower()
         url_clean = (listing_url or "").lower()
         try:
@@ -231,6 +238,50 @@ class IngestionService:
                 return await RahatEmlakAzScraper.fetch_item_details(listing_url or external_id)
             elif "lalafo_" in ext_clean or "lalafo.az" in url_clean:
                 return await LalafoAzScraper.fetch_item_details(listing_url or external_id)
+            
+            # Universal detail fetcher for all secondary portals (evonline, ev10, vipemlak, binam, binalar, mulk, homdom, ofis, kub, unvan, ipoteka, villa)
+            if listing_url and listing_url.startswith("http"):
+                headers = get_random_headers()
+                async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+                    res = await client.get(listing_url, headers=headers)
+                    if res.status_code == 200:
+                        soup = BeautifulSoup(res.text, "html.parser")
+                        page_text_lower = soup.get_text().lower()
+
+                        desc_el = soup.find(class_=re.compile(r'text|description|more_info|item_text|body', re.I)) or soup.find("article")
+                        full_desc = desc_el.get_text(separator=" ", strip=True) if desc_el else ""
+
+                        author_el = soup.find(class_=re.compile(r'author|owner|contact|user-info|seller|agent', re.I))
+                        author_text = author_el.get_text(separator=" ", strip=True).lower() if author_el else ""
+
+                        norm_desc = normalize_az_text(full_desc or page_text_lower)
+                        desc_for_agency = re.sub(
+                            r'\b(?:vasitəçisiz|vasitecisiz|maklersiz|vasitəçi yoxdur|vasiteci yoxdur|vasitəçi deyiləm|vasiteci deyilem|vasitəçi deyil|vasiteci deyil|makler deyiləm|makler deyilem|makler deyil|maklerlər narahat etməsin|maklerler narahat etmesin|vasitəçilər narahat etməsin|vasiteciler narahat etmesin)\b',
+                            ' [GENUINE_OWNER_FLAG] ',
+                            norm_desc
+                        )
+
+                        has_agency_kw = (
+                            any(kw in desc_for_agency for kw in AGENCY_KEYWORDS) or
+                            bool(COMMISSION_REGEX.search(desc_for_agency)) or
+                            bool(INVENTORY_CODE_REGEX.search(desc_for_agency)) or
+                            bool(MULTI_INVENTORY_REGEX.search(desc_for_agency))
+                        )
+
+                        is_agent = has_agency_kw or any(k in author_text for k in ["vasitəçi", "vasiteci", "agent", "agentlik", "şirkət", "rieltor", "makler", "realtor"])
+                        is_owner = ("mülkiyyətçi" in author_text or "sahibindən" in author_text or "öz mənzilimdir" in author_text or "öz evimdir" in author_text) and not is_agent
+
+                        seller_type = "agency" if is_agent else ("owner" if is_owner else "agency")
+                        phone_res = extract_az_phone(page_text_lower)
+                        extracted_phone = phone_res[0] if phone_res else None
+
+                        return {
+                            "phone_number": extracted_phone,
+                            "full_description": full_desc,
+                            "seller_type": seller_type,
+                            "is_makler": seller_type == "agency",
+                            "makler_score": 1.0 if seller_type == "agency" else 0.0
+                        }
         except Exception as e:
             logger.debug(f"[IngestionService] Error in _fetch_details_for_item ({external_id}): {e}")
         return {}
