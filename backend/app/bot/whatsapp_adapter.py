@@ -130,8 +130,8 @@ class WhatsAppAdapter:
 
                 # Group Pairing Filter
                 if is_group and remote_jid not in allowed_groups:
-                    is_pair_cmd = any(cmd in text_lower for cmd in ["/pair_group", "/set_group", "/bot_here", "/group_pair", "pair group", "bot qoş", "bot qos"])
-                    is_unpair_cmd = any(cmd in text_lower for cmd in ["/unpair_group", "/remove_group", "bot ayır", "bot ayir"])
+                    is_pair_cmd = any(cmd in text_lower for cmd in ["/pair_group", "/set_group", "/bot_here", "/group_pair", "pair group", "bot qoş", "bot qos", "bot burda", "bot burada"])
+                    is_unpair_cmd = any(cmd in text_lower for cmd in ["/unpair_group", "/remove_group", "/bot_leave", "/leave_group", "/bot_exit", "bot ayır", "bot ayir", "bot çıx", "bot cix", "bot sil", "botu çıxar", "botu cixar"])
                     if not is_pair_cmd and not is_unpair_cmd:
                         # Un-paired group and not a pairing command -> SILENTLY DROP without downloading media!
                         return None

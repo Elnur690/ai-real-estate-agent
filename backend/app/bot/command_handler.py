@@ -145,8 +145,8 @@ class BotCommandHandler:
         if channel == "whatsapp" and is_group:
             allowed_groups = list(tenant.allowed_group_jids or [])
 
-            is_pair_cmd = any(cmd in text_lower for cmd in ["/pair_group", "/set_group", "/bot_here", "/group_pair", "pair group", "bot qoş", "bot qos"])
-            is_unpair_cmd = any(cmd in text_lower for cmd in ["/unpair_group", "/remove_group", "bot ayır", "bot ayir"])
+            is_pair_cmd = any(cmd in text_lower for cmd in ["/pair_group", "/set_group", "/bot_here", "/group_pair", "pair group", "bot qoş", "bot qos", "bot burda", "bot burada"])
+            is_unpair_cmd = any(cmd in text_lower for cmd in ["/unpair_group", "/remove_group", "/bot_leave", "/leave_group", "/bot_exit", "bot ayır", "bot ayir", "bot çıx", "bot cix", "bot sil", "botu çıxar", "botu cixar"])
 
             if is_pair_cmd:
                 if sender_id not in allowed_groups:
@@ -160,7 +160,7 @@ class BotCommandHandler:
                     allowed_groups.remove(sender_id)
                     tenant.allowed_group_jids = allowed_groups
                     await db.commit()
-                return f"🛑 Bu WhatsApp qrupu AI Əmlak Agentindən ayrıldı."
+                return f"🛑 Bu WhatsApp qrupu AI Əmlak Agentindən ayrıldı (Bot bu qrupda deaktiv edildi)."
 
             if sender_id not in allowed_groups:
                 # Message in an un-paired WhatsApp group -> SILENTLY IGNORE!
@@ -1422,8 +1422,8 @@ class BotCommandHandler:
             f"▪️ `/cancel` — Hazırkı axtarış qaralamasını ləğv etmək\n"
             f"▪️ `/help` — Bu təlimatı yenidən göstərmək\n\n"
             f"👥 *WHATSAPP QRUP İSTİFADƏSİ:*\n"
-            f"▪️ `/pair_group` və ya `/bot_here` (və ya `bot qoş`) — Botu işçi WhatsApp qrupunuza aktivləşdirmək\n"
-            f"▪️ `/unpair_group` (və ya `bot ayır`) — Botu WhatsApp qrupundan ayırmaq\n"
+            f"▪️ `/bot_here` və ya `/pair_group` (və ya `bot qoş`) — Botu işçi WhatsApp qrupunuza aktivləşdirmək\n"
+            f"▪️ `/bot_leave` və ya `/unpair_group` (və ya `bot çıx`, `bot ayır`) — Botu WhatsApp qrupundan ayırmaq\n"
             f"*(Qrupda yaradılan axtarışların elanları birbaşa həmin qrupa, şəxsi çatdakılar isə şəxsi çata gəlir)*\n\n"
             f"💬 *ELAN REAKSİYALARI VƏ ƏMƏLİYYATLAR:*\n"
             f"• `Təqdimat <id>` | `Foto <id>` | `Maraqlanıram <id>` | `Keç <id>` | `Satılıb <id>`"
