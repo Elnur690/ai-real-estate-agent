@@ -13,6 +13,99 @@ from app.core.baku_locations import (
 logger = logging.getLogger(__name__)
 
 class YeniEmlakAzScraper(BaseScraper):
+    @staticmethod
+    async def fetch_item_details(item_id_or_url: str) -> dict:
+        """Fetches full item details from YeniEmlak.az including real seller type (Vasitəçi / Rieltor vs Mülkiyyətçi)."""
+        clean_url = str(item_id_or_url).strip()
+        m = re.search(r'(\d+)', clean_url)
+        if not m:
+            return {}
+        ext_id = m.group(1)
+        if not clean_url.startswith("http"):
+            clean_url = f"https://yeniemlak.az/elan/{ext_id}"
+
+        headers = get_random_headers(referer="https://yeniemlak.az/elan/axtar")
+        try:
+            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+                res = await client.get(clean_url, headers=headers)
+                if res.status_code != 200:
+                    return {}
+
+                soup = BeautifulSoup(res.text, "html.parser")
+                page_text_lower = soup.get_text().lower()
+
+                # Extract full description
+                desc_el = soup.find(class_=re.compile(r'elan_text|description|more_info|item_text|text', re.I)) or soup.find("article")
+                full_desc = desc_el.get_text(separator=" ", strip=True) if desc_el else ""
+
+                # Extract author / seller info specifically
+                author_elements = soup.find_all(["td", "div", "span", "p", "tr"], text=re.compile(r'elan verən|vasitəçi|rieltor|mülkiyyətçi|sahibindən|şirkət|agent', re.I))
+                author_text = " ".join(el.get_text(separator=" ", strip=True).lower() for el in author_elements)
+
+                from app.core.property_classifier import (
+                    AGENCY_KEYWORDS, OWNER_KEYWORDS, COMMISSION_REGEX,
+                    INVENTORY_CODE_REGEX, MULTI_INVENTORY_REGEX, normalize_az_text
+                )
+
+                norm_desc = normalize_az_text(full_desc)
+                desc_for_agency = re.sub(
+                    r'\b(?:vasitəçisiz|vasitecisiz|maklersiz|vasitəçi yoxdur|vasiteci yoxdur|vasitəçi deyiləm|vasiteci deyilem|vasitəçi deyil|vasiteci deyil|makler deyiləm|makler deyilem|makler deyil|maklerlər narahat etməsin|maklerler narahat etmesin|vasitəçilər narahat etməsin|vasiteciler narahat etmesin)\b',
+                    ' [GENUINE_OWNER_FLAG] ',
+                    norm_desc
+                )
+
+                has_agency_kw = (
+                    any(kw in desc_for_agency for kw in AGENCY_KEYWORDS) or
+                    bool(COMMISSION_REGEX.search(desc_for_agency)) or
+                    bool(INVENTORY_CODE_REGEX.search(desc_for_agency)) or
+                    bool(MULTI_INVENTORY_REGEX.search(desc_for_agency))
+                )
+
+                is_agent = (
+                    any(k in page_text_lower for k in [
+                        "vasitəçi / rieltor", "vasiteci / rieltor", "vasitəçi/rieltor", "vasiteci/rieltor",
+                        "vasitəçi", "vasiteci", "rieltor", "realtor", "əmlak şirkəti", "emlak sirketi",
+                        "şirkətin xidmət haqqı", "ofis haqqı", "1% ofis", "xidmət haqqı"
+                    ]) and not any(k in page_text_lower for k in [
+                        "vasitəçilər narahat etməsin", "vasiteciler narahat etmesin",
+                        "makler narahat etməsin", "maklersiz", "vasitəçisiz"
+                    ])
+                ) or has_agency_kw
+
+                is_owner = (
+                    any(k in author_text for k in ["mülkiyyətçi", "mulkiyyetci", "öz mənzilimdir", "öz evimdir"]) or
+                    ("mülkiyyətçi" in page_text_lower and not is_agent)
+                )
+
+                if is_agent:
+                    seller_type = "agency"
+                    is_makler = True
+                    makler_score = 1.0
+                elif is_owner:
+                    seller_type = "owner"
+                    is_makler = False
+                    makler_score = 0.0
+                else:
+                    seller_type = "agency"
+                    is_makler = True
+                    makler_score = 0.8
+
+                # Extract phone
+                from app.core.baku_locations import extract_az_phone
+                phone_res = extract_az_phone(page_text_lower)
+                extracted_phone = phone_res[0] if phone_res else None
+
+                return {
+                    "phone_number": extracted_phone,
+                    "full_description": full_desc,
+                    "seller_type": seller_type,
+                    "is_makler": is_makler,
+                    "makler_score": makler_score
+                }
+        except Exception as e:
+            logger.debug(f"[YeniEmlakAzScraper] Error fetching detail for {clean_url}: {e}")
+            return {}
+
     async def scrape_source(self, url_or_handle: str = "https://yeniemlak.az/elan/axtar") -> List[RawListingItem]:
         logger.info(f"[YeniEmlakAzScraper] Fetching listings from {url_or_handle}")
         items: List[RawListingItem] = []

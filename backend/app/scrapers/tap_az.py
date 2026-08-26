@@ -13,6 +13,90 @@ from app.core.baku_locations import (
 logger = logging.getLogger(__name__)
 
 class TapAzScraper(BaseScraper):
+    @staticmethod
+    async def fetch_item_details(item_id_or_url: str) -> dict:
+        """Fetches full item details from Tap.az including real seller type and phone number."""
+        clean_url = str(item_id_or_url).strip()
+        m = re.search(r'(\d+)', clean_url)
+        if not m:
+            return {}
+        ext_id = m.group(1)
+        if not clean_url.startswith("http"):
+            clean_url = f"https://tap.az/elanlar/dasinmaz-emlak/menziller/{ext_id}"
+
+        headers = get_random_headers(referer="https://tap.az/elanlar/dasinmaz-emlak")
+        try:
+            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+                res = await client.get(clean_url, headers=headers)
+                if res.status_code != 200:
+                    return {}
+
+                soup = BeautifulSoup(res.text, "html.parser")
+                page_text_lower = soup.get_text().lower()
+
+                # Extract author elements
+                author_el = soup.find(class_=re.compile(r'author|shop-contact|seller|user-info', re.I))
+                author_text = author_el.get_text(separator=" ", strip=True).lower() if author_el else ""
+
+                desc_el = soup.find(class_=re.compile(r'text|description|body', re.I))
+                full_desc = desc_el.get_text(separator=" ", strip=True) if desc_el else ""
+
+                from app.core.property_classifier import (
+                    AGENCY_KEYWORDS, OWNER_KEYWORDS, COMMISSION_REGEX,
+                    INVENTORY_CODE_REGEX, MULTI_INVENTORY_REGEX, normalize_az_text
+                )
+
+                norm_desc = normalize_az_text(full_desc)
+                desc_for_agency = re.sub(
+                    r'\b(?:vasitəçisiz|vasitecisiz|maklersiz|vasitəçi yoxdur|vasiteci yoxdur|vasitəçi deyiləm|vasiteci deyilem|vasitəçi deyil|vasiteci deyil|makler deyiləm|makler deyilem|makler deyil|maklerlər narahat etməsin|maklerler narahat etmesin|vasitəçilər narahat etməsin|vasiteciler narahat etmesin)\b',
+                    ' [GENUINE_OWNER_FLAG] ',
+                    norm_desc
+                )
+
+                has_agency_kw = (
+                    any(kw in desc_for_agency for kw in AGENCY_KEYWORDS) or
+                    bool(COMMISSION_REGEX.search(desc_for_agency)) or
+                    bool(INVENTORY_CODE_REGEX.search(desc_for_agency)) or
+                    bool(MULTI_INVENTORY_REGEX.search(desc_for_agency))
+                )
+
+                is_shop = bool(soup.find(class_=re.compile(r'shop-badge|shop-header|shop-contact', re.I))) or bool(soup.find("a", href=re.compile(r'/shops/')))
+                is_agent = is_shop or has_agency_kw or (
+                    any(k in author_text for k in ["vasitəçi", "vasiteci", "agent", "agentlik", "şirkət", "rieltor", "makler"])
+                )
+
+                is_owner = (
+                    ("mülkiyyətçi" in author_text or "sahibindən" in author_text) and not is_agent
+                )
+
+                if is_agent:
+                    seller_type = "agency"
+                    is_makler = True
+                    makler_score = 1.0
+                elif is_owner:
+                    seller_type = "owner"
+                    is_makler = False
+                    makler_score = 0.0
+                else:
+                    seller_type = "agency"
+                    is_makler = True
+                    makler_score = 0.8
+
+                from app.core.baku_locations import extract_az_phone
+                phone_res = extract_az_phone(page_text_lower)
+                extracted_phone = phone_res[0] if phone_res else None
+
+                return {
+                    "phone_number": extracted_phone,
+                    "full_description": full_desc,
+                    "seller_type": seller_type,
+                    "is_makler": is_makler,
+                    "makler_score": makler_score
+                }
+        except Exception as e:
+            logger.debug(f"[TapAzScraper] Error fetching detail for {clean_url}: {e}")
+            return {}
+
     async def scrape_source(self, url_or_handle: str = "https://tap.az/elanlar/dasinmaz-emlak") -> List[RawListingItem]:
         logger.info(f"[TapAzScraper] Fetching listings from {url_or_handle}")
         items: List[RawListingItem] = []

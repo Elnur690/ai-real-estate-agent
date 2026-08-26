@@ -214,6 +214,22 @@ class IngestionService:
         return targets
 
     @staticmethod
+    async def _fetch_details_for_item(external_id: str, listing_url: str = "") -> dict:
+        """Dispatches detail fetching to the appropriate portal scraper (Bina.az, YeniEmlak.az, Tap.az)."""
+        ext_clean = (external_id or "").lower()
+        url_clean = (listing_url or "").lower()
+        try:
+            if "bina_" in ext_clean or "bina.az" in url_clean:
+                return await BinaAzScraper.fetch_item_details(listing_url or external_id)
+            elif "yeniemlak_" in ext_clean or "yeniemlak.az" in url_clean:
+                return await YeniEmlakAzScraper.fetch_item_details(listing_url or external_id)
+            elif "tap_" in ext_clean or "tap.az" in url_clean:
+                return await TapAzScraper.fetch_item_details(listing_url or external_id)
+        except Exception as e:
+            logger.debug(f"[IngestionService] Error in _fetch_details_for_item ({external_id}): {e}")
+        return {}
+
+    @staticmethod
     async def _ingest_single_raw_item(db: AsyncSession, item: RawListingItem, source_id: int = 1) -> Optional[Listing]:
         """Ingests, deduplicates with In-Memory Cache, and runs Makler + AVM analysis."""
         try:
@@ -238,9 +254,9 @@ class IngestionService:
                 await db.commit()
                 return existing_listing
             else:
-                if item.external_id and "bina_" in item.external_id:
+                if item.external_id:
                     try:
-                        details = await BinaAzScraper.fetch_item_details(item.external_id)
+                        details = await IngestionService._fetch_details_for_item(item.external_id, item.listing_url)
                         if details:
                             if details.get("phone_number"):
                                 item.phone_number = details["phone_number"]
@@ -581,6 +597,13 @@ class IngestionService:
             if getattr(listing, 'is_first_posting', True) is False and getattr(listing, 'earlier_posting_url', None):
                 # If property was already posted on major portal or earlier by agency, reject for owner-only search
                 return False
+            if (getattr(listing, 'duplicate_count', None) or 1) > 1 and bool(getattr(listing, 'duplicate_listings', None)):
+                # Multi-broker duplicate clusters (reposted at varying prices or multiple broker phones) are strictly rejected for owner searches
+                dup_list = listing.duplicate_listings or []
+                dup_prices = {d.get("price") for d in dup_list if d.get("price")}
+                dup_phones = {d.get("phone") for d in dup_list if d.get("phone")}
+                if len(dup_prices) > 1 or len(dup_phones) > 1 or any(d.get("seller_type") in ["agency", "makler", "agent"] for d in dup_list):
+                    return False
             if listing.seller_type != "owner":
                 return False
             text_agency_check = re.sub(r'\b(?:vasitəçisiz|vasitecisiz|maklersiz|vasitəçi yoxdur|vasiteci yoxdur|vasitəçi deyiləm|vasiteci deyilem|vasitəçi deyil|vasiteci deyil|makler deyiləm|makler deyilem|makler deyil|maklerlər narahat etməsin|maklerler narahat etmesin|vasitəçilər narahat etməsin|vasiteciler narahat etmesin)\b', ' [GENUINE_OWNER_FLAG] ', listing_text)
@@ -773,10 +796,10 @@ class IngestionService:
         if not getattr(listing, 'is_active', True):
             return 0
 
-        # If live scraping from Bina.az, enrich detail metadata (exact property type, seller type, phone, rooms) before matching
-        if enrich_live and listing.external_id and "bina_" in listing.external_id:
+        # If live scraping from portals, enrich detail metadata (exact property type, seller type, phone, rooms) before matching
+        if enrich_live and listing.external_id:
             try:
-                details = await BinaAzScraper.fetch_item_details(listing.external_id)
+                details = await IngestionService._fetch_details_for_item(listing.external_id, listing.listing_url)
                 if details:
                     if details.get("phone_number") and not listing.phone_number:
                         listing.phone_number = details["phone_number"]

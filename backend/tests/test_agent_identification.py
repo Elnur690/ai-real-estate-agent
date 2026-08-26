@@ -209,3 +209,47 @@ def test_seller_str_rendering_makler_protection():
     is_genuine_owner = (listing.seller_type == "owner") and not getattr(listing, 'is_makler', False) and ((listing.makler_score or 0.0) < 0.30)
     seller_str = "Ev Sahibindən" if is_genuine_owner else "Vasitəçidən/Agentlikdən"
     assert seller_str == "Vasitəçidən/Agentlikdən"
+
+def test_yeniemlak_vasiteci_rieltor_parsing():
+    from app.scrapers.yeniemlak_az import YeniEmlakAzScraper
+    # Verify that raw text with 'Vasitəçi / Rieltor' or agency terms classifies as agency
+    offer, prop, seller = classify_property_and_offer(
+        title="2 otaqlı Mənzil (Nəriman Nərimanov)",
+        description="Nərimanov rayonu, Əliyar Əliyev küç. Vasitəçi / Rieltor. 2 otaqlı 54 m².",
+        url="https://yeniemlak.az/elan/satilir-2-otaqli-bina-evi-menzil-nerimanov-rayonu-nerimanov-rayonu-eliyar-el-172892"
+    )
+    assert seller == "agency"
+
+def test_multi_broker_duplicate_cluster_strict_match_rejection():
+    search = SavedSearch(
+        tenant_id=1,
+        name="Owner Only Search",
+        raw_criteria_text="Nərimanovda sahibindən 2 otaqlı",
+        seller_type="owner",
+        min_price=100000,
+        max_price=200000,
+        min_rooms=2,
+        max_rooms=2,
+        district="Nərimanov"
+    )
+
+    # Multi-broker duplicate listing with 11 postings across 155k-175k AZN
+    cluster_listing = Listing(
+        source_id=1,
+        external_id="yeniemlak_172892",
+        title="2 otaqlı Mənzil (Nərimanov)",
+        description="Nərimanov m., yeni tikili.",
+        listing_url="https://yeniemlak.az/elan/172892",
+        district="Nərimanov",
+        rooms=2,
+        price=155000.0,
+        seller_type="owner", # Even if upstream was labeled owner
+        duplicate_count=11,
+        duplicate_listings=[
+            {"id": 1, "price": 155000.0, "seller_type": "agency", "phone": "+994501111111"},
+            {"id": 2, "price": 175000.0, "seller_type": "agency", "phone": "+994552222222"}
+        ]
+    )
+
+    # Must be strictly rejected for owner searches
+    assert IngestionService.is_strict_match(search, cluster_listing) is False
