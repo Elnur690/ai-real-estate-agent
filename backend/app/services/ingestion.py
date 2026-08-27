@@ -481,14 +481,19 @@ class IngestionService:
                 await db.refresh(db_listing)
 
                 # Run Makler Detector, AVM valuation, and Multi-Broker Duplicate Detector
-                from app.services.makler_detector import MaklerDetectorService
-                from app.services.avm_engine import AVMEngineService
-                from app.services.duplicate_detector import DuplicateDetectorService
+                try:
+                    from app.services.makler_detector import MaklerDetectorService
+                    from app.services.avm_engine import AVMEngineService
+                    from app.services.duplicate_detector import DuplicateDetectorService
 
-                db_listing = await MaklerDetectorService.analyze_listing(db, db_listing)
-                db_listing = await AVMEngineService.evaluate_listing_valuation(db, db_listing)
-                db_listing = await DuplicateDetectorService.analyze_and_group_duplicates(db, db_listing)
-                await db.commit()
+                    db_listing = await MaklerDetectorService.analyze_listing(db, db_listing)
+                    db_listing = await AVMEngineService.evaluate_listing_valuation(db, db_listing)
+                    db_listing = await DuplicateDetectorService.analyze_and_group_duplicates(db, db_listing)
+                    await db.commit()
+                except Exception as e_post:
+                    logger.debug(f"[IngestionService] Post-processing notice for #{db_listing.id}: {e_post}")
+                    await db.rollback()
+
                 return db_listing
         except Exception as e:
             logger.error(f"[IngestionService] Error ingesting item {item.external_id}: {e}")

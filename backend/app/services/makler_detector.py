@@ -204,21 +204,29 @@ class MaklerDetectorService:
             if len(clean_d) >= 7:
                 p_key = clean_d[-9:] if len(clean_d) >= 9 else clean_d
                 try:
-                    stmt_find = select(AgentPhone).where(AgentPhone.phone_clean.like(f"%{p_key}%"))
+                    stmt_find = select(AgentPhone).where(
+                        (AgentPhone.phone_clean == clean_d) |
+                        (AgentPhone.phone_clean.like(f"%{p_key}%"))
+                    )
                     res_find = await db.execute(stmt_find)
                     existing_entry = res_find.scalars().first()
                     if not existing_entry:
-                        new_agent_phone = AgentPhone(
-                            phone_clean=clean_d,
-                            phone_raw=listing.phone_number or raw_phone_str,
-                            agency_name=listing.district or "Agency",
-                            listing_count=1,
-                            is_blocked_makler=True,
-                            source="makler_detector"
-                        )
-                        db.add(new_agent_phone)
+                        try:
+                            async with db.begin_nested():
+                                new_agent_phone = AgentPhone(
+                                    phone_clean=clean_d,
+                                    phone_raw=listing.phone_number or raw_phone_str,
+                                    agency_name=listing.district or "Agency",
+                                    listing_count=1,
+                                    is_blocked_makler=True,
+                                    source="makler_detector"
+                                )
+                                db.add(new_agent_phone)
+                                await db.flush()
+                        except Exception as e_dup:
+                            logger.debug(f"[MaklerDetector] AgentPhone savepoint notice ({clean_d}): {e_dup}")
                     else:
-                        existing_entry.listing_count += 1
+                        existing_entry.listing_count = (existing_entry.listing_count or 1) + 1
                         existing_entry.last_seen_at = datetime.now(timezone.utc)
                 except Exception as e:
                     logger.debug(f"[MaklerDetector] Error registering AgentPhone: {e}")
