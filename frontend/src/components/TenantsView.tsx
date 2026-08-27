@@ -737,19 +737,55 @@ export const TenantsView: React.FC = () => {
                 />
               </div>
 
+              {/* Connected Channels Checkboxes */}
               <div>
-                <label className="text-xs text-slate-400 block mb-1">Preferred Bot Channel</label>
-                <select
-                  value={subAgentForm.preferred_channel}
-                  onChange={(e) => setSubAgentForm({ ...subAgentForm, preferred_channel: e.target.value })}
-                  className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
-                >
-                  <option value="whatsapp">WhatsApp</option>
-                  <option value="telegram">Telegram</option>
-                </select>
+                <label className="text-xs font-semibold text-slate-300 block mb-1.5">Qoşulacaq Bildiriş Kanalları</label>
+                <div className="grid grid-cols-2 gap-2.5 mb-2">
+                  <label className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition ${
+                    (subAgentForm.preferred_channel === 'whatsapp' || subAgentForm.preferred_channel === 'both' || Boolean(subAgentForm.whatsapp_number))
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      : 'bg-dark-800 border-slate-700/60 text-slate-400'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={subAgentForm.preferred_channel === 'whatsapp' || subAgentForm.preferred_channel === 'both' || Boolean(subAgentForm.whatsapp_number)}
+                      onChange={(e) => {
+                        const isTg = subAgentForm.preferred_channel === 'telegram' || subAgentForm.preferred_channel === 'both' || Boolean(subAgentForm.telegram_chat_id);
+                        const next = e.target.checked ? (isTg ? 'both' : 'whatsapp') : (isTg ? 'telegram' : 'whatsapp');
+                        setSubAgentForm({ ...subAgentForm, preferred_channel: next });
+                      }}
+                      className="w-4 h-4 rounded border-slate-700 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div>
+                      <div className="text-xs font-bold text-slate-200">WhatsApp</div>
+                      <div className="text-[10px] text-slate-400">Elan bildirişləri</div>
+                    </div>
+                  </label>
+
+                  <label className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition ${
+                    (subAgentForm.preferred_channel === 'telegram' || subAgentForm.preferred_channel === 'both' || Boolean(subAgentForm.telegram_chat_id))
+                      ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+                      : 'bg-dark-800 border-slate-700/60 text-slate-400'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={subAgentForm.preferred_channel === 'telegram' || subAgentForm.preferred_channel === 'both' || Boolean(subAgentForm.telegram_chat_id)}
+                      onChange={(e) => {
+                        const isWa = subAgentForm.preferred_channel === 'whatsapp' || subAgentForm.preferred_channel === 'both' || Boolean(subAgentForm.whatsapp_number);
+                        const next = e.target.checked ? (isWa ? 'both' : 'telegram') : (isWa ? 'whatsapp' : 'telegram');
+                        setSubAgentForm({ ...subAgentForm, preferred_channel: next });
+                      }}
+                      className="w-4 h-4 rounded border-slate-700 text-blue-600 focus:ring-blue-500"
+                    />
+                    <div>
+                      <div className="text-xs font-bold text-slate-200">Telegram & Mini App</div>
+                      <div className="text-[10px] text-slate-400">Bildiriş və CRM</div>
+                    </div>
+                  </label>
+                </div>
               </div>
 
-              {subAgentForm.preferred_channel === 'whatsapp' ? (
+              {(subAgentForm.preferred_channel === 'whatsapp' || subAgentForm.preferred_channel === 'both' || Boolean(subAgentForm.whatsapp_number)) && (
                 <div>
                   <label className="text-xs text-slate-400 block mb-1">WhatsApp Number</label>
                   <input
@@ -760,7 +796,9 @@ export const TenantsView: React.FC = () => {
                     className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
                   />
                 </div>
-              ) : (
+              )}
+
+              {(subAgentForm.preferred_channel === 'telegram' || subAgentForm.preferred_channel === 'both' || Boolean(subAgentForm.telegram_chat_id)) && (
                 <div>
                   <label className="text-xs text-slate-400 block mb-1">Telegram Chat ID / Username</label>
                   <input
@@ -857,30 +895,16 @@ export const TenantsView: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-slate-400 block mb-1">Account Type</label>
-                  <select
-                    value={editFormData.type}
-                    onChange={(e) => setEditFormData({ ...editFormData, type: e.target.value as any })}
-                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
-                  >
-                    <option value="individual_agent">Individual Agent</option>
-                    <option value="agency">Agency / Brokerage</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-slate-400 block mb-1">Bot Channel</label>
-                  <select
-                    value={editFormData.preferred_channel}
-                    onChange={(e) => setEditFormData({ ...editFormData, preferred_channel: e.target.value as any })}
-                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
-                  >
-                    <option value="telegram">Telegram</option>
-                    <option value="whatsapp">WhatsApp</option>
-                    <option value="both">Hər ikisi (Dual: WhatsApp + Telegram)</option>
-                  </select>
-                </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Account Type</label>
+                <select
+                  value={editFormData.type}
+                  onChange={(e) => setEditFormData({ ...editFormData, type: e.target.value as any })}
+                  className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
+                >
+                  <option value="individual_agent">Individual Agent</option>
+                  <option value="agency">Agency / Brokerage</option>
+                </select>
               </div>
 
               <div>
@@ -898,12 +922,60 @@ export const TenantsView: React.FC = () => {
                 </select>
               </div>
 
-              {(editFormData.preferred_channel === 'whatsapp' || editFormData.preferred_channel === 'both') && (
+              {/* Connected Channels Checkboxes */}
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1.5">Qoşulmuş Bildiriş Kanalları</label>
+                <div className="grid grid-cols-2 gap-2.5 mb-2">
+                  <label className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition ${
+                    (editFormData.preferred_channel === 'whatsapp' || editFormData.preferred_channel === 'both' || Boolean(editFormData.whatsapp_number))
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      : 'bg-dark-800 border-slate-700/60 text-slate-400'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={editFormData.preferred_channel === 'whatsapp' || editFormData.preferred_channel === 'both' || Boolean(editFormData.whatsapp_number)}
+                      onChange={(e) => {
+                        const isTg = editFormData.preferred_channel === 'telegram' || editFormData.preferred_channel === 'both' || Boolean(editFormData.telegram_chat_id);
+                        const next = e.target.checked ? (isTg ? 'both' : 'whatsapp') : (isTg ? 'telegram' : 'whatsapp');
+                        setEditFormData({ ...editFormData, preferred_channel: next });
+                      }}
+                      className="w-4 h-4 rounded border-slate-700 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div>
+                      <div className="text-xs font-bold text-slate-200">WhatsApp</div>
+                      <div className="text-[10px] text-slate-400">Elan bildirişləri</div>
+                    </div>
+                  </label>
+
+                  <label className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition ${
+                    (editFormData.preferred_channel === 'telegram' || editFormData.preferred_channel === 'both' || Boolean(editFormData.telegram_chat_id))
+                      ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+                      : 'bg-dark-800 border-slate-700/60 text-slate-400'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={editFormData.preferred_channel === 'telegram' || editFormData.preferred_channel === 'both' || Boolean(editFormData.telegram_chat_id)}
+                      onChange={(e) => {
+                        const isWa = editFormData.preferred_channel === 'whatsapp' || editFormData.preferred_channel === 'both' || Boolean(editFormData.whatsapp_number);
+                        const next = e.target.checked ? (isWa ? 'both' : 'telegram') : (isWa ? 'whatsapp' : 'telegram');
+                        setEditFormData({ ...editFormData, preferred_channel: next });
+                      }}
+                      className="w-4 h-4 rounded border-slate-700 text-blue-600 focus:ring-blue-500"
+                    />
+                    <div>
+                      <div className="text-xs font-bold text-slate-200">Telegram & Mini App</div>
+                      <div className="text-[10px] text-slate-400">Bildiriş və CRM</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {(editFormData.preferred_channel === 'whatsapp' || editFormData.preferred_channel === 'both' || Boolean(editFormData.whatsapp_number)) && (
                 <div>
-                  <label className="text-xs text-slate-400 block mb-1">WhatsApp Number</label>
+                  <label className="text-xs text-slate-400 block mb-1">WhatsApp Nömrəsi</label>
                   <input
                     type="text"
-                    value={editFormData.whatsapp_number}
+                    value={editFormData.whatsapp_number || ''}
                     onChange={(e) => setEditFormData({ ...editFormData, whatsapp_number: e.target.value })}
                     className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
                     placeholder="+994 50 123 45 67"
@@ -911,12 +983,12 @@ export const TenantsView: React.FC = () => {
                 </div>
               )}
 
-              {(editFormData.preferred_channel === 'telegram' || editFormData.preferred_channel === 'both') && (
+              {(editFormData.preferred_channel === 'telegram' || editFormData.preferred_channel === 'both' || Boolean(editFormData.telegram_chat_id)) && (
                 <div>
                   <label className="text-xs text-slate-400 block mb-1">Telegram Chat ID / Username</label>
                   <input
                     type="text"
-                    value={editFormData.telegram_chat_id}
+                    value={editFormData.telegram_chat_id || ''}
                     onChange={(e) => setEditFormData({ ...editFormData, telegram_chat_id: e.target.value })}
                     className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
                     placeholder="12345678 və ya @username"
@@ -1101,30 +1173,16 @@ export const TenantsView: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-slate-400 block mb-1">Account Type</label>
-                  <select
-                    value={newTenant.type}
-                    onChange={(e) => setNewTenant({ ...newTenant, type: e.target.value })}
-                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
-                  >
-                    <option value="individual_agent">Individual Agent</option>
-                    <option value="agency">Agency / Team</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-slate-400 block mb-1">Preferred Bot Channel</label>
-                  <select
-                    value={newTenant.preferred_channel}
-                    onChange={(e) => setNewTenant({ ...newTenant, preferred_channel: e.target.value as any })}
-                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
-                  >
-                    <option value="telegram">Telegram</option>
-                    <option value="whatsapp">WhatsApp</option>
-                    <option value="both">Hər ikisi (Dual: WhatsApp + Telegram)</option>
-                  </select>
-                </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">Account Type</label>
+                <select
+                  value={newTenant.type}
+                  onChange={(e) => setNewTenant({ ...newTenant, type: e.target.value })}
+                  className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
+                >
+                  <option value="individual_agent">Individual Agent</option>
+                  <option value="agency">Agency / Team</option>
+                </select>
               </div>
 
               <div>
@@ -1142,9 +1200,57 @@ export const TenantsView: React.FC = () => {
                 </select>
               </div>
 
-              {(newTenant.preferred_channel === 'whatsapp' || newTenant.preferred_channel === 'both') && (
+              {/* Connected Channels Checkboxes */}
+              <div>
+                <label className="text-xs font-semibold text-slate-300 block mb-1.5">Qoşulacaq Bildiriş Kanalları</label>
+                <div className="grid grid-cols-2 gap-2.5 mb-2">
+                  <label className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition ${
+                    (newTenant.preferred_channel === 'whatsapp' || newTenant.preferred_channel === 'both' || Boolean(newTenant.whatsapp_number))
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      : 'bg-dark-800 border-slate-700/60 text-slate-400'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={newTenant.preferred_channel === 'whatsapp' || newTenant.preferred_channel === 'both' || Boolean(newTenant.whatsapp_number)}
+                      onChange={(e) => {
+                        const isTg = newTenant.preferred_channel === 'telegram' || newTenant.preferred_channel === 'both' || Boolean(newTenant.telegram_handle);
+                        const next = e.target.checked ? (isTg ? 'both' : 'whatsapp') : (isTg ? 'telegram' : 'whatsapp');
+                        setNewTenant({ ...newTenant, preferred_channel: next });
+                      }}
+                      className="w-4 h-4 rounded border-slate-700 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <div>
+                      <div className="text-xs font-bold text-slate-200">WhatsApp</div>
+                      <div className="text-[10px] text-slate-400">Elan bildirişləri</div>
+                    </div>
+                  </label>
+
+                  <label className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition ${
+                    (newTenant.preferred_channel === 'telegram' || newTenant.preferred_channel === 'both' || Boolean(newTenant.telegram_handle))
+                      ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+                      : 'bg-dark-800 border-slate-700/60 text-slate-400'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={newTenant.preferred_channel === 'telegram' || newTenant.preferred_channel === 'both' || Boolean(newTenant.telegram_handle)}
+                      onChange={(e) => {
+                        const isWa = newTenant.preferred_channel === 'whatsapp' || newTenant.preferred_channel === 'both' || Boolean(newTenant.whatsapp_number);
+                        const next = e.target.checked ? (isWa ? 'both' : 'telegram') : (isWa ? 'whatsapp' : 'telegram');
+                        setNewTenant({ ...newTenant, preferred_channel: next });
+                      }}
+                      className="w-4 h-4 rounded border-slate-700 text-blue-600 focus:ring-blue-500"
+                    />
+                    <div>
+                      <div className="text-xs font-bold text-slate-200">Telegram & Mini App</div>
+                      <div className="text-[10px] text-slate-400">Bildiriş və CRM</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {(newTenant.preferred_channel === 'whatsapp' || newTenant.preferred_channel === 'both' || Boolean(newTenant.whatsapp_number)) && (
                 <div>
-                  <label className="text-xs text-slate-400 block mb-1">WhatsApp Number</label>
+                  <label className="text-xs text-slate-400 block mb-1">WhatsApp Nömrəsi</label>
                   <input
                     type="text"
                     placeholder="+994501234567"
@@ -1155,9 +1261,9 @@ export const TenantsView: React.FC = () => {
                 </div>
               )}
 
-              {(newTenant.preferred_channel === 'telegram' || newTenant.preferred_channel === 'both') && (
+              {(newTenant.preferred_channel === 'telegram' || newTenant.preferred_channel === 'both' || Boolean(newTenant.telegram_handle)) && (
                 <div>
-                  <label className="text-xs text-slate-400 block mb-1">Telegram Handle</label>
+                  <label className="text-xs text-slate-400 block mb-1">Telegram İstifadəçi Adı / Chat ID</label>
                   <input
                     type="text"
                     placeholder="@agent_username"
