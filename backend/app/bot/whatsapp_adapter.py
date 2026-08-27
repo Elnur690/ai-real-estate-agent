@@ -250,6 +250,11 @@ class WhatsAppAdapter:
             return False
 
     @staticmethod
+    async def send_text(phone_number: str, text: str, instance_name: Optional[str] = None) -> bool:
+        """Alias for send_message."""
+        return await WhatsAppAdapter.send_message(phone_number=phone_number, text=text, instance_name=instance_name)
+
+    @staticmethod
     async def send_media_image(phone_number: str, image_path: str, caption: str = "", instance_name: Optional[str] = None) -> bool:
         """Send an image with caption via Evolution API."""
         import base64

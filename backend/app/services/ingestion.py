@@ -372,15 +372,26 @@ class IngestionService:
             )
 
             dest_channel = getattr(search, 'channel', None) or tenant.preferred_channel or "telegram"
-            dest_chat_id = getattr(search, 'destination_chat_id', None) or tenant.telegram_chat_id or tenant.whatsapp_number
+            dest_chat_id = getattr(search, 'destination_chat_id', None)
             inst_name = getattr(search, 'instance_name', None) or f"tenant_{tenant.id}"
 
-            if dest_channel == "whatsapp" and dest_chat_id:
-                await WhatsAppAdapter.send_text(dest_chat_id, msg, inst_name)
-                delivered += 1
-            elif dest_chat_id:
-                await send_telegram_notification(tenant.telegram_chat_id or dest_chat_id, msg)
-                delivered += 1
+            # Deliver to Telegram
+            if (dest_channel in ["telegram", "both"]) and (tenant.telegram_chat_id or (dest_channel == "telegram" and dest_chat_id)):
+                tg_id = (dest_chat_id if dest_channel == "telegram" else None) or tenant.telegram_chat_id
+                if tg_id:
+                    await send_telegram_notification(tg_id, msg)
+                    delivered += 1
+
+            # Deliver to WhatsApp
+            if (dest_channel in ["whatsapp", "both"]) and (tenant.whatsapp_number or (dest_channel == "whatsapp" and dest_chat_id)):
+                wa_id = (dest_chat_id if dest_channel == "whatsapp" else None) or tenant.whatsapp_number
+                if wa_id:
+                    await WhatsAppAdapter.send_message(
+                        phone_number=wa_id,
+                        text=msg,
+                        instance_name=inst_name
+                    )
+                    delivered += 1
 
         return delivered
 
