@@ -122,6 +122,17 @@ async def send_telegram_document(chat_id: str, document_path: str, caption: str 
         return False
 
 
+async def telegram_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Catches and suppresses transient network / DNS polling blips."""
+    err = context.error
+    if err:
+        err_str = str(err).lower()
+        if "name resolution" in err_str or "connecterror" in err_str or "timed out" in err_str or "networkerror" in err_str:
+            logger.warning(f"[TelegramAdapter] Transient network/DNS notice during polling: {err}")
+            return
+        logger.error(f"[TelegramAdapter] Unhandled bot exception: {err}")
+
+
 def build_telegram_app() -> Optional[Application]:
     if not settings.TELEGRAM_BOT_TOKEN:
         return None
@@ -130,4 +141,5 @@ def build_telegram_app() -> Optional[Application]:
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, telegram_message_handler))
     app.add_handler(CommandHandler("start", telegram_message_handler))
     app.add_handler(CommandHandler("help", telegram_message_handler))
+    app.add_error_handler(telegram_error_handler)
     return app
