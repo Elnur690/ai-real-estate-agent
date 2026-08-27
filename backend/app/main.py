@@ -109,6 +109,15 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS sale_type VARCHAR(50) DEFAULT 'permanent';"))
         await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS sale_expires_at TIMESTAMP WITH TIME ZONE;"))
         await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS sale_badge_label VARCHAR(100);"))
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS feature_crm BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS addon_crm_price FLOAT DEFAULT 0.0;"))
+        await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS feature_crm BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS addon_crm_price FLOAT DEFAULT 15.0;"))
+        await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS addon_crm_tiers JSON DEFAULT '[]'::json;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS feature_crm BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS addon_crm_price FLOAT DEFAULT 15.0;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS addon_crm_tiers JSON DEFAULT '[]'::json;"))
+        await conn.execute(text("ALTER TABLE sellers ADD COLUMN IF NOT EXISTS free_trial_feature_crm BOOLEAN DEFAULT FALSE;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS quiet_hours_enabled BOOLEAN DEFAULT FALSE;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS quiet_hours_start VARCHAR(10) DEFAULT '23:30';"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS quiet_hours_end VARCHAR(10) DEFAULT '08:30';"))
@@ -211,11 +220,11 @@ async def lifespan(app: FastAPI):
 
             # Auto-seed default subscription plans if missing per code
             default_plans_data = [
-                {"code": "free", "name": "Free Trial Tier", "description": "Basic listing scraper & trial alerts", "price": 0.0, "billing_period": "monthly", "max_agents": 1, "feature_makler_detector": True, "feature_avm_bargain_finder": False, "feature_social_brochure": False, "feature_client_intake_bot": False, "feature_multi_location": False, "max_locations_per_search": 1, "backup_enabled": False},
-                {"code": "starter", "name": "Starter Agent Plan", "description": "Individual agent listing alerts & Telegram bot", "price": 29.0, "billing_period": "monthly", "max_agents": 1, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 3, "backup_enabled": False},
-                {"code": "pro", "name": "Pro Agent Plan", "description": "Full AI Makler Detector, AVM Bargain Finder & WhatsApp alerts", "price": 59.0, "billing_period": "monthly", "max_agents": 3, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 5, "backup_enabled": True},
-                {"code": "agency", "name": "Agency Team Plan", "description": "Multi-agent team territory routing & automated backups", "price": 129.0, "billing_period": "monthly", "max_agents": 10, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 10, "backup_enabled": True},
-                {"code": "enterprise", "name": "Enterprise Custom Plan", "description": "Unlimited agent seats, custom intake branding & dedicated AI model", "price": 299.0, "billing_period": "monthly", "max_agents": 50, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 20, "backup_enabled": True},
+                {"code": "free", "name": "Free Trial Tier", "description": "Basic listing scraper & trial alerts", "price": 0.0, "billing_period": "monthly", "max_agents": 1, "feature_makler_detector": True, "feature_avm_bargain_finder": False, "feature_social_brochure": False, "feature_client_intake_bot": False, "feature_multi_location": False, "max_locations_per_search": 1, "feature_crm": False, "addon_crm_price": 15.0, "backup_enabled": False},
+                {"code": "starter", "name": "Starter Agent Plan", "description": "Individual agent listing alerts & Telegram bot", "price": 29.0, "billing_period": "monthly", "max_agents": 1, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 3, "feature_crm": False, "addon_crm_price": 15.0, "backup_enabled": False},
+                {"code": "pro", "name": "Pro Agent Plan", "description": "Full AI Makler Detector, AVM Bargain Finder & WhatsApp alerts", "price": 59.0, "billing_period": "monthly", "max_agents": 3, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 5, "feature_crm": True, "addon_crm_price": 15.0, "backup_enabled": True},
+                {"code": "agency", "name": "Agency Team Plan", "description": "Multi-agent team territory routing & automated backups", "price": 129.0, "billing_period": "monthly", "max_agents": 10, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 10, "feature_crm": True, "addon_crm_price": 15.0, "backup_enabled": True},
+                {"code": "enterprise", "name": "Enterprise Custom Plan", "description": "Unlimited agent seats, custom intake branding & dedicated AI model", "price": 299.0, "billing_period": "monthly", "max_agents": 50, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 20, "feature_crm": True, "addon_crm_price": 15.0, "backup_enabled": True},
             ]
             
             for pdata in default_plans_data:
@@ -308,7 +317,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.api.v1 import auth, tenants, payments, ai_config, settings as settings_api, scrapers, webhooks, client_intake, promo_codes, plans, whatsapp, analytics
+from app.api.v1 import auth, tenants, payments, ai_config, settings as settings_api, scrapers, webhooks, client_intake, promo_codes, plans, whatsapp, analytics, sellers, crm
 
 # Include Router endpoints
 app.include_router(auth.router, prefix=settings.API_V1_STR)
@@ -324,6 +333,7 @@ app.include_router(plans.router, prefix=settings.API_V1_STR)
 app.include_router(whatsapp.router, prefix=settings.API_V1_STR)
 app.include_router(analytics.router, prefix=settings.API_V1_STR)
 app.include_router(sellers.router, prefix=settings.API_V1_STR)
+app.include_router(crm.router, prefix=settings.API_V1_STR)
 
 # Serve generated PDF brochures statically
 from fastapi.staticfiles import StaticFiles

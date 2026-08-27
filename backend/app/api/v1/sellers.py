@@ -75,6 +75,9 @@ class CreatePackageRequest(BaseModel):
     included_image_requests: int = 0
     addon_image_requests_price: float = 10.0
     addon_image_tiers: Optional[List[Dict[str, Any]]] = None
+    feature_crm: bool = False
+    addon_crm_price: float = 15.0
+    addon_crm_tiers: Optional[List[Dict[str, Any]]] = None
     sale_enabled: bool = False
     sale_price: Optional[float] = None
     sale_discount_percent: Optional[float] = None
@@ -107,6 +110,9 @@ class UpdatePackageRequest(BaseModel):
     included_image_requests: Optional[int] = None
     addon_image_requests_price: Optional[float] = None
     addon_image_tiers: Optional[List[Dict[str, Any]]] = None
+    feature_crm: Optional[bool] = None
+    addon_crm_price: Optional[float] = None
+    addon_crm_tiers: Optional[List[Dict[str, Any]]] = None
     sale_enabled: Optional[bool] = None
     sale_price: Optional[float] = None
     sale_discount_percent: Optional[float] = None
@@ -130,6 +136,8 @@ class RegisterSellerAgentRequest(BaseModel):
     selected_extra_searches_price: Optional[float] = None
     selected_image_requests: Optional[int] = None
     selected_image_price: Optional[float] = None
+    selected_crm_enabled: Optional[bool] = None
+    selected_crm_price: Optional[float] = None
 
 class UpdateSellerAgentRequest(BaseModel):
     name: Optional[str] = None
@@ -151,6 +159,8 @@ class UpdateSellerAgentRequest(BaseModel):
     feature_watermark_free_images: Optional[bool] = None
     addon_image_requests_limit: Optional[int] = None
     addon_image_requests_used: Optional[int] = None
+    feature_crm: Optional[bool] = None
+    addon_crm_price: Optional[float] = None
 
 class RenewSellerAgentRequest(BaseModel):
     package_id: Optional[int] = None

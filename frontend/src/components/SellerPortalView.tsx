@@ -1238,11 +1238,13 @@ export function SellerPortalView() {
                         </td>
                         <td className="py-3.5 px-4">
                           <span className={`capitalize text-xs font-semibold px-2 py-0.5 rounded-md ${
-                            a.preferred_channel === 'telegram'
+                            a.preferred_channel === 'both'
+                              ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                              : a.preferred_channel === 'telegram'
                               ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
                               : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                           }`}>
-                            {a.preferred_channel}
+                            {a.preferred_channel === 'both' ? '⚡ Dual (WA + TG)' : a.preferred_channel}
                           </span>
                         </td>
                         <td className="py-3.5 px-4">
@@ -2885,8 +2887,9 @@ export function SellerPortalView() {
                         onChange={(e) => setEditAgentChannel(e.target.value)}
                         className="w-1/2 bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-white text-xs"
                       >
-                        <option value="telegram">TG</option>
-                        <option value="whatsapp">WA</option>
+                        <option value="telegram">Telegram</option>
+                        <option value="whatsapp">WhatsApp</option>
+                        <option value="both">Hər ikisi (Dual)</option>
                       </select>
                       <select
                         value={editAgentStatus}
@@ -3091,6 +3094,7 @@ export function SellerPortalView() {
                   >
                     <option value="telegram">Telegram</option>
                     <option value="whatsapp">WhatsApp</option>
+                    <option value="both">Hər ikisi (Dual: WhatsApp + Telegram)</option>
                   </select>
                 </div>
               </div>

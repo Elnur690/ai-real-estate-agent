@@ -122,7 +122,7 @@ class BotCommandHandler:
 
             if not tenant:
                 clean_sender = sender_id.replace("+", "").replace(" ", "").split("@")[0]
-                stmt_w = select(Tenant).where(Tenant.preferred_channel == "whatsapp")
+                stmt_w = select(Tenant)
                 res_w = await db.execute(stmt_w)
                 all_w = res_w.scalars().all()
                 for t in all_w:
@@ -345,6 +345,108 @@ class BotCommandHandler:
                 f"2. Müştərilər bura daxil olub büdcə və əmlak tələblərini yazdıqda, AI həmin kriteriyanı avtomatik sizin adınıza axtarışa salacaq!\n"
                 f"3. Uyğun elan çıxan kimi sizə dərhal bildiriş gələcək. 🎯"
             )
+
+        # Real Estate CRM & Telegram Mini App Listing Ingestion (/crm <id>, /deal <id>, crm <id>)
+        crm_match = re.search(r'^(?:/crm|crm|/deal|deal)\s*#?\s*(\d+)', text_lower)
+        if crm_match:
+            input_id = int(crm_match.group(1))
+
+            # 1. Resolve target listing ID (check if input is a Match ID or direct Listing ID)
+            stmt_m = select(Match.listing_id).where(Match.id == input_id, Match.tenant_id == tenant.id)
+            res_m = await db.execute(stmt_m)
+            matched_listing_id = res_m.scalar_one_or_none()
+            target_listing_id = matched_listing_id if matched_listing_id else input_id
+
+            # 2. Check 1: Is CRM add-on active on tenant's account?
+            if not getattr(tenant, "feature_crm", False):
+                crm_price = getattr(tenant, 'addon_crm_price', 15.0) or 15.0
+                return (
+                    f"🔒 *CRM və Mini App Add-on aktiv deyil!*\n\n"
+                    f"Elanları CRM-ə göndərmək, müştərilərə təyin etmək və Telegram Mini App-də idarə etmək üçün hesabınızda CRM modulunu aktivləşdirin.\n\n"
+                    f"💰 *Qiymət:* {crm_price} AZN/ay\n"
+                    f"📞 Aktivləşdirmək üçün admin və ya dəstək xidməti ilə əlaqə saxlayın."
+                )
+
+            # 3. Check 2: Has the agent connected their Telegram account?
+            if not tenant.telegram_chat_id:
+                bot_username = settings.TELEGRAM_BOT_USERNAME or "RealEstateBot"
+                tg_link = f"https://t.me/{bot_username}?start=agent_{tenant.id}"
+                return (
+                    f"⚠️ *Telegram Hesabınız Aktivləşdirilməyib!*\n\n"
+                    f"CRM məlumatlarını idarə etmək və Telegram Mini App-dən istifadə etmək üçün əvvəlcə Telegram botumuzu aktivləşdirməlisiniz:\n\n"
+                    f"👉 {tg_link}\n\n"
+                    f"1️⃣ Yuxarıdakı linkə klikləyin və Telegram botda *Start* düyməsini sıxın.\n"
+                    f"2️⃣ Hesabınız bağlandıqdan sonra `/crm {input_id}` əmrini yenidən göndərin."
+                )
+
+            # 4. Fetch Listing
+            from app.models.listing import Listing
+            from app.models.crm import CrmDeal, CrmActivity
+            stmt_l = select(Listing).where(Listing.id == target_listing_id)
+            res_l = await db.execute(stmt_l)
+            listing = res_l.scalars().first()
+
+            if not listing:
+                return f"❌ #{input_id} nömrəli elan tapılmadı."
+
+            # Check if deal already exists for this tenant and listing
+            stmt_exist = select(CrmDeal).where(CrmDeal.tenant_id == tenant.id, CrmDeal.listing_id == listing.id)
+            res_exist = await db.execute(stmt_exist)
+            deal = res_exist.scalars().first()
+
+            if not deal:
+                title = listing.title or f"{listing.rooms or ''} otaq {listing.district or ''}"
+                photos_list = listing.photos or []
+                img = photos_list[0] if (isinstance(photos_list, list) and len(photos_list) > 0) else None
+                loc = listing.district or listing.metro_station or "Bakı"
+                deal = CrmDeal(
+                    tenant_id=tenant.id,
+                    listing_id=listing.id,
+                    listing_title=title,
+                    listing_price=listing.price or 0.0,
+                    listing_currency=listing.currency or "AZN",
+                    listing_url=listing.listing_url,
+                    listing_image=img,
+                    listing_location=loc,
+                    stage="new",
+                    private_notes=f"Elan portaldan /crm əmri ilə əlavə edildi ({channel.capitalize()})."
+                )
+                db.add(deal)
+                await db.commit()
+                await db.refresh(deal)
+
+                act = CrmActivity(
+                    tenant_id=tenant.id,
+                    deal_id=deal.id,
+                    action_type="deal_created",
+                    description=f"Elan {channel.capitalize()} bot vasitəsilə CRM-ə əlavə edildi"
+                )
+                db.add(act)
+                await db.commit()
+
+            bot_username = settings.TELEGRAM_BOT_USERNAME or "RealEstateBot"
+            app_short_name = settings.TELEGRAM_MINI_APP_SHORT_NAME or "crm"
+            tma_link = f"https://t.me/{bot_username}/{app_short_name}?startapp=deal_{deal.id}"
+
+            if channel == "whatsapp":
+                return (
+                    f"✅ *Elan CRM-ə uğurla əlavə edildi!* 💼 (Deal ID: #{deal.id})\n\n"
+                    f"🏠 *Elan:* {deal.listing_title}\n"
+                    f"💰 *Qiymət:* {int(deal.listing_price):,} {deal.listing_currency}\n"
+                    f"📍 *Məkan:* {deal.listing_location or 'Bakı'}\n"
+                    f"🔗 [Elan Linki]({deal.listing_url})\n\n"
+                    f"📱 *Telegram Mini App-də müştəriyə təyin etmək və qeyd yazmaq üçün daxil olun:*\n"
+                    f"👉 {tma_link}"
+                )
+            else:
+                return (
+                    f"✅ *Elan CRM-ə uğurla əlavə edildi!* 💼 (Deal ID: #{deal.id})\n\n"
+                    f"🏠 *Elan:* {deal.listing_title}\n"
+                    f"💰 *Qiymət:* {int(deal.listing_price):,} {deal.listing_currency}\n"
+                    f"📍 *Məkan:* {deal.listing_location or 'Bakı'}\n\n"
+                    f"📱 *Telegram Mini App:* {tma_link}\n\n"
+                    f"Müştəri adı, təklif qiyməti və şəxsi qeydlərinizi Mini App vasitəsilə dərhal redaktə edə bilərsiniz."
+                )
 
         # Watermark-Free Listing Photos Command (/foto <id>, /image <id>, /şəkil <id>, /sekil <id>)
         photo_match = re.search(r'^(?:/foto|foto|/image|image|/şəkil|şəkil|/sekil|sekil)\s*#?\s*(\d+)', text_lower)
@@ -1467,6 +1569,7 @@ class BotCommandHandler:
             f"▪️ `/resume <id>` (və ya `/aktiv <id>`) — Dayandırılmış axtarışı aktiv etmək\n"
             f"▪️ `/cancel` — Hazırkı axtarış qaralamasını ləğv etmək\n\n"
             f"📦 *Arxiv və Satış Alətləri:*\n"
+            f"▪️ `/crm <id>` (və ya `/deal <id>`) — Elanı CRM-ə göndərmək və Telegram Mini App-də açmaq 💼\n"
             f"▪️ `/arxiv <ay> <məkan>` (və ya `/since <gün>`) — Bazar arxivində uzun müddət satışda qalan aktiv elanlar (məs: `/arxiv 3 Yasamal`)\n"
             f"▪️ `/təqdimat <id>` (və ya `/brochure <id>`) — Müştəriyə göndəriləcək təmiz mətn və PDF buklet\n"
             f"▪️ `/foto <id>` (və ya `/image <id>`) — Elanın su nişansız (watermark-free) orijinal şəkilləri\n"
@@ -1474,12 +1577,12 @@ class BotCommandHandler:
             f"⚙️ *Hesab və Qrup Parametrləri:*\n"
             f"▪️ `/command` (və ya `/commands`) — Bu əmrlər menyusunu göstərmək\n"
             f"▪️ `/status` (və ya `/plan`) — Abunəlik statusunuz və limitləriniz\n"
-            f"▪️ `/paket` — Əlavə axtarış, arxiv və foto limit paketləri\n"
+            f"▪️ `/paket` — Əlavə axtarış, arxiv, foto və CRM paketləri\n"
             f"▪️ `/channel` (və ya `/kanal`) — Bildiriş kanalını dəyişmək (WhatsApp / Telegram)\n"
             f"▪️ `/bot_here` (və ya `bot qoş`) — Botu WhatsApp işçi qrupuna qoşmaq\n"
             f"▪️ `/bot_leave` (və ya `bot çıx`, `bot ayır`) — Botu WhatsApp qrupundan ayırmaq\n\n"
             f"💬 *Elan Reaksiyaları (Bildirişin altında birbaşa toxunun):*\n"
-            f"• `Təqdimat <id>` | `Foto <id>` | `Maraqlanıram <id>` | `Keç <id>` | `Satılıb <id>`"
+            f"• `Təqdimat <id>` | `Foto <id>` | `CRM <id>` | `Maraqlanıram <id>` | `Keç <id>` | `Satılıb <id>`"
         )
 
     @staticmethod
@@ -1500,6 +1603,7 @@ class BotCommandHandler:
             f"🏗️ *Bina Növü:* 'Yeni tikili' və ya 'Köhnə tikili' qeyd edildikdə dəqiq seçilir, qeyd edilmədikdə hər iki bina növü aktiv olur.\n"
             f"🏷️ *Əməliyyat:* Satış və ya İcarə/Kirayə elanları.\n"
             f"👤 *Satıcı:* Yalnız Ev Sahibindən (makler və şirkət komissiyası filtrlənir) və ya Hamısı.\n"
+            f"💼 *CRM & Telegram Mini App:* `/crm <id>` ilə elanları bir toxunuşla Mini App-ə köçürmək və müştəri təkliflərini idarə etmək.\n"
             f"⌛ *Bazar Arxivi (Aged Listings):* Uzun müddət satışda qalan elanlar (məs: `3 aydan bəri`, `2 aydır satışda olan`).\n"
             f"🖼️ *Su Nişansız Şəkillər (Watermark Removal):* Portal su nişanları təmizlənmiş orijinal fotolar.\n\n"
             f"💡 *SİSTEMDƏN İSTİFADƏ QAYDASI (2 ASAN ADDIM):*\n"
@@ -1518,10 +1622,11 @@ class BotCommandHandler:
             f"▪️ `/sil <id>` — Axtarış kriteriyasını silmək (nümunə: `/sil 1`)\n"
             f"▪️ `/pause <id>` — Axtarışı müvəqqəti dayandırmaq\n"
             f"▪️ `/resume <id>` — Dayandırılmış axtarışı yenidən aktiv etmək\n"
+            f"▪️ `/crm <id>` — Elanı CRM pipeline-a göndərmək və Telegram Mini App-də açmaq 💼\n"
             f"▪️ `/since <gün>` və ya `/arxiv <ay>` — Bazar arxivində keçmiş aktiv elanları axtarmaq (nümunə: `/arxiv 3 Yasamal`)\n"
             f"▪️ `/təqdimat <id>` (və ya `/brochure <id>`) — Müştəriyə göndəriləcək təmiz mətn və PDF buklet\n"
             f"▪️ `/foto <id>` (və ya `/image <id>`) — Elanın su nişansız (watermark-free) təmiz şəkillərini yükləmək\n"
-            f"▪️ `/paket` — Əlavə axtarış, arxiv və foto limit paketləri\n"
+            f"▪️ `/paket` — Əlavə axtarış, arxiv, foto və CRM paketləri\n"
             f"▪️ `/status` — Abunə tarifiniz, bitmə vaxtı və foto/axtarış limitləriniz\n"
             f"▪️ `/cancel` — Hazırkı axtarış qaralamasını ləğv etmək\n"
             f"▪️ `/help` — Bu təlimatı yenidən göstərmək\n\n"
@@ -1530,7 +1635,7 @@ class BotCommandHandler:
             f"▪️ `/bot_leave` və ya `/unpair_group` (və ya `bot çıx`, `bot ayır`) — Botu WhatsApp qrupundan ayırmaq\n"
             f"*(Qrupda yaradılan axtarışların elanları birbaşa həmin qrupa, şəxsi çatdakılar isə şəxsi çata gəlir)*\n\n"
             f"💬 *ELAN REAKSİYALARI VƏ ƏMƏLİYYATLAR:*\n"
-            f"• `Təqdimat <id>` | `Foto <id>` | `Maraqlanıram <id>` | `Keç <id>` | `Satılıb <id>`"
+            f"• `Təqdimat <id>` | `Foto <id>` | `CRM <id>` | `Maraqlanıram <id>` | `Keç <id>` | `Satılıb <id>`"
         )
 
     @staticmethod

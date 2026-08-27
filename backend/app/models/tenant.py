@@ -54,6 +54,10 @@ class Tenant(Base):
     addon_image_requests_used: Mapped[int] = mapped_column(default=0)
     addon_image_requests_price: Mapped[float] = mapped_column(default=0.0)
 
+    # 💼 Telegram Mini App & Real Estate CRM Add-on
+    feature_crm: Mapped[bool] = mapped_column(default=False)
+    addon_crm_price: Mapped[float] = mapped_column(default=0.0)
+
     # 🎁 Referral System & Promo Code Reward Options
     referral_code: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True)
     referred_by_tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True)
@@ -78,3 +82,5 @@ class Tenant(Base):
     payments = relationship("Payment", back_populates="tenant", cascade="all, delete-orphan")
     seller = relationship("Seller", back_populates="agents")
     seller_package = relationship("SellerPackage", back_populates="subscribed_agents")
+    crm_clients = relationship("CrmClient", back_populates="tenant", cascade="all, delete-orphan")
+    crm_deals = relationship("CrmDeal", back_populates="tenant", cascade="all, delete-orphan")

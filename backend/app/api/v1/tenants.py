@@ -37,6 +37,8 @@ class CreateTenantRequest(BaseModel):
     feature_watermark_free_images: bool = False
     addon_image_requests_limit: int = 0
     addon_image_requests_price: float = 0.0
+    feature_crm: bool = False
+    addon_crm_price: float = 0.0
 
 class UpdateTenantRequest(BaseModel):
     name: Optional[str] = None
@@ -63,6 +65,8 @@ class UpdateTenantRequest(BaseModel):
     addon_image_requests_limit: Optional[int] = None
     addon_image_requests_used: Optional[int] = None
     addon_image_requests_price: Optional[float] = None
+    feature_crm: Optional[bool] = None
+    addon_crm_price: Optional[float] = None
 
 class TenantResponse(BaseModel):
     id: int
@@ -95,6 +99,8 @@ class TenantResponse(BaseModel):
     addon_image_requests_limit: int = 0
     addon_image_requests_used: int = 0
     addon_image_requests_price: float = 0.0
+    feature_crm: bool = False
+    addon_crm_price: float = 0.0
     active_searches_count: int = 0
     max_saved_searches: int = 10
     referral_code: Optional[str] = None
@@ -186,6 +192,8 @@ async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(ge
         max_locations_per_search=db_plan.max_locations_per_search if db_plan else body.max_locations_per_search,
         feature_aged_listings=getattr(db_plan, 'feature_aged_listings', False) or body.feature_aged_listings,
         addon_aged_max_months=body.addon_aged_max_months or 12,
+        feature_crm=getattr(db_plan, 'feature_crm', False) or body.feature_crm,
+        addon_crm_price=getattr(db_plan, 'addon_crm_price', 0.0) if body.addon_crm_price == 0.0 else body.addon_crm_price,
         plan_started_at=datetime.now(timezone.utc),
         plan_expires_at=expires_at,
         status=initial_status
@@ -248,6 +256,8 @@ async def update_tenant(tenant_id: int, body: UpdateTenantRequest, db: AsyncSess
             tenant.backup_enabled = db_plan.backup_enabled
             if getattr(db_plan, 'feature_aged_listings', False):
                 tenant.feature_aged_listings = True
+            if getattr(db_plan, 'feature_crm', False):
+                tenant.feature_crm = True
 
     for field, val in update_data.items():
         setattr(tenant, field, val)

@@ -42,6 +42,9 @@ class PlanResponse(BaseModel):
     included_image_requests: int = 0
     addon_image_requests_price: float = 10.0
     addon_image_tiers: Optional[List[dict]] = []
+    feature_crm: bool = False
+    addon_crm_price: float = 15.0
+    addon_crm_tiers: Optional[List[dict]] = []
     sale_enabled: bool = False
     sale_price: Optional[float] = None
     sale_discount_percent: Optional[float] = None
@@ -80,6 +83,9 @@ class CreatePlanRequest(BaseModel):
     included_image_requests: int = 0
     addon_image_requests_price: float = 10.0
     addon_image_tiers: Optional[List[dict]] = []
+    feature_crm: bool = False
+    addon_crm_price: float = 15.0
+    addon_crm_tiers: Optional[List[dict]] = []
     sale_enabled: bool = False
     sale_price: Optional[float] = None
     sale_discount_percent: Optional[float] = None
@@ -116,6 +122,9 @@ class UpdatePlanRequest(BaseModel):
     included_image_requests: Optional[int] = None
     addon_image_requests_price: Optional[float] = None
     addon_image_tiers: Optional[List[dict]] = None
+    feature_crm: Optional[bool] = None
+    addon_crm_price: Optional[float] = None
+    addon_crm_tiers: Optional[List[dict]] = None
     sale_enabled: Optional[bool] = None
     sale_price: Optional[float] = None
     sale_discount_percent: Optional[float] = None

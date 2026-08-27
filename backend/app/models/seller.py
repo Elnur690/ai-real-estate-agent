@@ -45,6 +45,7 @@ class Seller(Base):
     free_trial_feature_multi_location: Mapped[bool] = mapped_column(Boolean, default=True)
     free_trial_feature_watermark_images: Mapped[bool] = mapped_column(Boolean, default=False)
     free_trial_image_requests: Mapped[int] = mapped_column(Integer, default=5)
+    free_trial_feature_crm: Mapped[bool] = mapped_column(Boolean, default=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -94,6 +95,11 @@ class SellerPackage(Base):
     included_image_requests: Mapped[int] = mapped_column(Integer, default=0)
     addon_image_requests_price: Mapped[float] = mapped_column(Float, default=10.0)
     addon_image_tiers: Mapped[list[dict] | None] = mapped_column(JSON, default=list) # e.g. [{"images": 25, "price": 10.0}, {"images": 50, "price": 18.0}]
+    
+    # 💼 Telegram Mini App & Real Estate CRM Add-on
+    feature_crm: Mapped[bool] = mapped_column(Boolean, default=False)
+    addon_crm_price: Mapped[float] = mapped_column(Float, default=15.0)
+    addon_crm_tiers: Mapped[list[dict] | None] = mapped_column(JSON, default=list) # e.g. [{"months": 1, "price": 15.0}, {"months": 3, "price": 35.0}]
     
     # 🏷️ Promotional Sale & Discount Campaign Features
     sale_enabled: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -76,7 +76,7 @@ class WhatsAppAdapter:
 
                 if not tenant:
                     clean_remote = re.sub(r'\D', '', remote_jid.split("@")[0])
-                    stmt_w = select(Tenant).where(Tenant.preferred_channel == "whatsapp")
+                    stmt_w = select(Tenant)
                     res_w = await db.execute(stmt_w)
                     all_w = res_w.scalars().all()
                     for t in all_w:

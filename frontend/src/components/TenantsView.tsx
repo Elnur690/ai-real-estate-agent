@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { UserPlus, Search, ShieldCheck, Clock, AlertCircle, Phone, MessageSquare, Plus, CheckCircle, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff, DollarSign, Edit3, Trash2, X, AlertTriangle, Users, MapPin, Store, Sparkles } from 'lucide-react';
+import { UserPlus, Search, ShieldCheck, Clock, AlertCircle, Phone, MessageSquare, Plus, CheckCircle, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff, DollarSign, Edit3, Trash2, X, AlertTriangle, Users, MapPin, Store, Sparkles, Briefcase } from 'lucide-react';
 import api from '../api';
 import { Tenant, SavedSearch } from '../types';
 
@@ -46,7 +46,9 @@ export const TenantsView: React.FC = () => {
     addon_aged_max_months: 12,
     addon_saved_searches: 0,
     feature_watermark_free_images: false,
-    addon_image_requests_limit: 0
+    addon_image_requests_limit: 0,
+    feature_crm: false,
+    addon_crm_price: 0.0,
   });
 
   const [availablePlans, setAvailablePlans] = useState<any[]>([]);
@@ -66,12 +68,12 @@ export const TenantsView: React.FC = () => {
 
   // Edit Modal State
   const [editTenant, setEditTenant] = useState<Tenant | null>(null);
-  const [editFormData, setEditFormData] = useState({
+  const [editFormData, setEditFormData] = useState<Partial<Tenant>>({
     name: '',
     phone: '',
-    type: 'individual_agent',
+    status: 'active',
+    plan: 'free',
     preferred_channel: 'telegram',
-    plan: 'starter',
     whatsapp_number: '',
     telegram_chat_id: '',
     backup_enabled: false,
@@ -81,7 +83,9 @@ export const TenantsView: React.FC = () => {
     addon_saved_searches: 0,
     feature_watermark_free_images: false,
     addon_image_requests_limit: 0,
-    addon_image_requests_used: 0
+    addon_image_requests_used: 0,
+    feature_crm: false,
+    addon_crm_price: 0.0,
   });
 
   // Delete Confirmation Modal State
@@ -242,7 +246,9 @@ export const TenantsView: React.FC = () => {
         addon_aged_max_months: 12,
         addon_saved_searches: 0,
         feature_watermark_free_images: false,
-        addon_image_requests_limit: 0
+        addon_image_requests_limit: 0,
+        feature_crm: false,
+        addon_crm_price: 0.0,
       });
       loadTenants();
     } catch (e: any) {
@@ -573,9 +579,13 @@ export const TenantsView: React.FC = () => {
                   </td>
                   <td className="p-4">
                     <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium ${
-                      t.preferred_channel === 'whatsapp' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                      t.preferred_channel === 'both'
+                        ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                        : t.preferred_channel === 'whatsapp'
+                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                        : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
                     }`}>
-                      {t.preferred_channel === 'whatsapp' ? 'WhatsApp' : 'Telegram'}
+                      {t.preferred_channel === 'both' ? '⚡ Dual (WA + TG)' : t.preferred_channel === 'whatsapp' ? 'WhatsApp' : 'Telegram'}
                     </span>
                   </td>
                   <td className="p-4">
@@ -584,6 +594,12 @@ export const TenantsView: React.FC = () => {
                       <Search className="w-3 h-3" />
                       {t.active_searches_count || 0} / {t.max_saved_searches || 10} Searches
                     </div>
+                    {t.feature_crm && (
+                      <div className="text-[11px] text-indigo-400 font-medium flex items-center gap-1 mt-0.5">
+                        <Briefcase className="w-3 h-3" />
+                        CRM Mini App
+                      </div>
+                    )}
                     {t.feature_watermark_free_images && (
                       <div className="text-[11px] text-teal-400 font-mono flex items-center gap-1 mt-0.5">
                         <Sparkles className="w-3 h-3" />
@@ -846,7 +862,7 @@ export const TenantsView: React.FC = () => {
                   <label className="text-xs text-slate-400 block mb-1">Account Type</label>
                   <select
                     value={editFormData.type}
-                    onChange={(e) => setEditFormData({ ...editFormData, type: e.target.value })}
+                    onChange={(e) => setEditFormData({ ...editFormData, type: e.target.value as any })}
                     className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
                   >
                     <option value="individual_agent">Individual Agent</option>
@@ -857,11 +873,12 @@ export const TenantsView: React.FC = () => {
                   <label className="text-xs text-slate-400 block mb-1">Bot Channel</label>
                   <select
                     value={editFormData.preferred_channel}
-                    onChange={(e) => setEditFormData({ ...editFormData, preferred_channel: e.target.value })}
+                    onChange={(e) => setEditFormData({ ...editFormData, preferred_channel: e.target.value as any })}
                     className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
                   >
                     <option value="telegram">Telegram</option>
                     <option value="whatsapp">WhatsApp</option>
+                    <option value="both">Hər ikisi (Dual: WhatsApp + Telegram)</option>
                   </select>
                 </div>
               </div>
@@ -870,7 +887,7 @@ export const TenantsView: React.FC = () => {
                 <label className="text-xs text-slate-400 block mb-1">Subscription Plan</label>
                 <select
                   value={editFormData.plan}
-                  onChange={(e) => setEditFormData({ ...editFormData, plan: e.target.value })}
+                  onChange={(e) => setEditFormData({ ...editFormData, plan: e.target.value as any })}
                   className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800 capitalize"
                 >
                   {availablePlans.map((p) => (
@@ -881,7 +898,7 @@ export const TenantsView: React.FC = () => {
                 </select>
               </div>
 
-              {editFormData.preferred_channel === 'whatsapp' ? (
+              {(editFormData.preferred_channel === 'whatsapp' || editFormData.preferred_channel === 'both') && (
                 <div>
                   <label className="text-xs text-slate-400 block mb-1">WhatsApp Number</label>
                   <input
@@ -889,22 +906,42 @@ export const TenantsView: React.FC = () => {
                     value={editFormData.whatsapp_number}
                     onChange={(e) => setEditFormData({ ...editFormData, whatsapp_number: e.target.value })}
                     className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
+                    placeholder="+994 50 123 45 67"
                   />
                 </div>
-              ) : (
+              )}
+
+              {(editFormData.preferred_channel === 'telegram' || editFormData.preferred_channel === 'both') && (
                 <div>
-                  <label className="text-xs text-slate-400 block mb-1">Telegram Chat ID</label>
+                  <label className="text-xs text-slate-400 block mb-1">Telegram Chat ID / Username</label>
                   <input
                     type="text"
                     value={editFormData.telegram_chat_id}
                     onChange={(e) => setEditFormData({ ...editFormData, telegram_chat_id: e.target.value })}
                     className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
+                    placeholder="12345678 və ya @username"
                   />
                 </div>
               )}
 
-              {/* Aged Listings Addon */}
+              {/* CRM Mini App Addon */}
               <div className="pt-2 border-t border-slate-800">
+                <label className="flex items-center gap-2 p-2.5 bg-dark-800/80 rounded-xl border border-slate-700/60 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editFormData.feature_crm || false}
+                    onChange={(e) => setEditFormData({ ...editFormData, feature_crm: e.target.checked })}
+                    className="rounded accent-blue-500"
+                  />
+                  <div className="flex-1 text-xs">
+                    <span className="font-semibold text-indigo-300">💼 Telegram Mini App & Real Estate CRM</span>
+                    <p className="text-[11px] text-slate-400">Agentlər üçün /crm &lt;id&gt; əmri, müştəri boru kəməri və TMA interfeysi</p>
+                  </div>
+                </label>
+              </div>
+
+              {/* Aged Listings Addon */}
+              <div>
                 <label className="flex items-center gap-2 p-2.5 bg-dark-800/80 rounded-xl border border-slate-700/60 cursor-pointer">
                   <input
                     type="checkbox"
@@ -1080,11 +1117,12 @@ export const TenantsView: React.FC = () => {
                   <label className="text-xs text-slate-400 block mb-1">Preferred Bot Channel</label>
                   <select
                     value={newTenant.preferred_channel}
-                    onChange={(e) => setNewTenant({ ...newTenant, preferred_channel: e.target.value })}
+                    onChange={(e) => setNewTenant({ ...newTenant, preferred_channel: e.target.value as any })}
                     className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
                   >
                     <option value="telegram">Telegram</option>
                     <option value="whatsapp">WhatsApp</option>
+                    <option value="both">Hər ikisi (Dual: WhatsApp + Telegram)</option>
                   </select>
                 </div>
               </div>
@@ -1093,7 +1131,7 @@ export const TenantsView: React.FC = () => {
                 <label className="text-xs text-slate-400 block mb-1">Subscription Plan</label>
                 <select
                   value={newTenant.plan}
-                  onChange={(e) => setNewTenant({ ...newTenant, plan: e.target.value })}
+                  onChange={(e) => setNewTenant({ ...newTenant, plan: e.target.value as any })}
                   className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800 capitalize"
                 >
                   {availablePlans.map((p) => (
@@ -1104,7 +1142,7 @@ export const TenantsView: React.FC = () => {
                 </select>
               </div>
 
-              {newTenant.preferred_channel === 'whatsapp' ? (
+              {(newTenant.preferred_channel === 'whatsapp' || newTenant.preferred_channel === 'both') && (
                 <div>
                   <label className="text-xs text-slate-400 block mb-1">WhatsApp Number</label>
                   <input
@@ -1115,7 +1153,9 @@ export const TenantsView: React.FC = () => {
                     className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
                   />
                 </div>
-              ) : (
+              )}
+
+              {(newTenant.preferred_channel === 'telegram' || newTenant.preferred_channel === 'both') && (
                 <div>
                   <label className="text-xs text-slate-400 block mb-1">Telegram Handle</label>
                   <input
@@ -1128,8 +1168,24 @@ export const TenantsView: React.FC = () => {
                 </div>
               )}
 
-              {/* Aged Listings Addon */}
+              {/* CRM Mini App Addon */}
               <div className="pt-2 border-t border-slate-800">
+                <label className="flex items-center gap-2 p-2.5 bg-dark-800/80 rounded-xl border border-slate-700/60 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newTenant.feature_crm || false}
+                    onChange={(e) => setNewTenant({ ...newTenant, feature_crm: e.target.checked })}
+                    className="rounded accent-blue-500"
+                  />
+                  <div className="flex-1 text-xs">
+                    <span className="font-semibold text-indigo-300">💼 Telegram Mini App & Real Estate CRM</span>
+                    <p className="text-[11px] text-slate-400">Agentlər üçün /crm &lt;id&gt; əmri və TMA boru kəməri</p>
+                  </div>
+                </label>
+              </div>
+
+              {/* Aged Listings Addon */}
+              <div>
                 <label className="flex items-center gap-2 p-2.5 bg-dark-800/80 rounded-xl border border-slate-700/60 cursor-pointer">
                   <input
                     type="checkbox"

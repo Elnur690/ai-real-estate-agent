@@ -54,6 +54,8 @@ class Settings(BaseSettings):
 
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: Optional[str] = os.getenv("TELEGRAM_BOT_TOKEN", None)
+    TELEGRAM_BOT_USERNAME: Optional[str] = os.getenv("TELEGRAM_BOT_USERNAME", "RealEstateBot")
+    TELEGRAM_MINI_APP_SHORT_NAME: Optional[str] = os.getenv("TELEGRAM_MINI_APP_SHORT_NAME", "crm")
 
     # Evolution API (WhatsApp)
     EVOLUTION_API_URL: Optional[str] = os.getenv("EVOLUTION_API_URL", "http://evolution:8080")

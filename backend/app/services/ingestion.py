@@ -1324,17 +1324,24 @@ class IngestionService:
                     f"{contact_line}"
                     f"🔗 [Elana keçid et]({listing.listing_url})\n\n"
                     f"💬 *Reaksiya bildirin:*\n"
-                    f"`Təqdimat {new_match.id}` | `Foto {new_match.id}` | `Maraqlanıram {new_match.id}` | `Keç {new_match.id}` | `Satılıb {new_match.id}`"
+                    f"`Təqdimat {new_match.id}` | `Foto {new_match.id}` | `CRM {new_match.id}` | `Maraqlanıram {new_match.id}` | `Keç {new_match.id}` | `Satılıb {new_match.id}`"
                 )
 
-                if dest_channel == "telegram" and dest_chat_id:
-                    await send_telegram_notification(dest_chat_id, msg_text)
-                elif dest_channel == "whatsapp" and dest_chat_id:
-                    await WhatsAppAdapter.send_message(
-                        phone_number=dest_chat_id,
-                        text=msg_text,
-                        instance_name=inst_name
-                    )
+                # Deliver to Telegram
+                if (dest_channel in ["telegram", "both"]) and (tenant.telegram_chat_id or (dest_channel == "telegram" and dest_chat_id)):
+                    tg_id = (dest_chat_id if dest_channel == "telegram" else None) or tenant.telegram_chat_id
+                    if tg_id:
+                        await send_telegram_notification(tg_id, msg_text)
+
+                # Deliver to WhatsApp
+                if (dest_channel in ["whatsapp", "both"]) and (tenant.whatsapp_number or (dest_channel == "whatsapp" and dest_chat_id)):
+                    wa_id = (dest_chat_id if dest_channel == "whatsapp" else None) or tenant.whatsapp_number
+                    if wa_id:
+                        await WhatsAppAdapter.send_message(
+                            phone_number=wa_id,
+                            text=msg_text,
+                            instance_name=inst_name
+                        )
 
         return matches_count
 

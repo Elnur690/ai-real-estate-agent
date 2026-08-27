@@ -31,6 +31,9 @@ export interface PlanItem {
   included_image_requests?: number;
   addon_image_requests_price?: number;
   addon_image_tiers?: Array<{ requests: number; price: number }>;
+  feature_crm?: boolean;
+  addon_crm_price?: number;
+  addon_crm_tiers?: Array<{ months: number; price: number }>;
   sale_enabled?: boolean;
   sale_price?: number;
   sale_discount_percent?: number;
@@ -90,6 +93,14 @@ export function PlansView() {
     { requests: 25, price: 10 },
     { requests: 50, price: 18 },
     { requests: 100, price: 30 }
+  ]);
+
+  const [formCrm, setFormCrm] = useState(false);
+  const [formAddonCrmPrice, setFormAddonCrmPrice] = useState<number>(15);
+  const [formCrmTiers, setFormCrmTiers] = useState<Array<{ months: number; price: number }>>([
+    { months: 1, price: 15 },
+    { months: 3, price: 35 },
+    { months: 6, price: 65 }
   ]);
 
   // Promotional Sale State
@@ -257,6 +268,13 @@ export function PlansView() {
       { requests: 50, price: 18 },
       { requests: 100, price: 30 }
     ]);
+    setFormCrm(!!plan.feature_crm);
+    setFormAddonCrmPrice(plan.addon_crm_price || 15);
+    setFormCrmTiers(plan.addon_crm_tiers && plan.addon_crm_tiers.length > 0 ? plan.addon_crm_tiers : [
+      { months: 1, price: 15 },
+      { months: 3, price: 35 },
+      { months: 6, price: 65 }
+    ]);
     setFormSaleEnabled(plan.sale_enabled ?? false);
     setFormSalePrice(plan.sale_price);
     setFormSaleDiscountPercent(plan.sale_discount_percent);
@@ -299,6 +317,9 @@ export function PlansView() {
           included_image_requests: formIncludedImageRequests,
           addon_image_requests_price: formAddonImagePrice,
           addon_image_tiers: formImageTiers,
+          feature_crm: formCrm,
+          addon_crm_price: formAddonCrmPrice,
+          addon_crm_tiers: formCrmTiers,
           sale_enabled: formSaleEnabled,
           sale_price: formSaleEnabled ? formSalePrice : undefined,
           sale_discount_percent: formSaleEnabled ? formSaleDiscountPercent : undefined,
@@ -336,6 +357,9 @@ export function PlansView() {
           included_image_requests: formIncludedImageRequests,
           addon_image_requests_price: formAddonImagePrice,
           addon_image_tiers: formImageTiers,
+          feature_crm: formCrm,
+          addon_crm_price: formAddonCrmPrice,
+          addon_crm_tiers: formCrmTiers,
           sale_enabled: formSaleEnabled,
           sale_price: formSaleEnabled ? formSalePrice : undefined,
           sale_discount_percent: formSaleEnabled ? formSaleDiscountPercent : undefined,
@@ -628,6 +652,26 @@ export function PlansView() {
                         ))}
                       </div>
                     )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        {plan.feature_crm ? (
+                          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                        ) : (
+                          <X className="w-4 h-4 text-slate-600 shrink-0" />
+                        )}
+                        <span className={plan.feature_crm ? 'text-slate-200 font-semibold' : 'text-slate-500 line-through'}>
+                          💼 Telegram Mini App & Real Estate CRM
+                        </span>
+                      </div>
+                      {plan.addon_crm_price && plan.addon_crm_price > 0 ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 font-semibold">
+                          +{plan.addon_crm_price} AZN Addon
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1236,6 +1280,44 @@ export function PlansView() {
                           ))}
                         </div>
                       )}
+                    </div>
+                  )}
+                </div>
+
+                {/* CRM Mini App Addon Section */}
+                <div className="p-3.5 bg-dark-900/60 border border-slate-800 rounded-2xl space-y-3 mt-2">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formCrm}
+                        onChange={(e) => setFormCrm(e.target.checked)}
+                        className="rounded accent-blue-500"
+                      />
+                      <span className="font-bold text-indigo-300 text-xs">💼 Telegram Mini App & Real Estate CRM Add-on</span>
+                    </label>
+                  </div>
+
+                  {formCrm && (
+                    <div className="space-y-2.5 pt-1">
+                      <div className="flex items-center justify-between text-xs text-slate-400">
+                        <span>Standart Aylıq Əlavə Qiymət (AZN):</span>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            value={formAddonCrmPrice}
+                            onChange={(e) => setFormAddonCrmPrice(Number(e.target.value))}
+                            className="w-24 bg-dark-950 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs text-center font-bold"
+                            placeholder="15"
+                          />
+                          <span>AZN/ay</span>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        Bu parametr aktiv olduqda, həmin tarifdəki agentlər həm WhatsApp, həm Telegram-da <code className="text-blue-400">/crm &lt;id&gt;</code> əmri vasitəsilə elanları CRM-ə göndərə və Telegram Mini App-dən idarə edə bilərlər.
+                      </p>
                     </div>
                   )}
                 </div>

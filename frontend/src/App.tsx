@@ -12,9 +12,17 @@ import { BakuPropertyMap } from './components/BakuPropertyMap';
 import { AdminProfileModal } from './components/AdminProfileModal';
 import { SellersAdminView } from './components/SellersAdminView';
 import { SellerPortalView } from './components/SellerPortalView';
+import { TmaCrm } from './components/TmaCrm';
 import { useTranslation } from './i18n';
 
 export function App() {
+  const isTmaMode = Boolean(
+    (window.Telegram?.WebApp?.initData && window.Telegram.WebApp.initData.length > 0) ||
+    window.location.search.includes('tma=') ||
+    window.location.search.includes('mock_tg') ||
+    window.location.hash.includes('crm')
+  );
+
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => !!localStorage.getItem('token'));
   const [userName, setUserName] = useState<string>(() => localStorage.getItem('user_name') || 'Admin');
   const [userRole, setUserRole] = useState<string>(() => localStorage.getItem('user_role') || 'admin');
@@ -71,6 +79,11 @@ export function App() {
     setActiveTab(tab);
     setMobileMenuOpen(false);
   };
+
+  // If in Telegram Mini App mode, render TMA CRM directly
+  if (isTmaMode) {
+    return <TmaCrm />;
+  }
 
   if (!isAuthenticated) {
     return <LoginView onLoginSuccess={handleLoginSuccess} appName={appName} />;

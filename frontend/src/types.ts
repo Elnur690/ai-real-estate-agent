@@ -10,7 +10,7 @@ export interface Tenant {
   plan_started_at: string;
   plan_expires_at?: string;
   status: 'active' | 'expired' | 'suspended' | 'pending';
-  preferred_channel: 'whatsapp' | 'telegram';
+  preferred_channel: 'whatsapp' | 'telegram' | 'both';
   whatsapp_number?: string;
   telegram_chat_id?: string;
   digest_mode: 'instant' | 'hourly' | 'daily';
@@ -30,6 +30,8 @@ export interface Tenant {
   addon_image_requests_limit?: number;
   addon_image_requests_used?: number;
   addon_image_requests_price?: number;
+  feature_crm?: boolean;
+  addon_crm_price?: number;
   active_searches_count?: number;
   max_saved_searches?: number;
   referral_code?: string;
@@ -112,5 +114,64 @@ export interface AdminUser {
   phone?: string;
   role: string;
   created_at?: string;
+}
+
+export interface CrmClient {
+  id: number;
+  tenant_id: number;
+  name: string;
+  phone?: string;
+  whatsapp_number?: string;
+  telegram_handle?: string;
+  client_type: 'buyer' | 'renter' | 'seller' | 'landlord';
+  budget_min?: number;
+  budget_max?: number;
+  rooms_min?: number;
+  rooms_max?: number;
+  districts?: string[];
+  notes?: string;
+  deals_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CrmActivity {
+  id: number;
+  deal_id?: number;
+  action_type: string;
+  description: string;
+  created_at: string;
+}
+
+export interface CrmDeal {
+  id: number;
+  tenant_id: number;
+  client_id?: number;
+  client_name?: string;
+  client_phone?: string;
+  listing_id?: number;
+  listing_title: string;
+  listing_price: number;
+  listing_currency: string;
+  listing_url?: string;
+  listing_image?: string;
+  listing_location?: string;
+  stage: 'new' | 'offered' | 'viewing' | 'negotiation' | 'closed' | 'lost';
+  custom_offer_price?: number;
+  commission_amount?: number;
+  commission_percent?: number;
+  private_notes?: string;
+  scheduled_viewing_at?: string;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+  activities: CrmActivity[];
+}
+
+export interface CrmStats {
+  total_deals: number;
+  stage_counts: Record<string, number>;
+  total_clients: number;
+  total_won_commission: number;
 }
 

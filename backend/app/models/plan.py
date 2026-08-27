@@ -44,6 +44,11 @@ class Plan(Base):
     addon_image_requests_price: Mapped[float] = mapped_column(Float, default=10.0)
     addon_image_tiers: Mapped[list[dict] | None] = mapped_column(JSON, default=list) # e.g. [{"images": 25, "price": 10.0}, {"images": 50, "price": 18.0}]
 
+    # 💼 Telegram Mini App & Real Estate CRM Add-on
+    feature_crm: Mapped[bool] = mapped_column(Boolean, default=False)
+    addon_crm_price: Mapped[float] = mapped_column(Float, default=15.0)
+    addon_crm_tiers: Mapped[list[dict] | None] = mapped_column(JSON, default=list) # e.g. [{"months": 1, "price": 15.0}, {"months": 3, "price": 35.0}]
+
     # 🏷️ Promotional Sale & Discount Campaign Features for SaaS Plans
     sale_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     sale_price: Mapped[float | None] = mapped_column(Float, nullable=True) # e.g. 29.0 AZN
