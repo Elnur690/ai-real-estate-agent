@@ -110,20 +110,18 @@ async def trigger_ingestion(background_tasks: BackgroundTasks, current_admin = D
 
 @router.get("/stats")
 async def get_system_stats(db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
-    stmt_sources = select(ListingSource)
-    res_sources = await db.execute(stmt_sources)
-    sources = res_sources.scalars().all()
+    from sqlalchemy import func
+    stmt_sources = select(func.count(ListingSource.id))
+    sources_cnt = (await db.execute(stmt_sources)).scalar() or 0
 
-    stmt_listings = select(Listing)
-    res_listings = await db.execute(stmt_listings)
-    listings = res_listings.scalars().all()
+    stmt_listings = select(func.count(Listing.id))
+    listings_cnt = (await db.execute(stmt_listings)).scalar() or 0
 
-    stmt_matches = select(Match)
-    res_matches = await db.execute(stmt_matches)
-    matches = res_matches.scalars().all()
+    stmt_matches = select(func.count(Match.id))
+    matches_cnt = (await db.execute(stmt_matches)).scalar() or 0
 
     return {
-        "total_sources": len(sources),
-        "total_listings": len(listings),
-        "total_matches": len(matches)
+        "total_sources": sources_cnt,
+        "total_listings": listings_cnt,
+        "total_matches": matches_cnt
     }

@@ -157,44 +157,14 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_payout_seller_status ON seller_payout_requests (seller_id, status);"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_matches_tenant_search ON matches (tenant_id, saved_search_id, listing_id);"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_saved_searches_active ON saved_searches (is_active, tenant_id);"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_crm_deals_tenant_stage ON crm_deals (tenant_id, stage);"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_crm_deals_client ON crm_deals (client_id);"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_crm_clients_tenant ON crm_clients (tenant_id);"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_crm_activities_tenant ON crm_activities (tenant_id, deal_id);"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_tenants_seller ON tenants (seller_id, status);"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_payments_tenant ON payments (tenant_id, received_at);"))
         await conn.execute(text("UPDATE listing_sources SET status = 'active' WHERE status = 'error';"))
-        await conn.execute(text("""
-            INSERT INTO listing_sources (type, name, url_or_handle, status, created_at)
-            SELECT 'telegram_channel', 'Emlak Tap Telegram', '@emlaktap', 'active', NOW()
-            WHERE NOT EXISTS (
-                SELECT 1 FROM listing_sources WHERE url_or_handle = '@emlaktap'
-            );
-        """))
-        await conn.execute(text("""
-            UPDATE listings 
-            SET offer_type = 'rent' 
-            WHERE listing_url LIKE '%kiraye%' OR listing_url LIKE '%icare%' OR listing_url LIKE '%ayliq%';
-        """))
-        await conn.execute(text("""
-            UPDATE listings 
-            SET offer_type = 'daily_rent' 
-            WHERE (price <= 400 AND offer_type = 'sale') 
-               OR listing_url LIKE '%gunluk%' 
-               OR listing_url LIKE '%daily%'
-               OR title LIKE '%günlük%'
-               OR description LIKE '%günlük%';
-        """))
-        await conn.execute(text("""
-            UPDATE listings 
-            SET property_type = 'office' 
-            WHERE listing_url LIKE '%ofis%' OR listing_url LIKE '%office%';
-        """))
-        await conn.execute(text("""
-            UPDATE listings 
-            SET property_type = 'commercial' 
-            WHERE listing_url LIKE '%obyekt%' OR listing_url LIKE '%magaza%';
-        """))
-        await conn.execute(text("""
-            UPDATE listings 
-            SET phone_number = NULL, is_makler = FALSE, makler_score = 0.0
-            WHERE phone_number IN ('+994125269494', '+994125261919', '+994125990805', '+994125990801', '+994124997700', '0125269494', '0125261919');
-        """))
-    logger.info("[Startup] Database tables and columns verified.")
+    logger.info("[Startup] Database tables, columns, and high-speed indexes verified.")
 
     # Auto-seed default admin user if none exists
     from app.db.session import AsyncSessionLocal
