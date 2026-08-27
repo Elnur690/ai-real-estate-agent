@@ -1,6 +1,8 @@
+import os
 import logging
 from typing import Optional
-from telegram import Update
+from telegram import Update, Bot, InputMediaPhoto
+from telegram.request import HTTPXRequest
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +11,15 @@ from app.db.session import AsyncSessionLocal
 from app.bot.command_handler import BotCommandHandler
 
 logger = logging.getLogger(__name__)
+
+def get_telegram_request() -> HTTPXRequest:
+    return HTTPXRequest(
+        connection_pool_size=8,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        connect_timeout=30.0,
+        pool_timeout=30.0
+    )
 
 async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.effective_message or not update.effective_user or not update.effective_chat:
@@ -41,8 +52,8 @@ async def send_telegram_notification(chat_id: str, message_text: str) -> bool:
         logger.warning("[TelegramAdapter] TELEGRAM_BOT_TOKEN not configured.")
         return False
     try:
-        from telegram import Bot
-        bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
+        req = get_telegram_request()
+        bot = Bot(token=settings.TELEGRAM_BOT_TOKEN, request=req)
         try:
             await bot.send_message(chat_id=chat_id, text=message_text, parse_mode="Markdown", disable_web_page_preview=True)
             return True
@@ -61,8 +72,8 @@ async def send_telegram_media_group(chat_id: str, image_paths: list[str], captio
         logger.warning("[TelegramAdapter] TELEGRAM_BOT_TOKEN not configured.")
         return False
     try:
-        from telegram import Bot, InputMediaPhoto
-        bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
+        req = get_telegram_request()
+        bot = Bot(token=settings.TELEGRAM_BOT_TOKEN, request=req)
         
         media = []
         opened_files = []
@@ -96,8 +107,8 @@ async def send_telegram_document(chat_id: str, document_path: str, caption: str 
         logger.warning("[TelegramAdapter] TELEGRAM_BOT_TOKEN not configured.")
         return False
     try:
-        from telegram import Bot
-        bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
+        req = get_telegram_request()
+        bot = Bot(token=settings.TELEGRAM_BOT_TOKEN, request=req)
         with open(document_path, "rb") as doc_f:
             await bot.send_document(
                 chat_id=chat_id,
@@ -114,7 +125,8 @@ async def send_telegram_document(chat_id: str, document_path: str, caption: str 
 def build_telegram_app() -> Optional[Application]:
     if not settings.TELEGRAM_BOT_TOKEN:
         return None
-    app = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
+    req = get_telegram_request()
+    app = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).request(req).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, telegram_message_handler))
     app.add_handler(CommandHandler("start", telegram_message_handler))
     app.add_handler(CommandHandler("help", telegram_message_handler))

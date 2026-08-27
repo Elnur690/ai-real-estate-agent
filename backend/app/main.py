@@ -228,13 +228,27 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"[Startup Error] Auto-seeding encountered notice: {e}")
 
-    # Start Telegram Bot polling in background if token is set
-    tg_app = build_telegram_app()
-    if tg_app:
-        logger.info("[Startup] Starting Telegram Bot polling...")
-        await tg_app.initialize()
-        await tg_app.start()
-        await tg_app.updater.start_polling()
+    # Start Telegram Bot polling in background with resilient retry
+    tg_app = None
+    async def _start_telegram_bot():
+        nonlocal tg_app
+        if not settings.TELEGRAM_BOT_TOKEN:
+            return
+        for attempt in range(1, 10):
+            try:
+                tg_app = build_telegram_app()
+                if tg_app:
+                    logger.info(f"[Startup] Initializing Telegram Bot polling (attempt {attempt})...")
+                    await tg_app.initialize()
+                    await tg_app.start()
+                    await tg_app.updater.start_polling(drop_pending_updates=True)
+                    logger.info("[Startup] Telegram Bot polling started successfully.")
+                    break
+            except Exception as tg_err:
+                logger.warning(f"[Startup] Telegram Bot startup attempt {attempt} failed ({tg_err}). Retrying in 10s...")
+                await asyncio.sleep(10)
+
+    asyncio.create_task(_start_telegram_bot())
 
     # Start background trial tracking loop
     import asyncio
@@ -265,10 +279,13 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    if tg_app:
-        await tg_app.updater.stop()
-        await tg_app.stop()
-        await tg_app.shutdown()
+    if tg_app and getattr(tg_app, 'updater', None) and tg_app.updater.running:
+        try:
+            await tg_app.updater.stop()
+            await tg_app.stop()
+            await tg_app.shutdown()
+        except Exception as e_shut:
+            logger.warning(f"[Shutdown] Notice during Telegram bot shutdown: {e_shut}")
     logger.info("[Shutdown] Application shut down cleanly.")
 
 
