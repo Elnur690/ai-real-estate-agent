@@ -37,9 +37,10 @@ class SavedSearch(Base):
     is_mortgageable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     is_repaired: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
-    # Delivery Routing
+    # Delivery Routing & Ownership
     channel: Mapped[str] = mapped_column(String(50), default="whatsapp") # whatsapp | telegram
     destination_chat_id: Mapped[str | None] = mapped_column(String(255), nullable=True) # WhatsApp Group JID (@g.us) or private phone or Telegram Chat ID
+    created_by_sender_id: Mapped[str | None] = mapped_column(String(100), nullable=True) # Exact sender/agent phone or chat_id who created this search
     instance_name: Mapped[str | None] = mapped_column(String(100), nullable=True) # Evolution API instance name (e.g. tenant_1)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

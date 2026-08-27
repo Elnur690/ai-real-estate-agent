@@ -177,7 +177,7 @@ class BotCommandHandler:
             )
 
         if text_lower in ["/searches", "/axtarışlar", "/axtarislar", "/axtarışlarım", "/axtarislarim", "/list", "axtarışlarım", "axtarislarim", "1"]:
-            return await BotCommandHandler._list_saved_searches(db, tenant)
+            return await BotCommandHandler._list_saved_searches(db, tenant, sender_id=sender_id, is_group=is_group)
 
         if text_lower in ["/status", "/plan", "status", "planım nə vaxt bitir?", "planim ne vaxt bitir?", "4"]:
             return await BotCommandHandler._get_account_status(db, tenant, app_name)
@@ -200,34 +200,90 @@ class BotCommandHandler:
         delete_match = re.search(r'^(?:/delete|delete|/sil|sil)\s*#?\s*(\d+)', text_lower)
         if delete_match:
             search_id = int(delete_match.group(1))
-            stmt = update(SavedSearch).where(SavedSearch.id == search_id, SavedSearch.tenant_id == tenant.id).values(is_active=False)
-            res_del = await db.execute(stmt)
+            stmt_s = select(SavedSearch).where(SavedSearch.id == search_id, SavedSearch.tenant_id == tenant.id)
+            res_s = await db.execute(stmt_s)
+            search_obj = res_s.scalars().first()
+            if not search_obj:
+                return f"⚠️ Axtarış #{search_id} sizin hesabınızda tapılmadı."
+
+            # Strict Multi-Agent & Multi-Group Ownership Guard
+            search_dest = search_obj.destination_chat_id or ""
+            search_creator = getattr(search_obj, 'created_by_sender_id', None) or ""
+
+            clean_sender = sender_id.replace("+", "").replace(" ", "").split("@")[0]
+            clean_creator = search_creator.replace("+", "").replace(" ", "").split("@")[0]
+            clean_dest = search_dest.replace("+", "").replace(" ", "").split("@")[0]
+
+            if is_group:
+                # Command is executed in a WhatsApp group -> must match this group's JID
+                if search_dest and search_dest != sender_id:
+                    return f"🚫 *İcazə verilmədi:* Axtarış #{search_id} başqa bir WhatsApp qrupuna/agentə aiddir. Siz yalnız bu qrupa aid axtarışları silə bilərsiniz."
+            else:
+                # Command is executed in 1-on-1 private chat
+                if search_dest and "@g.us" in search_dest:
+                    return f"🚫 *İcazə verilmədi:* Axtarış #{search_id} WhatsApp işçi qrupuna aiddir. Zəhmət olmasa həmin qrupda `/sil #{search_id}` yazın."
+                elif search_creator and clean_creator and clean_creator != clean_sender:
+                    return f"🚫 *İcazə verilmədi:* Axtarış #{search_id} başqa bir agentə aiddir və sizin tərəfinizdən silinə bilməz."
+
+            search_obj.is_active = False
             await db.commit()
-            if res_del.rowcount and res_del.rowcount > 0:
-                return f"Axtarış #{search_id} silindi. 🗑️"
-            return f"⚠️ Axtarış #{search_id} sizin hesabınızda tapılmadı."
+            return f"✅ Axtarış #{search_id} (*{search_obj.name}*) uğurla silindi. 🗑️"
 
         # Pause Search Command (/pause <id>, /dayandır <id>, dayandır <id>)
         pause_match = re.search(r'^(?:/pause|pause|/dayandır|/dayandir|dayandır|dayandir)\s*#?\s*(\d+)', text_lower)
         if pause_match:
             search_id = int(pause_match.group(1))
-            stmt = update(SavedSearch).where(SavedSearch.id == search_id, SavedSearch.tenant_id == tenant.id).values(is_active=False)
-            res_p = await db.execute(stmt)
+            stmt_s = select(SavedSearch).where(SavedSearch.id == search_id, SavedSearch.tenant_id == tenant.id)
+            res_s = await db.execute(stmt_s)
+            search_obj = res_s.scalars().first()
+            if not search_obj:
+                return f"⚠️ Axtarış #{search_id} sizin hesabınızda tapılmadı."
+
+            search_dest = search_obj.destination_chat_id or ""
+            search_creator = getattr(search_obj, 'created_by_sender_id', None) or ""
+            clean_sender = sender_id.replace("+", "").replace(" ", "").split("@")[0]
+            clean_creator = search_creator.replace("+", "").replace(" ", "").split("@")[0]
+
+            if is_group:
+                if search_dest and search_dest != sender_id:
+                    return f"🚫 *İcazə verilmədi:* Axtarış #{search_id} başqa bir WhatsApp qrupuna/agentə aiddir. Siz yalnız bu qrupa aid axtarışları dayandıra bilərsiniz."
+            else:
+                if search_dest and "@g.us" in search_dest:
+                    return f"🚫 *İcazə verilmədi:* Axtarış #{search_id} WhatsApp işçi qrupuna aiddir. Zəhmət olmasa həmin qrupda `/pause #{search_id}` yazın."
+                elif search_creator and clean_creator and clean_creator != clean_sender:
+                    return f"🚫 *İcazə verilmədi:* Axtarış #{search_id} başqa bir agentə aiddir və sizin tərəfinizdən dayandırıla bilməz."
+
+            search_obj.is_active = False
             await db.commit()
-            if res_p.rowcount and res_p.rowcount > 0:
-                return f"Axtarış #{search_id} dayandırıldı. ⏸️"
-            return f"⚠️ Axtarış #{search_id} sizin hesabınızda tapılmadı."
+            return f"⏸️ Axtarış #{search_id} (*{search_obj.name}*) dayandırıldı."
 
         # Resume Search Command (/resume <id>, /aktiv <id>, aktiv et <id>)
         resume_match = re.search(r'^(?:/resume|resume|/aktiv|aktiv|aktiv et)\s*#?\s*(\d+)', text_lower)
         if resume_match:
             search_id = int(resume_match.group(1))
-            stmt = update(SavedSearch).where(SavedSearch.id == search_id, SavedSearch.tenant_id == tenant.id).values(is_active=True)
-            res_r = await db.execute(stmt)
+            stmt_s = select(SavedSearch).where(SavedSearch.id == search_id, SavedSearch.tenant_id == tenant.id)
+            res_s = await db.execute(stmt_s)
+            search_obj = res_s.scalars().first()
+            if not search_obj:
+                return f"⚠️ Axtarış #{search_id} sizin hesabınızda tapılmadı."
+
+            search_dest = search_obj.destination_chat_id or ""
+            search_creator = getattr(search_obj, 'created_by_sender_id', None) or ""
+            clean_sender = sender_id.replace("+", "").replace(" ", "").split("@")[0]
+            clean_creator = search_creator.replace("+", "").replace(" ", "").split("@")[0]
+
+            if is_group:
+                if search_dest and search_dest != sender_id:
+                    return f"🚫 *İcazə verilmədi:* Axtarış #{search_id} başqa bir WhatsApp qrupuna/agentə aiddir. Siz yalnız bu qrupa aid axtarışları aktivləşdirə bilərsiniz."
+            else:
+                if search_dest and "@g.us" in search_dest:
+                    return f"🚫 *İcazə verilmədi:* Axtarış #{search_id} WhatsApp işçi qrupuna aiddir. Zəhmət olmasa həmin qrupda `/resume #{search_id}` yazın."
+                elif search_creator and clean_creator and clean_creator != clean_sender:
+                    return f"🚫 *İcazə verilmədi:* Axtarış #{search_id} başqa bir agentə aiddir və sizin tərəfinizdən aktivləşdirilə bilməz."
+
+            search_obj.is_active = True
             await db.commit()
-            if res_r.rowcount and res_r.rowcount > 0:
-                return f"Axtarış #{search_id} aktiv edildi. ▶️"
-            return f"⚠️ Axtarış #{search_id} sizin hesabınızda tapılmadı."
+            return f"▶️ Axtarış #{search_id} (*{search_obj.name}*) aktiv edildi."
 
         # Brochure & Social Kit Generation Command (/brochure <id>, /buklet <id>, /broşur <id>, /təqdimat <id>)
         brochure_match = re.search(r'^(?:/brochure|brochure|/buklet|buklet|/broşur|broşur|/broshur|broshur|/təqdimat|təqdimat|/teqdimat|teqdimat)\s*#?\s*(\d+)', text_lower)
@@ -1171,6 +1227,7 @@ class BotCommandHandler:
             is_repaired=is_repaired,
             channel=channel,
             destination_chat_id=destination_chat_id,
+            created_by_sender_id=sender_id,
             instance_name=instance_name,
             is_active=True
         )
@@ -1216,18 +1273,34 @@ class BotCommandHandler:
         )
 
     @staticmethod
-    async def _list_saved_searches(db: AsyncSession, tenant: Tenant) -> str:
+    async def _list_saved_searches(db: AsyncSession, tenant: Tenant, sender_id: str = "", is_group: bool = False) -> str:
         stmt = select(SavedSearch).where(SavedSearch.tenant_id == tenant.id)
+        if is_group and sender_id:
+            # Group chat: only list searches created for this WhatsApp group
+            stmt = stmt.where(SavedSearch.destination_chat_id == sender_id)
+        elif not is_group and sender_id:
+            # 1-on-1 direct chat: only list private searches belonging to this agent/sender
+            clean_sender = sender_id.replace("+", "").replace(" ", "").split("@")[0]
+            stmt = stmt.where(
+                (SavedSearch.destination_chat_id == sender_id) |
+                (SavedSearch.destination_chat_id.is_(None)) |
+                (SavedSearch.created_by_sender_id == sender_id) |
+                (SavedSearch.destination_chat_id.like(f"%{clean_sender}%"))
+            )
+
         res = await db.execute(stmt)
         searches = res.scalars().all()
 
         if not searches:
+            if is_group:
+                return "Bu WhatsApp qrupu üçün aktiv axtarış tapılmadı. Yeni axtarış yaratmaq üçün parametrləri bu qrupa yazın."
             return "Sizin hələ ki aktiv axtarışınız yoxdur. Yeni axtarış yaratmaq üçün parametrləri bura yazın."
 
         msg = ["📋 *Sizin Axtarışlarınız:*\n"]
         for s in searches:
             status_icon = "🟢" if s.is_active else "⏸️"
-            msg.append(f"{status_icon} *#{s.id} {s.name}*\n   Parametr: {s.raw_criteria_text}\n")
+            dest_tag = f" _(Qrup: {s.destination_chat_id})_" if (s.destination_chat_id and not is_group and "@g.us" in s.destination_chat_id) else ""
+            msg.append(f"{status_icon} *#{s.id} {s.name}*{dest_tag}\n   Parametr: {s.raw_criteria_text}\n")
 
         msg.append("\n_Dayandırmaq üçün:_ `/pause <id>`\n_Aktiv etmək üçün:_ `/resume <id>`\n_Silmək üçün:_ `/sil <id>` və ya `/delete <id>`")
         return "\n".join(msg)
