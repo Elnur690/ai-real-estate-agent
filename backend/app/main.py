@@ -250,7 +250,12 @@ async def lifespan(app: FastAPI):
                     logger.info(f"[Startup] Initializing Telegram Bot polling (attempt {attempt})...")
                     await tg_app.initialize()
                     await tg_app.start()
-                    await tg_app.updater.start_polling(drop_pending_updates=True)
+                    await tg_app.updater.start_polling(
+                        drop_pending_updates=True,
+                        poll_interval=1.0,
+                        timeout=20,
+                        bootstrap_retries=-1
+                    )
                     logger.info("[Startup] Telegram Bot polling started successfully.")
                     break
             except Exception as tg_err:

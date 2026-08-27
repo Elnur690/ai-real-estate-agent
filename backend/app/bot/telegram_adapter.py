@@ -12,13 +12,28 @@ from app.bot.command_handler import BotCommandHandler
 
 logger = logging.getLogger(__name__)
 
+class TransientNetworkFilter(logging.Filter):
+    """Downgrades transient polling connection hiccups from noisy ERROR traceback to single clean WARNING."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = str(record.getMessage() or "")
+        if record.exc_info:
+            msg += f" {record.exc_info}"
+        if any(err_kw in msg for err_kw in ["ConnectError", "NetworkError", "timed out", "RemoteProtocolError", "NameResolutionError"]):
+            record.levelno = logging.WARNING
+            record.levelname = "WARNING"
+        return True
+
+# Attach filter to python-telegram-bot's Updater logger
+logging.getLogger("telegram.ext.Updater").addFilter(TransientNetworkFilter())
+
 def get_telegram_request() -> HTTPXRequest:
     return HTTPXRequest(
-        connection_pool_size=8,
+        connection_pool_size=16,
         read_timeout=30.0,
         write_timeout=30.0,
         connect_timeout=30.0,
-        pool_timeout=30.0
+        pool_timeout=30.0,
+        http_version="1.1"
     )
 
 async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
