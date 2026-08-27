@@ -476,6 +476,40 @@ export const AppSettingsView: React.FC = () => {
             </div>
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs text-slate-300 font-semibold block mb-1">
+                🤖 Telegram Bot İstifadəçi Adı (`telegram_bot_username`)
+              </label>
+              <input
+                type="text"
+                placeholder="məs: baku_realestate_ai_bot"
+                value={settingsMap['telegram_bot_username'] || ''}
+                onChange={(e) => setSettingsMap({ ...settingsMap, telegram_bot_username: e.target.value.replace('@', '').trim() })}
+                className="w-full bg-dark-900 border border-slate-700/80 px-3.5 py-2.5 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+              />
+              <span className="text-[11px] text-slate-500 mt-1 block">
+                @ işarəsi olmadan yazın. Agentlərə QR kod və Telegram dəvət linkləri üçün istifadə olunur.
+              </span>
+            </div>
+
+            <div>
+              <label className="text-xs text-slate-300 font-semibold block mb-1">
+                💬 WhatsApp Bot Nömrəsi (`whatsapp_bot_phone`)
+              </label>
+              <input
+                type="text"
+                placeholder="məs: +994501234567"
+                value={settingsMap['whatsapp_bot_phone'] || ''}
+                onChange={(e) => setSettingsMap({ ...settingsMap, whatsapp_bot_phone: e.target.value })}
+                className="w-full bg-dark-900 border border-slate-700/80 px-3.5 py-2.5 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+              />
+              <span className="text-[11px] text-slate-500 mt-1 block">
+                Agentlərə WhatsApp birbaşa əlaqə və QR linkləri üçün istifadə olunur.
+              </span>
+            </div>
+          </div>
+
           <div>
             <label className="text-xs text-slate-300 font-semibold block mb-1">Custom SaaS Logo URL (`app_logo_url`)</label>
             <input
