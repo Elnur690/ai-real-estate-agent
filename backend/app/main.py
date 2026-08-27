@@ -251,7 +251,6 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_start_telegram_bot())
 
     # Start background trial tracking loop
-    import asyncio
     from app.services.trial_tracker import TrialTrackerService
     asyncio.create_task(TrialTrackerService.start_background_tracker())
 
