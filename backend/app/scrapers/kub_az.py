@@ -115,6 +115,8 @@ class KubAzScraper(BaseScraper):
                         if len(items) >= 20:
                             break
 
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError) as e:
+            logger.debug(f"[KubAzScraper] Source kub.az temporarily unreachable: {e}")
         except Exception as e:
             logger.warning(f"[KubAzScraper] Error scraping: {e}")
 

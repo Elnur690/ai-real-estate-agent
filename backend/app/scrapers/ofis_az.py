@@ -97,6 +97,8 @@ class OfisAzScraper(BaseScraper):
                         if len(items) >= 25:
                             break
 
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError) as e:
+            logger.debug(f"[OfisAzScraper] Source ofis.az temporarily unreachable: {e}")
         except Exception as e:
             logger.warning(f"[OfisAzScraper] Error scraping: {e}")
 

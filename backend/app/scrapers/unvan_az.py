@@ -115,6 +115,8 @@ class UnvanAzScraper(BaseScraper):
                         if len(items) >= 25:
                             break
 
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError) as e:
+            logger.debug(f"[UnvanAzScraper] Source unvan.az temporarily unreachable: {e}")
         except Exception as e:
             logger.warning(f"[UnvanAzScraper] Error scraping: {e}")
 

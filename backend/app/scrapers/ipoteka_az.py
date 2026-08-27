@@ -81,6 +81,8 @@ class IpotekaAzScraper(BaseScraper):
                             listing_url=f"{self.BASE_URL}{link}",
                             photos=card_photos
                         ))
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError) as e:
+            logger.debug(f"[IpotekaAzScraper] Source ipoteka.az temporarily unreachable or DNS resolving: {e}")
         except Exception as e:
             logger.warning(f"[IpotekaAzScraper] Error scraping: {e}")
 

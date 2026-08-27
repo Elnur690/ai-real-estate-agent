@@ -108,6 +108,8 @@ class HomDomAzScraper(BaseScraper):
                         if len(items) >= 20:
                             break
 
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError) as e:
+            logger.debug(f"[HomDomAzScraper] Source homdom.az temporarily unreachable: {e}")
         except Exception as e:
             logger.warning(f"[HomDomAzScraper] Error scraping: {e}")
 

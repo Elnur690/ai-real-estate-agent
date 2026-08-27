@@ -115,6 +115,8 @@ class VipEmlakAzScraper(BaseScraper):
                         if len(items) >= 25:
                             break
 
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError) as e:
+            logger.debug(f"[VipEmlakAzScraper] Source vipemlak.az temporarily unreachable: {e}")
         except Exception as e:
             logger.warning(f"[VipEmlakAzScraper] Error scraping: {e}")
 

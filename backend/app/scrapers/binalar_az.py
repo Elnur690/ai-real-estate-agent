@@ -112,6 +112,8 @@ class BinalarAzScraper(BaseScraper):
                         if len(items) >= 25:
                             break
 
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError) as e:
+            logger.debug(f"[BinalarAzScraper] Source binalar.az temporarily unreachable: {e}")
         except Exception as e:
             logger.warning(f"[BinalarAzScraper] Error scraping: {e}")
 
