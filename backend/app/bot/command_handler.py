@@ -167,6 +167,9 @@ class BotCommandHandler:
                 return None
 
         # 3. Handle Slash Commands & Fast-Path Menu Shortcuts
+        if text_lower in ["/command", "/commands", "/komanda", "/komandalar", "/əmrlər", "/emrler", "command", "commands", "komanda", "komandalar", "əmrlər", "emrler", "2"]:
+            return BotCommandHandler._get_commands_list(app_name)
+
         if text_lower in ["/start", "/help", "/kömək", "/komak", "kömək", "komak", "help", "menu", "menyu", "salam", "hi", "start"]:
             return BotCommandHandler._get_start_message(app_name)
 
@@ -1453,8 +1456,35 @@ class BotCommandHandler:
         )
 
     @staticmethod
+    def _get_commands_list(app_name: str) -> str:
+        return (
+            f"📋 *{app_name.upper()} — BÜTÜN MÖVCUD ƏMR VƏ KOMANDALAR:*\n\n"
+            f"🔍 *Axtarış İdarəetməsi:*\n"
+            f"▪️ `/searches` (və ya `/axtarışlar`) — Aktiv axtarışlarınızın siyahısı\n"
+            f"▪️ `/yeni <kriteriya>` — Birbaşa yeni axtarış yaratmaq (məs: `/yeni Nərimanovda 2 otaq 150000 AZN`)\n"
+            f"▪️ `/sil <id>` (və ya `/delete <id>`) — Axtarışı silmək (məs: `/sil 25`)\n"
+            f"▪️ `/pause <id>` (və ya `/dayandır <id>`) — Axtarışı müvəqqəti dayandırmaq\n"
+            f"▪️ `/resume <id>` (və ya `/aktiv <id>`) — Dayandırılmış axtarışı aktiv etmək\n"
+            f"▪️ `/cancel` — Hazırkı axtarış qaralamasını ləğv etmək\n\n"
+            f"📦 *Arxiv və Satış Alətləri:*\n"
+            f"▪️ `/arxiv <ay> <məkan>` (və ya `/since <gün>`) — Bazar arxivində uzun müddət satışda qalan aktiv elanlar (məs: `/arxiv 3 Yasamal`)\n"
+            f"▪️ `/təqdimat <id>` (və ya `/brochure <id>`) — Müştəriyə göndəriləcək təmiz mətn və PDF buklet\n"
+            f"▪️ `/foto <id>` (və ya `/image <id>`) — Elanın su nişansız (watermark-free) orijinal şəkilləri\n"
+            f"▪️ `/intake` (və ya `/link`) — Müştəri qəbulu üçün brendləşdirilmiş şəxsi linkiniz\n\n"
+            f"⚙️ *Hesab və Qrup Parametrləri:*\n"
+            f"▪️ `/command` (və ya `/commands`) — Bu əmrlər menyusunu göstərmək\n"
+            f"▪️ `/status` (və ya `/plan`) — Abunəlik statusunuz və limitləriniz\n"
+            f"▪️ `/paket` — Əlavə axtarış, arxiv və foto limit paketləri\n"
+            f"▪️ `/channel` (və ya `/kanal`) — Bildiriş kanalını dəyişmək (WhatsApp / Telegram)\n"
+            f"▪️ `/bot_here` (və ya `bot qoş`) — Botu WhatsApp işçi qrupuna qoşmaq\n"
+            f"▪️ `/bot_leave` (və ya `bot çıx`, `bot ayır`) — Botu WhatsApp qrupundan ayırmaq\n\n"
+            f"💬 *Elan Reaksiyaları (Bildirişin altında birbaşa toxunun):*\n"
+            f"• `Təqdimat <id>` | `Foto <id>` | `Maraqlanıram <id>` | `Keç <id>` | `Satılıb <id>`"
+        )
+
+    @staticmethod
     def _get_help_message(app_name: str) -> str:
-        return BotCommandHandler._get_start_message(app_name)
+        return BotCommandHandler._get_commands_list(app_name)
 
     @staticmethod
     def _get_start_message(app_name: str) -> str:
@@ -1482,6 +1512,7 @@ class BotCommandHandler:
             f"   • `$120k USD Elmlər metrosu yeni tikili`\n"
             f"2️⃣ *Təsdiqləyin:* Süni intellekt parametrləri analiz edib ön baxış təqdim edəcək. `Təsdiq` (və ya `Hə` / `Confirm` / `Да`) yazaraq axtarışı aktivləşdirin.\n\n"
             f"📜 *BÜTÜN MÖVCUD ƏMR VƏ QISAYOLLAR:*\n"
+            f"▪️ `/command` və ya `/commands` — Bütün mövcud əmrlərin qısa siyahısı\n"
             f"▪️ `/searches` və ya `/axtarışlar` — Aktiv axtarış kriteriyalarınızın siyahısı\n"
             f"▪️ `/yeni <mətn>` — Yeni axtarış yaratmaq\n"
             f"▪️ `/sil <id>` — Axtarış kriteriyasını silmək (nümunə: `/sil 1`)\n"

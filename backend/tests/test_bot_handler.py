@@ -96,6 +96,21 @@ async def test_bot_onboarding_and_commands():
         )
         assert "xoş gəlmisiniz" in res3.lower() or "bütün mövcud əmr" in res3.lower()
 
+        # Commands list via slash command /command
+        res_cmd = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="telegram",
+            sender_id="999888777",
+            sender_name="Orxan Agent",
+            raw_text="/command"
+        )
+        assert "bütün mövcud əmr və komandalar" in res_cmd.lower()
+        assert "/searches" in res_cmd
+        assert "/sil" in res_cmd
+        assert "/pause" in res_cmd
+        assert "/resume" in res_cmd
+        assert "/status" in res_cmd
+
         # Test /status command with Seller Linkage
         from app.models.seller import Seller
         from app.models.user import User
