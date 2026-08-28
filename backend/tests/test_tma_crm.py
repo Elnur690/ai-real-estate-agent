@@ -133,6 +133,24 @@ async def test_tma_auth_mock_and_crm_crud(client: AsyncClient, test_db: AsyncSes
     assert stats["total_clients"] == 1
     assert stats["stage_counts"]["viewing"] == 1
 
+    # 7. Delete Deal
+    del_deal_res = await client.delete(f"/api/v1/crm/deals/{deal_id}", headers=headers)
+    assert del_deal_res.status_code == 200
+    assert del_deal_res.json()["message"] == "Deal deleted successfully."
+
+    # Verify deal is deleted
+    deals_after = await client.get("/api/v1/crm/deals", headers=headers)
+    assert len(deals_after.json()) == 0
+
+    # 8. Delete Client
+    del_client_res = await client.delete(f"/api/v1/crm/clients/{crm_client_id}", headers=headers)
+    assert del_client_res.status_code == 200
+    assert del_client_res.json()["message"] == "Client deleted successfully."
+
+    # Verify client is deleted
+    clients_after = await client.get("/api/v1/crm/clients", headers=headers)
+    assert len(clients_after.json()) == 0
+
 @pytest.mark.asyncio
 async def test_bot_crm_command_flow(test_db: AsyncSession):
     # 1. Seed listing source & listing

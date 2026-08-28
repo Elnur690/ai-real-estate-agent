@@ -313,9 +313,10 @@ async def delete_crm_client(
     client = res.scalars().first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found.")
+    await db.execute(update(CrmDeal).where(CrmDeal.client_id == client.id).values(client_id=None))
     await db.delete(client)
     await db.commit()
-    return {"message": "Client deleted successfully."}
+    return {"message": "Client deleted successfully.", "client_id": client_id}
 
 
 # --- CRM Deals Endpoints ---
@@ -599,9 +600,10 @@ async def delete_crm_deal(
     deal = res.scalars().first()
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found.")
+    await db.execute(delete(CrmActivity).where(CrmActivity.deal_id == deal.id))
     await db.delete(deal)
     await db.commit()
-    return {"message": "Deal deleted successfully."}
+    return {"message": "Deal deleted successfully.", "deal_id": deal_id}
 
 
 # --- CRM Stats Overview ---

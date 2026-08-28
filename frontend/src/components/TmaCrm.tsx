@@ -214,6 +214,43 @@ export function TmaCrm() {
     }
   };
 
+  const handleDeleteDeal = async (dealId: number) => {
+    haptic('heavy');
+    if (!window.confirm('Bu elanı CRM-dən silmək istədiyinizə əminsiniz?')) {
+      return;
+    }
+    try {
+      await api.delete(`/crm/deals/${dealId}`);
+      setDeals(prev => prev.filter(d => d.id !== dealId));
+      if (selectedDeal?.id === dealId) {
+        setSelectedDeal(null);
+      }
+      setStats(prev => prev ? {
+        ...prev,
+        total_deals: Math.max(0, prev.total_deals - 1)
+      } : null);
+      await fetchAllData();
+    } catch (err) {
+      console.error('Failed to delete deal:', err);
+      alert('Elan silinərkən xəta baş verdi.');
+    }
+  };
+
+  const handleDeleteClient = async (clientId: number) => {
+    haptic('heavy');
+    if (!window.confirm('Bu müştərini silmək istədiyinizə əminsiniz?')) {
+      return;
+    }
+    try {
+      await api.delete(`/crm/clients/${clientId}`);
+      setClients(prev => prev.filter(c => c.id !== clientId));
+      await fetchAllData();
+    } catch (err) {
+      console.error('Failed to delete client:', err);
+      alert('Müştəri silinərkən xəta baş verdi.');
+    }
+  };
+
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClientName.trim()) return;
@@ -420,63 +457,23 @@ export function TmaCrm() {
               </div>
             ) : (
               <div className="space-y-3">
+                <div className="flex items-center justify-between px-1 text-[11px] text-slate-500">
+                  <span>💡 Elanı silmək üçün <b>sola sürüşdürün</b></span>
+                  <span>{filteredDeals.length} elan</span>
+                </div>
+
                 {filteredDeals.map(deal => {
                   const stageObj = STAGES.find(s => s.key === deal.stage) || STAGES[0];
                   return (
-                    <div
+                    <SwipeableDealCard
                       key={deal.id}
-                      onClick={() => openDealModal(deal)}
-                      className="bg-slate-900 border border-slate-800/80 hover:border-slate-700 rounded-2xl p-3.5 transition-all shadow-sm active:scale-[0.99] cursor-pointer"
-                    >
-                      <div className="flex gap-3">
-                        {deal.listing_image ? (
-                          <img
-                            src={deal.listing_image}
-                            alt=""
-                            className="w-20 h-20 rounded-xl object-cover border border-slate-800 flex-shrink-0 bg-slate-950"
-                          />
-                        ) : (
-                          <div className="w-20 h-20 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center flex-shrink-0 text-slate-600">
-                            🏠
-                          </div>
-                        )}
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-1 mb-1">
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${stageObj.color}`}>
-                              {stageObj.label}
-                            </span>
-                            <span className="text-xs font-black text-emerald-400">
-                              {deal.custom_offer_price ? `${intFormat(deal.custom_offer_price)} AZN` : `${intFormat(deal.listing_price)} ${deal.listing_currency}`}
-                            </span>
-                          </div>
-
-                          <h3 className="text-xs font-bold text-slate-100 line-clamp-1 mb-1">
-                            {deal.listing_title}
-                          </h3>
-
-                          {deal.client_name ? (
-                            <p className="text-[11px] text-blue-400 flex items-center gap-1 font-medium mb-1">
-                              <Users className="w-3 h-3" />
-                              {deal.client_name}
-                            </p>
-                          ) : (
-                            <p className="text-[11px] text-slate-500 italic mb-1">Müştəri təyin edilməyib</p>
-                          )}
-
-                          <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-800/60">
-                            <span>{deal.listing_location || 'Bakı'}</span>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); shareToClientWhatsApp(deal); }}
-                              className="flex items-center gap-1 text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-md hover:bg-emerald-500/20"
-                            >
-                              <Share2 className="w-3 h-3" />
-                              WhatsApp
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                      deal={deal}
+                      stageObj={stageObj}
+                      onOpen={openDealModal}
+                      onDelete={handleDeleteDeal}
+                      onShareWhatsApp={shareToClientWhatsApp}
+                      haptic={haptic}
+                    />
                   );
                 })}
               </div>
@@ -543,6 +540,13 @@ export function TmaCrm() {
                           <MessageSquare className="w-4 h-4" />
                         </a>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteClient(client.id)}
+                        className="w-8 h-8 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center hover:bg-rose-500/20"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -743,22 +747,33 @@ export function TmaCrm() {
               </div>
             </div>
 
-            {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-800 flex gap-2">
+            {/* Modal Footer with Delete & Save */}
+            <div className="p-4 border-t border-slate-800 flex flex-col gap-2">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedDeal(null)}
+                  className="w-1/3 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold"
+                >
+                  Bağla
+                </button>
+                <button
+                  type="button"
+                  disabled={savingDeal}
+                  onClick={handleSaveDeal}
+                  className="w-2/3 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-600/20 flex items-center justify-center gap-1"
+                >
+                  {savingDeal ? 'Saxlanılır...' : 'Yadda Saxla'}
+                </button>
+              </div>
+
               <button
                 type="button"
-                onClick={() => setSelectedDeal(null)}
-                className="w-1/3 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold"
+                onClick={() => handleDeleteDeal(selectedDeal.id)}
+                className="w-full py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 font-bold text-xs flex items-center justify-center gap-1.5 transition-all mt-1"
               >
-                Bağla
-              </button>
-              <button
-                type="button"
-                disabled={savingDeal}
-                onClick={handleSaveDeal}
-                className="w-2/3 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-600/20 flex items-center justify-center gap-1"
-              >
-                {savingDeal ? 'Saxlanılır...' : 'Yadda Saxla'}
+                <Trash2 className="w-3.5 h-3.5" />
+                Elanı CRM-dən Sil
               </button>
             </div>
           </div>
@@ -860,6 +875,201 @@ export function TmaCrm() {
           </form>
         </div>
       )}
+    </div>
+  );
+}
+
+function SwipeableDealCard({
+  deal,
+  stageObj,
+  onOpen,
+  onDelete,
+  onShareWhatsApp,
+  haptic
+}: {
+  deal: CrmDeal;
+  stageObj: any;
+  onOpen: (deal: CrmDeal) => void;
+  onDelete: (dealId: number) => void;
+  onShareWhatsApp: (deal: CrmDeal) => void;
+  haptic: (type: 'light' | 'medium' | 'heavy') => void;
+}) {
+  const [offsetX, setOffsetX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [startX, setStartX] = useState(0);
+  const [isSwipedOpen, setIsSwipedOpen] = useState(false);
+
+  // Touch Handlers for Mobile & Telegram Mini App
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setStartX(e.touches[0].clientX);
+    setIsDragging(true);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging) return;
+    const currentX = e.touches[0].clientX;
+    const diff = currentX - startX;
+    if (isSwipedOpen) {
+      const newOffset = Math.min(0, Math.max(-160, -90 + diff));
+      setOffsetX(newOffset);
+    } else if (diff < 0) {
+      setOffsetX(Math.max(-160, diff));
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (!isDragging) return;
+    setIsDragging(false);
+    if (offsetX < -130) {
+      haptic('heavy');
+      onDelete(deal.id);
+      setOffsetX(0);
+      setIsSwipedOpen(false);
+    } else if (offsetX < -45) {
+      haptic('medium');
+      setOffsetX(-90);
+      setIsSwipedOpen(true);
+    } else {
+      setOffsetX(0);
+      setIsSwipedOpen(false);
+    }
+  };
+
+  // Mouse Handlers for Desktop Browser
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setStartX(e.clientX);
+    setIsDragging(true);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    const diff = e.clientX - startX;
+    if (isSwipedOpen) {
+      setOffsetX(Math.min(0, Math.max(-160, -90 + diff)));
+    } else if (diff < 0) {
+      setOffsetX(Math.max(-160, diff));
+    }
+  };
+
+  const handleMouseUp = () => {
+    if (!isDragging) return;
+    setIsDragging(false);
+    if (offsetX < -130) {
+      haptic('heavy');
+      onDelete(deal.id);
+      setOffsetX(0);
+      setIsSwipedOpen(false);
+    } else if (offsetX < -45) {
+      haptic('medium');
+      setOffsetX(-90);
+      setIsSwipedOpen(true);
+    } else {
+      setOffsetX(0);
+      setIsSwipedOpen(false);
+    }
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (Math.abs(offsetX) > 10) {
+      e.stopPropagation();
+      setOffsetX(0);
+      setIsSwipedOpen(false);
+      return;
+    }
+    onOpen(deal);
+  };
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl select-none group touch-pan-y">
+      {/* Background Delete Action Tray (Revealed on Swipe) */}
+      <div className="absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-rose-600 to-rose-700 flex items-center justify-center rounded-2xl z-0 shadow-inner">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            haptic('heavy');
+            onDelete(deal.id);
+          }}
+          className="flex flex-col items-center justify-center text-white w-full h-full active:scale-95 transition-transform"
+        >
+          <Trash2 className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px] font-black uppercase tracking-wider">Sil</span>
+        </button>
+      </div>
+
+      {/* Foreground Swipeable Card */}
+      <div
+        style={{
+          transform: `translateX(${offsetX}px)`,
+          transition: isDragging ? 'none' : 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)'
+        }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onClick={handleClick}
+        className="relative z-10 bg-slate-900 border border-slate-800/80 hover:border-slate-700 rounded-2xl p-3.5 transition-colors shadow-sm active:bg-slate-900/90 cursor-pointer"
+      >
+        <div className="flex gap-3">
+          {deal.listing_image ? (
+            <img
+              src={deal.listing_image}
+              alt=""
+              className="w-20 h-20 rounded-xl object-cover border border-slate-800 flex-shrink-0 bg-slate-950"
+            />
+          ) : (
+            <div className="w-20 h-20 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center flex-shrink-0 text-slate-600">
+              🏠
+            </div>
+          )}
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-1 mb-1">
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${stageObj.color}`}>
+                {stageObj.label}
+              </span>
+              <span className="text-xs font-black text-emerald-400">
+                {deal.custom_offer_price ? `${intFormat(deal.custom_offer_price)} AZN` : `${intFormat(deal.listing_price)} ${deal.listing_currency}`}
+              </span>
+            </div>
+
+            <h3 className="text-xs font-bold text-slate-100 line-clamp-1 mb-1">
+              {deal.listing_title}
+            </h3>
+
+            {deal.client_name ? (
+              <p className="text-[11px] text-blue-400 flex items-center gap-1 font-medium mb-1">
+                <Users className="w-3 h-3" />
+                {deal.client_name}
+              </p>
+            ) : (
+              <p className="text-[11px] text-slate-500 italic mb-1">Müştəri təyin edilməyib</p>
+            )}
+
+            <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-800/60">
+              <span>{deal.listing_location || 'Bakı'}</span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={(e) => { e.stopPropagation(); onShareWhatsApp(deal); }}
+                  className="flex items-center gap-1 text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-md hover:bg-emerald-500/20"
+                >
+                  <Share2 className="w-3 h-3" />
+                  WhatsApp
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDelete(deal.id); }}
+                  className="p-1 text-slate-500 hover:text-rose-400 rounded-md hover:bg-rose-500/10 transition-colors"
+                  title="Sil"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
