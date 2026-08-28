@@ -191,7 +191,8 @@ export const TenantsView: React.FC = () => {
       addon_saved_searches: t.addon_saved_searches || 0,
       feature_watermark_free_images: t.feature_watermark_free_images || false,
       addon_image_requests_limit: t.addon_image_requests_limit || 0,
-      addon_image_requests_used: t.addon_image_requests_used || 0
+      addon_image_requests_used: t.addon_image_requests_used || 0,
+      feature_crm: t.feature_crm ?? false
     });
   };
 
