@@ -11,7 +11,7 @@ interface TaskType {
 }
 
 const modelOptions: Record<string, string[]> = {
-  gemini: ['gemini-3.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'],
+  gemini: ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.5-pro', 'gemini-1.5-pro'],
   claude: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
   gpt: ['gpt-4o', 'gpt-4o-mini']
 };
@@ -25,12 +25,12 @@ interface AppSettingsAITaskCardProps {
 
 const AppSettingsAITaskCard: React.FC<AppSettingsAITaskCardProps> = ({ task, cfg, onSave, onTest }) => {
   const [selectedProvider, setSelectedProvider] = useState<string>(cfg.provider || 'gemini');
-  const [selectedModel, setSelectedModel] = useState<string>(cfg.model_name || 'gemini-3.5-flash');
+  const [selectedModel, setSelectedModel] = useState<string>(cfg.model_name || 'gemini-2.5-flash');
   const [apiKeyInput, setApiKeyInput] = useState('');
 
   useEffect(() => {
     setSelectedProvider(cfg.provider || 'gemini');
-    setSelectedModel(cfg.model_name || 'gemini-3.5-flash');
+    setSelectedModel(cfg.model_name || 'gemini-2.5-flash');
   }, [cfg]);
 
   return (
@@ -38,21 +38,21 @@ const AppSettingsAITaskCard: React.FC<AppSettingsAITaskCardProps> = ({ task, cfg
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-bold text-white">{task.label}</h3>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 font-semibold uppercase">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400 font-medium capitalize">
             {cfg.provider || 'gemini'}
           </span>
         </div>
 
         <div>
-          <label className="text-[11px] font-semibold text-slate-300 block mb-1">Active Provider</label>
+          <label className="text-xs text-slate-400 block mb-1">Active Provider</label>
           <select
             value={selectedProvider}
             onChange={(e) => {
               const p = e.target.value;
               setSelectedProvider(p);
-              setSelectedModel(modelOptions[p] ? modelOptions[p][0] : 'gemini-1.5-flash');
+              setSelectedModel(modelOptions[p] ? modelOptions[p][0] : 'gemini-2.5-flash');
             }}
-            className="w-full bg-dark-900 border border-slate-700/80 px-3 py-2 rounded-xl text-xs text-white"
+            className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-900 border border-slate-700"
           >
             <option value="gemini">Gemini (Default Free Tier)</option>
             <option value="claude">Claude (Anthropic)</option>
@@ -160,9 +160,9 @@ export const AppSettingsView: React.FC = () => {
   const [alertStatusMsg, setAlertStatusMsg] = useState<{ success: boolean; text: string } | null>(null);
 
   const taskTypes: TaskType[] = [
-    { key: 'criteria_parsing', label: 'Criteria Parsing (Conversational Agent)', defaultProvider: 'gemini', defaultModel: 'gemini-3.5-flash' },
-    { key: 'listing_parsing', label: 'Telegram Unformatted Listing Parser', defaultProvider: 'gemini', defaultModel: 'gemini-3.5-flash' },
-    { key: 'match_scoring', label: 'Match Scoring Engine', defaultProvider: 'gemini', defaultModel: 'gemini-3.5-flash' },
+    { key: 'criteria_parsing', label: 'Criteria Parsing (Conversational Agent)', defaultProvider: 'gemini', defaultModel: 'gemini-2.5-flash' },
+    { key: 'listing_parsing', label: 'Telegram Unformatted Listing Parser', defaultProvider: 'gemini', defaultModel: 'gemini-2.5-flash' },
+    { key: 'match_scoring', label: 'Match Scoring Engine', defaultProvider: 'gemini', defaultModel: 'gemini-2.5-flash' },
   ];
 
   const loadSettings = async () => {

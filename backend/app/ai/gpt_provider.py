@@ -12,8 +12,8 @@ from app.core.baku_locations import (
 class GPTProvider(AIProvider):
     def __init__(self, api_key: str | None = None, model_name: str = "gpt-4o"):
         self.api_key = api_key or settings.OPENAI_API_KEY
-        self.model_name = model_name
-        self.fallback = GeminiProvider(model_name="gemini-3.5-flash")
+        self.model_name = model_name or "gpt-4o"
+        self.fallback = GeminiProvider(model_name="gemini-2.5-flash")
 
     async def parse_search_criteria(self, raw_text: str) -> StructuredCriteria:
         if self.api_key:
