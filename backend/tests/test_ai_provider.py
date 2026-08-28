@@ -93,3 +93,62 @@ def test_fernet_key_encryption():
     assert encrypted != plain
     decrypted = decrypt_key(encrypted)
     assert decrypted == plain
+
+@pytest.mark.asyncio
+async def test_area_and_floor_range_criteria_parsing():
+    provider = GeminiProvider(model_name="gemini-3.5-flash")
+    raw_text = "Nəsimidə 3 otaq 80-120 kv 3-10 mərtəbə 200k AZN kupçalı və ipotekaya yararlı"
+    criteria = await provider.parse_search_criteria(raw_text)
+
+    assert criteria.min_rooms == 3
+    assert criteria.min_area == 80.0
+    assert criteria.max_area == 120.0
+    assert criteria.min_floor == 3
+    assert criteria.max_floor == 10
+    assert criteria.has_kupcha is True
+    assert criteria.is_mortgageable is True
+    assert criteria.max_price == 200000.0
+
+@pytest.mark.asyncio
+async def test_studio_and_open_ended_room_parsing():
+    provider = GeminiProvider(model_name="gemini-3.5-flash")
+    
+    # 1. Studio
+    c_studio = await provider.parse_search_criteria("Sahildə studiya mənzil kirayə 700 AZN")
+    assert c_studio.min_rooms == 1
+    assert c_studio.max_rooms == 1
+    assert c_studio.offer_type == "rent"
+
+    # 2. Open-ended room minimum
+    c_open = await provider.parse_search_criteria("Xətaidə ən azı 3 otaq yeni tikili min 90 kv")
+    assert c_open.min_rooms == 3
+    assert c_open.min_area == 90.0
+
+@pytest.mark.asyncio
+async def test_bakmil_and_new_settlement_location_parsing():
+    from app.core.baku_locations import extract_all_metro_stations, extract_all_baku_settlements
+    
+    metros = extract_all_metro_stations("Bakmil metrosu və Elmlər Akademiyası")
+    assert "Bakmil" in metros
+    assert "Elmlər Akademiyası" in metros
+
+    settlements = extract_all_baku_settlements("Şaqanda bağ evi və Qobuda torpaq")
+    assert "Şaqan" in settlements
+    assert "Qobu" in settlements
+
+@pytest.mark.asyncio
+async def test_gpt_and_claude_provider_instantiation():
+    from app.ai.gpt_provider import GPTProvider
+    from app.ai.claude_provider import ClaudeProvider
+
+    gpt = GPTProvider(api_key=None, model_name="gpt-4o")
+    claude = ClaudeProvider(api_key=None, model_name="claude-3-5-sonnet")
+
+    assert gpt.model_name == "gpt-4o"
+    assert claude.model_name == "claude-3-5-sonnet"
+    
+    # Fallback to heuristic parser works cleanly
+    c_gpt = await gpt.parse_search_criteria("28 mayda 2 otaq 150 min")
+    assert "28 May" in c_gpt.locations or c_gpt.metro_station == "28 May"
+    assert c_gpt.min_rooms == 2
+

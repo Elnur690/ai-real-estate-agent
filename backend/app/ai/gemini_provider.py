@@ -139,27 +139,68 @@ Extract structured JSON strictly with these exact keys:
         found_district = ", ".join(all_settlements + all_districts) if (all_settlements or all_districts) else None
         found_metro = ", ".join(all_metros) if all_metros else None
 
-        # Rooms (Single or Multi-room, e.g. "3 və ya 4 otaqlı", "2, 3 otaq", "3-4 otaq", "2 və 3 otaq")
+        # Rooms (Single, Multi-room, Studio, Open-ended, e.g. "3 və ya 4 otaqlı", "2, 3 otaq", "3-4 otaq", "ən azı 2 otaq", "studiya")
         min_rooms, max_rooms = None, None
         
-        # 1. Multi-room pattern (e.g. 2, 3 otaq / 3-4 otaq / 3 və ya 4 otaq / 2 və 3 otaq / 2/3 otaq)
-        multi_room_match = re.search(
-            r'(\d+(?:\s*(?:-|–|,|\/|\bvə ya\b|\bya da\b|\bvə\b|\bve\b|\bya\b)\s*\d+)+)\s*(?:otaq|otaqlı|otag)',
+        # 1. Studio detection
+        if any(w in text_lower for w in ["studiya", "studio", "1 otaq studio", "1 otaq studiya"]):
+            min_rooms = 1
+            max_rooms = 1
+        else:
+            # 2. Open-ended room minimums (e.g. "ən azı 3 otaq", "minimum 2 otaq", "min 2 otaq", "2 otaqdan çox", "2 otaqdan yuxarı")
+            open_min_match = re.search(r'(?:ən azı|en azi|minimum|min)\s*(\d+)\s*(?:otaq|otaqlı|otag)', text_lower) or re.search(r'(\d+)\s*(?:otaqdan|otagdan)\s*(?:çox|cox|yuxarı|yuxari|artıq|artiq)', text_lower)
+            open_max_match = re.search(r'(?:maksimum|max)\s*(\d+)\s*(?:otaq|otaqlı|otag)', text_lower) or re.search(r'(\d+)\s*(?:otağa|otaqa|otaga)\s*qədər', text_lower)
+            if open_min_match:
+                d = int(open_min_match.group(1))
+                if 1 <= d <= 10:
+                    min_rooms = d
+            if open_max_match:
+                d = int(open_max_match.group(1))
+                if 1 <= d <= 10:
+                    max_rooms = d
+
+            if min_rooms is None and max_rooms is None:
+                # 3. Multi-room pattern (e.g. 2, 3 otaq / 3-4 otaq / 3 və ya 4 otaq / 2 və 3 otaq / 2/3 otaq)
+                multi_room_match = re.search(
+                    r'(\d+(?:\s*(?:-|–|,|\/|\bvə ya\b|\bya da\b|\bvə\b|\bve\b|\bya\b)\s*\d+)+)\s*(?:otaq|otaqlı|otag)',
+                    text_lower
+                )
+                if multi_room_match:
+                    digits = [int(d) for d in re.findall(r'\d+', multi_room_match.group(1)) if 1 <= int(d) <= 10]
+                    if digits:
+                        min_rooms = min(digits)
+                        max_rooms = max(digits)
+                else:
+                    # 4. Separate mentions like "2 otaq və ya 3 otaq" or single "3 otaqlı"
+                    all_room_matches = re.findall(r'(\d+)\s*(?:otaq|otaqlı|otag)', text_lower)
+                    if all_room_matches:
+                        digits = [int(d) for d in all_room_matches if 1 <= int(d) <= 10]
+                        if digits:
+                            min_rooms = min(digits)
+                            max_rooms = max(digits)
+
+        # Area (kv / kv.m / m2 / kvadrat)
+        min_area, max_area = None, None
+        area_range_match = re.search(
+            r'(\d+(?:\.\d+)?)\s*(?:-|–|to|ila|ilə|və ya|\s+)\s*(\d+(?:\.\d+)?)\s*(?:kv|kv\.m|kvadrat|m2|m²)',
             text_lower
         )
-        if multi_room_match:
-            digits = [int(d) for d in re.findall(r'\d+', multi_room_match.group(1)) if 1 <= int(d) <= 10]
-            if digits:
-                min_rooms = min(digits)
-                max_rooms = max(digits)
+        if area_range_match:
+            a1, a2 = float(area_range_match.group(1)), float(area_range_match.group(2))
+            min_area, max_area = min(a1, a2), max(a1, a2)
         else:
-            # 2. Separate mentions like "2 otaq və ya 3 otaq" or single "3 otaqlı"
-            all_room_matches = re.findall(r'(\d+)\s*(?:otaq|otaqlı|otag)', text_lower)
-            if all_room_matches:
-                digits = [int(d) for d in all_room_matches if 1 <= int(d) <= 10]
-                if digits:
-                    min_rooms = min(digits)
-                    max_rooms = max(digits)
+            open_min_area = re.search(r'(?:ən azı|en azi|minimum|min)\s*(\d+(?:\.\d+)?)\s*(?:kv|kv\.m|kvadrat|m2|m²)', text_lower) or re.search(r'(\d+(?:\.\d+)?)\s*(?:kv|kv\.m|kvadrat|m2|m²)\s*(?:dən|dan)?\s*(?:çox|cox|yuxarı|yuxari|artıq|artiq)', text_lower)
+            open_max_area = re.search(r'(?:maksimum|max)\s*(\d+(?:\.\d+)?)\s*(?:kv|kv\.m|kvadrat|m2|m²)', text_lower) or re.search(r'(\d+(?:\.\d+)?)\s*(?:kv|kv\.m|kvadrat|m2|m²)\s*(?:dək|dek|qədər|qeder)', text_lower)
+            if open_min_area:
+                min_area = float(open_min_area.group(1))
+            if open_max_area:
+                max_area = float(open_max_area.group(1))
+            if min_area is None and max_area is None:
+                single_area_match = re.search(r'(\d+(?:\.\d+)?)\s*(?:kv|kv\.m|kvadrat|m2|m²)', text_lower)
+                if single_area_match:
+                    val = float(single_area_match.group(1))
+                    if val >= 15.0:
+                        min_area = val
 
         # Historical Lookback / Months on market (e.g. "3 aydan bəri", "6aydan bəri", "3 aydır satışda", "2 ay əvvəldən")
         min_months_on_market = None
@@ -181,25 +222,31 @@ Extract structured JSON strictly with these exact keys:
         for metro_num in ["28 may", "28may", "20 yanvar", "20yanvar", "8 noyabr", "8noyabr"]:
             text_for_price = text_for_price.replace(metro_num, " ")
 
-        # 2. Strip micro-districts, massifs, floors, areas
-        text_for_price = re.sub(r'\d+\s*-(?:ci|cı|cü|cu)?\s*(?:mkr|mikrorayon|massiv|mərtəbə|mertebe|blok|etaj|sot|hektar)', ' ', text_for_price)
+        # 2. Strip area ranges and single areas
+        text_for_price = re.sub(r'\d+(?:\.\d+)?\s*(?:-|–|to|ila|ilə|və ya|\s+)\s*\d+(?:\.\d+)?\s*(?:kv|kv\.m|kvadrat|m2|m²)', ' ', text_for_price)
+        text_for_price = re.sub(r'\d+(?:\.\d+)?\s*(?:kv|kv\.m|kvadrat|m2|m²)', ' ', text_for_price)
 
-        # 3. Strip room numbers
+        # 3. Strip floor ranges and floor mentions
+        text_for_price = re.sub(r'\d+\s*(?:-|–|to|ila|ilə|və ya|\s+)\s*\d+\s*(?:-ci|-cı|-cü|-cu)?\s*(?:mərtəbə|mertebe|etaj)', ' ', text_for_price)
+        text_for_price = re.sub(r'\d+\s*-(?:ci|cı|cü|cu)?\s*(?:mkr|mikrorayon|massiv|mərtəbə|mertebe|blok|etaj|sot|hektar)', ' ', text_for_price)
+        text_for_price = re.sub(r'\d+\s*(?:mərtəbə|mertebe|etaj)', ' ', text_for_price)
+
+        # 4. Strip room numbers
         text_for_price = re.sub(r'\d+(?:\s*(?:-|–|,|\/|\bvə ya\b|\bya da\b|\bvə\b|\bve\b|\bya\b)\s*\d+)*\s*(?:otaq|otaqlı|otag|komnat|bed|room)', ' ', text_for_price)
 
-        # 4. Strip lookback string
+        # 5. Strip lookback string
         text_for_price = re.sub(r'["\'«»]?\s*\d+\s*(?:aydan\s*bəri|aydan\s*beri|aydır\s*satışda|aydir\s*satisda|aydır\s*qalan|aydir\s*qalan|ay\s*əvvəldən|ay\s*evvelden|aylıq\s*arxiv|ayliq\s*arxiv|ay\s*bazar|aydan|aydir)["\'«»]?', ' ', text_for_price)
 
         min_price, max_price = None, None
         min_price_usd, max_price_usd = None, None
 
-        # Try matching explicit price range (e.g. 150000 - 600000 AZN or 150-600 min)
+        # Try matching explicit price range (e.g. 150000 - 600000 AZN or 150-600 min or $100k-$150k)
         range_match = re.search(
-            r'(\d+(?:\.\d+)?)\s*(k|min)?\s*(?:-|–|to|ila|ilə|və ya|dan|dən|\s+)\s*(\d+(?:\.\d+)?)\s*(k|min|milyon|mln|azn|₼|usd|\$|manat|dollar)?',
+            r'(\$)?\s*(\d+(?:\.\d+)?)\s*(k|min)?\s*(?:-|–|to|ila|ilə|və ya|dan|dən|\s+)\s*(\$)?\s*(\d+(?:\.\d+)?)\s*(k|min|milyon|mln|azn|₼|usd|\$|manat|dollar)?',
             text_for_price
         )
         if range_match:
-            v1, m1, v2, m2 = range_match.groups()
+            d1, v1, m1, d2, v2, m2 = range_match.groups()
             p1, p2 = float(v1), float(v2)
             has_k_or_min = (m1 in ["k", "min"] or m2 in ["k", "min"] or (p1 < 1000 and p2 < 1000 and ("min" in text_for_price or "k" in text_for_price)))
             if p1 < 1000 and has_k_or_min:
@@ -208,15 +255,15 @@ Extract structured JSON strictly with these exact keys:
                 p2 *= 1000
 
             p_min, p_max = min(p1, p2), max(p1, p2)
-            if is_usd:
+            if is_usd or d1 or d2:
                 min_price_usd, max_price_usd = p_min, p_max
                 min_price, max_price = round(p_min * rate, 2), round(p_max * rate, 2)
             else:
                 min_price, max_price = p_min, p_max
         else:
-            matches = re.findall(r'(\d+)\s*(k|min)?', text_for_price)
+            matches = re.findall(r'(\$)?\s*(\d+)\s*(k|min)?', text_for_price)
             parsed_prices = []
-            for val_str, mult in matches:
+            for dol, val_str, mult in matches:
                 if not val_str: continue
                 val = int(val_str)
                 if mult in ["k", "min"] or (val < 1000 and ("min" in text_for_price or "k" in text_for_price)):
@@ -277,6 +324,26 @@ Extract structured JSON strictly with these exact keys:
             elif any(k in text_lower for k in ["köhnə tikili", "kohne tikili", "köhnə bina", "kohne bina", "leninqrad", "xruşovka", "stalinka", "fransız", "kiyev", "eksperimental"]):
                 building_type = "old"
 
+        # Floor ranges (e.g. 3-10 mərtəbə, min 4 max 12 mərtəbə, 5-dən yuxarı mərtəbə)
+        min_floor, max_floor = None, None
+        floor_range_match = re.search(r'(\d+)\s*(?:-|–|to|ila|ilə|və ya|\s+)\s*(\d+)\s*(?:-ci|-cı|-cü|-cu)?\s*(?:mərtəbə|mertebe|etaj)', text_lower)
+        if floor_range_match:
+            f1, f2 = int(floor_range_match.group(1)), int(floor_range_match.group(2))
+            min_floor, max_floor = min(f1, f2), max(f1, f2)
+        else:
+            open_min_floor = re.search(r'(?:ən azı|en azi|minimum|min)\s*(\d+)\s*(?:-ci|-cı|-cü|-cu)?\s*(?:mərtəbə|mertebe|etaj)', text_lower) or re.search(r'(\d+)\s*(?:-dən|-dan|-dən yuxarı|-dan yuxarı)\s*(?:mərtəbə|mertebe|etaj)?', text_lower)
+            open_max_floor = re.search(r'(?:maksimum|max)\s*(\d+)\s*(?:-ci|-cı|-cü|-cu)?\s*(?:mərtəbə|mertebe|etaj)', text_lower) or re.search(r'(\d+)\s*(?:-ə|-a|-yə|-ya)?\s*qədər\s*(?:mərtəbə|mertebe|etaj)', text_lower)
+            if open_min_floor:
+                min_floor = int(open_min_floor.group(1))
+            if open_max_floor:
+                max_floor = int(open_max_floor.group(1))
+
+        # Advanced criteria filters (floor exclusion, deed, mortgage, repairs)
+        not_first_last_floor = bool(re.search(r'(?:1-?c?i?\s*(?:və|ve|ya)?\s*sonuncu|1-?c?i?\s*(?:və|ve|ya)?\s*axırıncı|birinci\s*(?:və|ve|ya)?\s*sonuncu)\s*mərtəbə\s*(?:olmasın|istisna|yox)', text_lower))
+        has_kupcha = True if any(k in text_lower for k in ["kupçalı", "kupcali", "çıxarışlı", "cixarisli", "kupça var", "çıxarış var", "kupça olsun", "çıxarış olsun"]) else None
+        is_mortgageable = True if any(k in text_lower for k in ["ipoteka", "ipotekalı", "ipotekali", "ipotekaya yararlı", "ipotekaya yararli"]) else None
+        is_repaired = True if any(k in text_lower for k in ["təmirli", "temirli", "əla təmirli", "yaxşı təmirli", "tam təmirli"]) and not any(k in text_lower for k in ["təmirsiz", "temirsiz", "təmirsizdir"]) else (False if any(k in text_lower for k in ["təmirsiz", "temirsiz", "podmayak", "təmirsizdir"]) else None)
+
         summary_parts = []
         if found_district:
             summary_parts.append(f"{found_district}")
@@ -290,6 +357,11 @@ Extract structured JSON strictly with these exact keys:
         elif min_rooms or max_rooms:
             summary_parts.append(f"{min_rooms or 1}-{max_rooms or 5} otaqlı")
         
+        if min_area and max_area:
+            summary_parts.append(f"{int(min_area)}-{int(max_area)} m²")
+        elif min_area:
+            summary_parts.append(f"min {int(min_area)} m²")
+
         prop_label = {
             "office": "ofis",
             "commercial": "obyekt",
@@ -316,14 +388,12 @@ Extract structured JSON strictly with these exact keys:
         if min_months_on_market:
             summary_parts.append(f"ən azı {min_months_on_market} aydan bəri bazarda olan")
 
-        # Advanced criteria filters (floor exclusion, deed, mortgage, repairs)
-        not_first_last_floor = bool(re.search(r'(?:1-?c?i?\s*(?:və|ve|ya)?\s*sonuncu|1-?c?i?\s*(?:və|ve|ya)?\s*axırıncı|birinci\s*(?:və|ve|ya)?\s*sonuncu)\s*mərtəbə\s*(?:olmasın|istisna|yox)', text_lower))
-        has_kupcha = True if any(k in text_lower for k in ["kupçalı", "kupcali", "çıxarışlı", "cixarisli", "kupça var", "çıxarış var", "kupça olsun", "çıxarış olsun"]) else None
-        is_mortgageable = True if any(k in text_lower for k in ["ipoteka", "ipotekalı", "ipotekali", "ipotekaya yararlı", "ipotekaya yararli"]) else None
-        is_repaired = True if any(k in text_lower for k in ["təmirli", "temirli", "əla təmirli", "yaxşı təmirli", "tam təmirli"]) and not any(k in text_lower for k in ["təmirsiz", "temirsiz", "təmirsizdir"]) else (False if any(k in text_lower for k in ["təmirsiz", "temirsiz", "podmayak", "təmirsizdir"]) else None)
-
         if not_first_last_floor:
             summary_parts.append("1-ci və sonuncu mərtəbələr istisna")
+        if min_floor and max_floor:
+            summary_parts.append(f"{min_floor}-{max_floor}-ci mərtəbələr")
+        elif min_floor:
+            summary_parts.append(f"{min_floor}-ci mərtəbədən yuxarı")
         if has_kupcha:
             summary_parts.append("çıxarışlı (kupçalı)")
         if is_mortgageable:
@@ -346,12 +416,16 @@ Extract structured JSON strictly with these exact keys:
             max_price_usd=max_price_usd,
             min_rooms=min_rooms,
             max_rooms=max_rooms,
+            min_area=min_area,
+            max_area=max_area,
             offer_type=offer_type,
             property_type=property_type,
             seller_type=seller_type,
             building_type=building_type,
             min_months_on_market=min_months_on_market,
             not_first_last_floor=not_first_last_floor,
+            min_floor=min_floor,
+            max_floor=max_floor,
             has_kupcha=has_kupcha,
             is_mortgageable=is_mortgageable,
             is_repaired=is_repaired,

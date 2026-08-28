@@ -111,11 +111,12 @@ async def test_price_drop_alerts():
 
     mock_res_search = MagicMock()
     mock_res_search.scalars.return_value.all.return_value = [search]
+    mock_res_tenant = MagicMock()
+    mock_res_tenant.scalars.return_value.all.return_value = [tenant]
     mock_res_match = MagicMock()
     mock_res_match.scalars.return_value.first.return_value = None
 
-    mock_db.execute.side_effect = [mock_res_search, mock_res_match]
-    mock_db.get.return_value = tenant
+    mock_db.execute.side_effect = [mock_res_search, mock_res_tenant, mock_res_match]
 
     with patch("app.services.ingestion.send_telegram_notification", new_callable=AsyncMock) as mock_tg:
         delivered = await IngestionService._deliver_price_drop_alerts(

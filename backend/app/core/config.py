@@ -70,4 +70,8 @@ class Settings(BaseSettings):
     # Gemini Fallback Key
     GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY", None)
 
+    # Optional AI Keys
+    OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY", None)
+    CLAUDE_API_KEY: Optional[str] = os.getenv("CLAUDE_API_KEY", None)
+
 settings = Settings()

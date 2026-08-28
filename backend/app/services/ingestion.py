@@ -309,13 +309,20 @@ class IngestionService:
         stmt = select(SavedSearch).where(SavedSearch.is_active == True)
         res = await db.execute(stmt)
         searches = res.scalars().all()
+        if not searches:
+            return 0
+
+        tenant_ids = {s.tenant_id for s in searches if s.tenant_id}
+        stmt_t = select(Tenant).where(Tenant.id.in_(tenant_ids))
+        res_t = await db.execute(stmt_t)
+        tenants_by_id = {t.id: t for t in res_t.scalars().all()}
         delivered = 0
 
         for search in searches:
             if not IngestionService.is_strict_match(search, listing):
                 continue
 
-            tenant = await db.get(Tenant, search.tenant_id)
+            tenant = tenants_by_id.get(search.tenant_id)
             if not tenant or tenant.status != "active":
                 continue
 
@@ -1027,15 +1034,20 @@ class IngestionService:
         res = await db.execute(stmt)
         saved_searches = res.scalars().all()
 
+        if not saved_searches:
+            return 0
+
+        tenant_ids = {s.tenant_id for s in saved_searches if s.tenant_id}
+        stmt_t = select(Tenant).where(Tenant.id.in_(tenant_ids))
+        res_t = await db.execute(stmt_t)
+        tenants_by_id = {t.id: t for t in res_t.scalars().all()}
+
         matches_count = 0
         app_name = await get_app_name(db)
         now_utc = datetime.now(timezone.utc)
 
         for search in saved_searches:
-            stmt_t = select(Tenant).where(Tenant.id == search.tenant_id)
-            res_t = await db.execute(stmt_t)
-            tenant = res_t.scalars().first()
-
+            tenant = tenants_by_id.get(search.tenant_id)
             if not tenant:
                 continue
             # Check tenant suspension or expiration

@@ -173,12 +173,6 @@ class BotCommandHandler:
         if text_lower in ["/start", "/help", "/kömək", "/komak", "kömək", "komak", "help", "menu", "menyu", "salam", "hi", "start"]:
             return BotCommandHandler._get_start_message(app_name)
 
-        # 3. Onboarding Flow if Tenant still not found in DB
-        if not tenant:
-            return await BotCommandHandler._handle_onboarding(
-                db, channel, sender_id, sender_name, raw_text_trimmed, app_name
-            )
-
         if text_lower in ["/searches", "/axtarışlar", "/axtarislar", "/axtarışlarım", "/axtarislarim", "/list", "axtarışlarım", "axtarislarim", "1"]:
             return await BotCommandHandler._list_saved_searches(db, tenant, sender_id=sender_id, is_group=is_group)
 

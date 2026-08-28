@@ -26,7 +26,8 @@ BAKU_METRO_STATIONS: Dict[str, List[str]] = {
     "Həzi Aslanov": ["həzi aslanov", "hezi aslanov", "aslanov", "aslanov m", "həzi aslanov m", "kvadratlar"],
     "Avtovağzal": ["avtovağzal", "avtovagzal", "avtovağzal m", "avtovagzal m", "beynəlxalq avtovağzal"],
     "8 Noyabr": ["8 noyabr", "8noyabr", "8 noyabr m", "8 noyabr metrosu", "hərbi hospital"],
-    "Xocəsən": ["xocəsən", "xocesen", "xocəsən m", "xocesen m"]
+    "Xocəsən": ["xocəsən", "xocesen", "xocəsən m", "xocesen m"],
+    "Bakmil": ["bakmil", "bakmil m", "bakmil metrosu"]
 }
 
 # Baku Metro Lines Network Adjacency Graph (1-stop neighboring stations)
@@ -44,8 +45,9 @@ METRO_ADJACENCY: Dict[str, List[str]] = {
     "Sahil": ["28 May", "İçərişəhər"],
     "İçərişəhər": ["Sahil"],
     "Gənclik": ["28 May", "Nəriman Nərimanov"],
-    "Nəriman Nərimanov": ["Gənclik", "Ulduz"],
-    "Ulduz": ["Nəriman Nərimanov", "Koroğlu"],
+    "Nəriman Nərimanov": ["Gənclik", "Ulduz", "Bakmil"],
+    "Bakmil": ["Nəriman Nərimanov", "Ulduz"],
+    "Ulduz": ["Nəriman Nərimanov", "Koroğlu", "Bakmil"],
     "Koroğlu": ["Ulduz", "Qara Qarayev"],
     "Qara Qarayev": ["Koroğlu", "Neftçilər"],
     "Neftçilər": ["Qara Qarayev", "Xalqlar Dostluğu"],
@@ -134,7 +136,18 @@ BAKU_SETTLEMENTS: Dict[str, List[str]] = {
     "8-ci mikrorayon": ["8-ci mikrorayon", "8 ci mikrorayon", "8-ci mkr", "8 ci mkr", "8mkr"],
     "9-cu mikrorayon": ["9-cu mikrorayon", "9 cu mikrorayon", "9-cu mkr", "9 ci mkr", "9mkr"],
     "Nizami küçəsi": ["nizami küç", "nizami kuc", "nizami küçəsi", "nizami kucesi", "nizami k.", "nizami k-si", "nizami k-də", "nizami kəs", "nizami prospekti"],
-    "Torqovaya": ["torqovı", "torqovaya", "tarqovi", "tarqoviy", "torqovi", "fəvvarələr meydanı", "fevvareler meydani", "fountain square", "isr plaza"]
+    "Torqovaya": ["torqovı", "torqovaya", "tarqovi", "tarqoviy", "torqovi", "fəvvarələr meydanı", "fevvareler meydani", "fountain square", "isr plaza"],
+    "Şaqan": ["şaqan", "saqan", "şaqanda", "saqanda"],
+    "Qobu": ["qobu", "qobuda"],
+    "Hökməli": ["hökməli", "hokmeli", "hökməlidə", "hokmelide"],
+    "NZS": ["nzs", "nzs qəs", "nzs qes", "nzs qəsəbəsi"],
+    "Böyükşor": ["böyükşor", "boyuksor", "böyükşorda", "boyuksorda"],
+    "Gürgən": ["gürgən", "gurgen", "gürgəndə"],
+    "Səngəçal": ["səngəçal", "sengecal", "səngəçalda", "sangachal"],
+    "Albalılıq": ["albalılıq", "albaliliq", "albalı", "vişnyovka", "visnyovka"],
+    "Zuğulba": ["zuğulba", "zugulba", "zuğulbada"],
+    "Dübəndi": ["dübəndi", "dubendi", "dübəndidə"],
+    "Pirəkəşkül": ["pirəkəşkül", "pirekeskul"]
 }
 
 # Baku Adjacent Geographical Neighboring Districts
@@ -181,9 +194,6 @@ def extract_all_metro_stations(text: str) -> List[str]:
     found.sort(key=lambda x: x[0])
     return [name for _, name in found]
 
-def extract_baku_settlement(text: str) -> Optional[str]:
-    """Extract specific Baku settlement or micro-district name."""
-    settlements = extract_all_baku_settlements(text)
 # Mapping of Settlements/Quarters to Parent Baku Administrative Districts
 SETTLEMENT_TO_DISTRICT: Dict[str, str] = {
     "Badamdar": "Səbail", "Bayıl": "Səbail", "Şıxov": "Səbail", "Nizami küçəsi": "Səbail", "Torqovaya": "Səbail",
@@ -191,8 +201,8 @@ SETTLEMENT_TO_DISTRICT: Dict[str, str] = {
     "Qaraçuxur": "Suraxanı", "Yeni Günəşli": "Suraxanı", "Köhnə Günəşli": "Suraxanı", "Hövsan": "Suraxanı", "Əmircan": "Suraxanı", "Bülbülə": "Suraxanı", "Zığ": "Suraxanı",
     "Biləcəri": "Binəqədi", "Sulutəpə": "Binəqədi", "Rəsulzadə": "Binəqədi", "6-cı mikrorayon": "Binəqədi", "7-ci mikrorayon": "Binəqədi", "8-ci mikrorayon": "Binəqədi", "9-cu mikrorayon": "Binəqədi", "Binəqədi qəs.": "Binəqədi",
     "1-ci mikrorayon": "Nəsimi", "2-ci mikrorayon": "Nəsimi", "3-cü mikrorayon": "Nəsimi", "4-cü mikrorayon": "Nəsimi", "5-ci mikrorayon": "Nəsimi", "Papanin": "Nəsimi", "Kubinka": "Nəsimi",
-    "Mərdəkan": "Xəzər", "Şüvəlan": "Xəzər", "Buzovna": "Xəzər", "Binə": "Xəzər", "Qala": "Xəzər", "Zirə": "Xəzər", "Türkan": "Xəzər", "Şaqan": "Xəzər",
-    "Xırdalan": "Abşeron", "Masazır": "Abşeron", "Saray": "Abşeron", "Novxanı": "Abşeron", "Mehdiabad": "Abşeron", "Fatmayı": "Abşeron", "Digah": "Abşeron", "Məmmədli": "Abşeron", "Qobu": "Abşeron", "Hökməli": "Abşeron",
+    "Mərdəkan": "Xəzər", "Şüvəlan": "Xəzər", "Buzovna": "Xəzər", "Binə": "Xəzər", "Qala": "Xəzər", "Zirə": "Xəzər", "Türkan": "Xəzər", "Şaqan": "Xəzər", "Albalılıq": "Xəzər", "Zuğulba": "Xəzər", "Dübəndi": "Xəzər",
+    "Xırdalan": "Abşeron", "Masazır": "Abşeron", "Saray": "Abşeron", "Novxanı": "Abşeron", "Mehdiabad": "Abşeron", "Fatmayı": "Abşeron", "Digah": "Abşeron", "Məmmədli": "Abşeron", "Qobu": "Abşeron", "Hökməli": "Abşeron", "Pirəkəşkül": "Abşeron",
     "Ağ Şəhər": "Xətai", "Əhmədli": "Xətai", "Həzi Aslanov": "Xətai", "NZS": "Xətai",
     "Montin": "Nərimanov", "Böyükşor": "Nərimanov",
     "Yeni Yasamal": "Yasamal",
@@ -204,7 +214,7 @@ SETTLEMENT_TO_DISTRICT: Dict[str, str] = {
 METRO_TO_DISTRICT: Dict[str, str] = {
     "Elmlər Akademiyası": "Yasamal", "İnşaatçılar": "Yasamal", "20 Yanvar": "Yasamal",
     "28 May": "Nəsimi", "Memar Əcəmi": "Nəsimi", "Nəsimi": "Nəsimi", "8 Noyabr": "Nəsimi", "Cəfər Cabbarlı": "Nəsimi",
-    "Gənclik": "Nərimanov", "Nəriman Nərimanov": "Nərimanov",
+    "Gənclik": "Nərimanov", "Nəriman Nərimanov": "Nərimanov", "Bakmil": "Nərimanov",
     "Xətai": "Xətai", "Əhmədli": "Xətai", "Həzi Aslanov": "Xətai",
     "Qara Qarayev": "Nizami", "Neftçilər": "Nizami", "Xalqlar Dostluğu": "Nizami",
     "İçərişəhər": "Səbail", "Sahil": "Səbail",
@@ -252,7 +262,9 @@ BINA_METRO_SLUGS: Dict[str, str] = {
     "Avtovağzal": "avtovagzal-m",
     "8 Noyabr": "8-noyabr-m",
     "Koroğlu": "koroglu-m",
-    "Ulduz": "ulduz-m"
+    "Ulduz": "ulduz-m",
+    "Bakmil": "bakmil-m",
+    "Xocəsən": "khodjasan-m"
 }
 
 BINA_SETTLEMENT_SLUGS: Dict[str, str] = {
@@ -280,7 +292,21 @@ BINA_SETTLEMENT_SLUGS: Dict[str, str] = {
     "2-ci mikrorayon": "2-ci-mikrorayon-q",
     "1-ci mikrorayon": "1-ci-mikrorayon-q",
     "Yeni Yasamal": "yeni-yasamal-q",
-    "Bayıl": "bayil-q"
+    "Bayıl": "bayil-q",
+    "Şaqan": "shaqan-q",
+    "Qobu": "qobu-q",
+    "Hökməli": "hokmali-q",
+    "Bilgəh": "bilgah-q",
+    "Nardaran": "nardaran-q",
+    "Zabrat": "zabrat-q",
+    "Maştağa": "mashtaga-q",
+    "Pirşağı": "pirshagi-q",
+    "Kürdəxanı": "kurdakhani-q",
+    "Balaxanı": "balakhani-q",
+    "Ramana": "ramana-q",
+    "Saray": "saray-q",
+    "Novxanı": "novkhani-q",
+    "Mehdiabad": "mehdiabad-q"
 }
 
 def get_bina_location_slug(district: Optional[str] = None, metro: Optional[str] = None) -> List[str]:
