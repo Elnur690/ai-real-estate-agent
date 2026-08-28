@@ -18,6 +18,7 @@ class Tenant(Base):
     plan_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     plan_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_expiry_warning_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    preferred_billing_day: Mapped[int | None] = mapped_column(default=1)  # Preferred day of month (1-28)
     status: Mapped[str] = mapped_column(String(50), default="pending")  # active | expired | suspended | pending
 
     preferred_channel: Mapped[str] = mapped_column(String(20), default="telegram")  # whatsapp | telegram
@@ -45,6 +46,7 @@ class Tenant(Base):
     max_locations_per_search: Mapped[int] = mapped_column(default=5)
     feature_aged_listings: Mapped[bool] = mapped_column(default=False)
     addon_aged_max_months: Mapped[int] = mapped_column(default=12) # Max historical lookback limit in months (1-24)
+    aged_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     addon_saved_searches: Mapped[int] = mapped_column(default=0) # Extra search slots purchased by agent
     addon_saved_searches_price: Mapped[float] = mapped_column(default=0.0) # Monthly price for search top-up add-on
 
@@ -57,6 +59,7 @@ class Tenant(Base):
     # 💼 Telegram Mini App & Real Estate CRM Add-on
     feature_crm: Mapped[bool] = mapped_column(default=False)
     addon_crm_price: Mapped[float] = mapped_column(default=0.0)
+    crm_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # 🎁 Referral System & Promo Code Reward Options
     referral_code: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True)

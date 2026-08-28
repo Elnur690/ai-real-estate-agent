@@ -47,6 +47,7 @@ class UpdateTenantRequest(BaseModel):
     plan: Optional[str] = None
     plan_period: Optional[str] = None
     preferred_channel: Optional[str] = None
+    preferred_billing_day: Optional[int] = None
     whatsapp_number: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     backup_enabled: Optional[bool] = None
@@ -78,6 +79,7 @@ class TenantResponse(BaseModel):
     plan_period: str
     plan_started_at: Optional[datetime] = None
     plan_expires_at: Optional[datetime] = None
+    preferred_billing_day: Optional[int] = 1
     status: str
     preferred_channel: str
     whatsapp_number: Optional[str] = None
@@ -94,6 +96,7 @@ class TenantResponse(BaseModel):
     max_locations_per_search: int = 5
     feature_aged_listings: bool = False
     addon_aged_max_months: int = 12
+    aged_expires_at: Optional[datetime] = None
     addon_saved_searches: int = 0
     feature_watermark_free_images: bool = False
     addon_image_requests_limit: int = 0
@@ -101,6 +104,7 @@ class TenantResponse(BaseModel):
     addon_image_requests_price: float = 0.0
     feature_crm: bool = False
     addon_crm_price: float = 0.0
+    crm_expires_at: Optional[datetime] = None
     active_searches_count: int = 0
     max_saved_searches: int = 10
     referral_code: Optional[str] = None

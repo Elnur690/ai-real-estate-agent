@@ -57,6 +57,12 @@ export function PlansView() {
   const [editingAddon, setEditingAddon] = useState<any | null>(null);
   const [addonPriceInput, setAddonPriceInput] = useState<number>(15);
   const [addonTiersInput, setAddonTiersInput] = useState<any[]>([]);
+  const [addonSaleEnabled, setAddonSaleEnabled] = useState(false);
+  const [addonSalePrice, setAddonSalePrice] = useState<number | undefined>(undefined);
+  const [addonSaleDiscountPercent, setAddonSaleDiscountPercent] = useState<number | undefined>(undefined);
+  const [addonSaleType, setAddonSaleType] = useState<string>('permanent');
+  const [addonSaleExpiresAt, setAddonSaleExpiresAt] = useState<string>('');
+  const [addonSaleBadgeLabel, setAddonSaleBadgeLabel] = useState<string>('');
   const [savingAddon, setSavingAddon] = useState(false);
 
   // Form State
@@ -404,6 +410,12 @@ export function PlansView() {
     setEditingAddon(addon);
     setAddonPriceInput(addon.default_price || 15);
     setAddonTiersInput(addon.tiers || []);
+    setAddonSaleEnabled(addon.sale_enabled ?? false);
+    setAddonSalePrice(addon.sale_price);
+    setAddonSaleDiscountPercent(addon.sale_discount_percent ?? 20);
+    setAddonSaleType(addon.sale_type || 'permanent');
+    setAddonSaleExpiresAt(addon.sale_expires_at ? addon.sale_expires_at.split('T')[0] : '');
+    setAddonSaleBadgeLabel(addon.sale_badge_label || `🔥 ${addon.sale_discount_percent || 20}% Xüsusi Təklif`);
   };
 
   const handleSaveAddon = async (e: React.FormEvent) => {
@@ -413,12 +425,18 @@ export function PlansView() {
     try {
       await api.put(`/plans/addons/${editingAddon.key}`, {
         price: addonPriceInput,
-        tiers: addonTiersInput
+        tiers: addonTiersInput,
+        sale_enabled: addonSaleEnabled,
+        sale_price: addonSaleEnabled ? addonSalePrice : undefined,
+        sale_discount_percent: addonSaleEnabled ? addonSaleDiscountPercent : undefined,
+        sale_type: addonSaleType,
+        sale_expires_at: addonSaleExpiresAt ? new Date(addonSaleExpiresAt).toISOString() : undefined,
+        sale_badge_label: addonSaleBadgeLabel || undefined
       });
       setEditingAddon(null);
       fetchAddons();
       fetchPlans();
-      alert(`"${editingAddon.name}" üçün qiymətlər uğurla yeniləndi!`);
+      alert(`"${editingAddon.name}" üçün qiymətlər və kampaniya uğurla yeniləndi!`);
     } catch (err: any) {
       alert(err.response?.data?.detail || 'Addon qiymətlərini yeniləyərkən xəta baş verdi');
     } finally {
@@ -914,6 +932,72 @@ export function PlansView() {
                   </div>
                 </div>
               )}
+
+              {/* Promotional Sale & Discount Campaign for Add-on */}
+              <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={addonSaleEnabled}
+                      onChange={(e) => setAddonSaleEnabled(e.target.checked)}
+                      className="rounded accent-rose-500 w-4 h-4"
+                    />
+                    <span className="font-bold text-rose-300 text-xs flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Xüsusi Endirim / Kampaniya Aktivləşdir</span>
+                    </span>
+                  </label>
+                </div>
+
+                {addonSaleEnabled && (
+                  <div className="space-y-2.5 pt-2 border-t border-rose-500/20 text-xs">
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="text-slate-300 text-[11px] block mb-1">Endirim Faizi (%)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="99"
+                          value={addonSaleDiscountPercent || ''}
+                          onChange={(e) => {
+                            const pct = Number(e.target.value);
+                            setAddonSaleDiscountPercent(pct);
+                            if (pct > 0 && addonPriceInput > 0) {
+                              setAddonSalePrice(Number((addonPriceInput * (1 - pct / 100)).toFixed(2)));
+                            }
+                          }}
+                          placeholder="20"
+                          className="w-full bg-dark-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white text-xs font-bold"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-slate-300 text-[11px] block mb-1">Endirimli Satış Qiyməti (AZN)</label>
+                        <input
+                          type="number"
+                          step="0.5"
+                          value={addonSalePrice || ''}
+                          onChange={(e) => setAddonSalePrice(Number(e.target.value))}
+                          placeholder="12.0"
+                          className="w-full bg-dark-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-rose-300 text-xs font-bold font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-slate-300 text-[11px] block mb-1">Kampaniya Etiketi (Badge Label)</label>
+                      <input
+                        type="text"
+                        value={addonSaleBadgeLabel}
+                        onChange={(e) => setAddonSaleBadgeLabel(e.target.value)}
+                        placeholder="🔥 20% Xüsusi Endirim"
+                        className="w-full bg-dark-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white text-xs"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
 
               <div className="pt-4 border-t border-slate-800 flex items-center justify-end gap-3">
                 <button

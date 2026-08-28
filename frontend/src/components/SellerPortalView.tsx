@@ -78,6 +78,7 @@ export interface SellerAgent {
   backup_enabled?: boolean;
   feature_aged_listings?: boolean;
   addon_aged_max_months?: number;
+  aged_expires_at?: string;
   addon_saved_searches?: number;
   addon_saved_searches_price?: number;
   feature_watermark_free_images?: boolean;
@@ -85,6 +86,8 @@ export interface SellerAgent {
   addon_image_requests_used?: number;
   addon_image_requests_price?: number;
   feature_crm?: boolean;
+  crm_expires_at?: string;
+  preferred_billing_day?: number;
   seller_package_id?: number;
   package_data?: any;
   saved_searches_count?: number;
@@ -279,12 +282,14 @@ export function SellerPortalView() {
   const [submittingPkg, setSubmittingPkg] = useState(false);
 
   // Agent Registration Addon Selections
+  const [agentBillingDay, setAgentBillingDay] = useState<number>(1);
   const [agentSelectedAgedMonths, setAgentSelectedAgedMonths] = useState<number>(0);
   const [agentSelectedAgedPrice, setAgentSelectedAgedPrice] = useState<number>(0);
   const [agentSelectedExtraSearches, setAgentSelectedExtraSearches] = useState<number>(0);
   const [agentSelectedExtraSearchesPrice, setAgentSelectedExtraSearchesPrice] = useState<number>(0);
   const [agentSelectedImageRequests, setAgentSelectedImageRequests] = useState<number>(0);
   const [agentSelectedImagePrice, setAgentSelectedImagePrice] = useState<number>(0);
+  const [agentSelectedCrmMonths, setAgentSelectedCrmMonths] = useState<number>(1);
 
   // Agent Detail & Management Modal State
   const [isAgentDetailOpen, setIsAgentDetailOpen] = useState(false);
@@ -298,6 +303,7 @@ export function SellerPortalView() {
   const [editAgentTg, setEditAgentTg] = useState('');
   const [editAgentWa, setEditAgentWa] = useState('');
   const [editAgentChannel, setEditAgentChannel] = useState('telegram');
+  const [editAgentBillingDay, setEditAgentBillingDay] = useState<number>(1);
   const [editAgentStatus, setEditAgentStatus] = useState('active');
   const [editAgentMakler, setEditAgentMakler] = useState(true);
   const [editAgentAvm, setEditAgentAvm] = useState(true);
@@ -319,6 +325,7 @@ export function SellerPortalView() {
 
   // Renew Agent State
   const [renewPkgId, setRenewPkgId] = useState<number>(0);
+  const [renewBillingDay, setRenewBillingDay] = useState<number>(1);
   const [renewAgedMonths, setRenewAgedMonths] = useState<number>(0);
   const [renewAgedPrice, setRenewAgedPrice] = useState<number>(0);
   const [renewExtraSearches, setRenewExtraSearches] = useState<number>(0);
@@ -326,6 +333,7 @@ export function SellerPortalView() {
   const [renewImageRequests, setRenewImageRequests] = useState<number>(0);
   const [renewImagePrice, setRenewImagePrice] = useState<number>(0);
   const [renewCrm, setRenewCrm] = useState<boolean>(false);
+  const [renewCrmMonths, setRenewCrmMonths] = useState<number>(1);
   const [renewCrmPrice, setRenewCrmPrice] = useState<number>(0);
   const [renewingAgent, setRenewingAgent] = useState(false);
   const [renewError, setRenewError] = useState<string | null>(null);
@@ -618,6 +626,7 @@ export function SellerPortalView() {
         telegram_handle: agentTg || undefined,
         whatsapp_number: agentWhatsapp || undefined,
         preferred_channel: agentChannel,
+        preferred_billing_day: agentBillingDay,
         feature_crm: agentCrm,
         package_id: isTrial ? undefined : agentPkgId,
         is_trial: isTrial,
@@ -627,6 +636,8 @@ export function SellerPortalView() {
         selected_extra_searches_price: agentSelectedExtraSearchesPrice > 0 ? agentSelectedExtraSearchesPrice : undefined,
         selected_image_requests: agentSelectedImageRequests > 0 ? agentSelectedImageRequests : undefined,
         selected_image_price: agentSelectedImagePrice > 0 ? agentSelectedImagePrice : undefined,
+        selected_crm_enabled: agentCrm,
+        selected_crm_months: agentSelectedCrmMonths,
         selected_crm_price: (agentCrm && !isTrial) ? (packages.find(p => p.id === agentPkgId)?.addon_crm_price || 15) : 0
       });
       setIsAddAgentOpen(false);
@@ -636,12 +647,14 @@ export function SellerPortalView() {
       setAgentWhatsapp('');
       setAgentCrm(false);
       setAgentPkgId(undefined);
+      setAgentBillingDay(1);
       setAgentSelectedAgedMonths(0);
       setAgentSelectedAgedPrice(0);
       setAgentSelectedExtraSearches(0);
       setAgentSelectedExtraSearchesPrice(0);
       setAgentSelectedImageRequests(0);
       setAgentSelectedImagePrice(0);
+      setAgentSelectedCrmMonths(1);
       reloadAll();
     } catch (err: any) {
       setAgentError(err.response?.data?.detail || 'Xəta baş verdi');
@@ -665,6 +678,7 @@ export function SellerPortalView() {
     setEditAgentTg(agent.telegram_handle || '');
     setEditAgentWa(agent.whatsapp_number || '');
     setEditAgentChannel(agent.preferred_channel || 'telegram');
+    setEditAgentBillingDay(agent.preferred_billing_day || 1);
     setEditAgentStatus(agent.status || 'active');
     setEditAgentMakler(agent.feature_makler_detector ?? true);
     setEditAgentAvm(agent.feature_avm_bargain_finder ?? true);
@@ -684,12 +698,16 @@ export function SellerPortalView() {
     // Initialize renew fields (0 means keep current/transferred plan)
     const defaultPkgId = agent.seller_package_id || 0;
     setRenewPkgId(defaultPkgId);
+    setRenewBillingDay(agent.preferred_billing_day || 1);
     setRenewAgedMonths(0);
     setRenewAgedPrice(0);
     setRenewExtraSearches(0);
     setRenewExtraSearchesPrice(0);
     setRenewImageRequests(0);
     setRenewImagePrice(0);
+    setRenewCrm(agent.feature_crm ?? false);
+    setRenewCrmMonths(1);
+    setRenewCrmPrice(agent.feature_crm ? 15.0 : 0);
 
     // Fetch fresh details with counts & QR URLs
     setLoadingAgentDetail(true);
@@ -702,6 +720,7 @@ export function SellerPortalView() {
         setEditAgentTg(res.data.telegram_handle || '');
         setEditAgentWa(res.data.whatsapp_number || '');
         setEditAgentChannel(res.data.preferred_channel || 'telegram');
+        setEditAgentBillingDay(res.data.preferred_billing_day || 1);
         setEditAgentStatus(res.data.status || 'active');
         setEditAgentMakler(res.data.feature_makler_detector ?? true);
         setEditAgentAvm(res.data.feature_avm_bargain_finder ?? true);
@@ -717,6 +736,7 @@ export function SellerPortalView() {
         setEditAgentImageLimit(res.data.addon_image_requests_limit || 0);
         setEditAgentImageUsed(res.data.addon_image_requests_used || 0);
         setEditAgentCrm(res.data.feature_crm ?? false);
+        setRenewBillingDay(res.data.preferred_billing_day || 1);
         if (res.data.seller_package_id) {
           setRenewPkgId(res.data.seller_package_id);
         } else {
@@ -744,6 +764,7 @@ export function SellerPortalView() {
         telegram_handle: editAgentTg || undefined,
         whatsapp_number: editAgentWa || undefined,
         preferred_channel: editAgentChannel,
+        preferred_billing_day: editAgentBillingDay,
         status: editAgentStatus,
         feature_makler_detector: editAgentMakler,
         feature_avm_bargain_finder: editAgentAvm,
@@ -785,6 +806,7 @@ export function SellerPortalView() {
       const res = await api.post(`/sellers/me/agents/${selectedAgent.id}/renew`, {
         package_id: isCustomPlan ? undefined : renewPkgId,
         custom_price: isCustomPlan ? (selectedAgent.plan_price || 50.0) : undefined,
+        preferred_billing_day: renewBillingDay,
         selected_aged_months: renewAgedMonths > 0 ? renewAgedMonths : undefined,
         selected_aged_price: renewAgedPrice > 0 ? renewAgedPrice : undefined,
         selected_extra_searches: renewExtraSearches > 0 ? renewExtraSearches : undefined,
@@ -792,6 +814,7 @@ export function SellerPortalView() {
         selected_image_requests: renewImageRequests > 0 ? renewImageRequests : undefined,
         selected_image_price: renewImagePrice > 0 ? renewImagePrice : undefined,
         selected_crm_enabled: renewCrm,
+        selected_crm_months: renewCrmMonths,
         selected_crm_price: renewCrm ? renewCrmPrice : 0
       });
 
@@ -1276,6 +1299,11 @@ export function SellerPortalView() {
                             )}
                           </div>
                           <div className="flex flex-wrap gap-1 mt-0.5">
+                            {a.feature_crm && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 font-semibold">
+                                💼 CRM {a.crm_expires_at ? `(${new Date(a.crm_expires_at).toLocaleDateString('az-AZ')})` : ''}
+                              </span>
+                            )}
                             {a.feature_aged_listings && (
                               <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
                                 📦 Arxiv ({a.addon_aged_max_months || 12}ay)
@@ -1310,12 +1338,17 @@ export function SellerPortalView() {
                               <div className={isExp ? 'text-rose-400 font-semibold' : 'text-slate-300'}>
                                 {new Date(a.plan_expires_at).toLocaleDateString('az-AZ')}
                               </div>
-                              <div className="text-[10px] text-slate-500">
-                                {isExp ? 'Müddət bitib' : 'Aktiv abunə'}
+                              <div className="text-[10px] text-indigo-400 font-medium mt-0.5">
+                                🗓️ Ödəniş: Hər ayın {a.preferred_billing_day || 1}-i
                               </div>
                             </div>
                           ) : (
-                            <span className="text-slate-500">Limitsiz</span>
+                            <div>
+                              <span className="text-slate-500">Limitsiz</span>
+                              <div className="text-[10px] text-indigo-400 font-medium">
+                                🗓️ Ödəniş: Hər ayın {a.preferred_billing_day || 1}-i
+                              </div>
+                            </div>
                           )}
                         </td>
                         <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
@@ -2497,18 +2530,38 @@ export function SellerPortalView() {
                     <span className="capitalize font-bold text-blue-400">{selectedAgent.preferred_channel}</span>
                   </div>
                   <div className="flex justify-between py-1 border-b border-slate-800/60">
+                    <span className="text-slate-400">🗓️ Aylıq Ödəniş Günü:</span>
+                    <span className="font-bold text-indigo-400">Hər ayın {selectedAgent.preferred_billing_day || 1}-i</span>
+                  </div>
+                  <div className="flex justify-between py-1 border-b border-slate-800/60">
                     <span className="text-slate-400">Qeydiyyat Tarixi:</span>
                     <span className="text-slate-300">
                       {new Date(selectedAgent.created_at).toLocaleDateString('az-AZ')}
                     </span>
                   </div>
-                  <div className="flex justify-between py-1">
-                    <span className="text-slate-400">Abunə Bitmə Tarixi:</span>
+                  <div className="flex justify-between py-1 border-b border-slate-800/60">
+                    <span className="text-slate-400">Plan Bitmə Tarixi:</span>
                     <span className={selectedAgent.is_expired ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>
                       {selectedAgent.plan_expires_at ? new Date(selectedAgent.plan_expires_at).toLocaleDateString('az-AZ') : 'Limitsiz'}
                       {selectedAgent.is_expired && ' (Müddəti bitib)'}
                     </span>
                   </div>
+                  {selectedAgent.feature_crm && (
+                    <div className="flex justify-between py-1 border-b border-slate-800/60 text-indigo-300">
+                      <span>💼 CRM Add-on Bitmə Tarixi:</span>
+                      <span className="font-bold">
+                        {selectedAgent.crm_expires_at ? new Date(selectedAgent.crm_expires_at).toLocaleDateString('az-AZ') : 'Aktiv'}
+                      </span>
+                    </div>
+                  )}
+                  {selectedAgent.feature_aged_listings && (
+                    <div className="flex justify-between py-1 text-amber-300">
+                      <span>📦 Arxiv Add-on Bitmə Tarixi:</span>
+                      <span className="font-bold">
+                        {selectedAgent.aged_expires_at ? new Date(selectedAgent.aged_expires_at).toLocaleDateString('az-AZ') : 'Aktiv'}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Enabled Features List */}
@@ -2664,22 +2717,41 @@ export function SellerPortalView() {
                   </div>
                 )}
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Yenilənəcək Paket *</label>
-                  <select
-                    value={renewPkgId}
-                    onChange={(e) => setRenewPkgId(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-emerald-500"
-                  >
-                    <option value={0}>
-                      ✨ Cari Planı Qoru: {selectedAgent.plan} ({(selectedAgent.plan_price ?? 50).toFixed(2)} AZN / 30 Gün) — Bütün funksiyalar saxlanılır
-                    </option>
-                    {packages.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        💳 {p.name} ({p.price} AZN / {p.duration_days || 30} Gün)
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Yenilənəcək Paket *</label>
+                    <select
+                      value={renewPkgId}
+                      onChange={(e) => setRenewPkgId(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
+                    >
+                      <option value={0}>
+                        ✨ Cari Planı Qoru: {selectedAgent.plan} ({(selectedAgent.plan_price ?? 50).toFixed(2)} AZN)
                       </option>
-                    ))}
-                  </select>
+                      {packages.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          💳 {p.name} ({p.price} AZN / {p.duration_days || 30} Gün)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="block text-xs font-semibold text-indigo-300 mb-1">🗓️ Aylıq Ödəniş Günü</label>
+                    <select
+                      value={renewBillingDay}
+                      onChange={(e) => setRenewBillingDay(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value={1}>Hər ayın 1-i (Standart)</option>
+                      <option value={5}>Hər ayın 5-i</option>
+                      <option value={10}>Hər ayın 10-u</option>
+                      <option value={15}>Hər ayın 15-i</option>
+                      <option value={20}>Hər ayın 20-si</option>
+                      <option value={25}>Hər ayın 25-i</option>
+                      <option value={28}>Hər ayın 28-i</option>
+                    </select>
+                  </div>
                 </div>
 
                 {/* Addon Tier Selectors for Renewal */}
@@ -2691,7 +2763,17 @@ export function SellerPortalView() {
                   const hasImageTiers = currentPkg && currentPkg.feature_watermark_free_images && currentPkg.addon_image_tiers && currentPkg.addon_image_tiers.length > 0;
 
                   const basePrice = isCustomPlan ? (selectedAgent.plan_price ?? 50.0) : (currentPkg?.price ?? 0);
-                  const crmPriceVal = renewCrm ? (currentPkg?.addon_crm_price ?? 15.0) : 0;
+                  
+                  // CRM Price Calculation based on selected months
+                  let crmPriceVal = 0;
+                  if (renewCrm) {
+                    if (renewCrmMonths === 1) crmPriceVal = currentPkg?.addon_crm_price ?? 15.0;
+                    else if (renewCrmMonths === 3) crmPriceVal = 35.0;
+                    else if (renewCrmMonths === 6) crmPriceVal = 65.0;
+                    else if (renewCrmMonths === 12) crmPriceVal = 110.0;
+                    else crmPriceVal = (currentPkg?.addon_crm_price ?? 15.0) * renewCrmMonths;
+                  }
+
                   const totalGross = basePrice + renewAgedPrice + renewExtraSearchesPrice + renewImagePrice + crmPriceVal;
                   const commRate = dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70;
                   const sellerProfit = (totalGross * commRate) / 100;
@@ -2717,7 +2799,7 @@ export function SellerPortalView() {
                               } else {
                                 const tier = currentPkg?.addon_aged_tiers?.find(t => t.months === val);
                                 setRenewAgedMonths(val);
-                                setRenewAgedPrice(tier?.price ?? 0);
+                                setRenewAgedPrice(tier?.price ?? (val * 10));
                               }
                             }}
                             className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-amber-500"
@@ -2788,9 +2870,9 @@ export function SellerPortalView() {
                         </div>
                       )}
 
-                      {/* Telegram Mini App & CRM Add-on Selector */}
-                      <div>
-                        <label className="flex items-center justify-between p-2.5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl cursor-pointer">
+                      {/* Telegram Mini App & CRM Add-on Selector with Multi-month Duration */}
+                      <div className="p-3 bg-indigo-500/10 border border-indigo-500/30 rounded-xl space-y-2.5">
+                        <label className="flex items-center justify-between cursor-pointer">
                           <div className="flex items-center gap-2.5">
                             <input
                               type="checkbox"
@@ -2812,9 +2894,34 @@ export function SellerPortalView() {
                             </div>
                           </div>
                           <span className="text-[11px] text-indigo-400 font-mono font-semibold">
-                            +{(currentPkg?.addon_crm_price ?? 15.0)} AZN
+                            +{crmPriceVal.toFixed(2)} AZN
                           </span>
                         </label>
+
+                        {renewCrm && (
+                          <div className="pt-2 border-t border-indigo-500/20 flex items-center justify-between text-xs">
+                            <span className="text-slate-300">CRM Müddəti:</span>
+                            <select
+                              value={renewCrmMonths}
+                              onChange={(e) => {
+                                const m = Number(e.target.value);
+                                setRenewCrmMonths(m);
+                                let p = 15.0;
+                                if (m === 1) p = currentPkg?.addon_crm_price ?? 15.0;
+                                else if (m === 3) p = 35.0;
+                                else if (m === 6) p = 65.0;
+                                else if (m === 12) p = 110.0;
+                                setRenewCrmPrice(p);
+                              }}
+                              className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-white text-xs font-bold"
+                            >
+                              <option value={1}>1 Ay — +{(currentPkg?.addon_crm_price ?? 15.0)} AZN</option>
+                              <option value={3}>3 Ay — +35.00 AZN (🔥 Endirimlə)</option>
+                              <option value={6}>6 Ay — +65.00 AZN (🔥 Endirimlə)</option>
+                              <option value={12}>12 Ay (1 İl) — +110.00 AZN (🔥 Xüsusi Təklif)</option>
+                            </select>
+                          </div>
+                        )}
                       </div>
 
                       {/* Renewal Price Summary */}
@@ -2843,8 +2950,8 @@ export function SellerPortalView() {
                         )}
                         {renewCrm && (
                           <div className="flex justify-between text-xs text-indigo-300">
-                            <span>💼 Telegram CRM:</span>
-                            <span>+{(currentPkg?.addon_crm_price ?? 15.0).toFixed(2)} AZN</span>
+                            <span>💼 Telegram CRM ({renewCrmMonths} ay):</span>
+                            <span>+{crmPriceVal.toFixed(2)} AZN</span>
                           </div>
                         )}
                         <div className="border-t border-emerald-500/30 pt-1.5 flex justify-between text-sm font-bold">
@@ -2921,6 +3028,22 @@ export function SellerPortalView() {
                       <option value="active">Aktiv</option>
                       <option value="suspended">Dayandır</option>
                       <option value="expired">Bitib</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-indigo-300 mb-1">🗓️ Aylıq Ödəniş Günü</label>
+                    <select
+                      value={editAgentBillingDay}
+                      onChange={(e) => setEditAgentBillingDay(Number(e.target.value))}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value={1}>Hər ayın 1-i (Standart)</option>
+                      <option value={5}>Hər ayın 5-i</option>
+                      <option value={10}>Hər ayın 10-u</option>
+                      <option value={15}>Hər ayın 15-i</option>
+                      <option value={20}>Hər ayın 20-si</option>
+                      <option value={25}>Hər ayın 25-i</option>
+                      <option value={28}>Hər ayın 28-i</option>
                     </select>
                   </div>
                 </div>
@@ -3326,9 +3449,26 @@ export function SellerPortalView() {
                   />
                 </div>
 
+                <div>
+                  <label className="block text-xs font-semibold text-indigo-300 mb-1">🗓️ Aylıq Ödəniş Günü</label>
+                  <select
+                    value={agentBillingDay}
+                    onChange={(e) => setAgentBillingDay(Number(e.target.value))}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value={1}>Hər ayın 1-i (Standart)</option>
+                    <option value={5}>Hər ayın 5-i</option>
+                    <option value={10}>Hər ayın 10-u</option>
+                    <option value={15}>Hər ayın 15-i</option>
+                    <option value={20}>Hər ayın 20-si</option>
+                    <option value={25}>Hər ayın 25-i</option>
+                    <option value={28}>Hər ayın 28-i</option>
+                  </select>
+                </div>
+
                 {/* CRM Mini App Addon */}
-                <div className="pt-1">
-                  <label className="flex items-center gap-2.5 p-2.5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl cursor-pointer">
+                <div className="pt-1 p-2.5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl space-y-2">
+                  <label className="flex items-center gap-2.5 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={agentCrm}
@@ -3340,6 +3480,22 @@ export function SellerPortalView() {
                       <div className="text-[10px] text-slate-400">Agent üçün /crm əmri və TMA müştəri boru kəmərini aktivləşdirir</div>
                     </div>
                   </label>
+
+                  {agentCrm && (
+                    <div className="pt-2 border-t border-indigo-500/20 flex items-center justify-between text-xs">
+                      <span className="text-slate-300 text-xs">CRM Müddəti:</span>
+                      <select
+                        value={agentSelectedCrmMonths}
+                        onChange={(e) => setAgentSelectedCrmMonths(Number(e.target.value))}
+                        className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-white text-xs font-bold"
+                      >
+                        <option value={1}>1 Ay — +15.00 AZN</option>
+                        <option value={3}>3 Ay — +35.00 AZN (🔥 Endirimlə)</option>
+                        <option value={6}>6 Ay — +65.00 AZN (🔥 Endirimlə)</option>
+                        <option value={12}>12 Ay (1 İl) — +110.00 AZN (🔥 Xüsusi Təklif)</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
 
                 <div>

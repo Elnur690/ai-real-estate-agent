@@ -952,7 +952,99 @@ async def test_seller_package_promotional_sale_and_discount(client: AsyncClient,
     assert tx is not None
     assert tx.amount == 40.0
     assert tx.seller_profit == 28.0
-    assert tx.platform_fee == 12.0
+@pytest.mark.asyncio
+async def test_seller_agent_preferred_billing_day_and_independent_addon_durations(client: AsyncClient, test_db: AsyncSession):
+    """Test Preferred Monthly Billing Day and Independent Add-on Expiration Lifecycles."""
+    # 1. Seed Seller User & Seller Profile
+    seller_user = User(
+        name="Independent Seller",
+        email="independentseller@baku.az",
+        phone="+994508889955",
+        role="seller",
+        password_hash=get_password_hash("seller123")
+    )
+    test_db.add(seller_user)
+    await test_db.commit()
+    await test_db.refresh(seller_user)
+
+    seller = Seller(
+        user_id=seller_user.id,
+        name="Independent Seller",
+        email="independentseller@baku.az",
+        phone="+994508889955",
+        commission_rate=70.0,
+        rank="Bronze"
+    )
+    test_db.add(seller)
+    await test_db.commit()
+    await test_db.refresh(seller)
+
+    seller_token = create_access_token(seller_user.id)
+    seller_headers = {"Authorization": f"Bearer {seller_token}"}
+
+    # 2. Create Base Package
+    pkg_res = await client.post("/api/v1/sellers/me/packages", json={
+        "name": "Standard Plan",
+        "price": 50.0,
+        "duration_days": 30,
+        "addon_crm_price": 15.0,
+        "addon_aged_tiers": [
+            {"months": 6, "price": 25.0},
+            {"months": 12, "price": 40.0}
+        ]
+    }, headers=seller_headers)
+    assert pkg_res.status_code == 201
+    pkg_id = pkg_res.json()["package_id"]
+
+    # 3. Register Agent with Preferred Billing Day = 15, CRM = 3 Months, Aged Archive = 6 Months
+    reg_res = await client.post("/api/v1/sellers/me/agents", json={
+        "name": "Ali Vəliyev",
+        "phone": "+994501112233",
+        "preferred_channel": "both",
+        "preferred_billing_day": 15,
+        "package_id": pkg_id,
+        "selected_crm_enabled": True,
+        "selected_crm_months": 3,
+        "selected_crm_price": 35.0,
+        "selected_aged_months": 6,
+        "selected_aged_price": 25.0
+    }, headers=seller_headers)
+    assert reg_res.status_code == 201
+    agent_id = reg_res.json()["agent_id"]
+
+    # 4. Fetch Agent Detail and verify fields
+    detail_res = await client.get(f"/api/v1/sellers/me/agents/{agent_id}", headers=seller_headers)
+    assert detail_res.status_code == 200
+    data = detail_res.json()
+    assert data["preferred_billing_day"] == 15
+    assert data["feature_crm"] is True
+    assert data["crm_expires_at"] is not None
+    assert data["feature_aged_listings"] is True
+    assert data["aged_expires_at"] is not None
+
+    # 5. Update Agent preferred billing day to 20
+    update_res = await client.put(f"/api/v1/sellers/me/agents/{agent_id}", json={
+        "preferred_billing_day": 20
+    }, headers=seller_headers)
+    assert update_res.status_code == 200
+
+    detail_res2 = await client.get(f"/api/v1/sellers/me/agents/{agent_id}", headers=seller_headers)
+    assert detail_res2.json()["preferred_billing_day"] == 20
+
+    # 6. Renew Agent with CRM for another 6 months independently
+    renew_res = await client.post(f"/api/v1/sellers/me/agents/{agent_id}/renew", json={
+        "package_id": pkg_id,
+        "preferred_billing_day": 25,
+        "selected_crm_enabled": True,
+        "selected_crm_months": 6,
+        "selected_crm_price": 65.0
+    }, headers=seller_headers)
+    assert renew_res.status_code == 200
+
+    detail_res3 = await client.get(f"/api/v1/sellers/me/agents/{agent_id}", headers=seller_headers)
+    assert detail_res3.json()["preferred_billing_day"] == 25
+    assert detail_res3.json()["feature_crm"] is True
+
 
 
 

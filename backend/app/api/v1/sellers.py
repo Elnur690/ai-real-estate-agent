@@ -130,6 +130,7 @@ class RegisterSellerAgentRequest(BaseModel):
     preferred_channel: str = "telegram"
     package_id: Optional[int] = None
     is_trial: bool = False
+    preferred_billing_day: Optional[int] = 1
     selected_aged_months: Optional[int] = None
     selected_aged_price: Optional[float] = None
     selected_extra_searches: Optional[int] = None
@@ -137,6 +138,7 @@ class RegisterSellerAgentRequest(BaseModel):
     selected_image_requests: Optional[int] = None
     selected_image_price: Optional[float] = None
     selected_crm_enabled: Optional[bool] = None
+    selected_crm_months: Optional[int] = None
     selected_crm_price: Optional[float] = None
 
 class UpdateSellerAgentRequest(BaseModel):
@@ -145,6 +147,7 @@ class UpdateSellerAgentRequest(BaseModel):
     telegram_handle: Optional[str] = None
     whatsapp_number: Optional[str] = None
     preferred_channel: Optional[str] = None
+    preferred_billing_day: Optional[int] = None
     status: Optional[str] = None
     feature_makler_detector: Optional[bool] = None
     feature_avm_bargain_finder: Optional[bool] = None
@@ -165,6 +168,7 @@ class UpdateSellerAgentRequest(BaseModel):
 class RenewSellerAgentRequest(BaseModel):
     package_id: Optional[int] = None
     custom_price: Optional[float] = None
+    preferred_billing_day: Optional[int] = None
     selected_aged_months: Optional[int] = None
     selected_aged_price: Optional[float] = None
     selected_extra_searches: Optional[int] = None
@@ -172,6 +176,7 @@ class RenewSellerAgentRequest(BaseModel):
     selected_image_requests: Optional[int] = None
     selected_image_price: Optional[float] = None
     selected_crm_enabled: Optional[bool] = None
+    selected_crm_months: Optional[int] = None
     selected_crm_price: Optional[float] = None
 
 class UpdateFreeTrialSettingsRequest(BaseModel):
@@ -594,6 +599,14 @@ def _is_expired(expires_at: Optional[datetime]) -> bool:
     return expires_at < datetime.now(timezone.utc)
 
 
+def _normalize_dt(dt: Optional[datetime]) -> Optional[datetime]:
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 @router.get("/me/agents")
 async def get_my_agents(
     db: AsyncSession = Depends(get_db),
@@ -675,6 +688,7 @@ async def get_my_agents(
             "is_expired": is_expired,
             "plan_started_at": a.plan_started_at.isoformat() if a.plan_started_at else None,
             "plan_expires_at": a.plan_expires_at.isoformat() if a.plan_expires_at else None,
+            "preferred_billing_day": getattr(a, 'preferred_billing_day', 1) or 1,
             "feature_makler_detector": a.feature_makler_detector,
             "feature_avm_bargain_finder": a.feature_avm_bargain_finder,
             "feature_social_brochure": a.feature_social_brochure,
@@ -684,12 +698,15 @@ async def get_my_agents(
             "backup_enabled": a.backup_enabled,
             "feature_aged_listings": a.feature_aged_listings,
             "addon_aged_max_months": a.addon_aged_max_months,
+            "aged_expires_at": a.aged_expires_at.isoformat() if getattr(a, 'aged_expires_at', None) else None,
             "addon_saved_searches": a.addon_saved_searches,
             "addon_saved_searches_price": a.addon_saved_searches_price,
             "feature_watermark_free_images": getattr(a, 'feature_watermark_free_images', False),
             "addon_image_requests_limit": getattr(a, 'addon_image_requests_limit', 0),
             "addon_image_requests_used": getattr(a, 'addon_image_requests_used', 0),
             "addon_image_requests_price": getattr(a, 'addon_image_requests_price', 0.0),
+            "feature_crm": getattr(a, 'feature_crm', False),
+            "crm_expires_at": a.crm_expires_at.isoformat() if getattr(a, 'crm_expires_at', None) else None,
             "seller_package_id": a.seller_package_id,
             "created_at": a.created_at.isoformat() if a.created_at else None,
             "telegram_bot_url": tg_url,
@@ -792,6 +809,7 @@ async def get_my_agent_detail(
         "is_expired": is_expired,
         "plan_started_at": agent.plan_started_at.isoformat() if agent.plan_started_at else None,
         "plan_expires_at": agent.plan_expires_at.isoformat() if agent.plan_expires_at else None,
+        "preferred_billing_day": getattr(agent, 'preferred_billing_day', 1) or 1,
         "feature_makler_detector": agent.feature_makler_detector,
         "feature_avm_bargain_finder": agent.feature_avm_bargain_finder,
         "feature_social_brochure": agent.feature_social_brochure,
@@ -801,6 +819,7 @@ async def get_my_agent_detail(
         "backup_enabled": agent.backup_enabled,
         "feature_aged_listings": agent.feature_aged_listings,
         "addon_aged_max_months": agent.addon_aged_max_months,
+        "aged_expires_at": agent.aged_expires_at.isoformat() if getattr(agent, 'aged_expires_at', None) else None,
         "addon_saved_searches": agent.addon_saved_searches,
         "addon_saved_searches_price": agent.addon_saved_searches_price,
         "feature_watermark_free_images": getattr(agent, 'feature_watermark_free_images', False),
@@ -808,6 +827,7 @@ async def get_my_agent_detail(
         "addon_image_requests_used": getattr(agent, 'addon_image_requests_used', 0),
         "addon_image_requests_price": getattr(agent, 'addon_image_requests_price', 0.0),
         "feature_crm": getattr(agent, 'feature_crm', False),
+        "crm_expires_at": agent.crm_expires_at.isoformat() if getattr(agent, 'crm_expires_at', None) else None,
         "seller_package_id": agent.seller_package_id,
         "package_data": pkg_data,
         "saved_searches_count": saved_searches_count,
@@ -872,6 +892,8 @@ async def update_my_agent(
         agent.whatsapp_number = body.whatsapp_number.strip() or None
     if body.preferred_channel is not None:
         agent.preferred_channel = body.preferred_channel
+    if body.preferred_billing_day is not None:
+        agent.preferred_billing_day = max(1, min(28, int(body.preferred_billing_day)))
     if body.status is not None:
         agent.status = body.status
     if body.feature_makler_detector is not None:
@@ -992,17 +1014,38 @@ async def renew_my_agent(
         agent.addon_image_requests_price = addon_images_price
         agent.addon_image_requests_used = 0
 
-        # CRM Mini App Add-on Handling
+        # Preferred Billing Day
+        if body.preferred_billing_day is not None:
+            agent.preferred_billing_day = max(1, min(28, int(body.preferred_billing_day)))
+
+        # CRM Mini App Add-on Handling with Independent Expiry
         selected_crm_price = max(0.0, float(body.selected_crm_price or 0.0))
+        now_utc = datetime.now(timezone.utc)
+        crm_months = int(body.selected_crm_months or 1)
+        norm_crm_exp = _normalize_dt(agent.crm_expires_at)
         if body.selected_crm_enabled is not None:
             agent.feature_crm = bool(body.selected_crm_enabled)
             agent.addon_crm_price = selected_crm_price if body.selected_crm_enabled else 0.0
+            if body.selected_crm_enabled:
+                base_crm_exp = norm_crm_exp if (norm_crm_exp and norm_crm_exp > now_utc) else now_utc
+                agent.crm_expires_at = base_crm_exp + timedelta(days=crm_months * 30)
         elif selected_crm_price > 0:
             agent.feature_crm = True
             agent.addon_crm_price = selected_crm_price
+            base_crm_exp = norm_crm_exp if (norm_crm_exp and norm_crm_exp > now_utc) else now_utc
+            agent.crm_expires_at = base_crm_exp + timedelta(days=crm_months * 30)
         else:
             agent.feature_crm = package.feature_crm
             agent.addon_crm_price = package.addon_crm_price if package.feature_crm else 0.0
+            if package.feature_crm:
+                base_crm_exp = norm_crm_exp if (norm_crm_exp and norm_crm_exp > now_utc) else now_utc
+                agent.crm_expires_at = base_crm_exp + timedelta(days=30)
+
+        # Aged Archive Add-on Handling with Independent Expiry
+        if body.selected_aged_months is not None and body.selected_aged_months > 0:
+            norm_aged_exp = _normalize_dt(agent.aged_expires_at)
+            base_aged_exp = norm_aged_exp if (norm_aged_exp and norm_aged_exp > now_utc) else now_utc
+            agent.aged_expires_at = base_aged_exp + timedelta(days=int(body.selected_aged_months) * 30)
 
         base_price = package.price
         if getattr(package, 'sale_enabled', False) and getattr(package, 'sale_price', None) is not None and package.sale_price > 0:
@@ -1016,14 +1059,34 @@ async def renew_my_agent(
         agent.status = "active"
         agent.plan_expires_at = new_expires_at
 
+        # Preferred Billing Day
+        if body.preferred_billing_day is not None:
+            agent.preferred_billing_day = max(1, min(28, int(body.preferred_billing_day)))
+
         # CRM Mini App Add-on Handling for custom/transferred
         selected_crm_price = max(0.0, float(body.selected_crm_price or 0.0))
+        now_utc = datetime.now(timezone.utc)
+        crm_months = int(body.selected_crm_months or 1)
+        norm_crm_exp = _normalize_dt(agent.crm_expires_at)
         if body.selected_crm_enabled is not None:
             agent.feature_crm = bool(body.selected_crm_enabled)
             agent.addon_crm_price = selected_crm_price if body.selected_crm_enabled else 0.0
+            if body.selected_crm_enabled:
+                base_crm_exp = norm_crm_exp if (norm_crm_exp and norm_crm_exp > now_utc) else now_utc
+                agent.crm_expires_at = base_crm_exp + timedelta(days=crm_months * 30)
         elif selected_crm_price > 0:
             agent.feature_crm = True
             agent.addon_crm_price = selected_crm_price
+            base_crm_exp = norm_crm_exp if (norm_crm_exp and norm_crm_exp > now_utc) else now_utc
+            agent.crm_expires_at = base_crm_exp + timedelta(days=crm_months * 30)
+
+        # Aged Archive Add-on Handling with Independent Expiry
+        if body.selected_aged_months is not None and body.selected_aged_months > 0:
+            agent.feature_aged_listings = True
+            agent.addon_aged_max_months = int(body.selected_aged_months)
+            norm_aged_exp = _normalize_dt(agent.aged_expires_at)
+            base_aged_exp = norm_aged_exp if (norm_aged_exp and norm_aged_exp > now_utc) else now_utc
+            agent.aged_expires_at = base_aged_exp + timedelta(days=int(body.selected_aged_months) * 30)
 
         # Determine price from custom_price, latest payment, plan table, or fallback
         if body.custom_price is not None and body.custom_price > 0:
@@ -1236,12 +1299,18 @@ async def register_my_agent(
             addon_images = getattr(package, 'included_image_requests', 0) if package else 0
             addon_images_price = getattr(package, 'addon_image_requests_price', 0.0) if package else 0.0
 
+    crm_enabled = bool(body.selected_crm_enabled or (body.selected_crm_price and body.selected_crm_price > 0))
+    crm_months = int(body.selected_crm_months or 1)
+    crm_exp = (now_utc + timedelta(days=crm_months * 30)) if crm_enabled else None
+    aged_exp = (now_utc + timedelta(days=int(body.selected_aged_months) * 30)) if (body.selected_aged_months and body.selected_aged_months > 0) else None
+
     agent = Tenant(
         name=body.name,
         phone=formatted_phone,
         telegram_handle=body.telegram_handle.strip().lstrip('@') if body.telegram_handle else None,
         whatsapp_number=body.whatsapp_number or formatted_phone,
         preferred_channel=body.preferred_channel,
+        preferred_billing_day=max(1, min(28, int(body.preferred_billing_day or 1))),
         seller_id=seller.id,
         seller_package_id=package.id if (package and not is_trial) else None,
         plan=agent_plan,
@@ -1257,13 +1326,16 @@ async def register_my_agent(
         backup_enabled=f_backup,
         feature_aged_listings=f_aged,
         addon_aged_max_months=aged_months,
+        aged_expires_at=aged_exp,
         addon_saved_searches=addon_searches,
         addon_saved_searches_price=addon_searches_price,
         feature_watermark_free_images=f_images,
         addon_image_requests_limit=addon_images,
         addon_image_requests_used=0,
         addon_image_requests_price=addon_images_price,
-        feature_crm=getattr(body, 'feature_crm', False) or False
+        feature_crm=crm_enabled,
+        addon_crm_price=float(body.selected_crm_price or 0.0) if crm_enabled else 0.0,
+        crm_expires_at=crm_exp
     )
     db.add(agent)
     await db.commit()
