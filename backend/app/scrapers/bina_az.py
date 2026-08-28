@@ -319,11 +319,15 @@ class BinaAzScraper(BaseScraper):
                         if not m_id:
                             continue
                         ext_id = m_id.group(1)
-                        parent = a.find_parent("div", class_=lambda c: c and any(x in str(c) for x in ['items-i', 'items_i', 'card_item', 'products-i'])) or a.find_parent("div")
+                        parent = (
+                            a.find_parent("div", attrs={"data-cy": "item-card"}) or
+                            a.find_parent("div", class_=re.compile(r'item-card|items-i|items_i|card_item|products-i')) or
+                            a.find_parent("div")
+                        )
                         card_text = parent.get_text(separator=" | ", strip=True).replace('\xa0', ' ') if parent else a.get_text(strip=True).replace('\xa0', ' ')
 
                         if ext_id not in seen or len(card_text) > len(seen[ext_id].get('text', '')):
-                            seen[ext_id] = {'href': a['href'], 'text': card_text, 'card': parent, 'target_url': target_url}
+                            seen[ext_id] = {'href': a['href'], 'text': card_text, 'card': parent, 'target_url': target_url, 'link_elem': a}
 
                 except Exception as e:
                     logger.error(f"[BinaAzScraper] Error fetching from {target_url}: {e}")
@@ -336,27 +340,37 @@ class BinaAzScraper(BaseScraper):
             raw_lower = raw_text.lower()
             c = data['card']
             target_url = data['target_url']
+            a_link = data.get('link_elem')
+            aria_label = a_link.get('aria-label', '') if a_link else ''
+            combined_text = f"{aria_label} | {raw_text}".replace('\xa0', ' ')
+            combined_lower = combined_text.lower()
 
             # 1. Price Extraction & Currency
             price = 0.0
             currency = "AZN"
-            price_val_el = c.find("span", class_="price-val") if c else None
+            price_val_el = (
+                c.find(attrs={"data-cy": "item-card-price-full"}) or
+                c.find(attrs={"data-cy": "item-card-price"}) or
+                c.find("span", class_=re.compile(r'price-val|price-container|price', re.I))
+            ) if c else None
+
             if price_val_el:
-                val_clean = re.sub(r'[^\d.]', '', price_val_el.get_text())
+                val_clean = re.sub(r'[^\d.]', '', price_val_el.get_text().replace('\xa0', ' '))
                 price = safe_float(val_clean, default=0.0)
-            else:
-                price_m = re.search(r'([\d\s]+)\s*(?:AZN|₼|USD|\$|\/\s*ay|\/\s*gün)', raw_text) or re.search(r'([\d\s]+)\s*\|\s*AZN', raw_text)
+            
+            if not price or price == 0:
+                price_m = re.search(r'([\d\s]+)\s*(?:AZN|₼|USD|\$|\/\s*ay|\/\s*gün)', raw_text) or re.search(r'([\d\s]+)\s*\|\s*AZN', raw_text) or re.search(r'(\d+[\d\s]{3,})', raw_text)
                 if price_m:
                     price_clean = re.sub(r'[^\d]', '', price_m.group(1))
                     price = safe_float(price_clean, default=0.0)
 
-            if "usd" in raw_lower or "$" in raw_text:
+            if "usd" in combined_lower or "$" in combined_text:
                 currency = "USD"
 
             # 2. Offer Type (Sale, Monthly Rent, Daily Rent)
-            if "gunluk" in target_url or "daily" in target_url or "/ gün" in raw_text or "/gun" in raw_lower or "günlük" in raw_lower or "sutkalıq" in raw_lower or "günlük kirayə" in raw_lower:
+            if "gunluk" in target_url or "daily" in target_url or "/ gün" in combined_text or "/gun" in combined_lower or "günlük" in combined_lower or "sutkalıq" in combined_lower or "günlük kirayə" in combined_lower:
                 offer_type = "daily_rent"
-            elif "/kiraye" in target_url or "leased=true" in target_url or "kiraye" in target_url or "/ ay" in raw_text or "aylıq" in raw_lower or "icarə" in raw_lower or "kirayə" in raw_lower:
+            elif "/kiraye" in target_url or "leased=true" in target_url or "kiraye" in target_url or "/ ay" in combined_text or "aylıq" in combined_lower or "icarə" in combined_lower or "kirayə" in combined_lower:
                 offer_type = "rent"
             elif price > 0 and price <= 350:
                 # Real estate in Baku is never sold for <= 350 AZN. If <= 350 AZN, it is daily/monthly rental.
@@ -365,25 +379,25 @@ class BinaAzScraper(BaseScraper):
                 offer_type = "sale"
 
             # 3. Rooms, Floor, Area, and Land (Sot)
-            rooms_m = re.search(r'(\d+)\s*otaqlı', raw_text)
+            rooms_m = re.search(r'(\d+)\s*otaqlı', combined_text)
             rooms = int(rooms_m.group(1)) if rooms_m else None
 
-            area_m = re.search(r'([\d.]+)\s*m²', raw_text)
+            area_m = re.search(r'([\d.]+)\s*m²', combined_text)
             area = safe_optional_float(area_m.group(1) if area_m else None)
 
-            land_m = re.search(r'([\d.]+)\s*sot', raw_text)
+            land_m = re.search(r'([\d.]+)\s*sot', combined_text)
             land_sot = safe_optional_float(land_m.group(1) if land_m else None)
 
             floor, total_floors = None, None
-            floor_m = re.search(r'(\d+)\s*\/\s*(\d+)\s*mərtəbə', raw_text)
+            floor_m = re.search(r'(\d+)\s*\/\s*(\d+)\s*mərtəbə', combined_text)
             if floor_m:
                 floor = int(floor_m.group(1))
                 total_floors = int(floor_m.group(2))
 
             # 4. Location Details (District, Settlement, Metro)
-            district = extract_baku_district(raw_text)
-            settlement = extract_baku_settlement(raw_text)
-            metro = extract_metro_station(raw_text)
+            district = extract_baku_district(combined_text)
+            settlement = extract_baku_settlement(combined_text)
+            metro = extract_metro_station(combined_text)
 
             # Auto-infer parent district if not explicitly present on card
             if not district:
@@ -393,13 +407,13 @@ class BinaAzScraper(BaseScraper):
                     district = METRO_TO_DISTRICT[metro]
 
             # 5. Property Category Classification based on card content & category_id
-            if "sot" in raw_lower and "otaqlı" not in raw_lower and "mərtəbə" not in raw_lower:
+            if "sot" in combined_lower and "otaqlı" not in combined_lower and "mərtəbə" not in combined_lower:
                 detected_prop = "land"
-            elif any(k in raw_lower for k in ["həyət evi", "heyet evi", "bağ evi", "bag evi", "villa"]):
+            elif any(k in combined_lower for k in ["həyət evi", "heyet evi", "bağ evi", "bag evi", "villa"]):
                 detected_prop = "house"
-            elif "ofis" in raw_lower:
+            elif "ofis" in combined_lower:
                 detected_prop = "office"
-            elif "obyekt" in raw_lower:
+            elif "obyekt" in combined_lower:
                 detected_prop = "commercial"
             elif "category_id=5" in target_url or "heyet-evleri" in target_url or "villa" in target_url:
                 detected_prop = "house"
@@ -415,9 +429,9 @@ class BinaAzScraper(BaseScraper):
             detected_offer = offer_type
 
             # 6. Building Type (Yeni tikili vs Köhnə tikili)
-            if "category_id=2" in target_url or "yeni tikili" in raw_lower or "yeni-tikili" in target_url:
+            if "category_id=2" in target_url or "yeni tikili" in combined_lower or "yeni-tikili" in target_url:
                 bld_type = "new"
-            elif "category_id=3" in target_url or "köhnə tikili" in raw_lower or "kohne tikili" in raw_lower or "kohne-tikili" in target_url:
+            elif "category_id=3" in target_url or "köhnə tikili" in combined_lower or "kohne tikili" in combined_lower or "kohne-tikili" in target_url:
                 bld_type = "old"
             elif detected_prop == "apartment":
                 if total_floors and total_floors >= 10:
@@ -432,9 +446,11 @@ class BinaAzScraper(BaseScraper):
             # 7. Seller Type (Bina.az Agency Tag Detection)
             has_agency_badge = bool(
                 c and (
-                    c.find("a", href=re.compile(r'/agentlikler|/vasiteciler|/complexes|/companies|/shops')) 
+                    c.find(attrs={"data-cy": "product-label-agency"}) 
+                    or c.find("a", href=re.compile(r'/agentlikler|/vasiteciler|/complexes|/companies|/shops')) 
                     or c.find(class_=re.compile(r'agency|shop|complex|developer|broker|company|rieltor|items-i-agency', re.I))
                     or c.find("img", src=re.compile(r'agency|logo|shop', re.I))
+                    or "agentlik" in combined_lower
                 )
             )
 
@@ -446,9 +462,9 @@ class BinaAzScraper(BaseScraper):
                 from app.core.property_classifier import classify_property_and_offer
                 _, _, detected_seller = classify_property_and_offer(
                     title="",
-                    description=raw_text,
+                    description=combined_text,
                     url=href,
-                    raw_text=raw_text
+                    raw_text=combined_text
                 )
                 seller_type = detected_seller
 
@@ -475,16 +491,16 @@ class BinaAzScraper(BaseScraper):
                 desc_extra.append(f"Torpaq sahəsi: {land_sot} sot")
             if floor and total_floors:
                 desc_extra.append(f"Mərtəbə: {floor}/{total_floors}")
-            if "çıxarış" in raw_lower or "kupça" in raw_lower:
+            if "çıxarış" in combined_lower or "kupça" in combined_lower:
                 desc_extra.append("Çıxarış (Kupça): Var")
-            if "ipoteka" in raw_lower:
+            if "ipoteka" in combined_lower:
                 desc_extra.append("İpoteka: Var")
 
             full_desc = f"Bina.az: {raw_text}" + (f" | {' | '.join(desc_extra)}" if desc_extra else "")
 
-            # Check if any phone is already mentioned in raw_text
+            # Check if any phone is already mentioned in combined_text
             from app.core.baku_locations import extract_az_phone
-            phone_found = extract_az_phone(raw_text)
+            phone_found = extract_az_phone(combined_text)
             extracted_phone = phone_found[1] if phone_found else None
 
             # Extract card photo
@@ -494,8 +510,15 @@ class BinaAzScraper(BaseScraper):
                 if img_el:
                     src_val = img_el.get("data-src") or img_el.get("src") or img_el.get("data-full-src")
                     if src_val and ("uploads/" in src_val or "azstatic" in src_val or "bina.az" in src_val):
-                        src_clean = src_val.replace('/thumbnail/', '/full/').replace('/f660x496/', '/full/')
+                        src_clean = src_val.replace('/thumbnail/', '/full/').replace('/f460x345/', '/full/').replace('/f660x496/', '/full/')
                         card_photos.append(src_clean)
+                source_el = c.find("source")
+                if source_el and source_el.get("srcset"):
+                    s_src = source_el.get("srcset").split()[0]
+                    if s_src and ("uploads/" in s_src or "azstatic" in s_src or "bina.az" in s_src):
+                        s_clean = s_src.replace('/thumbnail/', '/full/').replace('/f460x345/', '/full/').replace('/f660x496/', '/full/')
+                        if s_clean not in card_photos:
+                            card_photos.append(s_clean)
 
             clean_url = href if href.startswith("http") else f"https://bina.az{href}"
             items.append(RawListingItem(

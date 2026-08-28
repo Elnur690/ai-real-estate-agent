@@ -2,6 +2,8 @@ import re
 import logging
 import asyncio
 import urllib.parse
+import httpx
+from bs4 import BeautifulSoup
 from typing import List, Tuple, Any, Optional
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, update
