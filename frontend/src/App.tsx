@@ -17,10 +17,15 @@ import { useTranslation } from './i18n';
 
 export function App() {
   const isTmaMode = Boolean(
+    window.location.hash.includes('tgWebAppData') ||
+    window.location.search.includes('tgWebAppData') ||
+    window.location.search.includes('tgWebAppPlatform') ||
+    window.location.search.includes('tgWebAppVersion') ||
+    window.location.hash.includes('crm') ||
+    window.location.pathname.startsWith('/crm') ||
     (window.Telegram?.WebApp?.initData && window.Telegram.WebApp.initData.length > 0) ||
     window.location.search.includes('tma=') ||
-    window.location.search.includes('mock_tg') ||
-    window.location.hash.includes('crm')
+    window.location.search.includes('mock_tg')
   );
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => !!localStorage.getItem('token'));

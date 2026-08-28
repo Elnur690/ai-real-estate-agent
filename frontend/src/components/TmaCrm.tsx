@@ -102,6 +102,16 @@ export function TmaCrm() {
         const tg = window.Telegram?.WebApp;
         let initData = tg?.initData || '';
 
+        // Extract from URL hash or query if not populated on window yet
+        if (!initData && window.location.hash.includes('tgWebAppData=')) {
+          const hashParams = new URLSearchParams(window.location.hash.substring(1));
+          initData = hashParams.get('tgWebAppData') || '';
+        }
+        if (!initData && window.location.search.includes('tgWebAppData=')) {
+          const searchParams = new URLSearchParams(window.location.search);
+          initData = searchParams.get('tgWebAppData') || '';
+        }
+
         // Fallback for development browser testing
         if (!initData) {
           const urlParams = new URLSearchParams(window.location.search);
@@ -112,19 +122,12 @@ export function TmaCrm() {
         }
 
         if (!initData) {
-          // If running in browser without TG data, use existing JWT token if available
-          const token = localStorage.getItem('token');
-          if (token) {
-            await fetchAllData();
-            setLoading(false);
-            return;
-          }
-          setAuthError('Zəhmət olmasa bu tətbiqi Telegram Bot daxilində açın.');
+          setAuthError('Zəhmət olmasa bu tətbiqi Telegram Bot (@RealEstateBot) menyusu daxilində açın.');
           setLoading(false);
           return;
         }
 
-        // Authenticate with backend
+        // Authenticate with backend and check feature_crm access
         const res = await api.post('/auth/telegram-webapp', { init_data: initData });
         const authData = res.data;
         

@@ -553,13 +553,14 @@ async def telegram_webapp_auth(
 
     tg_user_id = str(user_info["id"])
     first_name = user_info.get("first_name", "Agent")
-    username = user_info.get("username", "")
+    username = (user_info.get("username") or "").strip().lstrip("@")
 
     # Look up Tenant by telegram_chat_id, telegram_handle, or ID (dev/mock)
     conditions = [
         Tenant.telegram_chat_id == tg_user_id,
-        Tenant.telegram_handle == username if username else False
     ]
+    if username:
+        conditions.append(func.lower(Tenant.telegram_handle) == username.lower())
     if tg_user_id.isdigit():
         conditions.append(Tenant.id == int(tg_user_id))
 
@@ -571,6 +572,13 @@ async def telegram_webapp_auth(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Bu Telegram hesabı (@{username or tg_user_id}) heç bir agent profilinə bağlı deyil. Zəhmət olmasa əvvəlcə botda /start agent_<id> edin."
+        )
+
+    # Check if CRM feature is enabled for this tenant
+    if not tenant.feature_crm:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Hörmətli {tenant.name}, hesabınızda Real Estate CRM Add-on aktivləşdirilməyib. Zəhmət olmasa administrator və ya satıcı ilə əlaqə saxlayın."
         )
 
     # Ensure telegram_chat_id is linked if matched by handle
