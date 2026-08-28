@@ -64,6 +64,27 @@ async def test_tma_auth_mock_and_crm_crud(client: AsyncClient, test_db: AsyncSes
     token = data["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
+    # 2b. Test 64-bit Telegram Chat ID matching (e.g. 8708925566)
+    tenant_64bit = Tenant(
+        name="BigID Agent",
+        phone="+994509990099",
+        telegram_chat_id="8708925566",
+        telegram_handle="big_agent",
+        plan="pro",
+        status="active",
+        feature_crm=True
+    )
+    test_db.add(tenant_64bit)
+    await test_db.commit()
+    await test_db.refresh(tenant_64bit)
+
+    res_64 = await client.post("/api/v1/auth/telegram-webapp", json={
+        "init_data": f"mock_telegram_8708925566"
+    })
+    # Since mock_telegram_8708925566 sets user_info['id'] = 8708925566, it should match tenant_64bit.telegram_chat_id
+    assert res_64.status_code == 200
+    assert res_64.json()["tenant_id"] == tenant_64bit.id
+
     # 3. Create a CRM Client
     c_res = await client.post("/api/v1/crm/clients", headers=headers, json={
         "name": "Namiq Məmmədov",

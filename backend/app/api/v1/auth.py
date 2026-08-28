@@ -561,7 +561,7 @@ async def telegram_webapp_auth(
     ]
     if username:
         conditions.append(func.lower(Tenant.telegram_handle) == username.lower())
-    if tg_user_id.isdigit():
+    if body.init_data.startswith("mock_telegram_") and tg_user_id.isdigit() and int(tg_user_id) <= 2147483647:
         conditions.append(Tenant.id == int(tg_user_id))
 
     stmt_t = select(Tenant).where(or_(*conditions))
