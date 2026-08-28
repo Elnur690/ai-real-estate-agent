@@ -181,28 +181,53 @@ class WhatsAppAdapter:
             return None
 
     @staticmethod
-    async def resolve_active_instance(instance_name: Optional[str] = None, base_url: str = "http://evolution:8080", headers: dict = {}) -> str:
-        if instance_name:
-            return instance_name
+    def normalize_recipient(phone_number: str) -> str:
+        """Normalizes any Azerbaijani phone number (e.g. 0501234567 -> 994501234567) or preserves group JID."""
+        if not phone_number:
+            return ""
+        if "@g.us" in phone_number:
+            return phone_number.strip()
+        digits = re.sub(r'\D', '', str(phone_number).split("@")[0])
+        if digits.startswith("0") and len(digits) == 10:
+            digits = "994" + digits[1:]
+        elif not digits.startswith("994") and len(digits) == 9:
+            digits = "994" + digits
+        return digits
 
+    @staticmethod
+    async def resolve_active_instance(instance_name: Optional[str] = None, base_url: str = "http://evolution:8080", headers: dict = {}) -> str:
         try:
             async with httpx.AsyncClient(timeout=3.0) as client:
                 res = await client.get(f"{base_url}/instance/fetchInstances", headers=headers)
                 if res.status_code == 200:
                     instances = res.json()
                     if isinstance(instances, list) and len(instances) > 0:
+                        # 1. If explicit instance requested, check if it is active and open
+                        if instance_name:
+                            for item in instances:
+                                inst_obj = item.get("instance", {}) if isinstance(item, dict) else {}
+                                name = inst_obj.get("instanceName") or item.get("name")
+                                status = inst_obj.get("status") or item.get("connectionStatus")
+                                if name == instance_name and status in ["open", "connecting"]:
+                                    return name
+
+                        # 2. Otherwise find any connected/open instance
                         for item in instances:
                             inst_obj = item.get("instance", {}) if isinstance(item, dict) else {}
-                            if inst_obj.get("status") == "open" or item.get("connectionStatus") == "open":
+                            status = inst_obj.get("status") or item.get("connectionStatus")
+                            if status == "open":
                                 name = inst_obj.get("instanceName") or item.get("name")
                                 if name:
                                     return name
+
+                        # 3. First available instance
                         first_name = instances[0].get("instance", {}).get("instanceName") or instances[0].get("name")
                         if first_name:
                             return first_name
-        except Exception:
-            pass
-        return instance_name or settings.EVOLUTION_INSTANCE_NAME
+        except Exception as e:
+            logger.debug(f"[WhatsAppAdapter] resolve_active_instance lookup notice: {e}")
+
+        return instance_name or settings.EVOLUTION_INSTANCE_NAME or "default"
 
     @staticmethod
     async def send_message(phone_number: str, text: str, instance_name: Optional[str] = None) -> bool:
@@ -217,7 +242,10 @@ class WhatsAppAdapter:
             headers["apikey"] = str(settings.EVOLUTION_API_KEY)
 
         inst = await WhatsAppAdapter.resolve_active_instance(instance_name, base_url, headers)
-        clean_recipient = phone_number if "@g.us" in phone_number else phone_number.replace("+", "").replace(" ", "")
+        clean_recipient = WhatsAppAdapter.normalize_recipient(phone_number)
+        if not clean_recipient:
+            logger.warning(f"[WhatsAppAdapter] Cannot send message: invalid recipient '{phone_number}'")
+            return False
 
         url = f"{base_url}/message/sendText/{inst}"
         body = {
@@ -268,10 +296,10 @@ class WhatsAppAdapter:
             headers["apikey"] = str(settings.EVOLUTION_API_KEY)
 
         inst = await WhatsAppAdapter.resolve_active_instance(instance_name, base_url, headers)
-        if "@g.us" in phone_number:
-            clean_recipient = phone_number
-        else:
-            clean_recipient = re.sub(r'\D', '', phone_number.split("@")[0])
+        clean_recipient = WhatsAppAdapter.normalize_recipient(phone_number)
+        if not clean_recipient:
+            logger.warning(f"[WhatsAppAdapter] Cannot send media: invalid recipient '{phone_number}'")
+            return False
 
         try:
             with open(image_path, "rb") as img_f:
@@ -331,10 +359,10 @@ class WhatsAppAdapter:
             headers["apikey"] = str(settings.EVOLUTION_API_KEY)
 
         inst = await WhatsAppAdapter.resolve_active_instance(instance_name, base_url, headers)
-        if "@g.us" in phone_number:
-            clean_recipient = phone_number
-        else:
-            clean_recipient = re.sub(r'\D', '', phone_number.split("@")[0])
+        clean_recipient = WhatsAppAdapter.normalize_recipient(phone_number)
+        if not clean_recipient:
+            logger.warning(f"[WhatsAppAdapter] Cannot send document: invalid recipient '{phone_number}'")
+            return False
 
         try:
             with open(document_path, "rb") as doc_f:

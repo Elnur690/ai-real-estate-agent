@@ -69,13 +69,14 @@ async def send_telegram_notification(chat_id: str, message_text: str) -> bool:
     try:
         req = get_telegram_request()
         bot = Bot(token=settings.TELEGRAM_BOT_TOKEN, request=req)
-        try:
-            await bot.send_message(chat_id=chat_id, text=message_text, parse_mode="Markdown", disable_web_page_preview=True)
-            return True
-        except Exception as e:
-            logger.warning(f"[TelegramAdapter] Markdown parsing failed, retrying plain text: {e}")
-            await bot.send_message(chat_id=chat_id, text=message_text, disable_web_page_preview=True)
-            return True
+        async with bot:
+            try:
+                await bot.send_message(chat_id=chat_id, text=message_text, parse_mode="Markdown", disable_web_page_preview=True)
+                return True
+            except Exception as e:
+                logger.warning(f"[TelegramAdapter] Markdown parsing failed, retrying plain text: {e}")
+                await bot.send_message(chat_id=chat_id, text=message_text, disable_web_page_preview=True)
+                return True
     except Exception as e:
         logger.error(f"[TelegramAdapter] Failed to send notification to {chat_id}: {e}")
         return False
@@ -103,7 +104,8 @@ async def send_telegram_media_group(chat_id: str, image_paths: list[str], captio
 
         try:
             if media:
-                await bot.send_media_group(chat_id=chat_id, media=media)
+                async with bot:
+                    await bot.send_media_group(chat_id=chat_id, media=media)
                 return True
         finally:
             for f in opened_files:
@@ -125,12 +127,13 @@ async def send_telegram_document(chat_id: str, document_path: str, caption: str 
         req = get_telegram_request()
         bot = Bot(token=settings.TELEGRAM_BOT_TOKEN, request=req)
         with open(document_path, "rb") as doc_f:
-            await bot.send_document(
-                chat_id=chat_id,
-                document=doc_f,
-                filename=filename or os.path.basename(document_path),
-                caption=caption
-            )
+            async with bot:
+                await bot.send_document(
+                    chat_id=chat_id,
+                    document=doc_f,
+                    filename=filename or os.path.basename(document_path),
+                    caption=caption
+                )
         return True
     except Exception as e:
         logger.error(f"[TelegramAdapter] Failed to send document to {chat_id}: {e}")
