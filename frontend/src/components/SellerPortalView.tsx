@@ -2875,18 +2875,20 @@ export function SellerPortalView() {
 
                 {/* Connected Channels Checkboxes */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Qoşulmuş Bildiriş Kanalları</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Qoşulmuş Bildiriş Kanalları ({editAgentChannel === 'both' ? '⚡ Hər İkisi (WhatsApp + Telegram)' : editAgentChannel === 'whatsapp' ? '💬 Yalnız WhatsApp' : '🤖 Yalnız Telegram'})
+                  </label>
                   <div className="grid grid-cols-2 gap-2 mb-2">
                     <label className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition ${
-                      (editAgentChannel === 'whatsapp' || editAgentChannel === 'both' || Boolean(editAgentWa))
+                      (editAgentChannel === 'whatsapp' || editAgentChannel === 'both')
                         ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
                         : 'bg-slate-950 border-slate-800 text-slate-400'
                     }`}>
                       <input
                         type="checkbox"
-                        checked={editAgentChannel === 'whatsapp' || editAgentChannel === 'both' || Boolean(editAgentWa)}
+                        checked={editAgentChannel === 'whatsapp' || editAgentChannel === 'both'}
                         onChange={(e) => {
-                          const isTg = editAgentChannel === 'telegram' || editAgentChannel === 'both' || Boolean(editAgentTg);
+                          const isTg = editAgentChannel === 'telegram' || editAgentChannel === 'both';
                           const next = e.target.checked ? (isTg ? 'both' : 'whatsapp') : (isTg ? 'telegram' : 'whatsapp');
                           setEditAgentChannel(next);
                         }}
@@ -2899,15 +2901,15 @@ export function SellerPortalView() {
                     </label>
 
                     <label className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition ${
-                      (editAgentChannel === 'telegram' || editAgentChannel === 'both' || Boolean(editAgentTg))
+                      (editAgentChannel === 'telegram' || editAgentChannel === 'both')
                         ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
                         : 'bg-slate-950 border-slate-800 text-slate-400'
                     }`}>
                       <input
                         type="checkbox"
-                        checked={editAgentChannel === 'telegram' || editAgentChannel === 'both' || Boolean(editAgentTg)}
+                        checked={editAgentChannel === 'telegram' || editAgentChannel === 'both'}
                         onChange={(e) => {
-                          const isWa = editAgentChannel === 'whatsapp' || editAgentChannel === 'both' || Boolean(editAgentWa);
+                          const isWa = editAgentChannel === 'whatsapp' || editAgentChannel === 'both';
                           const next = e.target.checked ? (isWa ? 'both' : 'telegram') : (isWa ? 'whatsapp' : 'telegram');
                           setEditAgentChannel(next);
                         }}
@@ -2922,30 +2924,26 @@ export function SellerPortalView() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  {(editAgentChannel === 'whatsapp' || editAgentChannel === 'both' || Boolean(editAgentWa)) && (
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">WhatsApp Nömrəsi</label>
-                      <input
-                        type="text"
-                        value={editAgentWa}
-                        onChange={(e) => setEditAgentWa(e.target.value)}
-                        placeholder="+99450..."
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-amber-500"
-                      />
-                    </div>
-                  )}
-                  {(editAgentChannel === 'telegram' || editAgentChannel === 'both' || Boolean(editAgentTg)) && (
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">Telegram İstifadəçi Adı / ID</label>
-                      <input
-                        type="text"
-                        value={editAgentTg}
-                        onChange={(e) => setEditAgentTg(e.target.value)}
-                        placeholder="@username"
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-amber-500"
-                      />
-                    </div>
-                  )}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">WhatsApp Nömrəsi</label>
+                    <input
+                      type="text"
+                      value={editAgentWa}
+                      onChange={(e) => setEditAgentWa(e.target.value)}
+                      placeholder="+99450..."
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Telegram İstifadəçi Adı / ID</label>
+                    <input
+                      type="text"
+                      value={editAgentTg}
+                      onChange={(e) => setEditAgentTg(e.target.value)}
+                      placeholder="@username"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
                 </div>
 
                 {/* Feature Toggles */}
@@ -3120,7 +3118,9 @@ export function SellerPortalView() {
 
               {/* Connected Channels Checkboxes */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Qoşulacaq Bildiriş Kanalları</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Qoşulacaq Bildiriş Kanalları ({agentChannel === 'both' ? '⚡ Hər İkisi (WhatsApp + Telegram)' : agentChannel === 'whatsapp' ? '💬 Yalnız WhatsApp' : '🤖 Yalnız Telegram'})
+                </label>
                 <div className="grid grid-cols-2 gap-2 mb-2">
                   <label className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition ${
                     (agentChannel === 'whatsapp' || agentChannel === 'both')
@@ -3131,7 +3131,7 @@ export function SellerPortalView() {
                       type="checkbox"
                       checked={agentChannel === 'whatsapp' || agentChannel === 'both'}
                       onChange={(e) => {
-                        const isTg = agentChannel === 'telegram' || agentChannel === 'both' || Boolean(agentTg);
+                        const isTg = agentChannel === 'telegram' || agentChannel === 'both';
                         const next = e.target.checked ? (isTg ? 'both' : 'whatsapp') : (isTg ? 'telegram' : 'whatsapp');
                         setAgentChannel(next);
                       }}
@@ -3166,18 +3166,16 @@ export function SellerPortalView() {
                 </div>
               </div>
 
-              {(agentChannel === 'telegram' || agentChannel === 'both') && (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-1">Telegram İstifadəçi Adı və ya Chat ID</label>
-                  <input
-                    type="text"
-                    value={agentTg}
-                    onChange={(e) => setAgentTg(e.target.value)}
-                    placeholder="@agent_username"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-              )}
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1">Telegram İstifadəçi Adı və ya Chat ID</label>
+                <input
+                  type="text"
+                  value={agentTg}
+                  onChange={(e) => setAgentTg(e.target.value)}
+                  placeholder="@agent_username"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                />
+              </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-400 mb-1">Təyin Ediləcək Plan / Paket *</label>
