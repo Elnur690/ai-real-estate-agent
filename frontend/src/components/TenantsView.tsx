@@ -109,6 +109,7 @@ export const TenantsView: React.FC = () => {
   const [cashExtraSearches, setCashExtraSearches] = useState<number>(0);
   const [cashFeatureImages, setCashFeatureImages] = useState<boolean>(false);
   const [cashExtraImages, setCashExtraImages] = useState<number>(0);
+  const [cashIncludeCrm, setCashIncludeCrm] = useState<boolean>(false);
   const [cashNotes, setCashNotes] = useState<string>('');
 
   const loadTenants = async () => {
@@ -361,25 +362,28 @@ export const TenantsView: React.FC = () => {
     includeAged: boolean, 
     extraSearches: number = cashExtraSearches,
     category: string = paymentCategory,
-    extraImages: number = cashExtraImages
+    extraImages: number = cashExtraImages,
+    includeCrm: boolean = cashIncludeCrm
   ) => {
     const planObj = availablePlans.find(p => p.code === planCode);
     const basePrice = planObj ? planObj.price : 29.0;
     const addonPrice = planObj?.addon_aged_listings_price !== undefined ? planObj.addon_aged_listings_price : 15.0;
     const searchPackPrice = planObj?.addon_saved_searches_price !== undefined ? planObj.addon_saved_searches_price : 10.0;
     const imagePackPrice = planObj?.addon_image_requests_price !== undefined ? planObj.addon_image_requests_price : 10.0;
+    const crmPrice = planObj?.addon_crm_price !== undefined ? planObj.addon_crm_price : 15.0;
     const multiplier = days === 365 ? 10 : (days === 180 ? 5 : (days === 90 ? 2.7 : (days === 60 ? 2.0 : 1)));
 
     const agedFee = includeAged ? (addonPrice * multiplier) : 0;
     const searchFee = extraSearches > 0 ? ((extraSearches / 5.0) * searchPackPrice * multiplier) : 0;
     const imageFee = extraImages > 0 ? ((extraImages / 25.0) * imagePackPrice * multiplier) : 0;
+    const crmFee = includeCrm ? (crmPrice * multiplier) : 0;
 
     if (category === 'addon_only') {
-      return Math.round(agedFee + searchFee + imageFee);
+      return Math.round(agedFee + searchFee + imageFee + crmFee);
     } else if (category === 'plan_only') {
       return Math.round(basePrice * multiplier);
     } else {
-      return Math.round((basePrice * multiplier) + agedFee + searchFee + imageFee);
+      return Math.round((basePrice * multiplier) + agedFee + searchFee + imageFee + crmFee);
     }
   };
 
@@ -392,6 +396,7 @@ export const TenantsView: React.FC = () => {
     const extraSearches = t.addon_saved_searches || 0;
     const isImageActive = defaultCategory === 'addon_only' ? true : !!t.feature_watermark_free_images;
     const extraImages = t.addon_image_requests_limit || 0;
+    const isCrmActive = defaultCategory === 'addon_only' ? true : !!t.feature_crm;
     
     setPaymentCategory(defaultCategory);
     setPaymentPlan(initialPlan);
@@ -401,8 +406,9 @@ export const TenantsView: React.FC = () => {
     setCashExtraSearches(extraSearches);
     setCashFeatureImages(isImageActive);
     setCashExtraImages(extraImages);
+    setCashIncludeCrm(isCrmActive);
 
-    const initialAmount = calculateCashTotal(initialPlan, 30, isAgedActive, extraSearches, defaultCategory, extraImages);
+    const initialAmount = calculateCashTotal(initialPlan, 30, isAgedActive, extraSearches, defaultCategory, extraImages, isCrmActive);
     setCashAmount(initialAmount);
     const notePrefix = defaultCategory === 'addon_only' 
       ? `Cash payment for Addons ONLY - ${t.name}`
@@ -417,7 +423,8 @@ export const TenantsView: React.FC = () => {
     category: 'full' | 'addon_only' | 'plan_only' = paymentCategory,
     extraSearches: number = cashExtraSearches,
     extraImages: number = cashExtraImages,
-    featureImages: boolean = cashFeatureImages
+    featureImages: boolean = cashFeatureImages,
+    includeCrm: boolean = cashIncludeCrm
   ) => {
     setPaymentPlan(planCode);
     setCashDays(days);
@@ -426,12 +433,14 @@ export const TenantsView: React.FC = () => {
     setCashExtraSearches(extraSearches);
     setCashExtraImages(extraImages);
     setCashFeatureImages(featureImages);
-    const calculatedAmount = calculateCashTotal(planCode, days, includeAged, extraSearches, category, extraImages);
+    setCashIncludeCrm(includeCrm);
+    const calculatedAmount = calculateCashTotal(planCode, days, includeAged, extraSearches, category, extraImages, includeCrm);
     setCashAmount(calculatedAmount);
     const label = category === 'addon_only' ? 'Addons Only' : `${planCode.toUpperCase()} Plan`;
     const searchTag = extraSearches > 0 ? ` + ${extraSearches} Searches` : '';
     const imgTag = extraImages > 0 ? ` + ${extraImages} Photos` : '';
-    setCashNotes(`Cash payment for ${label}${searchTag}${imgTag} (${days} days)`);
+    const crmTag = includeCrm ? ` + Telegram CRM` : '';
+    setCashNotes(`Cash payment for ${label}${searchTag}${imgTag}${crmTag} (${days} days)`);
   };
 
   const handleRecordCashPayment = async (e: React.FormEvent) => {
@@ -443,11 +452,12 @@ export const TenantsView: React.FC = () => {
         duration_days: cashDays,
         amount_paid: Number(cashAmount),
         payment_category: paymentCategory,
-        include_aged_listings: paymentCategory === 'addon_only' ? true : (paymentCategory === 'plan_only' ? false : cashIncludeAgedListings),
+        include_aged_listings: paymentCategory === 'addon_only' ? cashIncludeAgedListings : (paymentCategory === 'plan_only' ? false : cashIncludeAgedListings),
         addon_aged_max_months: cashAgedMaxMonths,
         addon_saved_searches: cashExtraSearches,
         feature_watermark_free_images: cashFeatureImages || (cashExtraImages > 0),
         addon_image_requests_limit: cashExtraImages,
+        include_crm_addon: paymentCategory === 'addon_only' ? cashIncludeCrm : (paymentCategory === 'plan_only' ? false : cashIncludeCrm),
         notes: cashNotes
       });
       setPaymentModalTenant(null);
@@ -1590,6 +1600,37 @@ export const TenantsView: React.FC = () => {
                       </button>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* Telegram Mini App & CRM Add-on Option */}
+              {(paymentCategory === 'full' || paymentCategory === 'addon_only') && (
+                <div className="p-3 bg-dark-900/80 rounded-xl border border-indigo-500/30 space-y-2">
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <div className="flex items-center gap-2.5">
+                      <input
+                        type="checkbox"
+                        checked={cashIncludeCrm}
+                        onChange={(e) => {
+                          const val = e.target.checked;
+                          setCashIncludeCrm(val);
+                          handlePlanOrPeriodChange(paymentPlan, cashDays, cashIncludeAgedListings, paymentCategory, cashExtraSearches, cashExtraImages, cashFeatureImages, val);
+                        }}
+                        className="w-4 h-4 rounded accent-indigo-500"
+                      />
+                      <div>
+                        <span className="text-xs font-semibold text-indigo-200 block">
+                          💼 Telegram Mini App & Real Estate CRM Add-on
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          Agent üçün /crm əmri və TMA müştəri boru kəmərini aktivləşdirir
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-[11px] text-indigo-400 font-mono font-semibold">
+                      +{((availablePlans.find(p => p.code === paymentPlan)?.addon_crm_price) ?? 15)} AZN/ay
+                    </span>
+                  </label>
                 </div>
               )}
 

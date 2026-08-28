@@ -277,6 +277,8 @@ class TenantCashPaymentRequest(BaseModel):
     addon_saved_searches: Optional[int] = None
     feature_watermark_free_images: Optional[bool] = None
     addon_image_requests_limit: Optional[int] = None
+    include_crm_addon: Optional[bool] = None
+    addon_crm_price: Optional[float] = None
     use_referral_balance: bool = True
     notes: Optional[str] = None
 
@@ -302,6 +304,8 @@ async def record_tenant_cash_payment(
         addon_saved_searches=body.addon_saved_searches,
         feature_watermark_free_images=body.feature_watermark_free_images,
         addon_image_requests_limit=body.addon_image_requests_limit,
+        include_crm_addon=body.include_crm_addon,
+        addon_crm_price=body.addon_crm_price,
         use_referral_balance=body.use_referral_balance,
         notes=body.notes
     )

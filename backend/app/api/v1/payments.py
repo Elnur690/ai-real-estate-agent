@@ -24,6 +24,8 @@ class CreatePaymentRequest(BaseModel):
     addon_saved_searches: Optional[int] = None
     feature_watermark_free_images: Optional[bool] = None
     addon_image_requests_limit: Optional[int] = None
+    include_crm_addon: Optional[bool] = None
+    addon_crm_price: Optional[float] = None
     use_referral_balance: bool = True
     notes: Optional[str] = None
 
@@ -61,6 +63,8 @@ async def process_tenant_cash_payment(
     addon_saved_searches: Optional[int] = None,
     feature_watermark_free_images: Optional[bool] = None,
     addon_image_requests_limit: Optional[int] = None,
+    include_crm_addon: Optional[bool] = None,
+    addon_crm_price: Optional[float] = None,
     use_referral_balance: bool = True,
     notes: Optional[str] = None
 ) -> Payment:
@@ -138,14 +142,28 @@ async def process_tenant_cash_payment(
     if feature_watermark_free_images is not None:
         tenant.feature_watermark_free_images = bool(feature_watermark_free_images)
 
+    crm_addon_fee = 0.0
+    if include_crm_addon is not None:
+        tenant.feature_crm = bool(include_crm_addon)
+        if include_crm_addon:
+            crm_price_per_month = addon_crm_price if (addon_crm_price is not None and addon_crm_price > 0) else (getattr(db_plan, 'addon_crm_price', 15.0) or 15.0)
+            crm_addon_fee = round(crm_price_per_month * multiplier, 2)
+            tenant.addon_crm_price = crm_price_per_month
+        else:
+            tenant.addon_crm_price = 0.0
+    elif tenant.feature_crm:
+        crm_price_per_month = tenant.addon_crm_price or 15.0
+        crm_addon_fee = round(crm_price_per_month * multiplier, 2)
+
     if category == "addon_only":
         # Addon only payment
         base_price = 0.0
-        addon_fee = round(addon_price_per_month * multiplier, 2)
-        tenant.feature_aged_listings = True
-        if addon_aged_max_months:
-            tenant.addon_aged_max_months = int(addon_aged_max_months)
-        default_notes = f"Cash payment received for AGED LISTINGS ADDON ONLY ({days_covered} days coverage)"
+        addon_fee = round(addon_price_per_month * multiplier, 2) if include_aged_listings else 0.0
+        if include_aged_listings:
+            tenant.feature_aged_listings = True
+            if addon_aged_max_months:
+                tenant.addon_aged_max_months = int(addon_aged_max_months)
+        default_notes = f"Cash payment received for ADDONS ONLY ({days_covered} days coverage)"
     elif category == "plan_only":
         # Plan only payment
         base_price = round((db_plan.price if db_plan else 29.0) * multiplier, 2)
@@ -165,9 +183,10 @@ async def process_tenant_cash_payment(
         addon_label = f" + Aged Listings Addon ({tenant.addon_aged_max_months or 12} mo.)" if tenant.feature_aged_listings else ""
         search_label = f" + Extra {tenant.addon_saved_searches} Searches" if (tenant.addon_saved_searches and tenant.addon_saved_searches > 0) else ""
         image_label = f" + Extra {tenant.addon_image_requests_limit} Clean Images" if (tenant.addon_image_requests_limit and tenant.addon_image_requests_limit > 0) else ""
-        default_notes = f"Cash payment received for {plan_code.upper()} plan{addon_label}{search_label}{image_label} ({days_covered} days coverage)"
+        crm_label = " + Telegram CRM Mini App Addon" if tenant.feature_crm else ""
+        default_notes = f"Cash payment received for {plan_code.upper()} plan{addon_label}{search_label}{image_label}{crm_label} ({days_covered} days coverage)"
 
-    final_amount = amount if (amount is not None and amount > 0) else round(base_price + addon_fee + search_addon_fee + image_addon_fee, 2)
+    final_amount = amount if (amount is not None and amount > 0) else round(base_price + addon_fee + search_addon_fee + image_addon_fee + crm_addon_fee, 2)
     pay_currency = currency or (db_plan.currency if db_plan else "AZN")
 
     # Referral bonus discount

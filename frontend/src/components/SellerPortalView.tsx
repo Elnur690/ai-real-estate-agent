@@ -121,6 +121,9 @@ export interface SellerPackageItem {
   included_image_requests?: number;
   addon_image_requests_price?: number;
   addon_image_tiers?: { requests: number; price: number }[];
+  feature_crm?: boolean;
+  addon_crm_price?: number;
+  addon_crm_tiers?: { months: number; price: number }[];
   sale_enabled?: boolean;
   sale_price?: number;
   sale_discount_percent?: number;
@@ -322,6 +325,8 @@ export function SellerPortalView() {
   const [renewExtraSearchesPrice, setRenewExtraSearchesPrice] = useState<number>(0);
   const [renewImageRequests, setRenewImageRequests] = useState<number>(0);
   const [renewImagePrice, setRenewImagePrice] = useState<number>(0);
+  const [renewCrm, setRenewCrm] = useState<boolean>(false);
+  const [renewCrmPrice, setRenewCrmPrice] = useState<number>(0);
   const [renewingAgent, setRenewingAgent] = useState(false);
   const [renewError, setRenewError] = useState<string | null>(null);
   const [renewSuccessMsg, setRenewSuccessMsg] = useState<string | null>(null);
@@ -621,7 +626,8 @@ export function SellerPortalView() {
         selected_extra_searches: agentSelectedExtraSearches > 0 ? agentSelectedExtraSearches : undefined,
         selected_extra_searches_price: agentSelectedExtraSearchesPrice > 0 ? agentSelectedExtraSearchesPrice : undefined,
         selected_image_requests: agentSelectedImageRequests > 0 ? agentSelectedImageRequests : undefined,
-        selected_image_price: agentSelectedImagePrice > 0 ? agentSelectedImagePrice : undefined
+        selected_image_price: agentSelectedImagePrice > 0 ? agentSelectedImagePrice : undefined,
+        selected_crm_price: (agentCrm && !isTrial) ? (packages.find(p => p.id === agentPkgId)?.addon_crm_price || 15) : 0
       });
       setIsAddAgentOpen(false);
       setAgentName('');
@@ -784,7 +790,9 @@ export function SellerPortalView() {
         selected_extra_searches: renewExtraSearches > 0 ? renewExtraSearches : undefined,
         selected_extra_searches_price: renewExtraSearchesPrice > 0 ? renewExtraSearchesPrice : undefined,
         selected_image_requests: renewImageRequests > 0 ? renewImageRequests : undefined,
-        selected_image_price: renewImagePrice > 0 ? renewImagePrice : undefined
+        selected_image_price: renewImagePrice > 0 ? renewImagePrice : undefined,
+        selected_crm_enabled: renewCrm,
+        selected_crm_price: renewCrm ? renewCrmPrice : 0
       });
 
       setRenewSuccessMsg(res.data.message || 'Abunə uğurla yeniləndi!');
@@ -2683,7 +2691,8 @@ export function SellerPortalView() {
                   const hasImageTiers = currentPkg && currentPkg.feature_watermark_free_images && currentPkg.addon_image_tiers && currentPkg.addon_image_tiers.length > 0;
 
                   const basePrice = isCustomPlan ? (selectedAgent.plan_price ?? 50.0) : (currentPkg?.price ?? 0);
-                  const totalGross = basePrice + renewAgedPrice + renewExtraSearchesPrice + renewImagePrice;
+                  const crmPriceVal = renewCrm ? (currentPkg?.addon_crm_price ?? 15.0) : 0;
+                  const totalGross = basePrice + renewAgedPrice + renewExtraSearchesPrice + renewImagePrice + crmPriceVal;
                   const commRate = dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70;
                   const sellerProfit = (totalGross * commRate) / 100;
 
@@ -2779,6 +2788,35 @@ export function SellerPortalView() {
                         </div>
                       )}
 
+                      {/* Telegram Mini App & CRM Add-on Selector */}
+                      <div>
+                        <label className="flex items-center justify-between p-2.5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl cursor-pointer">
+                          <div className="flex items-center gap-2.5">
+                            <input
+                              type="checkbox"
+                              checked={renewCrm}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setRenewCrm(checked);
+                                setRenewCrmPrice(checked ? (currentPkg?.addon_crm_price ?? 15.0) : 0);
+                              }}
+                              className="w-4 h-4 rounded accent-indigo-500"
+                            />
+                            <div>
+                              <span className="text-xs font-semibold text-indigo-200 block">
+                                💼 Telegram Mini App & Real Estate CRM Add-on
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                Agent üçün /crm əmri və TMA müştəri boru kəmərini aktivləşdirir
+                              </span>
+                            </div>
+                          </div>
+                          <span className="text-[11px] text-indigo-400 font-mono font-semibold">
+                            +{(currentPkg?.addon_crm_price ?? 15.0)} AZN
+                          </span>
+                        </label>
+                      </div>
+
                       {/* Renewal Price Summary */}
                       <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl space-y-1.5">
                         <div className="flex justify-between text-xs text-slate-300">
@@ -2801,6 +2839,12 @@ export function SellerPortalView() {
                           <div className="flex justify-between text-xs text-teal-300">
                             <span>+{renewImageRequests} foto:</span>
                             <span>+{renewImagePrice.toFixed(2)} AZN</span>
+                          </div>
+                        )}
+                        {renewCrm && (
+                          <div className="flex justify-between text-xs text-indigo-300">
+                            <span>💼 Telegram CRM:</span>
+                            <span>+{(currentPkg?.addon_crm_price ?? 15.0).toFixed(2)} AZN</span>
                           </div>
                         )}
                         <div className="border-t border-emerald-500/30 pt-1.5 flex justify-between text-sm font-bold">
@@ -3245,7 +3289,8 @@ export function SellerPortalView() {
                 if (!hasAgedTiers && !hasSearchTiers && !hasImageTiers) return null;
 
                 const basePrice = selectedPkg.price;
-                const totalGross = basePrice + agentSelectedAgedPrice + agentSelectedExtraSearchesPrice + agentSelectedImagePrice;
+                const crmAddonPrice = agentCrm ? (selectedPkg.addon_crm_price ?? 15.0) : 0;
+                const totalGross = basePrice + agentSelectedAgedPrice + agentSelectedExtraSearchesPrice + agentSelectedImagePrice + crmAddonPrice;
                 const commRate = dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70;
                 const sellerProfit = (totalGross * commRate) / 100;
 
@@ -3364,6 +3409,12 @@ export function SellerPortalView() {
                         <div className="flex justify-between text-xs text-teal-300">
                           <span>🖼️ +{agentSelectedImageRequests} foto:</span>
                           <span className="font-medium">+{agentSelectedImagePrice.toFixed(2)} AZN</span>
+                        </div>
+                      )}
+                      {crmAddonPrice > 0 && (
+                        <div className="flex justify-between text-xs text-indigo-300">
+                          <span>💼 Telegram CRM Mini App:</span>
+                          <span className="font-medium">+{crmAddonPrice.toFixed(2)} AZN</span>
                         </div>
                       )}
                       <div className="border-t border-emerald-500/30 pt-1.5 flex justify-between text-sm font-bold">

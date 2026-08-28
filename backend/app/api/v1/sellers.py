@@ -171,6 +171,8 @@ class RenewSellerAgentRequest(BaseModel):
     selected_extra_searches_price: Optional[float] = None
     selected_image_requests: Optional[int] = None
     selected_image_price: Optional[float] = None
+    selected_crm_enabled: Optional[bool] = None
+    selected_crm_price: Optional[float] = None
 
 class UpdateFreeTrialSettingsRequest(BaseModel):
     free_trial_enabled: Optional[bool] = None
@@ -990,6 +992,18 @@ async def renew_my_agent(
         agent.addon_image_requests_price = addon_images_price
         agent.addon_image_requests_used = 0
 
+        # CRM Mini App Add-on Handling
+        selected_crm_price = max(0.0, float(body.selected_crm_price or 0.0))
+        if body.selected_crm_enabled is not None:
+            agent.feature_crm = bool(body.selected_crm_enabled)
+            agent.addon_crm_price = selected_crm_price if body.selected_crm_enabled else 0.0
+        elif selected_crm_price > 0:
+            agent.feature_crm = True
+            agent.addon_crm_price = selected_crm_price
+        else:
+            agent.feature_crm = package.feature_crm
+            agent.addon_crm_price = package.addon_crm_price if package.feature_crm else 0.0
+
         base_price = package.price
         if getattr(package, 'sale_enabled', False) and getattr(package, 'sale_price', None) is not None and package.sale_price > 0:
             base_price = package.sale_price
@@ -1001,6 +1015,15 @@ async def renew_my_agent(
         new_expires_at = base_expiry + timedelta(days=duration_days)
         agent.status = "active"
         agent.plan_expires_at = new_expires_at
+
+        # CRM Mini App Add-on Handling for custom/transferred
+        selected_crm_price = max(0.0, float(body.selected_crm_price or 0.0))
+        if body.selected_crm_enabled is not None:
+            agent.feature_crm = bool(body.selected_crm_enabled)
+            agent.addon_crm_price = selected_crm_price if body.selected_crm_enabled else 0.0
+        elif selected_crm_price > 0:
+            agent.feature_crm = True
+            agent.addon_crm_price = selected_crm_price
 
         # Determine price from custom_price, latest payment, plan table, or fallback
         if body.custom_price is not None and body.custom_price > 0:
@@ -1027,7 +1050,7 @@ async def renew_my_agent(
         pkg_tx_id = agent.seller_package_id
         desc_plan = f"Köçürülmüş Plan Yenilənməsi: {agent.name} ({agent.plan})"
 
-    if base_price > 0:
+    if base_price > 0 or selected_crm_price > 0:
         rank_map = await get_seller_rank_config_map(db)
         rank_info = rank_map.get(seller.rank, rank_map.get("Bronze", {}))
         bonus_pct = rank_info.get("bonus_commission", 0.0)
@@ -1036,7 +1059,7 @@ async def renew_my_agent(
         selected_aged_price = max(0.0, float(body.selected_aged_price or 0.0))
         selected_extra_searches_price = max(0.0, float(body.selected_extra_searches_price or 0.0))
         selected_image_price = max(0.0, float(body.selected_image_price or 0.0))
-        gross_amount = round(base_price + selected_aged_price + selected_extra_searches_price + selected_image_price, 2)
+        gross_amount = round(base_price + selected_aged_price + selected_extra_searches_price + selected_image_price + selected_crm_price, 2)
 
         seller_profit = round(gross_amount * (effective_commission_pct / 100.0), 2)
         platform_fee = round(gross_amount - seller_profit, 2)
@@ -1062,6 +1085,18 @@ async def renew_my_agent(
             description=f"{desc_plan} [Bonus: +{bonus_pct}%]"
         )
         db.add(tx)
+
+        # Create confirmed Payment record for this agent
+        pay_record = Payment(
+            tenant_id=agent.id,
+            amount=gross_amount,
+            currency="AZN",
+            period_covered_start=base_expiry,
+            period_covered_end=new_expires_at,
+            received_at=datetime.now(timezone.utc),
+            notes=f"Seller Renewal: {desc_plan} (Aged: {selected_aged_price} AZN, Searches: {selected_extra_searches_price} AZN, Images: {selected_image_price} AZN, CRM: {selected_crm_price} AZN)"
+        )
+        db.add(pay_record)
 
     await db.commit()
     await db.refresh(agent)
@@ -1249,7 +1284,8 @@ async def register_my_agent(
         selected_aged_price = max(0.0, float(body.selected_aged_price or 0.0))
         selected_extra_searches_price = max(0.0, float(body.selected_extra_searches_price or 0.0))
         selected_image_price = max(0.0, float(body.selected_image_price or 0.0))
-        gross_amount = round(effective_pkg_price + selected_aged_price + selected_extra_searches_price + selected_image_price, 2)
+        selected_crm_price = max(0.0, float(body.selected_crm_price or 0.0))
+        gross_amount = round(effective_pkg_price + selected_aged_price + selected_extra_searches_price + selected_image_price + selected_crm_price, 2)
 
         seller_profit = round(gross_amount * (effective_commission_pct / 100.0), 2)
         platform_fee = round(gross_amount - seller_profit, 2)
@@ -1278,6 +1314,19 @@ async def register_my_agent(
             description=f"Agent abunəsi: {agent.name} ({package.name}) [Bonus: +{bonus_pct}%]"
         )
         db.add(tx)
+
+        # Create confirmed Payment record for this agent
+        pay_record = Payment(
+            tenant_id=agent.id,
+            amount=gross_amount,
+            currency="AZN",
+            period_covered_start=now_utc,
+            period_covered_end=expires_at,
+            received_at=now_utc,
+            notes=f"Seller Registration: {agent.name} ({package.name}) (Aged: {selected_aged_price} AZN, CRM: {selected_crm_price} AZN)"
+        )
+        db.add(pay_record)
+
         await db.commit()
         await db.refresh(seller)
 
