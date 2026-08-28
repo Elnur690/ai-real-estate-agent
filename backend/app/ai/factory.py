@@ -84,7 +84,7 @@ class ProviderFactory:
                 return GeminiProvider(api_key=plain_key, model_name=model_name)
 
         # 3. Hard fallback
-        return GeminiProvider(api_key=settings.GEMINI_API_KEY, model_name="gemini-2.5-flash")
+        return GeminiProvider(api_key=settings.GEMINI_API_KEY, model_name="gemini-3.5-flash")
 
     @staticmethod
     async def log_call(

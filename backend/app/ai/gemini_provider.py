@@ -6,9 +6,9 @@ from app.ai.base import AIProvider, StructuredCriteria, StructuredListing
 from app.core.baku_locations import extract_metro_station, extract_all_metro_stations, extract_all_baku_districts
 
 class GeminiProvider(AIProvider):
-    def __init__(self, api_key: str | None = None, model_name: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: str | None = None, model_name: str = "gemini-3.5-flash"):
         self.api_key = api_key
-        self.model_name = model_name or "gemini-2.5-flash"
+        self.model_name = model_name or "gemini-3.5-flash"
 
     async def parse_search_criteria(self, raw_text: str) -> StructuredCriteria:
         # If API key is available, attempt call via official google-genai SDK
@@ -54,7 +54,7 @@ Extract structured JSON strictly with these exact keys:
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True) if hasattr(types, 'AutomaticFunctionCallingConfig') else None
                 )
 
-                target_model = self.model_name or "gemini-2.5-flash"
+                target_model = self.model_name or "gemini-3.5-flash"
                 response = client.models.generate_content(
                     model=target_model,
                     contents=prompt,
