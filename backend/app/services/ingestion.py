@@ -384,23 +384,51 @@ class IngestionService:
             dest_chat_id = getattr(search, 'destination_chat_id', None)
             inst_name = getattr(search, 'instance_name', None) or f"tenant_{tenant.id}"
 
+            tg_sent = False
+            wa_sent = False
+
             # Deliver to Telegram
-            if (dest_channel in ["telegram", "both"]) and (tenant.telegram_chat_id or (dest_channel == "telegram" and dest_chat_id)):
+            should_send_tg = (
+                (dest_channel in ["telegram", "both"]) or
+                (bool(tenant.telegram_chat_id) and not tenant.whatsapp_number)
+            )
+            if should_send_tg and (tenant.telegram_chat_id or (dest_channel == "telegram" and dest_chat_id)):
                 tg_id = (dest_chat_id if dest_channel == "telegram" else None) or tenant.telegram_chat_id
                 if tg_id:
-                    await send_telegram_notification(tg_id, msg)
-                    delivered += 1
+                    tg_sent = await send_telegram_notification(tg_id, msg)
+                    if tg_sent:
+                        delivered += 1
 
             # Deliver to WhatsApp
-            if (dest_channel in ["whatsapp", "both"]) and (tenant.whatsapp_number or (dest_channel == "whatsapp" and dest_chat_id)):
+            should_send_wa = (
+                (dest_channel in ["whatsapp", "both"]) or
+                (bool(tenant.whatsapp_number) and not tenant.telegram_chat_id)
+            )
+            if should_send_wa and (tenant.whatsapp_number or (dest_channel == "whatsapp" and dest_chat_id)):
                 wa_id = (dest_chat_id if dest_channel == "whatsapp" else None) or tenant.whatsapp_number
                 if wa_id:
-                    await WhatsAppAdapter.send_message(
+                    wa_sent = await WhatsAppAdapter.send_message(
                         phone_number=wa_id,
                         text=msg,
                         instance_name=inst_name
                     )
-                    delivered += 1
+                    if wa_sent:
+                        delivered += 1
+
+            # Resilient Cross-Channel Fallback
+            if not wa_sent and not tg_sent:
+                if tenant.telegram_chat_id:
+                    fallback_tg = await send_telegram_notification(tenant.telegram_chat_id, msg)
+                    if fallback_tg:
+                        delivered += 1
+                elif tenant.whatsapp_number:
+                    fallback_wa = await WhatsAppAdapter.send_message(
+                        phone_number=tenant.whatsapp_number,
+                        text=msg,
+                        instance_name=inst_name
+                    )
+                    if fallback_wa:
+                        delivered += 1
 
         return delivered
 
@@ -589,9 +617,13 @@ class IngestionService:
                     loc_likes.append(Listing.description.ilike(f"%{alias}%"))
             conditions.append(or_(*loc_likes))
 
-        # Only evaluate fresh DB listings (past 5 days) to avoid matching stale/sold listings
-        recency_cutoff = datetime.now(timezone.utc) - timedelta(days=5)
-        conditions.append(Listing.created_at >= recency_cutoff)
+        # Recency & archive lookback conditions
+        if getattr(search, 'min_months_on_market', None) and search.min_months_on_market > 0:
+            aged_cutoff = datetime.now(timezone.utc) - timedelta(days=search.min_months_on_market * 30)
+            conditions.append(Listing.created_at <= aged_cutoff)
+        else:
+            recency_cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+            conditions.append(Listing.created_at >= recency_cutoff)
 
         stmt_active = select(Listing).where(and_(*conditions)).order_by(Listing.id.desc()).limit(20)
         res_active = await db.execute(stmt_active)
@@ -1109,7 +1141,7 @@ class IngestionService:
             res_m = await db.execute(stmt_m)
             existing_match = res_m.scalars().first()
 
-            if not existing_match and score >= 0.70:
+            if not existing_match and score >= 0.50:
                 # 🌙 Quiet Hours Check (Baku Timezone UTC+4)
                 if getattr(tenant, 'quiet_hours_enabled', False):
                     baku_tz = timezone(timedelta(hours=4))
@@ -1355,6 +1387,9 @@ class IngestionService:
                     f"`Təqdimat {new_match.id}` | `Foto {new_match.id}` | `CRM {new_match.id}` | `Maraqlanıram {new_match.id}` | `Keç {new_match.id}` | `Satılıb {new_match.id}`"
                 )
 
+                tg_sent = False
+                wa_sent = False
+
                 # Deliver to Telegram
                 should_send_tg = (
                     (dest_channel in ["telegram", "both"]) or
@@ -1363,7 +1398,7 @@ class IngestionService:
                 if should_send_tg and (tenant.telegram_chat_id or (dest_channel == "telegram" and dest_chat_id)):
                     tg_id = (dest_chat_id if dest_channel == "telegram" else None) or tenant.telegram_chat_id
                     if tg_id:
-                        await send_telegram_notification(tg_id, msg_text)
+                        tg_sent = await send_telegram_notification(tg_id, msg_text)
 
                 # Deliver to WhatsApp
                 should_send_wa = (
@@ -1373,8 +1408,19 @@ class IngestionService:
                 if should_send_wa and (tenant.whatsapp_number or (dest_channel == "whatsapp" and dest_chat_id)):
                     wa_id = (dest_chat_id if dest_channel == "whatsapp" else None) or tenant.whatsapp_number
                     if wa_id:
-                        await WhatsAppAdapter.send_message(
+                        wa_sent = await WhatsAppAdapter.send_message(
                             phone_number=wa_id,
+                            text=msg_text,
+                            instance_name=inst_name
+                        )
+
+                # Resilient Cross-Channel Fallback: If primary failed, try the other channel immediately
+                if not wa_sent and not tg_sent:
+                    if tenant.telegram_chat_id:
+                        await send_telegram_notification(tenant.telegram_chat_id, msg_text)
+                    elif tenant.whatsapp_number:
+                        await WhatsAppAdapter.send_message(
+                            phone_number=tenant.whatsapp_number,
                             text=msg_text,
                             instance_name=inst_name
                         )

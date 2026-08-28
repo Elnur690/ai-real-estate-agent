@@ -17,8 +17,8 @@ class TrialTrackerService:
             target_num = tenant.whatsapp_number or tenant.phone
             try:
                 await WhatsAppAdapter.send_message(
-                    to_number=target_num,
-                    message_text=msg,
+                    phone_number=target_num,
+                    text=msg,
                     instance_name=f"tenant_{tenant.id}"
                 )
             except Exception as e_wa:
