@@ -780,8 +780,8 @@ export const TenantsView: React.FC = () => {
                       className="w-4 h-4 rounded border-slate-700 text-blue-600 focus:ring-blue-500"
                     />
                     <div>
-                      <div className="text-xs font-bold text-slate-200">Telegram & Mini App</div>
-                      <div className="text-[10px] text-slate-400">Bildiriş və CRM</div>
+                      <div className="text-xs font-bold text-slate-200">Telegram Botu</div>
+                      <div className="text-[10px] text-slate-400">Elan bildirişləri</div>
                     </div>
                   </label>
                 </div>
@@ -963,8 +963,8 @@ export const TenantsView: React.FC = () => {
                       className="w-4 h-4 rounded border-slate-700 text-blue-600 focus:ring-blue-500"
                     />
                     <div>
-                      <div className="text-xs font-bold text-slate-200">Telegram & Mini App</div>
-                      <div className="text-[10px] text-slate-400">Bildiriş və CRM</div>
+                      <div className="text-xs font-bold text-slate-200">Telegram Botu</div>
+                      <div className="text-[10px] text-slate-400">Elan bildirişləri</div>
                     </div>
                   </label>
                 </div>
@@ -1239,8 +1239,8 @@ export const TenantsView: React.FC = () => {
                       className="w-4 h-4 rounded border-slate-700 text-blue-600 focus:ring-blue-500"
                     />
                     <div>
-                      <div className="text-xs font-bold text-slate-200">Telegram & Mini App</div>
-                      <div className="text-[10px] text-slate-400">Bildiriş və CRM</div>
+                      <div className="text-xs font-bold text-slate-200">Telegram Botu</div>
+                      <div className="text-[10px] text-slate-400">Elan bildirişləri</div>
                     </div>
                   </label>
                 </div>

@@ -84,6 +84,7 @@ export interface SellerAgent {
   addon_image_requests_limit?: number;
   addon_image_requests_used?: number;
   addon_image_requests_price?: number;
+  feature_crm?: boolean;
   seller_package_id?: number;
   package_data?: any;
   saved_searches_count?: number;
@@ -215,6 +216,7 @@ export function SellerPortalView() {
   const [agentTg, setAgentTg] = useState('');
   const [agentWhatsapp, setAgentWhatsapp] = useState('');
   const [agentChannel, setAgentChannel] = useState('telegram');
+  const [agentCrm, setAgentCrm] = useState(false);
   const [agentPkgId, setAgentPkgId] = useState<number | undefined>(undefined);
   const [agentError, setAgentError] = useState<string | null>(null);
   const [submittingAgent, setSubmittingAgent] = useState(false);
@@ -307,6 +309,7 @@ export function SellerPortalView() {
   const [editAgentWatermarkImages, setEditAgentWatermarkImages] = useState(false);
   const [editAgentImageLimit, setEditAgentImageLimit] = useState(0);
   const [editAgentImageUsed, setEditAgentImageUsed] = useState(0);
+  const [editAgentCrm, setEditAgentCrm] = useState(false);
   const [savingAgentEdit, setSavingAgentEdit] = useState(false);
   const [agentEditError, setAgentEditError] = useState<string | null>(null);
   const [agentEditSuccessMsg, setAgentEditSuccessMsg] = useState<string | null>(null);
@@ -610,6 +613,7 @@ export function SellerPortalView() {
         telegram_handle: agentTg || undefined,
         whatsapp_number: agentWhatsapp || undefined,
         preferred_channel: agentChannel,
+        feature_crm: agentCrm,
         package_id: isTrial ? undefined : agentPkgId,
         is_trial: isTrial,
         selected_aged_months: agentSelectedAgedMonths > 0 ? agentSelectedAgedMonths : undefined,
@@ -624,6 +628,7 @@ export function SellerPortalView() {
       setAgentPhone('');
       setAgentTg('');
       setAgentWhatsapp('');
+      setAgentCrm(false);
       setAgentPkgId(undefined);
       setAgentSelectedAgedMonths(0);
       setAgentSelectedAgedPrice(0);
@@ -668,6 +673,7 @@ export function SellerPortalView() {
     setEditAgentWatermarkImages(agent.feature_watermark_free_images ?? false);
     setEditAgentImageLimit(agent.addon_image_requests_limit || 0);
     setEditAgentImageUsed(agent.addon_image_requests_used || 0);
+    setEditAgentCrm(agent.feature_crm ?? false);
 
     // Initialize renew fields (0 means keep current/transferred plan)
     const defaultPkgId = agent.seller_package_id || 0;
@@ -704,6 +710,7 @@ export function SellerPortalView() {
         setEditAgentWatermarkImages(res.data.feature_watermark_free_images ?? false);
         setEditAgentImageLimit(res.data.addon_image_requests_limit || 0);
         setEditAgentImageUsed(res.data.addon_image_requests_used || 0);
+        setEditAgentCrm(res.data.feature_crm ?? false);
         if (res.data.seller_package_id) {
           setRenewPkgId(res.data.seller_package_id);
         } else {
@@ -744,7 +751,8 @@ export function SellerPortalView() {
         addon_saved_searches: editAgentSearches,
         feature_watermark_free_images: editAgentWatermarkImages,
         addon_image_requests_limit: editAgentImageLimit,
-        addon_image_requests_used: editAgentImageUsed
+        addon_image_requests_used: editAgentImageUsed,
+        feature_crm: editAgentCrm
       });
 
       setAgentEditSuccessMsg('Agent məlumatları uğurla yeniləndi!');
@@ -2916,8 +2924,8 @@ export function SellerPortalView() {
                         className="rounded bg-slate-900 border-slate-700 text-blue-600"
                       />
                       <div>
-                        <div className="text-xs font-bold text-slate-200">Telegram & CRM</div>
-                        <div className="text-[10px] text-slate-400">Mini App</div>
+                        <div className="text-xs font-bold text-slate-200">Telegram Botu</div>
+                        <div className="text-[10px] text-slate-400">Elan bildirişləri</div>
                       </div>
                     </label>
                   </div>
@@ -2952,6 +2960,15 @@ export function SellerPortalView() {
                     İmkan və Funksiya İcazələri
                   </label>
                   <div className="grid grid-cols-2 gap-2 text-xs">
+                    <label className="flex items-center gap-2 p-2 bg-indigo-500/10 border border-indigo-500/30 rounded-xl cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={editAgentCrm}
+                        onChange={(e) => setEditAgentCrm(e.target.checked)}
+                        className="rounded bg-slate-900 border-slate-700 text-indigo-600"
+                      />
+                      <span className="text-indigo-300 font-semibold">💼 Telegram CRM Mini App</span>
+                    </label>
                     <label className="flex items-center gap-2 p-2 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer">
                       <input
                         type="checkbox"
@@ -3143,64 +3160,80 @@ export function SellerPortalView() {
                     </div>
                   </label>
 
-                  <label className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition ${
-                    (agentChannel === 'telegram' || agentChannel === 'both')
-                      ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
-                      : 'bg-slate-950 border-slate-800 text-slate-400'
-                  }`}>
+                    <label className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition ${
+                      (agentChannel === 'telegram' || agentChannel === 'both')
+                        ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+                        : 'bg-slate-950 border-slate-800 text-slate-400'
+                    }`}>
+                      <input
+                        type="checkbox"
+                        checked={agentChannel === 'telegram' || agentChannel === 'both'}
+                        onChange={(e) => {
+                          const isWa = agentChannel === 'whatsapp' || agentChannel === 'both';
+                          const next = e.target.checked ? (isWa ? 'both' : 'telegram') : (isWa ? 'whatsapp' : 'telegram');
+                          setAgentChannel(next);
+                        }}
+                        className="rounded bg-slate-900 border-slate-700 text-blue-600"
+                      />
+                      <div>
+                        <div className="text-xs font-bold text-slate-200">Telegram Botu</div>
+                        <div className="text-[10px] text-slate-400">Elan bildirişləri</div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">Telegram İstifadəçi Adı və ya Chat ID</label>
+                  <input
+                    type="text"
+                    value={agentTg}
+                    onChange={(e) => setAgentTg(e.target.value)}
+                    placeholder="@agent_username"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                {/* CRM Mini App Addon */}
+                <div className="pt-1">
+                  <label className="flex items-center gap-2.5 p-2.5 bg-indigo-500/10 border border-indigo-500/30 rounded-xl cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={agentChannel === 'telegram' || agentChannel === 'both'}
-                      onChange={(e) => {
-                        const isWa = agentChannel === 'whatsapp' || agentChannel === 'both';
-                        const next = e.target.checked ? (isWa ? 'both' : 'telegram') : (isWa ? 'whatsapp' : 'telegram');
-                        setAgentChannel(next);
-                      }}
-                      className="rounded bg-slate-900 border-slate-700 text-blue-600"
+                      checked={agentCrm}
+                      onChange={(e) => setAgentCrm(e.target.checked)}
+                      className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-indigo-500"
                     />
-                    <div>
-                      <div className="text-xs font-bold text-slate-200">Telegram & CRM</div>
-                      <div className="text-[10px] text-slate-400">Mini App</div>
+                    <div className="flex-1">
+                      <div className="text-xs font-bold text-indigo-300">💼 Telegram Mini App & Real Estate CRM</div>
+                      <div className="text-[10px] text-slate-400">Agent üçün /crm əmri və TMA müştəri boru kəmərini aktivləşdirir</div>
                     </div>
                   </label>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Telegram İstifadəçi Adı və ya Chat ID</label>
-                <input
-                  type="text"
-                  value={agentTg}
-                  onChange={(e) => setAgentTg(e.target.value)}
-                  placeholder="@agent_username"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Təyin Ediləcək Plan / Paket *</label>
-                <select
-                  value={agentPkgId !== undefined ? agentPkgId : (trialEnabled ? -1 : (packages[0]?.id || 0))}
-                  onChange={(e) => setAgentPkgId(Number(e.target.value))}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
-                >
-                  {trialEnabled && (
-                    <option value={-1}>
-                      🎁 Pulsuz Sınaq Təklifi ({trialDays} Günlük Aktivlik)
-                    </option>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">Təyin Ediləcək Plan / Paket *</label>
+                  <select
+                    value={agentPkgId !== undefined ? agentPkgId : (trialEnabled ? -1 : (packages[0]?.id || 0))}
+                    onChange={(e) => setAgentPkgId(Number(e.target.value))}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                  >
+                    {trialEnabled && (
+                      <option value={-1}>
+                        🎁 Pulsuz Sınaq Təklifi ({trialDays} Günlük Aktivlik)
+                      </option>
+                    )}
+                    {packages.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        💳 {p.name} ({p.price} AZN / {p.period === 'monthly' ? 'aylıq' : p.period})
+                      </option>
+                    ))}
+                  </select>
+                  {agentPkgId === -1 && (
+                    <span className="text-[11px] text-indigo-400 mt-1.5 block bg-indigo-500/10 p-2 rounded-lg border border-indigo-500/20">
+                      Agent {trialDays} gün müddətində pulsuz sınaqdan ({trialSearches} axtarış, {trialLocations} məkan) yararlanacaq.
+                    </span>
                   )}
-                  {packages.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      💳 {p.name} ({p.price} AZN / {p.period === 'monthly' ? 'aylıq' : p.period})
-                    </option>
-                  ))}
-                </select>
-                {agentPkgId === -1 && (
-                  <span className="text-[11px] text-indigo-400 mt-1.5 block bg-indigo-500/10 p-2 rounded-lg border border-indigo-500/20">
-                    Agent {trialDays} gün müddətində pulsuz sınaqdan ({trialSearches} axtarış, {trialLocations} məkan) yararlanacaq.
-                  </span>
-                )}
-              </div>
+                </div>
 
               {/* Addon Tier Selectors — only for paid packages */}
               {agentPkgId !== undefined && agentPkgId !== -1 && (() => {

@@ -805,6 +805,7 @@ async def get_my_agent_detail(
         "addon_image_requests_limit": getattr(agent, 'addon_image_requests_limit', 0),
         "addon_image_requests_used": getattr(agent, 'addon_image_requests_used', 0),
         "addon_image_requests_price": getattr(agent, 'addon_image_requests_price', 0.0),
+        "feature_crm": getattr(agent, 'feature_crm', False),
         "seller_package_id": agent.seller_package_id,
         "package_data": pkg_data,
         "saved_searches_count": saved_searches_count,
@@ -897,6 +898,8 @@ async def update_my_agent(
         agent.addon_image_requests_limit = body.addon_image_requests_limit
     if body.addon_image_requests_used is not None:
         agent.addon_image_requests_used = body.addon_image_requests_used
+    if body.feature_crm is not None:
+        agent.feature_crm = body.feature_crm
 
     await db.commit()
     await db.refresh(agent)
@@ -1224,7 +1227,8 @@ async def register_my_agent(
         feature_watermark_free_images=f_images,
         addon_image_requests_limit=addon_images,
         addon_image_requests_used=0,
-        addon_image_requests_price=addon_images_price
+        addon_image_requests_price=addon_images_price,
+        feature_crm=getattr(body, 'feature_crm', False) or False
     )
     db.add(agent)
     await db.commit()
