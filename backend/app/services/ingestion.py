@@ -650,24 +650,27 @@ class IngestionService:
         active_searches = res_s.scalars().all()
 
         targeted_tasks = []
+        seen_target_urls = set()
         for s in active_searches:
             for s_name, scraper_inst, t_url in IngestionService.build_targeted_search_urls(s):
-                targeted_tasks.append((s_name, scraper_inst, t_url, 1))
+                if t_url not in seen_target_urls:
+                    seen_target_urls.add(t_url)
+                    targeted_tasks.append((s_name, scraper_inst, t_url, 1))
 
         total_scraped = 0
         total_matched = 0
 
-        # 3. High-Speed Concurrent Scrape with Bounded Concurrency Pool (12 parallel workers)
-        sem = asyncio.Semaphore(12)
+        # 3. High-Speed Concurrent Scrape with Bounded Concurrency Pool (6 polite parallel workers)
+        sem = asyncio.Semaphore(6)
 
         async def fetch_source(s_id, s_name, scraper, url):
             async with sem:
                 try:
-                    await polite_delay(0.1, 0.4)
+                    await polite_delay(0.1, 0.3)
                     items = await scraper.scrape_source(url)
                     return (s_id, s_name, items)
                 except Exception as e:
-                    logger.error(f"[IngestionService] Error scraping {s_name} ({url}): {e}")
+                    logger.debug(f"[IngestionService] Notice scraping {s_name} ({url}): {e}")
                     return (s_id, s_name, [])
 
         scrape_jobs = [

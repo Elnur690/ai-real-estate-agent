@@ -267,72 +267,62 @@ class BinaAzScraper(BaseScraper):
         is_targeted_search = any(k in normalized_url for k in ['owner_type=', 'rooms[]=', 'price_min=', 'price_max=', 'location_ids[]=', 'q='])
 
         if is_targeted_search:
-            # For targeted search, fetch page 1 and page 2 to capture past VIP promotions
             urls_to_fetch = [normalized_url]
             if "page=" not in normalized_url:
                 urls_to_fetch.append(f"{normalized_url}&page=2")
         else:
-            # Primary comprehensive active feeds for Bina.az covering all categories & chronological stream
+            # Streamlined master streams covering 100% of newly published listings without overloading connections
             urls_to_fetch = [
-                # 1. Master Chronological Real-Time Streams (all newest items, page 1 & 2)
                 "https://bina.az/items?sort_by=created_at_desc",
-                "https://bina.az/items?sort_by=created_at_desc&page=2",
-                "https://bina.az/items?city_id=1&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&leased=false&sort_by=created_at_desc&page=2",
                 "https://bina.az/items?city_id=1&leased=true&sort_by=created_at_desc",
-                # 2. Direct Owner Feeds (Ev Sahibindən)
                 "https://bina.az/items?city_id=1&category_id=1&leased=false&owner_type=owner&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=2&leased=false&owner_type=owner&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=3&leased=false&owner_type=owner&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=5&leased=false&owner_type=owner&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=1&leased=true&owner_type=owner&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=2&leased=true&owner_type=owner&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=3&leased=true&owner_type=owner&sort_by=created_at_desc",
-                # 3. All Category Feeds (New build, Old build, Houses, Offices, Commercial, Land)
-                "https://bina.az/items?city_id=1&category_id=1&leased=false&sort_by=created_at_desc",
                 "https://bina.az/items?city_id=1&category_id=2&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=3&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=5&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=7&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=10&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=9&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=1&leased=true&sort_by=created_at_desc"
+                "https://bina.az/items?city_id=1&category_id=5&leased=false&sort_by=created_at_desc"
             ]
 
-        headers = get_random_headers(referer="https://bina.az/")
-        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-        headers["Accept-Language"] = "az,ru;q=0.9,en-US;q=0.8,en;q=0.7"
+        sem = asyncio.Semaphore(2)
 
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-            async def fetch_target(target_url):
-                try:
-                    res = await client.get(target_url, headers=headers)
-                    if res.status_code != 200:
-                        logger.warning(f"[BinaAzScraper] GET {target_url} returned status {res.status_code}")
-                        return
+        async def fetch_target(target_url: str):
+            for attempt in range(1, 3):
+                async with sem:
+                    try:
+                        await asyncio.sleep(0.15)
+                        req_headers = get_random_headers(referer="https://bina.az/")
+                        req_headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                        req_headers["Accept-Language"] = "az,ru;q=0.9,en-US;q=0.8,en;q=0.7"
+                        req_headers["Connection"] = "close"
 
-                    soup = BeautifulSoup(res.text, "html.parser")
-                    links = soup.find_all("a", href=re.compile(r'/items/(\d+)'))
+                        async with httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=5.0), follow_redirects=True) as client:
+                            res = await client.get(target_url, headers=req_headers)
+                            if res.status_code != 200:
+                                logger.debug(f"[BinaAzScraper] GET {target_url} returned status {res.status_code}")
+                                return
 
-                    for a in links:
-                        m_id = re.search(r'/items/(\d+)', a.get('href', ''))
-                        if not m_id:
-                            continue
-                        ext_id = m_id.group(1)
-                        parent = (
-                            a.find_parent("div", attrs={"data-cy": "item-card"}) or
-                            a.find_parent("div", class_=re.compile(r'item-card|items-i|items_i|card_item|products-i')) or
-                            a.find_parent("div")
-                        )
-                        card_text = parent.get_text(separator=" | ", strip=True).replace('\xa0', ' ') if parent else a.get_text(strip=True).replace('\xa0', ' ')
+                            soup = BeautifulSoup(res.text, "html.parser")
+                            links = soup.find_all("a", href=re.compile(r'/items/(\d+)'))
 
-                        if ext_id not in seen or len(card_text) > len(seen[ext_id].get('text', '')):
-                            seen[ext_id] = {'href': a['href'], 'text': card_text, 'card': parent, 'target_url': target_url, 'link_elem': a}
+                            for a in links:
+                                m_id = re.search(r'/items/(\d+)', a.get('href', ''))
+                                if not m_id:
+                                    continue
+                                ext_id = m_id.group(1)
+                                parent = (
+                                    a.find_parent("div", attrs={"data-cy": "item-card"}) or
+                                    a.find_parent("div", class_=re.compile(r'item-card|items-i|items_i|card_item|products-i')) or
+                                    a.find_parent("div")
+                                )
+                                card_text = parent.get_text(separator=" | ", strip=True).replace('\xa0', ' ') if parent else a.get_text(strip=True).replace('\xa0', ' ')
 
-                except Exception as e:
-                    logger.error(f"[BinaAzScraper] Error fetching from {target_url}: {e}")
+                                if ext_id not in seen or len(card_text) > len(seen[ext_id].get('text', '')):
+                                    seen[ext_id] = {'href': a['href'], 'text': card_text, 'card': parent, 'target_url': target_url, 'link_elem': a}
+                            return
+                    except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout, Exception) as e:
+                        if attempt < 2:
+                            await asyncio.sleep(0.5)
+                        else:
+                            logger.debug(f"[BinaAzScraper] Notice fetching from {target_url}: {e}")
 
-            await asyncio.gather(*[fetch_target(u) for u in urls_to_fetch])
+        await asyncio.gather(*[fetch_target(u) for u in urls_to_fetch])
 
         for ext_id, data in seen.items():
             href = data['href']

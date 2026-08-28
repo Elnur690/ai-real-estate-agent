@@ -1,5 +1,6 @@
 import re
 import logging
+import asyncio
 import httpx
 from bs4 import BeautifulSoup
 from typing import List
@@ -105,104 +106,110 @@ class TapAzScraper(BaseScraper):
         urls_to_fetch = [url_or_handle] if ("?" in url_or_handle or not url_or_handle.endswith("tap.az/elanlar/dasinmaz-emlak")) else [
             "https://tap.az/elanlar/dasinmaz-emlak?order=new",
             "https://tap.az/elanlar/dasinmaz-emlak/menziller?order=new",
-            "https://tap.az/elanlar/dasinmaz-emlak/heyet-evleri-baglar-villalar?order=new",
-            "https://tap.az/elanlar/dasinmaz-emlak/ofisler?order=new",
-            "https://tap.az/elanlar/dasinmaz-emlak/obyektler?order=new",
-            "https://tap.az/elanlar/dasinmaz-emlak/torpaq?order=new"
+            "https://tap.az/elanlar/dasinmaz-emlak/heyet-evleri-baglar-villalar?order=new"
         ]
 
-        headers = get_random_headers(referer="https://tap.az/")
-        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-        headers["Accept-Language"] = "az,ru;q=0.9,en-US;q=0.8,en;q=0.7"
-
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-            for target_url in urls_to_fetch:
+        for target_url in urls_to_fetch:
+            for attempt in range(1, 3):
                 try:
-                    res = await client.get(target_url, headers=headers)
-                    if res.status_code == 200:
-                        soup = BeautifulSoup(res.text, "html.parser")
-                        cards = soup.find_all("a", href=re.compile(r'/elanlar/dasinmaz-emlak/(?:menziller|heyet-evleri-baglar-villalar|ofisler|obyektler|torpaq)/(\d+)'))
-                        if not cards:
-                            cards = soup.find_all("a", href=re.compile(r'/elanlar/dasinmaz-emlak/[^"]+/(\d+)'))
+                    await asyncio.sleep(0.15)
+                    headers = get_random_headers(referer="https://tap.az/")
+                    headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                    headers["Accept-Language"] = "az,ru;q=0.9,en-US;q=0.8,en;q=0.7"
+                    headers["Connection"] = "close"
 
-                        for a in cards:
-                            href = a.get('href', '')
-                            m_id = re.search(r'/elanlar/dasinmaz-emlak/[^"]+/(\d+)', href)
-                            if not m_id:
-                                continue
-                            ext_id = m_id.group(1)
-                            if ext_id in seen:
-                                continue
-                            seen.add(ext_id)
+                    async with httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=5.0), follow_redirects=True) as client:
+                        res = await client.get(target_url, headers=headers)
+                        if res.status_code == 200:
+                            soup = BeautifulSoup(res.text, "html.parser")
+                            cards = soup.find_all("a", href=re.compile(r'/elanlar/dasinmaz-emlak/(?:menziller|heyet-evleri-baglar-villalar|ofisler|obyektler|torpaq)/(\d+)'))
+                            if not cards:
+                                cards = soup.find_all("a", href=re.compile(r'/elanlar/dasinmaz-emlak/[^"]+/(\d+)'))
 
-                            raw_text = a.get_text(separator=" | ", strip=True).replace('\xa0', ' ')
-                            raw_lower = raw_text.lower()
+                            for a in cards:
+                                href = a.get('href', '')
+                                m_id = re.search(r'/elanlar/dasinmaz-emlak/[^"]+/(\d+)', href)
+                                if not m_id:
+                                    continue
+                                ext_id = m_id.group(1)
+                                if ext_id in seen:
+                                    continue
+                                seen.add(ext_id)
 
-                            price_m = re.search(r'([\d\s]+)\s*\|\s*₼', raw_text) or re.search(r'([\d\s]+)\s*₼', raw_text) or re.search(r'([\d\s]+)\s*AZN', raw_text)
-                            price = safe_float(price_m.group(1) if price_m else None, default=0.0)
+                                raw_text = a.get_text(separator=" | ", strip=True).replace('\xa0', ' ')
+                                raw_lower = raw_text.lower()
 
-                            rooms_m = re.search(r'(\d+)\s*-\s*otaqlı', raw_text) or re.search(r'(\d+)\s*otaqlı', raw_text)
-                            rooms = int(rooms_m.group(1)) if rooms_m else None
-                            area_m = re.search(r'([\d.]+)\s*m²', raw_text)
-                            area = safe_optional_float(area_m.group(1) if area_m else None)
+                                price_m = re.search(r'([\d\s]+)\s*\|\s*₼', raw_text) or re.search(r'([\d\s]+)\s*₼', raw_text) or re.search(r'([\d\s]+)\s*AZN', raw_text)
+                                price = safe_float(price_m.group(1) if price_m else None, default=0.0)
 
-                            district = extract_baku_district(raw_text) 
-                            settlement = extract_baku_settlement(raw_text)
-                            metro = extract_metro_station(raw_text)
+                                rooms_m = re.search(r'(\d+)\s*-\s*otaqlı', raw_text) or re.search(r'(\d+)\s*otaqlı', raw_text)
+                                rooms = int(rooms_m.group(1)) if rooms_m else None
+                                area_m = re.search(r'([\d.]+)\s*m²', raw_text)
+                                area = safe_optional_float(area_m.group(1) if area_m else None)
 
-                            if not district:
-                                if settlement and settlement in SETTLEMENT_TO_DISTRICT:
-                                    district = SETTLEMENT_TO_DISTRICT[settlement]
-                                elif metro and metro in METRO_TO_DISTRICT:
-                                    district = METRO_TO_DISTRICT[metro]
+                                district = extract_baku_district(raw_text) 
+                                settlement = extract_baku_settlement(raw_text)
+                                metro = extract_metro_station(raw_text)
 
-                            from app.core.property_classifier import classify_property_and_offer
-                            detected_offer, detected_prop, detected_seller = classify_property_and_offer(
-                                title="",
-                                description=raw_text,
-                                url=href,
-                                raw_text=raw_text
-                            )
+                                if not district:
+                                    if settlement and settlement in SETTLEMENT_TO_DISTRICT:
+                                        district = SETTLEMENT_TO_DISTRICT[settlement]
+                                    elif metro and metro in METRO_TO_DISTRICT:
+                                        district = METRO_TO_DISTRICT[metro]
 
-                            prop_label_map = {
-                                "apartment": "Mənzil",
-                                "house": "Həyət evi / Villa",
-                                "office": "Ofis",
-                                "commercial": "Obyekt",
-                                "land": "Torpaq sahəsi"
-                            }
-                            prop_name = prop_label_map.get(detected_prop, "Əmlak")
-                            loc_label = settlement or metro or district or 'Bakı'
-                            title = f"{rooms} otaqlı {prop_name} ({loc_label})" if rooms else f"{prop_name} ({loc_label})"
+                                from app.core.property_classifier import classify_property_and_offer
+                                detected_offer, detected_prop, detected_seller = classify_property_and_offer(
+                                    title="",
+                                    description=raw_text,
+                                    url=href,
+                                    raw_text=raw_text
+                                )
 
-                            bld_type = "old" if "köhnə" in raw_lower else "new"
+                                prop_label_map = {
+                                    "apartment": "Mənzil",
+                                    "house": "Həyət evi / Villa",
+                                    "office": "Ofis",
+                                    "commercial": "Obyekt",
+                                    "land": "Torpaq sahəsi"
+                                }
+                                prop_name = prop_label_map.get(detected_prop, "Əmlak")
+                                loc_label = settlement or metro or district or 'Bakı'
+                                title = f"{rooms} otaqlı {prop_name} ({loc_label})" if rooms else f"{prop_name} ({loc_label})"
 
-                            # Extract card photo
-                            card_photos = []
-                            img_el = a.find("img")
-                            if img_el:
-                                src_val = img_el.get("src") or img_el.get("data-src") or img_el.get("data-original")
-                                if src_val and ("uploads/" in src_val or "azstatic" in src_val or "tap.az" in src_val):
-                                    src_clean = src_val.replace('/thumbnail/', '/full/').replace('/f660x496/', '/full/')
-                                    card_photos.append(src_clean)
+                                bld_type = "old" if "köhnə" in raw_lower else "new"
 
-                            items.append(RawListingItem(
-                                external_id=f"tap_{ext_id}",
-                                title=title,
-                                description=f"Tap.az: {raw_text}",
-                                price=price,
-                                currency="AZN",
-                                district=district,
-                                metro_station=metro,
-                                rooms=rooms,
-                                area_sqm=area,
-                                building_type=bld_type,
-                                seller_type=detected_seller,
-                                offer_type=detected_offer,
-                                property_type=detected_prop,
-                                listing_url=f"https://tap.az{href}",
-                                photos=card_photos
-                            ))
+                                # Extract card photo
+                                card_photos = []
+                                img_el = a.find("img")
+                                if img_el:
+                                    src_val = img_el.get("src") or img_el.get("data-src") or img_el.get("data-original")
+                                    if src_val and ("uploads/" in src_val or "azstatic" in src_val or "tap.az" in src_val):
+                                        src_clean = src_val.replace('/thumbnail/', '/full/').replace('/f660x496/', '/full/')
+                                        card_photos.append(src_clean)
+
+                                items.append(RawListingItem(
+                                    external_id=f"tap_{ext_id}",
+                                    title=title,
+                                    description=f"Tap.az: {raw_text}",
+                                    price=price,
+                                    currency="AZN",
+                                    district=district,
+                                    metro_station=metro,
+                                    rooms=rooms,
+                                    area_sqm=area,
+                                    building_type=bld_type,
+                                    seller_type=detected_seller,
+                                    offer_type=detected_offer,
+                                    property_type=detected_prop,
+                                    listing_url=f"https://tap.az{href}",
+                                    photos=card_photos
+                                ))
+                            break
+                except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout, Exception) as e:
+                    if attempt < 2:
+                        await asyncio.sleep(0.5)
+                    else:
+                        logger.debug(f"[TapAzScraper] Notice fetching from {target_url}: {e}")
                 except Exception as e:
                     logger.warning(f"[TapAzScraper] Error fetching from {target_url}: {e}")
 
