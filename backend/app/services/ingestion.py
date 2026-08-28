@@ -1087,8 +1087,8 @@ class IngestionService:
                 "property_type": getattr(listing, 'property_type', 'apartment')
             }, criteria=criteria)
 
-            # Check if match already recorded
-            stmt_m = select(Match).where(Match.saved_search_id == search.id, Match.listing_id == listing.id)
+            # Check if match already recorded for this tenant (prevents duplicate spam across searches)
+            stmt_m = select(Match).where(Match.tenant_id == tenant.id, Match.listing_id == listing.id)
             res_m = await db.execute(stmt_m)
             existing_match = res_m.scalars().first()
 
