@@ -325,7 +325,7 @@ class IngestionService:
                 continue
 
             tenant = tenants_by_id.get(search.tenant_id)
-            if not tenant or tenant.status != "active":
+            if not tenant or tenant.status in ["suspended", "expired"]:
                 continue
 
             # Check if match already recorded
@@ -1090,12 +1090,6 @@ class IngestionService:
             # Check tenant suspension or expiration
             if tenant.status in ["suspended", "expired"]:
                 continue
-            if tenant.plan_expires_at:
-                expires_at = tenant.plan_expires_at
-                if expires_at.tzinfo is None:
-                    expires_at = expires_at.replace(tzinfo=timezone.utc)
-                if expires_at < now_utc:
-                    continue
 
             # Deterministic Strict Filter Check
             if not IngestionService.is_strict_match(search, listing):
