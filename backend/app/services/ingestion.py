@@ -1339,13 +1339,21 @@ class IngestionService:
                 )
 
                 # Deliver to Telegram
-                if (dest_channel in ["telegram", "both"]) and (tenant.telegram_chat_id or (dest_channel == "telegram" and dest_chat_id)):
+                should_send_tg = (
+                    (dest_channel in ["telegram", "both"]) or
+                    (bool(tenant.telegram_chat_id) and not tenant.whatsapp_number)
+                )
+                if should_send_tg and (tenant.telegram_chat_id or (dest_channel == "telegram" and dest_chat_id)):
                     tg_id = (dest_chat_id if dest_channel == "telegram" else None) or tenant.telegram_chat_id
                     if tg_id:
                         await send_telegram_notification(tg_id, msg_text)
 
                 # Deliver to WhatsApp
-                if (dest_channel in ["whatsapp", "both"]) and (tenant.whatsapp_number or (dest_channel == "whatsapp" and dest_chat_id)):
+                should_send_wa = (
+                    (dest_channel in ["whatsapp", "both"]) or
+                    (bool(tenant.whatsapp_number) and not tenant.telegram_chat_id)
+                )
+                if should_send_wa and (tenant.whatsapp_number or (dest_channel == "whatsapp" and dest_chat_id)):
                     wa_id = (dest_chat_id if dest_channel == "whatsapp" else None) or tenant.whatsapp_number
                     if wa_id:
                         await WhatsAppAdapter.send_message(

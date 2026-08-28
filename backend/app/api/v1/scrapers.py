@@ -81,14 +81,28 @@ async def delete_source(source_id: int, db: AsyncSession = Depends(get_db), curr
     return {"status": "deleted", "id": source_id}
 
 async def _bg_run_ingestion():
+    import logging
+    logger = logging.getLogger("scrapers_api")
     from app.db.session import AsyncSessionLocal
-    async with AsyncSessionLocal() as db:
-        await IngestionService.run_ingestion_cycle(db)
+    logger.info("[ManualTrigger] Manual scraping and matching triggered from Admin Dashboard...")
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await IngestionService.run_ingestion_cycle(db)
+            logger.info(f"[ManualTrigger] Completed: {result}")
+    except Exception as e:
+        logger.error(f"[ManualTrigger] Error during manual scraping cycle: {e}")
 
 async def _bg_recheck_listings(limit: int = 1000):
+    import logging
+    logger = logging.getLogger("scrapers_api")
     from app.db.session import AsyncSessionLocal
-    async with AsyncSessionLocal() as db:
-        await IngestionService.recheck_and_heal_all_listings(db, limit=limit)
+    logger.info(f"[ManualRecheck] Healing and re-evaluating top {limit} listings...")
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await IngestionService.recheck_and_heal_all_listings(db, limit=limit)
+            logger.info(f"[ManualRecheck] Completed: {result}")
+    except Exception as e:
+        logger.error(f"[ManualRecheck] Error during listings recheck: {e}")
 
 @router.post("/recheck")
 async def recheck_historical_listings(background_tasks: BackgroundTasks, current_admin = Depends(get_current_admin)):
