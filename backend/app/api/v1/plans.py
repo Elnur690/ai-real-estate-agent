@@ -537,3 +537,172 @@ async def delete_plan(
     plan.is_active = False
     await db.commit()
     return {"message": f"Plan '{plan.name}' has been deactivated."}
+
+
+class UpdateAddonRequest(BaseModel):
+    is_active: Optional[bool] = None
+    price: Optional[float] = None
+    tiers: Optional[List[dict]] = None
+    sale_enabled: Optional[bool] = None
+    sale_price: Optional[float] = None
+    sale_discount_percent: Optional[float] = None
+    sale_badge_label: Optional[str] = None
+    max_months: Optional[int] = None
+    included_quota: Optional[int] = None
+
+
+@router.get("/addons/overview")
+async def get_addons_overview(
+    db: AsyncSession = Depends(get_db),
+    current_admin = Depends(get_current_admin)
+):
+    """Retrieve consolidated catalogue of all SaaS Add-ons, their base prices, tiers, and sale parameters."""
+    stmt = select(Plan).where(Plan.is_active == True)
+    res = await db.execute(stmt)
+    plans = res.scalars().all()
+
+    # Find starter/default plan for reference
+    starter_plan = next((p for p in plans if p.code == "starter"), (plans[0] if plans else None))
+
+    addons = [
+        {
+            "key": "crm",
+            "name": "💼 Telegram Mini App & Real Estate CRM",
+            "description": "Agentlər üçün /crm əmri, müştəri boru kəməri (pipeline), lead idarəetməsi və Telegram Mini App CRM interfeysi.",
+            "category": "crm",
+            "is_active": True,
+            "default_price": getattr(starter_plan, 'addon_crm_price', 15.0) or 15.0,
+            "billing_period": "monthly",
+            "tiers": getattr(starter_plan, 'addon_crm_tiers', []) or [
+                {"months": 1, "price": 15.0},
+                {"months": 3, "price": 35.0},
+                {"months": 6, "price": 65.0},
+                {"months": 12, "price": 110.0}
+            ],
+            "sale_enabled": False,
+            "sale_price": None,
+            "sale_discount_percent": 20.0,
+            "sale_badge_label": "🔥 20% CRM Xüsusi Endirim",
+            "features_included": [
+                "/crm <id> Telegram əmri və sürətli idarəetmə",
+                "Müştəri Boru Kəməri (TMA Kanban / Pipeline)",
+                "Elan və müştəri uyğunluq qeydləri",
+                "Fərdi zəng və əlaqə statuslarının izlənməsi"
+            ]
+        },
+        {
+            "key": "aged_listings",
+            "name": "📦 Arxiv Elanlar Bazasından Axtarış",
+            "description": "Tarixi və aktiv arxiv elanlar bazasından (1-24 ay) axtarış və dərhal uyğunluq tapılması.",
+            "category": "inventory",
+            "is_active": True,
+            "default_price": getattr(starter_plan, 'addon_aged_listings_price', 15.0) or 15.0,
+            "billing_period": "monthly",
+            "max_months": getattr(starter_plan, 'addon_aged_max_months', 12) or 12,
+            "tiers": getattr(starter_plan, 'addon_aged_tiers', []) or [
+                {"months": 1, "price": 10.0},
+                {"months": 3, "price": 25.0},
+                {"months": 6, "price": 45.0},
+                {"months": 12, "price": 80.0}
+            ],
+            "sale_enabled": False,
+            "sale_price": None,
+            "sale_discount_percent": 15.0,
+            "sale_badge_label": "📦 Arxiv Paketi Xüsusi Təklif",
+            "features_included": [
+                "24 aya qədər tarixi elan arxivinə çıxış",
+                "Dərhal tarixi axtarış (Backfill Matcher)",
+                "Sahibindən arxiv elanlarının analizi"
+            ]
+        },
+        {
+            "key": "saved_searches",
+            "name": "⚡ Əlavə Axtarış Yuvaları (Search Slots)",
+            "description": "Agentin eyni anda aktiv saxlaya biləcəyi daimi axtarış filtrlərinin sayını artırır.",
+            "category": "quota",
+            "is_active": True,
+            "default_price": getattr(starter_plan, 'addon_saved_searches_price', 10.0) or 10.0,
+            "billing_period": "monthly",
+            "pack_size": 5,
+            "tiers": getattr(starter_plan, 'addon_search_tiers', []) or [
+                {"searches": 5, "price": 10.0},
+                {"searches": 10, "price": 18.0},
+                {"searches": 20, "price": 30.0}
+            ],
+            "sale_enabled": False,
+            "sale_price": None,
+            "sale_discount_percent": None,
+            "sale_badge_label": "⚡ Sürətli Axtarış Paketi",
+            "features_included": [
+                "Hər paket üçün +5 əlavə axtarış yuvası",
+                "Eyni vaxtda çoxsaylı müştəri sorğusunu izləmə",
+                "Prioritet elan bildirişləri"
+            ]
+        },
+        {
+            "key": "watermark_free_images",
+            "name": "🖼️ Su Nişansız Şəkillər (Clean Photos)",
+            "description": "Saytların su nişanları (bina.az, tap.az və s.) təmizlənmiş yüksək keyfiyyətli orijinal elan şəkilləri.",
+            "category": "quota",
+            "is_active": True,
+            "default_price": getattr(starter_plan, 'addon_image_requests_price', 10.0) or 10.0,
+            "billing_period": "monthly",
+            "pack_size": 25,
+            "tiers": getattr(starter_plan, 'addon_image_tiers', []) or [
+                {"requests": 25, "price": 10.0},
+                {"requests": 50, "price": 18.0},
+                {"requests": 100, "price": 30.0}
+            ],
+            "sale_enabled": False,
+            "sale_price": None,
+            "sale_discount_percent": None,
+            "sale_badge_label": "🖼️ Təmiz Şəkil Paketi",
+            "features_included": [
+                "AI ilə su nişanı təmizlənmiş fotolar",
+                "Müştəriyə göndərilmək üçün hazır vizual broşür",
+                "HD keyfiyyətli şəkil yükləmə"
+            ]
+        }
+    ]
+
+    return addons
+
+
+@router.put("/addons/{addon_key}")
+async def update_addon_config(
+    addon_key: str,
+    body: UpdateAddonRequest,
+    db: AsyncSession = Depends(get_db),
+    current_admin = Depends(get_current_admin)
+):
+    """Batch update pricing and tiers for a specific Add-on across subscription plans."""
+    stmt = select(Plan)
+    res = await db.execute(stmt)
+    plans = res.scalars().all()
+
+    for plan in plans:
+        if addon_key == "crm":
+            if body.price is not None:
+                plan.addon_crm_price = float(body.price)
+            if body.tiers is not None:
+                plan.addon_crm_tiers = body.tiers
+        elif addon_key == "aged_listings":
+            if body.price is not None:
+                plan.addon_aged_listings_price = float(body.price)
+            if body.tiers is not None:
+                plan.addon_aged_tiers = body.tiers
+            if body.max_months is not None:
+                plan.addon_aged_max_months = int(body.max_months)
+        elif addon_key == "saved_searches":
+            if body.price is not None:
+                plan.addon_saved_searches_price = float(body.price)
+            if body.tiers is not None:
+                plan.addon_search_tiers = body.tiers
+        elif addon_key == "watermark_free_images":
+            if body.price is not None:
+                plan.addon_image_requests_price = float(body.price)
+            if body.tiers is not None:
+                plan.addon_image_tiers = body.tiers
+
+    await db.commit()
+    return {"message": f"Add-on '{addon_key}' konfiqurasiyası bütün planlarda uğurla yeniləndi."}

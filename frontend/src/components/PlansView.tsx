@@ -45,10 +45,19 @@ export interface PlanItem {
 }
 
 export function PlansView() {
+  const [activeTab, setActiveTab] = useState<'plans' | 'addons'>('plans');
   const [plans, setPlans] = useState<PlanItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<PlanItem | null>(null);
+
+  // Add-ons Management State
+  const [addonsList, setAddonsList] = useState<any[]>([]);
+  const [loadingAddons, setLoadingAddons] = useState(false);
+  const [editingAddon, setEditingAddon] = useState<any | null>(null);
+  const [addonPriceInput, setAddonPriceInput] = useState<number>(15);
+  const [addonTiersInput, setAddonTiersInput] = useState<any[]>([]);
+  const [savingAddon, setSavingAddon] = useState(false);
 
   // Form State
   const [formCode, setFormCode] = useState('');
@@ -379,6 +388,44 @@ export function PlansView() {
     }
   };
 
+  const fetchAddons = async () => {
+    setLoadingAddons(true);
+    try {
+      const res = await api.get('/plans/addons/overview');
+      setAddonsList(res.data || []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingAddons(false);
+    }
+  };
+
+  const openEditAddon = (addon: any) => {
+    setEditingAddon(addon);
+    setAddonPriceInput(addon.default_price || 15);
+    setAddonTiersInput(addon.tiers || []);
+  };
+
+  const handleSaveAddon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAddon) return;
+    setSavingAddon(true);
+    try {
+      await api.put(`/plans/addons/${editingAddon.key}`, {
+        price: addonPriceInput,
+        tiers: addonTiersInput
+      });
+      setEditingAddon(null);
+      fetchAddons();
+      fetchPlans();
+      alert(`"${editingAddon.name}" üçün qiymətlər uğurla yeniləndi!`);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Addon qiymətlərini yeniləyərkən xəta baş verdi');
+    } finally {
+      setSavingAddon(false);
+    }
+  };
+
   const togglePlanActive = async (plan: PlanItem) => {
     try {
       await api.put(`/plans/${plan.id}`, {
@@ -400,28 +447,57 @@ export function PlansView() {
               <Package className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-white tracking-tight">Subscription Plans & Pricing</h2>
-              <p className="text-xs text-slate-400">Configure, add, or modify subscription tiers, feature flags & pricing</p>
+              <h2 className="text-xl font-bold text-white tracking-tight">Tariflər, Paketlər və Əlavə Xidmətlər (Add-ons)</h2>
+              <p className="text-xs text-slate-400">Abunə tariflərini, funksiyaları, əlavə xidmətlərin qiymət pillələrini və endirimləri idarə edin</p>
             </div>
           </div>
         </div>
 
+        {activeTab === 'plans' && (
+          <button
+            onClick={openCreateModal}
+            className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white px-4 py-2.5 rounded-xl font-semibold text-sm shadow-lg shadow-emerald-500/20 transition-all self-start sm:self-auto"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Yeni Abunə Planı</span>
+          </button>
+        )}
+      </div>
+
+      {/* Top Tabs Switcher */}
+      <div className="flex items-center gap-2 p-1.5 bg-dark-800/90 border border-slate-800 rounded-2xl w-fit">
         <button
-          onClick={openCreateModal}
-          className="flex items-center gap-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white px-4 py-2.5 rounded-xl font-semibold text-sm shadow-lg shadow-emerald-500/20 transition-all self-start sm:self-auto"
+          onClick={() => setActiveTab('plans')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition ${
+            activeTab === 'plans'
+              ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20'
+              : 'text-slate-400 hover:text-white'
+          }`}
         >
-          <Plus className="w-4 h-4" />
-          <span>Create New Plan</span>
+          <Package className="w-4 h-4" />
+          <span>📦 Abunə Paketləri ({plans.length})</span>
+        </button>
+        <button
+          onClick={() => { setActiveTab('addons'); fetchAddons(); }}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition ${
+            activeTab === 'addons'
+              ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/20'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          <span>🛒 Əlavə Xidmətlər (Add-ons & Qiymətlər)</span>
         </button>
       </div>
 
-      {/* Grid of Plans */}
-      {loading ? (
-        <div className="flex items-center justify-center py-16">
-          <RefreshCw className="w-7 h-7 text-emerald-400 animate-spin" />
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {/* TAB 1: Grid of Plans */}
+      {activeTab === 'plans' && (
+        loading ? (
+          <div className="flex items-center justify-center py-16">
+            <RefreshCw className="w-7 h-7 text-emerald-400 animate-spin" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {plans.map((plan) => (
             <div
               key={plan.id}
@@ -699,6 +775,165 @@ export function PlansView() {
               </div>
             </div>
           ))}
+        </div>
+        )
+      )}
+
+      {/* TAB 2: Grid of Add-ons */}
+      {activeTab === 'addons' && (
+        loadingAddons ? (
+          <div className="flex items-center justify-center py-16">
+            <RefreshCw className="w-7 h-7 text-indigo-400 animate-spin" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {addonsList.map((addon) => (
+              <div
+                key={addon.key}
+                className="bg-dark-800/90 border border-slate-800 hover:border-indigo-500/40 rounded-2xl p-6 flex flex-col justify-between transition-all shadow-xl relative overflow-hidden"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <span className="text-[11px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-md bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                      {addon.category.toUpperCase()} ADD-ON
+                    </span>
+                    <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      Aktiv
+                    </span>
+                  </div>
+
+                  <h3 className="text-lg font-bold text-white mb-1.5">{addon.name}</h3>
+                  <p className="text-xs text-slate-400 mb-4 leading-relaxed">{addon.description}</p>
+
+                  {/* Pricing Overview */}
+                  <div className="p-3.5 bg-dark-900/80 rounded-xl border border-slate-800 mb-4 space-y-2">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400">Baza Aylıq Qiymət:</span>
+                      <span className="text-base font-black text-emerald-400 font-mono">
+                        {addon.default_price.toFixed(2)} AZN / ay
+                      </span>
+                    </div>
+
+                    {addon.tiers && addon.tiers.length > 0 && (
+                      <div className="pt-2 border-t border-slate-800/80">
+                        <span className="text-[11px] font-semibold text-slate-400 block mb-1.5">Müddət Pillələri və Qiymətlər:</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {addon.tiers.map((t: any, idx: number) => (
+                            <span key={idx} className="px-2 py-1 rounded-lg bg-dark-950 border border-slate-800 text-[11px] font-mono text-indigo-300">
+                              {t.months ? `${t.months} ay` : t.searches ? `+${t.searches} axtarış` : `+${t.requests} foto`}: <strong>{t.price} AZN</strong>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Features Included List */}
+                  <div className="space-y-1.5 mb-5">
+                    <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">Daxil Olan Funksiyalar:</span>
+                    {addon.features_included?.map((f: string, i: number) => (
+                      <div key={i} className="flex items-center gap-2 text-xs text-slate-300">
+                        <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>{f}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-slate-800/80 flex items-center justify-end">
+                  <button
+                    onClick={() => openEditAddon(addon)}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs shadow-lg shadow-indigo-600/20 transition"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Qiymət və Pillələri Redaktə Et</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
+      {/* Modal: Edit Add-on */}
+      {editingAddon && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-dark-800 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5 my-8">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h3 className="text-lg font-bold text-white">
+                {editingAddon.name} — Qiymət Tənzimləmələri
+              </h3>
+              <button onClick={() => setEditingAddon(null)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAddon} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Baza Aylıq Qiymət (AZN) *
+                </label>
+                <input
+                  type="number"
+                  step="0.5"
+                  required
+                  value={addonPriceInput}
+                  onChange={(e) => setAddonPriceInput(Number(e.target.value))}
+                  className="w-full bg-dark-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white font-mono font-bold text-sm focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              {/* Tiers Editor */}
+              {addonTiersInput && addonTiersInput.length > 0 && (
+                <div className="space-y-2 pt-2 border-t border-slate-800">
+                  <label className="block text-xs font-semibold text-indigo-300 mb-1">
+                    Müddət və Həcm Pillələri üzrə Qiymətlər (AZN)
+                  </label>
+                  <div className="space-y-2">
+                    {addonTiersInput.map((tier: any, idx: number) => (
+                      <div key={idx} className="flex items-center gap-3 bg-dark-950/60 p-2.5 rounded-xl border border-slate-800">
+                        <span className="text-xs text-slate-300 font-mono w-28">
+                          {tier.months ? `${tier.months} Ay` : tier.searches ? `+${tier.searches} Axtarış` : `+${tier.requests} Foto`}
+                        </span>
+                        <div className="flex items-center gap-1.5 flex-1">
+                          <input
+                            type="number"
+                            step="0.5"
+                            value={tier.price}
+                            onChange={(e) => {
+                              const nextTiers = [...addonTiersInput];
+                              nextTiers[idx].price = Number(e.target.value);
+                              setAddonTiersInput(nextTiers);
+                            }}
+                            className="w-full bg-dark-900 border border-slate-700 rounded-lg px-2.5 py-1 text-white text-xs font-mono font-bold"
+                          />
+                          <span className="text-xs text-slate-400">AZN</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-4 border-t border-slate-800 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingAddon(null)}
+                  className="px-4 py-2 bg-dark-700 hover:bg-dark-600 text-slate-300 rounded-xl font-semibold text-xs"
+                >
+                  Ləğv et
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={savingAddon}
+                  className="px-5 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-semibold text-xs shadow-lg shadow-indigo-500/20 disabled:opacity-50"
+                >
+                  {savingAddon ? 'Saxlanılır...' : 'Qiymətləri Yadda Saxla'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

@@ -2998,21 +2998,18 @@ export function SellerPortalView() {
                   </div>
                 </div>
 
-                {/* Feature Toggles */}
-                <div className="pt-2 border-t border-slate-800 space-y-2">
-                  <label className="text-xs font-bold text-white uppercase tracking-wider block">
-                    İmkan və Funksiya İcazələri
-                  </label>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <label className="flex items-center gap-2 p-2 bg-indigo-500/10 border border-indigo-500/30 rounded-xl cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={editAgentCrm}
-                        onChange={(e) => setEditAgentCrm(e.target.checked)}
-                        className="rounded bg-slate-900 border-slate-700 text-indigo-600"
-                      />
-                      <span className="text-indigo-300 font-semibold">💼 Telegram CRM Mini App</span>
+                {/* SECTION 1: Plan-Included Features (Free/Included) */}
+                <div className="pt-3 border-t border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                      <span>🎁 Paketə Daxil Olan İmkanlar</span>
                     </label>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      ✅ Paketə Daxildir (0 AZN)
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs">
                     <label className="flex items-center gap-2 p-2 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer">
                       <input
                         type="checkbox"
@@ -3022,6 +3019,7 @@ export function SellerPortalView() {
                       />
                       <span className="text-slate-200">Makler Detektoru</span>
                     </label>
+
                     <label className="flex items-center gap-2 p-2 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer">
                       <input
                         type="checkbox"
@@ -3031,6 +3029,7 @@ export function SellerPortalView() {
                       />
                       <span className="text-slate-200">AVM Bazar Qiyməti</span>
                     </label>
+
                     <label className="flex items-center gap-2 p-2 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer">
                       <input
                         type="checkbox"
@@ -3040,6 +3039,7 @@ export function SellerPortalView() {
                       />
                       <span className="text-slate-200">Sosial Bukletlər</span>
                     </label>
+
                     <label className="flex items-center gap-2 p-2 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer">
                       <input
                         type="checkbox"
@@ -3049,6 +3049,7 @@ export function SellerPortalView() {
                       />
                       <span className="text-slate-200">Çoxsaylı Məkan</span>
                     </label>
+
                     <label className="flex items-center gap-2 p-2 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer">
                       <input
                         type="checkbox"
@@ -3058,6 +3059,7 @@ export function SellerPortalView() {
                       />
                       <span className="text-indigo-300 font-medium">Müştəri Qəbul Botu</span>
                     </label>
+
                     <label className="flex items-center gap-2 p-2 bg-slate-950/60 border border-slate-800 rounded-xl cursor-pointer">
                       <input
                         type="checkbox"
@@ -3068,22 +3070,94 @@ export function SellerPortalView() {
                       <span className="text-purple-300 font-medium">BaaS Data Backup</span>
                     </label>
                   </div>
+                </div>
 
-                  {/* Watermark-Free Photos Toggle & Limit in Edit Tab */}
-                  <div className="p-2.5 bg-slate-950/60 border border-slate-800 rounded-xl space-y-2">
+                {/* SECTION 2: Paid Add-ons (Requires Payment & Confirmation) */}
+                <div className="pt-3 border-t border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>🛒 Ödənişli Əlavə Xidmətlər (Add-ons)</span>
+                    </label>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                      ⚡ Əlavə Ödəniş Tələb Edilir
+                    </span>
+                  </div>
+
+                  {/* CRM Mini App Addon */}
+                  <div className="p-3 bg-indigo-500/10 border border-indigo-500/30 rounded-xl space-y-1.5">
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <div className="flex items-center gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={editAgentCrm}
+                          onChange={(e) => setEditAgentCrm(e.target.checked)}
+                          className="w-4 h-4 rounded bg-slate-900 border-slate-700 text-indigo-600"
+                        />
+                        <div>
+                          <div className="text-xs font-bold text-indigo-200">💼 Telegram Mini App & Real Estate CRM</div>
+                          <div className="text-[10px] text-slate-400">Agent üçün /crm əmri və TMA müştəri boru kəməri</div>
+                        </div>
+                      </div>
+                      <span className="text-[11px] font-mono font-bold text-indigo-400">+15.00 AZN/ay</span>
+                    </label>
+                  </div>
+
+                  {/* Aged Listings Addon */}
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-2">
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <div className="flex items-center gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={editAgentAged}
+                          onChange={(e) => setEditAgentAged(e.target.checked)}
+                          className="w-4 h-4 rounded bg-slate-900 border-slate-700 text-amber-600"
+                        />
+                        <div>
+                          <div className="text-xs font-bold text-amber-200">📦 Arxiv Elanlar Bazasından Axtarış</div>
+                          <div className="text-[10px] text-slate-400">Tarixi arxiv elanlarına baxış və dərhal axtarış</div>
+                        </div>
+                      </div>
+                      <span className="text-[11px] font-mono font-bold text-amber-400">+15.00 AZN/ay</span>
+                    </label>
+
+                    {editAgentAged && (
+                      <div className="flex items-center justify-between pt-2 border-t border-amber-500/20 text-xs">
+                        <span className="text-slate-400">Arxiv Dərinliyi:</span>
+                        <select
+                          value={editAgentAgedMonths}
+                          onChange={(e) => setEditAgentAgedMonths(Number(e.target.value))}
+                          className="bg-slate-900 border border-slate-700 text-white rounded-lg px-2 py-1 text-xs"
+                        >
+                          <option value={1}>1 Ay Arxiv</option>
+                          <option value={3}>3 Ay Arxiv</option>
+                          <option value={6}>6 Ay Arxiv</option>
+                          <option value={12}>12 Ay (1 İl) Arxiv</option>
+                          <option value={24}>24 Ay (2 İl) Arxiv</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Watermark-Free Photos Addon */}
+                  <div className="p-3 bg-teal-500/10 border border-teal-500/30 rounded-xl space-y-2">
                     <label className="flex items-center justify-between cursor-pointer text-xs">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2.5">
                         <input
                           type="checkbox"
                           checked={editAgentWatermarkImages}
                           onChange={(e) => setEditAgentWatermarkImages(e.target.checked)}
-                          className="rounded bg-slate-900 border-slate-700 text-teal-500"
+                          className="w-4 h-4 rounded bg-slate-900 border-slate-700 text-teal-500"
                         />
-                        <span className="text-teal-300 font-semibold">🖼️ Su Nişansız Şəkillər Add-on</span>
+                        <div>
+                          <div className="text-xs font-bold text-teal-200">🖼️ Su Nişansız Şəkillər Add-on</div>
+                          <div className="text-[10px] text-slate-400">AI ilə su nişanı təmizlənmiş orijinal elan şəkilləri</div>
+                        </div>
                       </div>
+                      <span className="text-[11px] font-mono font-bold text-teal-400">+10.00 AZN / 25 foto</span>
                     </label>
+
                     {editAgentWatermarkImages && (
-                      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800 text-xs">
+                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-teal-500/20 text-xs">
                         <div>
                           <label className="text-slate-400 text-[11px] block mb-0.5">Top-up Limit (Foto)</label>
                           <input
@@ -3106,6 +3180,20 @@ export function SellerPortalView() {
                         </div>
                       </div>
                     )}
+                  </div>
+
+                  {/* Payment Prompt / CTA */}
+                  <div className="p-3 bg-gradient-to-r from-indigo-950/40 via-purple-950/40 to-slate-900/60 border border-indigo-500/20 rounded-xl flex items-center justify-between gap-3">
+                    <div className="text-[11px] text-slate-300">
+                      💡 Əlavə xidmətlər (Add-on) üzrə ödəniş etmək və komissiya qazancınızı təsdiqləmək üçün birbaşa yeniləmə bölməsinə keçin:
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAgentModalTab('renew')}
+                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shrink-0 transition"
+                    >
+                      💳 Yenilə və Ödə
+                    </button>
                   </div>
                 </div>
 
