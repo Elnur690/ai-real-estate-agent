@@ -25,11 +25,11 @@ Extract structured JSON strictly with these exact keys:
 {{
   "district": "Comma-separated Baku districts or settlements if mentioned, else null",
   "metro_station": "Comma-separated Baku metro stations if mentioned, else null",
-  "locations": ["List of all distinct Baku locations, settlements, or metro stations mentioned"],
-  "min_price": number or null,
-  "max_price": number or null,
-  "min_price_usd": number or null,
-  "max_price_usd": number or null,
+  "locations": ["List of all distinct Baku locations, settlements, landmarks (e.g. BDU, BSU), or metro stations mentioned"],
+  "min_price": "number in AZN or null. If user specified price range in AZN (e.g. 1300 - 1600 AZN), put 1300 here. DO NOT convert to USD.",
+  "max_price": "number in AZN or null. If user specified price range in AZN (e.g. 1300 - 1600 AZN), put 1600 here. DO NOT convert to USD.",
+  "min_price_usd": "number in USD ONLY if the user explicitly wrote the price in USD ($ / USD / dollar), otherwise null",
+  "max_price_usd": "number in USD ONLY if the user explicitly wrote the price in USD ($ / USD / dollar), otherwise null",
   "min_rooms": integer or null,
   "max_rooms": integer or null,
   "min_area": number or null,
@@ -89,35 +89,50 @@ Extract structured JSON strictly with these exact keys:
                 if not data.get("locations"):
                     data["locations"] = all_locs
 
-                # If prices are in USD, auto-convert to AZN
+                # Currency validation: only keep USD if user explicitly mentioned USD / $
+                is_explicit_usd = any(c in raw_text.lower() for c in ["$", "usd", "dollar", "dolar"])
                 rate = 1.70
-                if data.get("max_price_usd") and not data.get("max_price"):
-                    data["max_price"] = round(data["max_price_usd"] * rate, 2)
-                if data.get("min_price_usd") and not data.get("min_price"):
-                    data["min_price"] = round(data["min_price_usd"] * rate, 2)
+                if not is_explicit_usd:
+                    data["min_price_usd"] = None
+                    data["max_price_usd"] = None
+                else:
+                    if data.get("max_price_usd") and not data.get("max_price"):
+                        data["max_price"] = round(data["max_price_usd"] * rate, 2)
+                    if data.get("min_price_usd") and not data.get("min_price"):
+                        data["min_price"] = round(data["min_price_usd"] * rate, 2)
 
+                raw_lower = raw_text.lower()
                 if not data.get("offer_type"):
-                    data["offer_type"] = "rent" if any(k in raw_text.lower() for k in ["kirayə", "kiraye", "icarə", "icare", "arenda", "aylıq"]) else "sale"
-                if not data.get("property_type"):
-                    raw_lower = raw_text.lower()
-                    if any(k in raw_lower for k in ["villa", "həyət evi", "heyet evi", "bağ evi", "bag evi", "həyət evləri", "bağ evləri"]):
+                    data["offer_type"] = "rent" if any(k in raw_lower for k in ["kirayə", "kiraye", "icarə", "icare", "arenda", "aylıq", "ayliq", "günlük"]) else "sale"
+                
+                # Property type refinement
+                if not data.get("property_type") or data.get("property_type") == "apartment":
+                    if any(k in raw_lower for k in [
+                        "obyekt", "mağaza", "magaza", "dükkan", "dukkan", "ticarət", "ticaret",
+                        "salon", "kafe", "restoran", "anbar", "sklad", "istehsalat", "qeyri-yaşayış",
+                        "qeyri yasayis", "vitraj", "yol kənarı", "yol kenari", "yol qırağı", "yol qiragi",
+                        "yola birbaşa", "yola birbasa", "küçəyə çıxış", "kuceye cixis"
+                    ]):
+                        data["property_type"] = "commercial"
+                    elif any(k in raw_lower for k in ["villa", "həyət evi", "heyet evi", "bağ evi", "bag evi", "həyət evləri", "bağ evləri"]):
                         data["property_type"] = "villa"
                     elif any(k in raw_lower for k in ["ofis", "ofislər", "biznes mərkəzi"]):
                         data["property_type"] = "office"
-                    elif any(k in raw_lower for k in ["obyekt", "mağaza", "kafe"]):
-                        data["property_type"] = "commercial"
                     elif any(k in raw_lower for k in ["torpaq", "sot", "hektar"]):
                         data["property_type"] = "land"
-                    else:
+                    elif not data.get("property_type"):
                         data["property_type"] = "apartment"
+                
                 if not data.get("building_type"):
                     data["building_type"] = "any"
 
                 # Lookback fallback if missed by LLM
                 if not data.get("min_months_on_market"):
-                    lb_match = re.search(r'(\d+)\s*(?:aydan\s*bəri|aydan\s*beri|aydır\s*satışda|aydir\s*satisda|aydır\s*qalan|aydir\s*qalan|ay\s*əvvəldən|ay\s*evvelden|aylıq\s*arxiv|ayliq\s*arxiv|ay\s*bazar)', raw_text.lower())
+                    lb_match = re.search(r'(\d+)\s*(?:aydan\s*bəri|aydan\s*beri|aydır\s*satışda|aydir\s*satisda|aydır\s*qalan|aydir\s*qalan|ay\s*əvvəldən|ay\s*evvelden|aylıq\s*arxiv|ayliq\s*arxiv|ay\s*bazar)', raw_lower)
                     if lb_match:
                         data["min_months_on_market"] = int(lb_match.group(1))
+
+                return StructuredCriteria(**data)
 
                 return StructuredCriteria(**data)
             except Exception as e:
@@ -553,21 +568,50 @@ Return JSON ONLY:
             if not loc_matched:
                 score -= 0.50
 
-        # 4. Rooms check
-        rooms = listing.get("rooms")
-        if rooms and criteria.min_rooms and rooms < criteria.min_rooms:
-            score -= 0.4
-        if rooms and criteria.max_rooms and rooms > criteria.max_rooms:
-            score -= 0.4
+        # 3. Property Type and Offer Type Check
+        if criteria and getattr(criteria, 'property_type', None) and criteria.property_type != "any":
+            c_prop = criteria.property_type.lower()
+            l_prop = (listing.get("property_type") or "apartment").lower()
+            if c_prop != l_prop:
+                if c_prop in ["commercial", "obyekt"] and l_prop == "office":
+                    desc_check = (listing.get("title") or "") + " " + (listing.get("description") or "")
+                    if not any(k in desc_check.lower() for k in ["obyekt", "mağaza", "ticarət", "salon", "kafe", "restoran", "vitraj"]):
+                        return 0.0
+                    score -= 0.2
+                elif c_prop in ["office", "ofis"] and l_prop == "commercial":
+                    desc_check = (listing.get("title") or "") + " " + (listing.get("description") or "")
+                    if not any(k in desc_check.lower() for k in ["ofis", "biznes mərkəzi", "plazada"]):
+                        return 0.0
+                    score -= 0.2
+                else:
+                    return 0.0
+
+        if criteria and getattr(criteria, 'offer_type', None) and criteria.offer_type != "any":
+            c_offer = criteria.offer_type.lower()
+            l_offer = (listing.get("offer_type") or "sale").lower()
+            if c_offer in ["rent", "kiraye", "icare"] and l_offer not in ["rent", "daily_rent"]:
+                return 0.0
+            elif c_offer == "sale" and l_offer != "sale":
+                return 0.0
+
+        # 4. Rooms check (Only for residential apartment/house)
+        c_prop_type = (getattr(criteria, 'property_type', None) or 'apartment').lower()
+        if c_prop_type not in ["commercial", "obyekt", "office", "land"]:
+            rooms = listing.get("rooms")
+            if rooms and criteria.min_rooms and rooms < criteria.min_rooms:
+                score -= 0.4
+            if rooms and criteria.max_rooms and rooms > criteria.max_rooms:
+                score -= 0.4
 
         # 5. Seller type check
         if criteria.seller_type and criteria.seller_type != "any" and listing.get("seller_type"):
             if criteria.seller_type != listing.get("seller_type"):
                 score -= 0.3
 
-        # 6. Building type check
-        if criteria.building_type and criteria.building_type != "any" and listing.get("building_type"):
-            if criteria.building_type != listing.get("building_type"):
-                score -= 0.25
+        # 6. Building type check (Only for residential apartments)
+        if c_prop_type not in ["commercial", "obyekt", "office", "land"]:
+            if criteria.building_type and criteria.building_type != "any" and listing.get("building_type"):
+                if criteria.building_type != listing.get("building_type"):
+                    score -= 0.25
 
         return max(0.0, min(1.0, round(score, 2)))

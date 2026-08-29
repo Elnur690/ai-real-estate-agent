@@ -76,9 +76,18 @@ class Ev10AzScraper(BaseScraper):
                         }
                         prop_name = prop_label_map.get(detected_prop, "Əmlak")
                         loc_label = metro or district or 'Bakı'
-                        title = f"{rooms} otaqlı {prop_name} ({loc_label})" if rooms else f"{prop_name} ({loc_label})"
+                        if detected_prop == "commercial":
+                            title = f"{int(area)} m² Obyekt ({loc_label})" if area else f"Obyekt ({loc_label})"
+                        elif detected_prop == "office":
+                            title = f"{rooms} otaqlı Ofis ({loc_label})" if rooms else (f"{int(area)} m² Ofis ({loc_label})" if area else f"Ofis ({loc_label})")
+                        elif detected_prop == "land":
+                            title = f"{area} sot Torpaq ({loc_label})" if area else f"Torpaq sahəsi ({loc_label})"
+                        elif rooms:
+                            title = f"{rooms} otaqlı {prop_name} ({loc_label})"
+                        else:
+                            title = f"{prop_name} ({loc_label})"
 
-                        bld_type = "old" if "köhnə" in raw_text.lower() else "new"
+                        bld_type = None if detected_prop in ["commercial", "office", "land"] else ("old" if "köhnə" in raw_text.lower() else "new")
                         clean_url = href if href.startswith("http") else f"https://ev10.az{href if href.startswith('/') else '/' + href}"
 
                         # Extract card photo

@@ -2,7 +2,7 @@ import re
 from typing import Optional, List, Dict
 
 BAKU_METRO_STATIONS: Dict[str, List[str]] = {
-    "Elmlər Akademiyası": ["elmlər", "elmler", "elmlər akademiyası", "elmler akademiyasi", "elmlər m", "elmler m", "bdu", "hüseyn cavid", "huseyn cavid"],
+    "Elmlər Akademiyası": ["elmlər", "elmler", "elmlər akademiyası", "elmler akademiyasi", "elmlər m", "elmler m", "bdu", "bakı dövlət universiteti", "baki dovlet universiteti", "dövlət universiteti", "hüseyn cavid", "huseyn cavid"],
     "28 May": ["28 may", "28may", "28 may m", "may 28", "vağzal", "dilarə əliyeva", "28 mall", "28 mol"],
     "Gənclik": ["gənclik", "genclik", "gənclik m", "genclik m", "gənclik mall", "genclik mall", "zoopark", "tibb universiteti", "koroglu heykeli"],
     "Nəriman Nərimanov": ["nərimanov", "nerimanov", "nərmanov", "nermanov", "nərman", "nerman", "n.nərimanov", "nərimanov m", "nerimanov m", "nərmanov m", "nermanov m", "montin", "metropark", "life centre"],

@@ -28,11 +28,11 @@ Extract structured JSON strictly with these exact keys:
 {{
   "district": "Comma-separated Baku districts or settlements if mentioned, else null",
   "metro_station": "Comma-separated Baku metro stations if mentioned, else null",
-  "locations": ["List of all distinct Baku locations, settlements, or metro stations mentioned"],
-  "min_price": number or null,
-  "max_price": number or null,
-  "min_price_usd": number or null,
-  "max_price_usd": number or null,
+  "locations": ["List of all distinct Baku locations, settlements, landmarks (e.g. BDU, BSU), or metro stations mentioned"],
+  "min_price": "number in AZN or null. If user specified price range in AZN (e.g. 1300 - 1600 AZN), put 1300 here. DO NOT convert to USD.",
+  "max_price": "number in AZN or null. If user specified price range in AZN (e.g. 1300 - 1600 AZN), put 1600 here. DO NOT convert to USD.",
+  "min_price_usd": "number in USD ONLY if the user explicitly wrote the price in USD ($ / USD / dollar), otherwise null",
+  "max_price_usd": "number in USD ONLY if the user explicitly wrote the price in USD ($ / USD / dollar), otherwise null",
   "min_rooms": integer or null,
   "max_rooms": integer or null,
   "min_area": number or null,
@@ -74,11 +74,38 @@ Extract structured JSON strictly with these exact keys:
                 if not data.get("locations"):
                     data["locations"] = all_locs
 
+                is_explicit_usd = any(c in raw_text.lower() for c in ["$", "usd", "dollar", "dolar"])
                 rate = 1.70
-                if data.get("max_price_usd") and not data.get("max_price"):
-                    data["max_price"] = round(data["max_price_usd"] * rate, 2)
-                if data.get("min_price_usd") and not data.get("min_price"):
-                    data["min_price"] = round(data["min_price_usd"] * rate, 2)
+                if not is_explicit_usd:
+                    data["min_price_usd"] = None
+                    data["max_price_usd"] = None
+                else:
+                    if data.get("max_price_usd") and not data.get("max_price"):
+                        data["max_price"] = round(data["max_price_usd"] * rate, 2)
+                    if data.get("min_price_usd") and not data.get("min_price"):
+                        data["min_price"] = round(data["min_price_usd"] * rate, 2)
+
+                raw_lower = raw_text.lower()
+                if not data.get("offer_type"):
+                    data["offer_type"] = "rent" if any(k in raw_lower for k in ["kirayə", "kiraye", "icarə", "icare", "arenda", "aylıq", "ayliq", "günlük"]) else "sale"
+                
+                # Property type refinement
+                if not data.get("property_type") or data.get("property_type") == "apartment":
+                    if any(k in raw_lower for k in [
+                        "obyekt", "mağaza", "magaza", "dükkan", "dukkan", "ticarət", "ticaret",
+                        "salon", "kafe", "restoran", "anbar", "sklad", "istehsalat", "qeyri-yaşayış",
+                        "qeyri yasayis", "vitraj", "yol kənarı", "yol kenari", "yol qırağı", "yol qiragi",
+                        "yola birbaşa", "yola birbasa", "küçəyə çıxış", "kuceye cixis"
+                    ]):
+                        data["property_type"] = "commercial"
+                    elif any(k in raw_lower for k in ["villa", "həyət evi", "heyet evi", "bağ evi", "bag evi", "həyət evləri", "bağ evləri"]):
+                        data["property_type"] = "villa"
+                    elif any(k in raw_lower for k in ["ofis", "ofislər", "biznes mərkəzi"]):
+                        data["property_type"] = "office"
+                    elif any(k in raw_lower for k in ["torpaq", "sot", "hektar"]):
+                        data["property_type"] = "land"
+                    elif not data.get("property_type"):
+                        data["property_type"] = "apartment"
 
                 return StructuredCriteria(**data)
             except Exception as e:

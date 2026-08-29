@@ -130,17 +130,8 @@ def classify_property_and_offer(
         offer_type = "sale"
 
     # 2. Classify Property Type
-    if "ofis.az" in url_lower or any(u in url_lower for u in ["ofis", "ofisler", "office", "category_id=7", "/ofis/"]):
-        property_type = "office"
-    elif any(u in url_lower for u in ["obyekt", "obyektler", "magaza", "restoran", "kommersiya", "category_id=10", "/obyekt/", "ticarət", "ticaret"]):
-        property_type = "commercial"
-    elif any(u in url_lower for u in ["torpaq", "torpaqlar", "sot-", "category_id=9", "/torpaq/"]):
-        property_type = "land"
-    elif any(u in url_lower for u in ["heyet-evi", "heyet-evleri", "bag-evi", "bag-evleri", "villa", "villalar", "category_id=5", "/heyet-evleri/"]):
-        property_type = "house"
-    elif any(k in full_text for k in ["ofis kimi", "ofis icarə", "ofis icare", "ofis üçün", "ofis ucun", "biznes mərkəzi", "biznes merkezi", "plazada ofis", "ofisdir", "ofis satılır", "ofis satilir", "ofis kirayə", "ofis kiraye"]):
-        property_type = "office"
-    elif any(k in full_text for k in [
+    is_mixed_commercial_office = any(u in url_lower for u in ["obyekt-ofis", "ofis-obyekt", "kommersiya-ofis"])
+    has_commercial_kw = any(k in full_text for k in [
         "obyekt", "obyekt satılır", "obyekt satilir", "obyekt icarə", "obyekt icare", "obyekt kirayə", "obyekt kiraye",
         "qeyri-yaşayış", "qeyri yasayis", "ticarət sahəsi", "ticaret sahesi", "ticarət obyekti", "ticaret obyekti",
         "mağaza", "magaza", "dükkan", "dukkan", "market", "supermarket", "aptek", "apteka", "klinika", "stomatologiya",
@@ -148,11 +139,34 @@ def classify_property_and_offer(
         "çay evi", "cay evi", "dönərxana", "donerxana", "yeməkxana", "yemekxana", "fast food",
         "anbar", "sklad", "istehsalat sahəsi", "istehsalat", "sex", "avtoyuma", "moyka", "avtoservis", "şadlıq sarayı", "sadliq sarayi",
         "otel", "hostel", "şou-rum", "showroom", "vitraj", "vitrajlı", "yol kənarı", "yol kenari", "yol qırağı", "yol qiragi",
-        "küçəyə çıxış", "kuceye cixis", "birbaşa çıxış", "birbasa cixis", "girişi küçədən", "girisi kucedan",
+        "yola birbaşa", "yola birbasa", "küçəyə çıxış", "kuceye cixis", "birbaşa çıxış", "birbasa cixis", "girişi küçədən", "girisi kucedan",
         "ayrıca tikili", "ayrica tikili", "sərbəst tikili", "serbest tikili", "özəl tikili", "ozel tikili",
         "zirzəmi obyekt", "zirzemi obyekt", "yarı zirzəmi", "yari zirzemi", "padval obyekt", "1-ci mərtəbə obyekt", "1-ci mertebe obyekt"
-    ]):
+    ])
+    has_office_kw = any(k in full_text for k in [
+        "ofis kimi", "ofis icarə", "ofis icare", "ofis üçün", "ofis ucun", "biznes mərkəzi", "biznes merkezi",
+        "plazada ofis", "ofisdir", "ofis satılır", "ofis satilir", "ofis kirayə", "ofis kiraye", "ofis mebeli", "kabinet"
+    ])
+
+    if is_mixed_commercial_office:
+        if has_commercial_kw:
+            property_type = "commercial"
+        elif has_office_kw:
+            property_type = "office"
+        else:
+            property_type = "commercial"
+    elif any(u in url_lower for u in ["torpaq", "torpaqlar", "sot-", "category_id=9", "/torpaq/"]):
+        property_type = "land"
+    elif any(u in url_lower for u in ["heyet-evi", "heyet-evleri", "bag-evi", "bag-evleri", "villa", "villalar", "category_id=5", "/heyet-evleri/"]):
+        property_type = "house"
+    elif "ofis.az" in url_lower or any(u in url_lower for u in ["/ofis/", "/ofis-", "-ofis-", "category_id=7", "-ofis.html"]):
+        property_type = "office"
+    elif any(u in url_lower for u in ["/obyekt/", "/obyekt-", "-obyekt-", "category_id=10", "-obyekt.html", "magaza", "restoran", "kommersiya", "ticarət", "ticaret"]):
         property_type = "commercial"
+    elif has_commercial_kw:
+        property_type = "commercial"
+    elif has_office_kw:
+        property_type = "office"
     elif any(k in full_text for k in ["torpaq sahəsi", "torpaq sahesi", "torpaq satılır", "torpaq satilir", "sot torpaq", "hektar"]):
         property_type = "land"
     elif any(k in full_text for k in ["həyət evi", "heyet evi", "bağ evi", "bag evi", "villa", "həyət", "kotec"]):

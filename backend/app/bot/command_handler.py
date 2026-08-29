@@ -1034,6 +1034,16 @@ class BotCommandHandler:
         tenant.draft_search_json = json.dumps(draft, ensure_ascii=False)
         await db.commit()
 
+        return await BotCommandHandler._format_confirmation_draft(db, tenant, draft, multi_loc_note)
+
+    @staticmethod
+    async def _format_confirmation_draft(
+        db: AsyncSession,
+        tenant: Tenant,
+        draft: dict,
+        multi_loc_note: Optional[str] = None
+    ) -> str:
+        """Constructs formatted preview confirmation message for a draft search."""
         # Build Structured Summary & Identify Missing Fields
         district = draft.get("district")
         metro_station = draft.get("metro_station")
@@ -1092,16 +1102,19 @@ class BotCommandHandler:
 
         if district:
             set_fields.append(f"• 📍 *Məkan (Rayon/Qəsəbə):* {district}")
-        else:
-            missing_fields.append("📍 *Məkan* (məsələn: Badamdar, Yasamal, Əhmədli)")
-
         if metro_station:
             set_fields.append(f"• 🚇 *Metro Stansiyaları:* {metro_station} m/st")
-        else:
-            missing_fields.append("🚇 *Metro Stansiyası* (məsələn: Qarayev, Neftçilər, Elmlər)")
+        if not district and not metro_station:
+            missing_fields.append("📍 *Məkan və ya Metro* (məsələn: Yasamal, Nərimanov, Elmlər m/st)")
 
-        if max_p_usd:
+        min_p_usd = draft.get("min_price_usd")
+        max_p_usd = draft.get("max_price_usd")
+        if min_p_usd and max_p_usd:
+            set_fields.append(f"• 💰 *Qiymət:* ${int(min_p_usd):,} - ${int(max_p_usd):,} USD (məzənnə ilə ≈ {int(min_p):,} - {int(max_p):,} AZN)")
+        elif max_p_usd:
             set_fields.append(f"• 💰 *Qiymət:* ${int(max_p_usd):,} USD (məzənnə ilə ≈ {int(max_p):,} AZN)")
+        elif min_p_usd:
+            set_fields.append(f"• 💰 *Minimum Qiymət:* ${int(min_p_usd):,} USD (məzənnə ilə ≈ {int(min_p):,} AZN)")
         elif min_p and max_p:
             set_fields.append(f"• 💰 *Qiymət:* {int(min_p):,} - {int(max_p):,} AZN")
         elif max_p:
@@ -1111,15 +1124,25 @@ class BotCommandHandler:
         else:
             missing_fields.append("💰 *Qiymət aralığı* (məsələn: 100-150 min AZN / $100k USD)")
 
-        if min_r and max_r and min_r == max_r:
-            set_fields.append(f"• 🚪 *Otaq sayı:* {min_r} otaqlı")
-        elif min_r and max_r and max_r == min_r + 1:
-            set_fields.append(f"• 🚪 *Otaq sayı:* {min_r} və ya {max_r} otaqlı")
-        elif min_r or max_r:
-            set_fields.append(f"• 🚪 *Otaq sayı:* {min_r or 1} - {max_r or 5} otaqlı")
-        else:
-            if prop == "apartment":
-                missing_fields.append("🚪 *Otaq sayı* (məsələn: 3 və ya 4 otaqlı)")
+        min_a = draft.get("min_area")
+        max_a = draft.get("max_area")
+        if min_a and max_a:
+            set_fields.append(f"• 📐 *Sahə:* {int(min_a)} - {int(max_a)} m²")
+        elif min_a:
+            set_fields.append(f"• 📐 *Minimum Sahə:* {int(min_a)} m²")
+        elif max_a:
+            set_fields.append(f"• 📐 *Maksimum Sahə:* {int(max_a)} m²")
+
+        if prop not in ["commercial", "land"]:
+            if min_r and max_r and min_r == max_r:
+                set_fields.append(f"• 🚪 *Otaq sayı:* {min_r} otaqlı")
+            elif min_r and max_r and max_r == min_r + 1:
+                set_fields.append(f"• 🚪 *Otaq sayı:* {min_r} və ya {max_r} otaqlı")
+            elif min_r or max_r:
+                set_fields.append(f"• 🚪 *Otaq sayı:* {min_r or 1} - {max_r or 5} otaqlı")
+            else:
+                if prop == "apartment":
+                    missing_fields.append("🚪 *Otaq sayı* (məsələn: 3 və ya 4 otaqlı)")
 
         if prop not in ["commercial", "office", "land"]:
             if bld == "new":

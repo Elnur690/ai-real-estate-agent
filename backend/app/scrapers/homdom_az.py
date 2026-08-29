@@ -63,18 +63,37 @@ class HomDomAzScraper(BaseScraper):
                         offer_type = "rent" if is_rent else "sale"
 
                         if any(k in raw_lower for k in ["villa", "həyət", "bağ"]):
-                            prop_type = "villa"
+                            prop_type = "house"
                         elif "ofis" in raw_lower:
                             prop_type = "office"
-                        elif "obyekt" in raw_lower:
+                        elif any(k in raw_lower for k in ["obyekt", "mağaza", "ticarət", "salon", "kafe", "restoran", "qeyri-yaşayış"]):
                             prop_type = "commercial"
                         elif "torpaq" in raw_lower:
                             prop_type = "land"
                         else:
                             prop_type = "apartment"
 
+                        prop_label_map = {
+                            "apartment": "Mənzil",
+                            "house": "Həyət evi / Villa",
+                            "office": "Ofis",
+                            "commercial": "Obyekt",
+                            "land": "Torpaq sahəsi"
+                        }
+                        prop_name = prop_label_map.get(prop_type, "Əmlak")
                         loc_label = settlement or metro or district or 'Bakı'
-                        title = f"{rooms} otaqlı {prop_type.capitalize()} ({loc_label})"
+                        if prop_type == "commercial":
+                            title = f"{int(area)} m² Obyekt ({loc_label})" if area else f"Obyekt ({loc_label})"
+                        elif prop_type == "office":
+                            title = f"{rooms} otaqlı Ofis ({loc_label})" if rooms else (f"{int(area)} m² Ofis ({loc_label})" if area else f"Ofis ({loc_label})")
+                        elif prop_type == "land":
+                            title = f"{area} sot Torpaq ({loc_label})" if area else f"Torpaq sahəsi ({loc_label})"
+                        elif rooms:
+                            title = f"{rooms} otaqlı {prop_name} ({loc_label})"
+                        else:
+                            title = f"{prop_name} ({loc_label})"
+
+                        bld_type = None if prop_type in ["commercial", "office", "land"] else ("old" if "köhnə" in raw_lower else "new")
 
                         # Extract card photo
                         card_photos = []
@@ -98,7 +117,7 @@ class HomDomAzScraper(BaseScraper):
                             metro_station=metro,
                             rooms=rooms,
                             area_sqm=area,
-                            building_type="new",
+                            building_type=bld_type,
                             seller_type="agency",
                             offer_type=offer_type,
                             property_type=prop_type,

@@ -87,7 +87,7 @@ class OfisAzScraper(BaseScraper):
                             metro_station=metro,
                             rooms=rooms,
                             area_sqm=area,
-                            building_type="new",
+                            building_type=None,
                             seller_type="agency",
                             offer_type=offer_type,
                             property_type="office",

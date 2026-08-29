@@ -419,7 +419,9 @@ class BinaAzScraper(BaseScraper):
             detected_offer = offer_type
 
             # 6. Building Type (Yeni tikili vs Köhnə tikili)
-            if "category_id=2" in target_url or "yeni tikili" in combined_lower or "yeni-tikili" in target_url:
+            if detected_prop in ["commercial", "office", "land"]:
+                bld_type = None
+            elif "category_id=2" in target_url or "yeni tikili" in combined_lower or "yeni-tikili" in target_url:
                 bld_type = "new"
             elif "category_id=3" in target_url or "köhnə tikili" in combined_lower or "kohne tikili" in combined_lower or "kohne-tikili" in target_url:
                 bld_type = "old"
@@ -471,6 +473,10 @@ class BinaAzScraper(BaseScraper):
 
             if detected_prop == "land" and land_sot:
                 title = f"{land_sot} sot {prop_name} ({loc_label})"
+            elif detected_prop == "commercial":
+                title = f"{int(area)} m² Obyekt ({loc_label})" if area else f"Obyekt ({loc_label})"
+            elif detected_prop == "office":
+                title = f"{rooms} otaqlı Ofis ({loc_label})" if rooms else (f"{int(area)} m² Ofis ({loc_label})" if area else f"Ofis ({loc_label})")
             elif rooms:
                 title = f"{rooms} otaqlı {prop_name} ({loc_label})"
             else:

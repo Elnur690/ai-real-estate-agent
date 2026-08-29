@@ -36,13 +36,14 @@ class AVMEngineService:
         base_conds = [
             Listing.district == listing.district,
             Listing.price_per_sqm > 0,
-            Listing.is_active == True
+            Listing.is_active == True,
+            Listing.property_type == prop_type
         ]
         if offer_type in ['rent', 'kiraye', 'icare']:
             base_conds.extend([
                 Listing.offer_type == 'rent',
                 Listing.price >= 100,
-                Listing.price < 20000
+                Listing.price < 50000
             ])
         else:
             base_conds.extend([
@@ -50,26 +51,25 @@ class AVMEngineService:
                 Listing.price >= 15000
             ])
 
-        # 1st attempt: Average for exact property type in district (e.g. apartment vs apartment)
-        stmt_prop = select(func.avg(Listing.price_per_sqm)).where(and_(*base_conds, Listing.property_type == prop_type))
+        stmt_prop = select(func.avg(Listing.price_per_sqm), func.count(Listing.id)).where(and_(*base_conds))
         res = await db.execute(stmt_prop)
-        avg_sqm = res.scalar()
+        row = res.first()
+        avg_sqm = row[0] if row else None
+        count_samples = row[1] if row else 0
 
-        # Fallback: General district average if specific property type data is sparse
-        if not avg_sqm or avg_sqm <= 0:
-            stmt_gen = select(func.avg(Listing.price_per_sqm)).where(and_(*base_conds))
-            res = await db.execute(stmt_gen)
-            avg_sqm = res.scalar()
+        # We require at least 3 comparable listings of the identical property type in the district to establish a valid market benchmark
+        if count_samples < 3 or not avg_sqm or avg_sqm <= 0:
+            listing.bargain_percentage = 0.0
+            return listing
 
-        if avg_sqm and avg_sqm > 0:
-            district_avg = round(float(avg_sqm), 2)
-            listing.district_avg_sqm = district_avg
+        district_avg = round(float(avg_sqm), 2)
+        listing.district_avg_sqm = district_avg
 
-            # Calculate Percentage Difference
-            diff_pct = round(((price_sqm - district_avg) / district_avg) * 100, 1)
-            listing.bargain_percentage = diff_pct
-            
-            if diff_pct <= -10.0:
-                logger.info(f"[AVMEngine] Hot Deal Detected! Listing #{listing.id} in {listing.district} is {abs(diff_pct)}% BELOW market average ({district_avg} AZN/m² vs {price_sqm} AZN/m²)")
+        # Calculate Percentage Difference
+        diff_pct = round(((price_sqm - district_avg) / district_avg) * 100, 1)
+        listing.bargain_percentage = diff_pct
+        
+        if diff_pct <= -10.0:
+            logger.info(f"[AVMEngine] Hot Deal Detected! Listing #{listing.id} ({prop_type}) in {listing.district} is {abs(diff_pct)}% BELOW market average ({district_avg} AZN/m² vs {price_sqm} AZN/m²)")
 
         return listing

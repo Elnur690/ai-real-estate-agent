@@ -333,6 +333,42 @@ class IngestionService:
             res_m = await db.execute(stmt_m)
             existing_match = res_m.scalars().first()
 
+            deal_label = "İcarə / Kirayə" if getattr(listing, 'offer_type', 'sale') == 'rent' else ("Günlük Kirayə" if getattr(listing, 'offer_type', 'sale') == 'daily_rent' else "Satış")
+            prop_type_val = getattr(listing, 'property_type', 'apartment') or 'apartment'
+            prop_map = {
+                "apartment": "Mənzil",
+                "house": "Həyət evi / Villa",
+                "office": "Ofis",
+                "commercial": "Obyekt / Qeyri-yaşayış",
+                "land": "Torpaq sahəsi"
+            }
+            prop_label = prop_map.get(prop_type_val, "Mənzil")
+            prop_emoji_map = {
+                "apartment": "🏠",
+                "house": "🏡",
+                "office": "🏢",
+                "commercial": "🏬",
+                "land": "🏞️"
+            }
+            prop_emoji = prop_emoji_map.get(prop_type_val, "🏠")
+            search_title = search.name or search.raw_criteria_text or search.district or f"Axtarış #{search.id}"
+
+            if prop_type_val in ["commercial", "land"]:
+                card_head = f"{prop_label} ({listing.district or 'Bakı'})"
+                area_line = f"📐 *Sahə:* {listing.area_sqm or '-'} m²"
+            elif prop_type_val == "office":
+                card_head = f"{listing.rooms} otaqlı Ofis ({listing.district or 'Bakı'})" if listing.rooms else f"Ofis ({listing.district or 'Bakı'})"
+                area_line = f"📐 *Otaq / Sahə:* {listing.rooms} otaqlı | {listing.area_sqm or '-'} m²" if listing.rooms else f"📐 *Sahə:* {listing.area_sqm or '-'} m²"
+            else:
+                card_head = f"{listing.rooms or ''} otaqlı {prop_label} ({listing.district or 'Bakı'})"
+                area_line = f"📐 *Otaq / Sahə:* {listing.rooms or '-'} otaqlı | {listing.area_sqm or '-'} m²"
+
+            is_genuine_owner = (listing.seller_type == "owner") and not getattr(listing, 'is_makler', False) and ((listing.makler_score or 0.0) < 0.30)
+            seller_str = "Ev Sahibindən" if is_genuine_owner else "Vasitəçidən/Agentlikdən"
+            listing_curr = listing.currency or 'AZN'
+            listing_loc = listing.metro_station or listing.district or 'Bakı'
+            listing_url_val = listing.listing_url
+
             if not existing_match:
                 new_match = Match(
                     saved_search_id=search.id,
@@ -350,32 +386,18 @@ class IngestionService:
             else:
                 match_id = existing_match.id
 
-            is_genuine_owner = (listing.seller_type == "owner") and not getattr(listing, 'is_makler', False) and ((listing.makler_score or 0.0) < 0.30)
-            seller_str = "Ev Sahibindən" if is_genuine_owner else "Vasitəçidən/Agentlikdən"
-
-            deal_label = "İcarə / Kirayə" if getattr(listing, 'offer_type', 'sale') == 'rent' else ("Günlük Kirayə" if getattr(listing, 'offer_type', 'sale') == 'daily_rent' else "Satış")
-            prop_map = {
-                "apartment": "Mənzil",
-                "house": "Həyət evi / Villa",
-                "office": "Ofis",
-                "commercial": "Obyekt / Qeyri-yaşayış",
-                "land": "Torpaq sahəsi"
-            }
-            prop_label = prop_map.get(getattr(listing, 'property_type', 'apartment'), "Mənzil")
-            search_title = search.name or search.raw_criteria_text or search.district or f"Axtarış #{search.id}"
-
             drop_tag = f"📉 *QİYMƏT ENDİRİMİ!* ({int(old_price):,} AZN ➡️ {int(new_price):,} AZN — *{int(price_diff):,} AZN / {drop_percent}% Endirim*)\n"
             search_header = f"🔎 *Axtarış:* #{search.id} - _{search_title[:55]}_\n"
             msg = (
                 f"{drop_tag}"
                 f"{search_header}\n"
-                f"🏠 *{listing.rooms or ''} otaqlı {prop_label} ({listing.district or 'Bakı'})*\n"
+                f"{prop_emoji} *{card_head}*\n"
                 f"🏷️ *Növ / Əməliyyat:* {prop_label} ({deal_label})\n"
-                f"💰 *Yeni Qiymət:* {int(new_price):,} {listing.currency or 'AZN'}\n"
-                f"📍 *Məkan:* {listing.metro_station or listing.district or 'Bakı'}\n"
-                f"📐 *Otaq / Sahə:* {listing.rooms or '-'} otaqlı | {listing.area_sqm or '-'} m²\n"
+                f"💰 *Yeni Qiymət:* {int(new_price):,} {listing_curr}\n"
+                f"📍 *Məkan:* {listing_loc}\n"
+                f"{area_line}\n"
                 f"👤 *Satıcı:* {seller_str}\n\n"
-                f"🔗 [Elana keçid et]({listing.listing_url})\n\n"
+                f"🔗 [Elana keçid et]({listing_url_val})\n\n"
                 f"💬 *Reaksiya bildirin:*\n"
                 f"`Təqdimat {match_id}` | `Foto {match_id}` | `Maraqlanıram {match_id}` | `Keç {match_id}`"
             )
@@ -728,10 +750,11 @@ class IngestionService:
                     db_listing = await IngestionService._ingest_single_raw_item(db, item, source_id=s_id)
                     if db_listing:
                         total_scraped += 1
-                        matches_created = await IngestionService._evaluate_and_deliver_matches(db, db_listing)
+                        matches_created = await IngestionService._evaluate_and_deliver_matches(db, db_listing, enrich_live=False)
                         total_matched += matches_created
                 except Exception as e:
                     logger.error(f"[IngestionService] Error processing item in {s_name}: {e}")
+                    await db.rollback()
 
         logger.info(f"[IngestionService] Parallel cycle completed: {total_scraped} scraped, {total_matched} matches delivered.")
         return {"scraped_count": total_scraped, "matched_count": total_matched}
@@ -797,16 +820,27 @@ class IngestionService:
                 if any(k in listing_text for k in ["villa satılır", "həyət evi satılır", "bağ evi satılır"]):
                     return False
             elif search_prop in ["office", "ofis"]:
-                if list_prop not in ["office", "commercial"]:
-                    return False
+                if list_prop not in ["office"]:
+                    if list_prop == "commercial" and any(k in listing_text for k in ["ofis", "ofis üçün", "ofis ucun", "ofis kimi", "biznes mərkəzi", "biznes merkezi", "plazada ofis"]):
+                        pass
+                    else:
+                        return False
                 if any(k in listing_text for k in ["yaşayış mənzili", "həyət evi", "bağ evi"]):
                     return False
             elif search_prop in ["house", "villa", "həyət evi", "heyet evi", "bağ evi", "bag evi"]:
                 if list_prop not in ["house", "villa"]:
                     return False
             elif search_prop in ["commercial", "obyekt"]:
-                if list_prop not in ["commercial", "office"]:
-                    return False
+                if list_prop not in ["commercial"]:
+                    if list_prop == "office" and any(k in listing_text for k in [
+                        "obyekt", "mağaza", "magaza", "dükkan", "dukkan", "ticarət", "ticaret",
+                        "salon", "kafe", "restoran", "anbar", "sklad", "istehsalat", "vitraj",
+                        "yol kənarı", "yol kenari", "yol qırağı", "yol qiragi", "yola birbaşa",
+                        "küçəyə çıxış", "birbaşa çıxış", "qeyri-yaşayış", "qeyri yasayis"
+                    ]):
+                        pass
+                    else:
+                        return False
             elif search_prop in ["land", "torpaq"]:
                 if list_prop not in ["land"]:
                     return False
@@ -1166,25 +1200,12 @@ class IngestionService:
                         matches_count += 1
                         continue
 
-                new_match = Match(
-                    saved_search_id=search.id,
-                    listing_id=listing.id,
-                    tenant_id=tenant.id,
-                    score=score,
-                    delivered_at=datetime.now(timezone.utc),
-                    delivery_channel=tenant.preferred_channel,
-                    status="sent"
-                )
-                db.add(new_match)
-                await db.commit()
-                await db.refresh(new_match)
-                matches_count += 1
-
                 is_genuine_owner = (listing.seller_type == "owner") and not getattr(listing, 'is_makler', False) and ((listing.makler_score or 0.0) < 0.30)
                 seller_str = "Ev Sahibindən" if is_genuine_owner else "Vasitəçidən/Agentlikdən"
                 bld_str = "Yeni tikili" if listing.building_type == "new" else ("Köhnə tikili" if listing.building_type == "old" else "")
 
                 deal_label = "İcarə / Kirayə" if getattr(listing, 'offer_type', 'sale') == 'rent' else ("Günlük Kirayə" if getattr(listing, 'offer_type', 'sale') == 'daily_rent' else "Satış")
+                prop_type_val = getattr(listing, 'property_type', 'apartment') or 'apartment'
                 prop_map = {
                     "apartment": "Mənzil",
                     "house": "Həyət evi / Villa",
@@ -1192,14 +1213,29 @@ class IngestionService:
                     "commercial": "Obyekt / Qeyri-yaşayış",
                     "land": "Torpaq sahəsi"
                 }
-                prop_label = prop_map.get(getattr(listing, 'property_type', 'apartment'), "Mənzil")
+                prop_label = prop_map.get(prop_type_val, "Mənzil")
+                prop_emoji_map = {
+                    "apartment": "🏠",
+                    "house": "🏡",
+                    "office": "🏢",
+                    "commercial": "🏬",
+                    "land": "🏞️"
+                }
+                prop_emoji = prop_emoji_map.get(prop_type_val, "🏠")
 
                 # Clean Title to prevent duplicate price display
                 clean_title = re.sub(r'\s*\d+\s*(?:AZN|₼|USD|\$|\/\s*ay|\/\s*gün)', '', listing.title or '').strip()
                 clean_title = re.sub(r'\s*\(?\s*satılır\s*\)?', '', clean_title, flags=re.I)
                 clean_title = re.sub(r'\s*\(?\s*icarə\s*\)?', '', clean_title, flags=re.I).strip()
                 if not clean_title:
-                    clean_title = f"{listing.rooms or ''} otaqlı {prop_label} ({listing.district or 'Bakı'})"
+                    if prop_type_val == "commercial":
+                        clean_title = f"{int(listing.area_sqm)} m² Obyekt ({listing.district or 'Bakı'})" if listing.area_sqm else f"Obyekt ({listing.district or 'Bakı'})"
+                    elif prop_type_val == "land":
+                        clean_title = f"Torpaq sahəsi ({listing.district or 'Bakı'})"
+                    elif prop_type_val == "office":
+                        clean_title = f"{listing.rooms} otaqlı Ofis ({listing.district or 'Bakı'})" if listing.rooms else f"Ofis ({listing.district or 'Bakı'})"
+                    else:
+                        clean_title = f"{listing.rooms or ''} otaqlı {prop_label} ({listing.district or 'Bakı'})"
 
                 # Killer Feature Notification Tags
                 bargain_tag = f"\n🔥 *TƏCİLİ FÜRSƏT ELAN! ({abs(listing.bargain_percentage)}% Bazar Qiymətindən Aşağı)*" if (listing.bargain_percentage and listing.bargain_percentage <= -10.0) else ""
@@ -1221,8 +1257,15 @@ class IngestionService:
                         diff_str = f" ({int(diff_val):,} AZN fərq)" if diff_val > 0 else ""
                         cheapest_item = sorted_dups[0]
                         cheapest_url = cheapest_item.get("url") or listing.listing_url
+                        prop_dup_subject = {
+                            "apartment": "mənzil",
+                            "house": "həyət evi / villa",
+                            "office": "ofis",
+                            "commercial": "obyekt",
+                            "land": "torpaq sahəsi"
+                        }.get(prop_type_val, "əmlak")
                         duplicate_tag = (
-                            f"\n👥 *DUBLİKAT ELAN:* Bu mənzil {listing.duplicate_count} fərqli elanda {int(min_dup):,} - {int(max_dup):,} AZN aralığında paylaşılıb!{diff_str}\n"
+                            f"\n👥 *DUBLİKAT ELAN:* Bu {prop_dup_subject} {listing.duplicate_count} fərqli elanda {int(min_dup):,} - {int(max_dup):,} AZN aralığında paylaşılıb!{diff_str}\n"
                             f"🟢 *Ən ucuz elan:* [{int(min_dup):,} AZN - Keçid]({cheapest_url})"
                         )
 
@@ -1259,7 +1302,7 @@ class IngestionService:
                 extra_details = []
                 if floor_str:
                     extra_details.append(f"🏢 *Mərtəbə:* {floor_str}")
-                if bld_str:
+                if prop_type_val not in ["commercial", "office", "land"] and bld_str:
                     extra_details.append(f"🏗️ *Bina:* {bld_str}")
                 if has_kupcha_tag:
                     extra_details.append(f"📄 *Sənəd:* {has_kupcha_tag}")
@@ -1289,6 +1332,8 @@ class IngestionService:
                         dest_chat_id = tenant.whatsapp_number if dest_channel == "whatsapp" else tenant.telegram_chat_id
 
                 inst_name = getattr(search, 'instance_name', None) or f"tenant_{tenant.id}"
+                tenant_tg_id = tenant.telegram_chat_id
+                tenant_wa_num = tenant.whatsapp_number
 
                 # 1-Tap Speed-Dial and WhatsApp Direct Chat formatting
                 from app.core.baku_locations import extract_az_phone, extract_baku_settlement
@@ -1364,19 +1409,52 @@ class IngestionService:
                 else:
                     loc_display = listing.address_raw or 'Bakı'
 
+                # Dimension / Room line
+                if prop_type_val in ["commercial", "land"]:
+                    area_val = f"{listing.area_sqm} m²" if listing.area_sqm else "-"
+                    if prop_type_val == "commercial" and listing.rooms and listing.rooms > 1:
+                        area_line_card = f"📐 *Sahə:* {area_val} ({listing.rooms} otaq/bölmə)"
+                    else:
+                        area_line_card = f"📐 *Sahə:* {area_val}"
+                elif prop_type_val == "office":
+                    area_val = f"{listing.area_sqm} m²" if listing.area_sqm else "-"
+                    if listing.rooms:
+                        area_line_card = f"📐 *Otaq / Sahə:* {listing.rooms} otaqlı | {area_val}"
+                    else:
+                        area_line_card = f"📐 *Sahə:* {area_val}"
+                else:
+                    area_line_card = f"📐 *Otaq / Sahə:* {listing.rooms or '-'} otaqlı | {listing.area_sqm or '-'} m²"
+
+                listing_url_val = listing.listing_url
+
+                # Commit match record to database
+                new_match = Match(
+                    saved_search_id=search.id,
+                    listing_id=listing.id,
+                    tenant_id=tenant.id,
+                    score=score,
+                    delivered_at=datetime.now(timezone.utc),
+                    delivery_channel=tenant.preferred_channel,
+                    status="sent"
+                )
+                db.add(new_match)
+                await db.commit()
+                await db.refresh(new_match)
+                matches_count += 1
+
                 msg_text = (
                     f"🔥 *YENİ UYĞUN ELAN! ({app_name})*\n"
                     f"{search_header}"
                     f"🎯 *Uyğunluq:* %{int(score * 100)}{bargain_tag}{first_post_tag}{makler_tag}{duplicate_tag}\n\n"
-                    f"🏠 *{clean_title}*\n"
+                    f"{prop_emoji} *{clean_title}*\n"
                     f"🏷️ *Növ / Əməliyyat:* {prop_label} ({deal_label})\n"
                     f"{price_line}\n"
                     f"📍 *Məkan:* {loc_display}\n"
-                    f"📐 *Otaq / Sahə:* {listing.rooms or '-'} otaqlı | {listing.area_sqm or '-'} m²\n"
+                    f"{area_line_card}\n"
                     f"👤 *Satıcı:* {seller_str}\n"
                     f"{details_block}"
                     f"{contact_line}"
-                    f"🔗 [Elana keçid et]({listing.listing_url})\n\n"
+                    f"🔗 [Elana keçid et]({listing_url_val})\n\n"
                     f"💬 *Reaksiya bildirin:*\n"
                     f"`Təqdimat {new_match.id}` | `Foto {new_match.id}` | `CRM {new_match.id}` | `Maraqlanıram {new_match.id}` | `Keç {new_match.id}` | `Satılıb {new_match.id}`"
                 )
