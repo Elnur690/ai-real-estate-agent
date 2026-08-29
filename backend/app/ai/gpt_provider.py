@@ -26,9 +26,9 @@ Analyze the following natural language search criteria:
 
 Extract structured JSON strictly with these exact keys:
 {{
-  "district": "Comma-separated Baku districts or settlements if mentioned, else null",
-  "metro_station": "Comma-separated Baku metro stations if mentioned, else null",
-  "locations": ["List of all distinct Baku locations, settlements, landmarks (e.g. BDU, BSU), or metro stations mentioned"],
+  "district": "Comma-separated Baku districts or settlements if mentioned, else null (e.g. if user mentions a university/school like BDU/Avropa Liseyi/20 nömrəli, map to Yasamal; if ADNSU/Slavyan/46 nömrəli, map to Nəsimi; if 23 nömrəli/160 nömrəli/Oxford məktəbi, map to Səbail/Nəsimi; if ATU/ADA/Dünya məktəbi, map to Nərimanov/Nəsimi)",
+  "metro_station": "Comma-separated Baku metro stations if mentioned, else null (e.g. if user mentions BDU/AzTU/AzMİU/Avropa Liseyi/20 nömrəli -> Elmlər Akademiyası; ADNSU/ADU/BSU/160 nömrəli -> 28 May; ATU/ADA/Odlar Yurdu -> Gənclik; UNEC/DİA/6 nömrəli -> İçərişəhər; ADPU/23 nömrəli -> Sahil; Xəzər Universiteti -> Neftçilər)",
+  "locations": ["List of all distinct Baku locations, settlements, universities, schools, lyceums (e.g. BDU, Azİİ, ATU, ADA, UNEC, 23 nömrəli məktəb, Oxford məktəbi, Landau, Avropa liseyi, Zərifə Əliyeva liseyi), or metro stations mentioned"],
   "min_price": "number in AZN or null. If user specified price range in AZN (e.g. 1300 - 1600 AZN), put 1300 here. DO NOT convert to USD.",
   "max_price": "number in AZN or null. If user specified price range in AZN (e.g. 1300 - 1600 AZN), put 1600 here. DO NOT convert to USD.",
   "min_price_usd": "number in USD ONLY if the user explicitly wrote the price in USD ($ / USD / dollar), otherwise null",

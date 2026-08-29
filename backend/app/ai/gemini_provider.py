@@ -23,9 +23,9 @@ Analyze the following natural language search criteria:
 
 Extract structured JSON strictly with these exact keys:
 {{
-  "district": "Comma-separated Baku districts or settlements if mentioned, else null",
-  "metro_station": "Comma-separated Baku metro stations if mentioned, else null",
-  "locations": ["List of all distinct Baku locations, settlements, landmarks (e.g. BDU, BSU), or metro stations mentioned"],
+  "district": "Comma-separated Baku districts or settlements if mentioned, else null (e.g. if user mentions a university/school like BDU/Avropa Liseyi/20 nömrəli, map to Yasamal; if ADNSU/Slavyan/46 nömrəli, map to Nəsimi; if 23 nömrəli/160 nömrəli/Oxford məktəbi, map to Səbail/Nəsimi; if ATU/ADA/Dünya məktəbi, map to Nərimanov/Nəsimi)",
+  "metro_station": "Comma-separated Baku metro stations if mentioned, else null (e.g. if user mentions BDU/AzTU/AzMİU/Avropa Liseyi/20 nömrəli -> Elmlər Akademiyası; ADNSU/ADU/BSU/160 nömrəli -> 28 May; ATU/ADA/Odlar Yurdu -> Gənclik; UNEC/DİA/6 nömrəli -> İçərişəhər; ADPU/23 nömrəli -> Sahil; Xəzər Universiteti -> Neftçilər)",
+  "locations": ["List of all distinct Baku locations, settlements, universities, schools, lyceums (e.g. BDU, Azİİ, ATU, ADA, UNEC, 23 nömrəli məktəb, Oxford məktəbi, Landau, Avropa liseyi, Zərifə Əliyeva liseyi), or metro stations mentioned"],
   "min_price": "number in AZN or null. If user specified price range in AZN (e.g. 1300 - 1600 AZN), put 1300 here. DO NOT convert to USD.",
   "max_price": "number in AZN or null. If user specified price range in AZN (e.g. 1300 - 1600 AZN), put 1600 here. DO NOT convert to USD.",
   "min_price_usd": "number in USD ONLY if the user explicitly wrote the price in USD ($ / USD / dollar), otherwise null",
@@ -252,8 +252,14 @@ Extract structured JSON strictly with these exact keys:
         # 5. Strip lookback string
         text_for_price = re.sub(r'["\'«»]?\s*\d+\s*(?:aydan\s*bəri|aydan\s*beri|aydır\s*satışda|aydir\s*satisda|aydır\s*qalan|aydir\s*qalan|ay\s*əvvəldən|ay\s*evvelden|aylıq\s*arxiv|ayliq\s*arxiv|ay\s*bazar|aydan|aydir)["\'«»]?', ' ', text_for_price)
 
+        # Offer / Deal Type
+        offer_type = "sale"
+        if any(k in text_lower for k in ["kirayə", "kiraye", "icarə", "icare", "arenda", "aylıq", "ayliq", "günlük"]):
+            offer_type = "rent"
+
         min_price, max_price = None, None
         min_price_usd, max_price_usd = None, None
+        has_min_k_keyword = bool(re.search(r'\b(?:min|k|minlik|minə|mine)\b', text_for_price))
 
         # Try matching explicit price range (e.g. 150000 - 600000 AZN or 150-600 min or $100k-$150k)
         range_match = re.search(
@@ -263,7 +269,7 @@ Extract structured JSON strictly with these exact keys:
         if range_match:
             d1, v1, m1, d2, v2, m2 = range_match.groups()
             p1, p2 = float(v1), float(v2)
-            has_k_or_min = (m1 in ["k", "min"] or m2 in ["k", "min"] or (p1 < 1000 and p2 < 1000 and ("min" in text_for_price or "k" in text_for_price)))
+            has_k_or_min = (m1 in ["k", "min"] or m2 in ["k", "min"] or (offer_type != "rent" and p1 < 1000 and p2 < 1000 and has_min_k_keyword))
             if p1 < 1000 and has_k_or_min:
                 p1 *= 1000
             if p2 < 1000 and has_k_or_min:
@@ -281,7 +287,7 @@ Extract structured JSON strictly with these exact keys:
             for dol, val_str, mult in matches:
                 if not val_str: continue
                 val = int(val_str)
-                if mult in ["k", "min"] or (val < 1000 and ("min" in text_for_price or "k" in text_for_price)):
+                if mult in ["k", "min"] or (offer_type != "rent" and val < 1000 and has_min_k_keyword):
                     val *= 1000
                 parsed_prices.append(val)
 
@@ -299,11 +305,6 @@ Extract structured JSON strictly with these exact keys:
                     max_price = round(p * rate, 2)
                 else:
                     max_price = float(p)
-
-        # Offer / Deal Type
-        offer_type = "sale"
-        if any(k in text_lower for k in ["kirayə", "kiraye", "icarə", "icare", "arenda", "aylıq", "ayliq", "günlük"]):
-            offer_type = "rent"
 
         # Property Type
         property_type = "apartment"
