@@ -109,19 +109,27 @@ class YeniEmlakAzScraper(BaseScraper):
     async def scrape_source(self, url_or_handle: str = "https://yeniemlak.az/elan/axtar") -> List[RawListingItem]:
         logger.info(f"[YeniEmlakAzScraper] Fetching listings from {url_or_handle}")
         items: List[RawListingItem] = []
+        seen = set()
 
-        target_url = "https://yeniemlak.az/elan/axtar" if ("yeniemlak.az" in url_or_handle and not url_or_handle.endswith("/elan/axtar")) else url_or_handle
+        urls_to_fetch = [url_or_handle] if ("?" in url_or_handle and not url_or_handle.endswith("/elan/axtar")) else [
+            "https://yeniemlak.az/elan/axtar",
+            "https://yeniemlak.az/elan/axtar?elan_nov=1",
+            "https://yeniemlak.az/elan/axtar?elan_nov=2",
+            "https://yeniemlak.az/elan/axtar?sehife=2"
+        ]
 
-        try:
-            headers = get_random_headers(referer="https://yeniemlak.az/")
-            headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-            headers["Accept-Language"] = "az,ru;q=0.9,en-US;q=0.8,en;q=0.7"
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-                res = await client.get(target_url, headers=headers)
-                if res.status_code == 200:
+        headers = get_random_headers(referer="https://yeniemlak.az/")
+        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        headers["Accept-Language"] = "az,ru;q=0.9,en-US;q=0.8,en;q=0.7"
+
+        for target_url in urls_to_fetch:
+            try:
+                async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                    res = await client.get(target_url, headers=headers)
+                    if res.status_code != 200:
+                        continue
                     soup = BeautifulSoup(res.text, "html.parser")
                     links = soup.find_all("a", href=re.compile(r'/elan/(?:satilir|kiraye|gunluk)[^"]+-(\d+)'))
-                    seen = set()
 
                     for a in links:
                         href = a['href']
@@ -215,11 +223,10 @@ class YeniEmlakAzScraper(BaseScraper):
                             listing_url=f"https://yeniemlak.az{href}",
                             photos=card_photos
                         ))
-                        if len(items) >= 28:
+                        if len(items) >= 40:
                             break
-
-        except Exception as e:
-            logger.error(f"[YeniEmlakAzScraper] Error scraping: {e}")
+            except Exception as e:
+                logger.debug(f"[YeniEmlakAzScraper] Notice scraping {target_url}: {e}")
 
         logger.info(f"[YeniEmlakAzScraper] Extracted {len(items)} listings.")
         return items

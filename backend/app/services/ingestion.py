@@ -132,7 +132,7 @@ class IngestionService:
     @staticmethod
     def build_targeted_search_urls(search: SavedSearch) -> List[Tuple[str, Any, str]]:
         """
-        Builds direct targeted query URLs for Bina.az (primary location slugs) and Tap.az matching exact criteria.
+        Builds direct targeted query URLs for Bina.az (direct category + location slug feeds) and Tap.az matching exact criteria.
         Returns list of (source_name, scraper_instance, target_url).
         """
         import urllib.parse
@@ -145,29 +145,30 @@ class IngestionService:
         seller = (getattr(search, 'seller_type', 'any') or 'any').lower()
         is_owner = seller in ["owner", "sahibinden", "sahibindən"]
 
-        # 1. Bina.az Category Mapping
+        # 1. Bina.az Category & Slug Mapping
         categories_to_query = []
-        prop_slug = "menziller"
+        prop_slugs = ["menziller"]
         if prop == "house":
             categories_to_query.append("5")
-            prop_slug = "heyet-evleri"
+            prop_slugs = ["heyet-evleri"]
         elif prop == "office":
             categories_to_query.append("7")
-            prop_slug = "ofisler"
+            prop_slugs = ["ofisler"]
         elif prop == "commercial":
             categories_to_query.append("10")
-            prop_slug = "obyektler"
+            prop_slugs = ["obyektler"]
         elif prop == "land":
             categories_to_query.append("9")
-            prop_slug = "torpaq"
+            prop_slugs = ["torpaq"]
         elif bld == "new":
             categories_to_query.append("2")
-            prop_slug = "yeni-tikililer"
+            prop_slugs = ["yeni-tikililer", "menziller"]
         elif bld == "old":
             categories_to_query.append("3")
-            prop_slug = "kohne-tikililer"
+            prop_slugs = ["kohne-tikililer", "menziller"]
         else:
             categories_to_query.extend(["1", "2", "3"])
+            prop_slugs = ["menziller", "yeni-tikililer"]
 
         # Construct full rooms sequence (e.g. min 2, max 4 -> rooms[]=2, rooms[]=3, rooms[]=4)
         rooms_params = []
@@ -193,6 +194,19 @@ class IngestionService:
         if search.metro_station:
             loc_names.extend([p.strip() for p in re.split(r'[,;/|\+]', search.metro_station) if p.strip()])
 
+        # Direct Location-Specific Bina.az Slugs (100% precision for requested locations)
+        for loc_slug in found_slugs:
+            for p_slug in prop_slugs:
+                slug_params = ["sort_by=created_at_desc"]
+                if is_owner:
+                    slug_params.append("owner_type=owner")
+                if prop in ["apartment", "house"] and rooms_params:
+                    slug_params.extend(rooms_params)
+                slug_params.extend(price_params)
+                
+                bina_slug_url = f"https://bina.az/baki/{deal_slug}/{p_slug}/{loc_slug}?{'&'.join(slug_params)}"
+                targets.append((f"Bina.az ({loc_slug})", BinaAzScraper(), bina_slug_url))
+
         # Parameterized Targeted Query Feeds on Bina.az
         for cat_id in categories_to_query:
             bina_params = [f"city_id=1", f"leased={leased_str}", f"category_id={cat_id}", "sort_by=created_at_desc"]
@@ -207,12 +221,18 @@ class IngestionService:
             targets.append(("Bina.az Targeted", BinaAzScraper(), bina_url))
 
         # 2. Tap.az Keyword Target (Newest First)
-        loc_kw = search.district or search.metro_station or ""
-        if loc_kw:
-            loc_encoded = urllib.parse.quote(loc_kw)
-            tap_cat = "menziller" if prop == "apartment" else ("heyet-evleri-baglar-villalar" if prop == "house" else "ofisler" if prop == "office" else "obyektler" if prop == "commercial" else "torpaq" if prop == "land" else "")
-            tap_url = f"https://tap.az/elanlar/dasinmaz-emlak/{tap_cat}?keywords={loc_encoded}&order=new" if tap_cat else f"https://tap.az/elanlar/dasinmaz-emlak?keywords={loc_encoded}&order=new"
-            targets.append(("Tap.az Targeted", TapAzScraper(), tap_url))
+        tap_cat = "menziller" if prop == "apartment" else ("heyet-evleri-baglar-villalar" if prop == "house" else "ofisler" if prop == "office" else "obyektler" if prop == "commercial" else "torpaq" if prop == "land" else "")
+        if loc_names:
+            for ln in loc_names:
+                loc_encoded = urllib.parse.quote(ln)
+                tap_url = f"https://tap.az/elanlar/dasinmaz-emlak/{tap_cat}?keywords={loc_encoded}&order=new" if tap_cat else f"https://tap.az/elanlar/dasinmaz-emlak?keywords={loc_encoded}&order=new"
+                targets.append((f"Tap.az ({ln})", TapAzScraper(), tap_url))
+        else:
+            loc_kw = search.district or search.metro_station or ""
+            if loc_kw:
+                loc_encoded = urllib.parse.quote(loc_kw)
+                tap_url = f"https://tap.az/elanlar/dasinmaz-emlak/{tap_cat}?keywords={loc_encoded}&order=new" if tap_cat else f"https://tap.az/elanlar/dasinmaz-emlak?keywords={loc_encoded}&order=new"
+                targets.append(("Tap.az Targeted", TapAzScraper(), tap_url))
 
         return targets
 

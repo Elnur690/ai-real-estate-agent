@@ -15,9 +15,9 @@ from app.core.property_classifier import classify_property_and_offer
 logger = logging.getLogger(__name__)
 
 def normalize_bina_url(url: str) -> str:
-    """Converts user-facing slug URLs (e.g. /baki/alqi-satqi/heyet-evleri) to internal items query URLs."""
+    """Preserves location slugs or converts short user-facing URLs to internal query URLs."""
     u = url.lower().strip()
-    if "category_id=" in u:
+    if "category_id=" in u or any(slug in u for slug in ['-r', '-m', '-q', 'khirdalan', 'sumqayit']) or ("/baki/" in u and len(u.split("/")) > 4):
         return url
 
     leased = "true" if ("/kiraye" in u or "leased=true" in u) else "false"
@@ -66,7 +66,7 @@ class BinaAzScraper(BaseScraper):
             phone_headers = dict(headers)
             phone_headers["X-Requested-With"] = "XMLHttpRequest"
             phone_headers["Accept"] = "application/json, text/javascript, */*; q=0.01"
-            async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=3.0, follow_redirects=True) as client:
                 r_phone = await client.get(f"https://bina.az/items/{ext_id}/phones", headers=phone_headers)
                 if r_phone.status_code == 200:
                     p_data = r_phone.json()
@@ -79,7 +79,7 @@ class BinaAzScraper(BaseScraper):
             logger.debug(f"[BinaAzScraper] Error fetching phone JSON for #{ext_id}: {e}")
 
         try:
-            async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=4.0, follow_redirects=True) as client:
                 res = await client.get(url, headers=headers)
                 if res.status_code != 200:
                     return {"phone_number": phone} if phone else {}
@@ -226,6 +226,7 @@ class BinaAzScraper(BaseScraper):
                     detected_offer = "rent"
                 elif "satılır" in h1_text:
                     detected_offer = "sale"
+
                 # 7. Extract exact rooms if present
                 rooms = None
                 rooms_m = re.search(r'(\d+)\s*otaq', f"{h1_text} {full_desc[:200].lower()}")
@@ -234,7 +235,7 @@ class BinaAzScraper(BaseScraper):
 
                 # 8. Extract all Photos from Detail Page Gallery via ScraplingHelper
                 from app.scrapers.utils import ScraplingHelper
-                clean_photos = ScraplingHelper.extract_all_photos(r.text, base_url="https://bina.az")
+                clean_photos = ScraplingHelper.extract_all_photos(res.text, base_url="https://bina.az")
 
                 return {
                     "phone_number": phone,
@@ -260,27 +261,51 @@ class BinaAzScraper(BaseScraper):
         items: List[RawListingItem] = []
         seen = {}
 
-        # Normalize slug URLs to items query URLs
+        # Normalize slug URLs to items query URLs while preserving location slugs
         normalized_url = normalize_bina_url(url_or_handle)
 
         # Check if this is a targeted criteria query or generic source
-        is_targeted_search = any(k in normalized_url for k in ['owner_type=', 'rooms[]=', 'price_min=', 'price_max=', 'location_ids[]=', 'q='])
+        is_targeted_search = (
+            any(k in normalized_url for k in ['owner_type=', 'rooms[]=', 'price_min=', 'price_max=', 'location_ids[]=', 'q=']) or
+            any(slug in normalized_url for slug in ['-r', '-m', '-q', 'khirdalan', 'sumqayit']) or
+            ("/baki/" in normalized_url and len(normalized_url.split("/")) > 4)
+        )
 
         if is_targeted_search:
             urls_to_fetch = [normalized_url]
+            sep = "&" if "?" in normalized_url else "?"
             if "page=" not in normalized_url:
-                urls_to_fetch.append(f"{normalized_url}&page=2")
+                urls_to_fetch.append(f"{normalized_url}{sep}page=2")
         else:
-            # Streamlined master streams covering 100% of newly published listings without overloading connections
+            # Master streams covering all real estate types, rental/sale, and pages 1 & 2 for high data freshness
             urls_to_fetch = [
+                # All newest listings across all categories (pages 1 & 2)
                 "https://bina.az/items?sort_by=created_at_desc",
+                "https://bina.az/items?sort_by=created_at_desc&page=2",
+                # All newest rentals (pages 1 & 2)
                 "https://bina.az/items?city_id=1&leased=true&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&leased=true&sort_by=created_at_desc&page=2",
+                # Owner direct apartments (sale & rent)
                 "https://bina.az/items?city_id=1&category_id=1&leased=false&owner_type=owner&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=1&leased=true&owner_type=owner&sort_by=created_at_desc",
+                # New buildings (Yeni tikili)
                 "https://bina.az/items?city_id=1&category_id=2&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=5&leased=false&sort_by=created_at_desc"
+                # Old buildings (Köhnə tikili)
+                "https://bina.az/items?city_id=1&category_id=3&leased=false&sort_by=created_at_desc",
+                # Houses & Villas (Həyət evi / Villa) sale & rent
+                "https://bina.az/items?city_id=1&category_id=5&leased=false&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=5&leased=true&sort_by=created_at_desc",
+                # Commercial properties (Obyektlər) sale & rent
+                "https://bina.az/items?city_id=1&category_id=10&leased=false&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=10&leased=true&sort_by=created_at_desc",
+                # Offices (Ofislər) sale & rent
+                "https://bina.az/items?city_id=1&category_id=7&leased=false&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=7&leased=true&sort_by=created_at_desc",
+                # Land (Torpaq)
+                "https://bina.az/items?city_id=1&category_id=9&leased=false&sort_by=created_at_desc"
             ]
 
-        sem = asyncio.Semaphore(2)
+        sem = asyncio.Semaphore(4)
 
         async def fetch_target(target_url: str):
             for attempt in range(1, 3):

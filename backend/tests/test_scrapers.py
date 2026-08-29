@@ -202,8 +202,47 @@ async def test_telegram_scraper_message_parsing():
     assert item.phone_number == "+994 55 321 45 67"
     assert item.seller_type == "owner"
     assert item.property_type == "apartment"
-    assert item.offer_type == "rent"
+@pytest.mark.asyncio
+async def test_bina_az_normalize_url_location_slug_preservation():
+    from app.scrapers.bina_az import normalize_bina_url
+
+    # Location slugs should NOT be stripped
+    url_metro = "https://bina.az/baki/kiraye/menziller/elmler-akademiyasi-m"
+    assert normalize_bina_url(url_metro) == url_metro
+
+    url_district = "https://bina.az/baki/alqi-satqi/menziller/yasamal-r"
+    assert normalize_bina_url(url_district) == url_district
+
+    url_commercial = "https://bina.az/baki/kiraye/obyektler/elmler-akademiyasi-m"
+    assert normalize_bina_url(url_commercial) == url_commercial
 
 
+@pytest.mark.asyncio
+async def test_targeted_search_url_generation_with_location_slugs():
+    from app.services.ingestion import IngestionService
+    from app.models.saved_search import SavedSearch
 
+    search = SavedSearch(
+        id=1,
+        tenant_id=1,
+        name="Elmlər Obyekt Kirayə",
+        district="Yasamal",
+        metro_station="Elmlər Akademiyası",
+        property_type="commercial",
+        offer_type="rent",
+        min_price=1300,
+        max_price=1600,
+        is_active=True
+    )
 
+    targets = IngestionService.build_targeted_search_urls(search)
+    target_urls = [t[2] for t in targets]
+
+    # Must contain direct location-slugged Bina.az URLs
+    has_elmler_slug = any("elmlar-akademiyasi-m" in u and "obyektler" in u and "kiraye" in u for u in target_urls)
+    has_yasamal_slug = any("yasamal-r" in u and "obyektler" in u and "kiraye" in u for u in target_urls)
+    has_price_params = any("price_min=1300" in u and "price_max=1600" in u for u in target_urls)
+
+    assert has_elmler_slug, f"Missing Elmlər slug target in {target_urls}"
+    assert has_yasamal_slug, f"Missing Yasamal slug target in {target_urls}"
+    assert has_price_params, f"Missing price params in {target_urls}"
