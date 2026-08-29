@@ -113,9 +113,7 @@ class YeniEmlakAzScraper(BaseScraper):
 
         urls_to_fetch = [url_or_handle] if ("?" in url_or_handle and not url_or_handle.endswith("/elan/axtar")) else [
             "https://yeniemlak.az/elan/axtar",
-            "https://yeniemlak.az/elan/axtar?elan_nov=1",
-            "https://yeniemlak.az/elan/axtar?elan_nov=2",
-            "https://yeniemlak.az/elan/axtar?sehife=2"
+            "https://yeniemlak.az/elan/axtar?elan_nov=1"
         ]
 
         headers = get_random_headers(referer="https://yeniemlak.az/")
@@ -124,7 +122,7 @@ class YeniEmlakAzScraper(BaseScraper):
 
         for target_url in urls_to_fetch:
             try:
-                async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(6.0, connect=3.0), follow_redirects=True) as client:
                     res = await client.get(target_url, headers=headers)
                     if res.status_code != 200:
                         continue

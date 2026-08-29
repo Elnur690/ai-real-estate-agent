@@ -273,36 +273,14 @@ class BinaAzScraper(BaseScraper):
 
         if is_targeted_search:
             urls_to_fetch = [normalized_url]
-            sep = "&" if "?" in normalized_url else "?"
-            if "page=" not in normalized_url:
-                urls_to_fetch.append(f"{normalized_url}{sep}page=2")
         else:
-            # Master streams covering all real estate types, rental/sale, and pages 1 & 2 for high data freshness
+            # High-speed master streams covering all newly published real estate categories
             urls_to_fetch = [
-                # All newest listings across all categories (pages 1 & 2)
                 "https://bina.az/items?sort_by=created_at_desc",
-                "https://bina.az/items?sort_by=created_at_desc&page=2",
-                # All newest rentals (pages 1 & 2)
                 "https://bina.az/items?city_id=1&leased=true&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&leased=true&sort_by=created_at_desc&page=2",
-                # Owner direct apartments (sale & rent)
                 "https://bina.az/items?city_id=1&category_id=1&leased=false&owner_type=owner&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=1&leased=true&owner_type=owner&sort_by=created_at_desc",
-                # New buildings (Yeni tikili)
-                "https://bina.az/items?city_id=1&category_id=2&leased=false&sort_by=created_at_desc",
-                # Old buildings (Köhnə tikili)
-                "https://bina.az/items?city_id=1&category_id=3&leased=false&sort_by=created_at_desc",
-                # Houses & Villas (Həyət evi / Villa) sale & rent
                 "https://bina.az/items?city_id=1&category_id=5&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=5&leased=true&sort_by=created_at_desc",
-                # Commercial properties (Obyektlər) sale & rent
-                "https://bina.az/items?city_id=1&category_id=10&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=10&leased=true&sort_by=created_at_desc",
-                # Offices (Ofislər) sale & rent
-                "https://bina.az/items?city_id=1&category_id=7&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=7&leased=true&sort_by=created_at_desc",
-                # Land (Torpaq)
-                "https://bina.az/items?city_id=1&category_id=9&leased=false&sort_by=created_at_desc"
+                "https://bina.az/items?city_id=1&category_id=10&leased=false&sort_by=created_at_desc"
             ]
 
         sem = asyncio.Semaphore(4)
@@ -311,13 +289,13 @@ class BinaAzScraper(BaseScraper):
             for attempt in range(1, 3):
                 async with sem:
                     try:
-                        await asyncio.sleep(0.15)
+                        await asyncio.sleep(0.1)
                         req_headers = get_random_headers(referer="https://bina.az/")
                         req_headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
                         req_headers["Accept-Language"] = "az,ru;q=0.9,en-US;q=0.8,en;q=0.7"
                         req_headers["Connection"] = "close"
 
-                        async with httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=5.0), follow_redirects=True) as client:
+                        async with httpx.AsyncClient(timeout=httpx.Timeout(6.0, connect=3.0), follow_redirects=True) as client:
                             res = await client.get(target_url, headers=req_headers)
                             if res.status_code != 200:
                                 logger.debug(f"[BinaAzScraper] GET {target_url} returned status {res.status_code}")

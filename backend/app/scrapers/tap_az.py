@@ -107,23 +107,19 @@ class TapAzScraper(BaseScraper):
             "https://tap.az/elanlar/dasinmaz-emlak?order=new",
             "https://tap.az/elanlar/dasinmaz-emlak/menziller?order=new",
             "https://tap.az/elanlar/dasinmaz-emlak/heyet-evleri-baglar-villalar?order=new",
-            "https://tap.az/elanlar/dasinmaz-emlak/ofisler?order=new",
-            "https://tap.az/elanlar/dasinmaz-emlak/obyektler?order=new",
-            "https://tap.az/elanlar/dasinmaz-emlak/torpaq?order=new",
-            "https://tap.az/elanlar/dasinmaz-emlak/menziller?p%5B837%5D=kiraye&order=new",
-            "https://tap.az/elanlar/dasinmaz-emlak/obyektler?p%5B837%5D=kiraye&order=new"
+            "https://tap.az/elanlar/dasinmaz-emlak/obyektler?order=new"
         ]
 
         for target_url in urls_to_fetch:
             for attempt in range(1, 3):
                 try:
-                    await asyncio.sleep(0.15)
+                    await asyncio.sleep(0.1)
                     headers = get_random_headers(referer="https://tap.az/")
                     headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
                     headers["Accept-Language"] = "az,ru;q=0.9,en-US;q=0.8,en;q=0.7"
                     headers["Connection"] = "close"
 
-                    async with httpx.AsyncClient(timeout=httpx.Timeout(12.0, connect=5.0), follow_redirects=True) as client:
+                    async with httpx.AsyncClient(timeout=httpx.Timeout(6.0, connect=3.0), follow_redirects=True) as client:
                         res = await client.get(target_url, headers=headers)
                         if res.status_code == 200:
                             soup = BeautifulSoup(res.text, "html.parser")

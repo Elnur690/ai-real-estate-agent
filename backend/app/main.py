@@ -17,8 +17,12 @@ logger = logging.getLogger("main")
 async def lifespan(app: FastAPI):
     # Startup: create tables automatically if sqlite/postgres table structure needed
     async with async_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
         from sqlalchemy import text
+        if "sqlite" in settings.DATABASE_URL:
+            await conn.execute(text("PRAGMA journal_mode=WAL;"))
+            await conn.execute(text("PRAGMA synchronous=NORMAL;"))
+            await conn.execute(text("PRAGMA busy_timeout=10000;"))
+        await conn.run_sync(Base.metadata.create_all)
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret VARCHAR(64);"))
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_temp_secret VARCHAR(64);"))
         await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT FALSE;"))

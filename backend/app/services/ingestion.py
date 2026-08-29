@@ -195,8 +195,9 @@ class IngestionService:
             loc_names.extend([p.strip() for p in re.split(r'[,;/|\+]', search.metro_station) if p.strip()])
 
         # Direct Location-Specific Bina.az Slugs (100% precision for requested locations)
-        for loc_slug in found_slugs:
-            for p_slug in prop_slugs:
+        if found_slugs:
+            p_slug = prop_slugs[0]
+            for loc_slug in found_slugs:
                 slug_params = ["sort_by=created_at_desc"]
                 if is_owner:
                     slug_params.append("owner_type=owner")
@@ -207,32 +208,25 @@ class IngestionService:
                 bina_slug_url = f"https://bina.az/baki/{deal_slug}/{p_slug}/{loc_slug}?{'&'.join(slug_params)}"
                 targets.append((f"Bina.az ({loc_slug})", BinaAzScraper(), bina_slug_url))
 
-        # Parameterized Targeted Query Feeds on Bina.az
-        for cat_id in categories_to_query:
-            bina_params = [f"city_id=1", f"leased={leased_str}", f"category_id={cat_id}", "sort_by=created_at_desc"]
-            if is_owner:
-                bina_params.append("owner_type=owner")
-            # Only attach rooms parameter for apartments and houses, not for commercial/office/land
-            if prop in ["apartment", "house"] and rooms_params:
-                bina_params.extend(rooms_params)
-            bina_params.extend(price_params)
+        # Primary Parameterized Targeted Query Feed on Bina.az
+        cat_id = categories_to_query[0] if categories_to_query else "1"
+        bina_params = [f"city_id=1", f"leased={leased_str}", f"category_id={cat_id}", "sort_by=created_at_desc"]
+        if is_owner:
+            bina_params.append("owner_type=owner")
+        if prop in ["apartment", "house"] and rooms_params:
+            bina_params.extend(rooms_params)
+        bina_params.extend(price_params)
 
-            bina_url = f"https://bina.az/items?{'&'.join(bina_params)}"
-            targets.append(("Bina.az Targeted", BinaAzScraper(), bina_url))
+        bina_url = f"https://bina.az/items?{'&'.join(bina_params)}"
+        targets.append(("Bina.az Targeted", BinaAzScraper(), bina_url))
 
-        # 2. Tap.az Keyword Target (Newest First)
+        # 2. Tap.az Keyword Target (Newest First) - 1 focused target per search
         tap_cat = "menziller" if prop == "apartment" else ("heyet-evleri-baglar-villalar" if prop == "house" else "ofisler" if prop == "office" else "obyektler" if prop == "commercial" else "torpaq" if prop == "land" else "")
-        if loc_names:
-            for ln in loc_names:
-                loc_encoded = urllib.parse.quote(ln)
-                tap_url = f"https://tap.az/elanlar/dasinmaz-emlak/{tap_cat}?keywords={loc_encoded}&order=new" if tap_cat else f"https://tap.az/elanlar/dasinmaz-emlak?keywords={loc_encoded}&order=new"
-                targets.append((f"Tap.az ({ln})", TapAzScraper(), tap_url))
-        else:
-            loc_kw = search.district or search.metro_station or ""
-            if loc_kw:
-                loc_encoded = urllib.parse.quote(loc_kw)
-                tap_url = f"https://tap.az/elanlar/dasinmaz-emlak/{tap_cat}?keywords={loc_encoded}&order=new" if tap_cat else f"https://tap.az/elanlar/dasinmaz-emlak?keywords={loc_encoded}&order=new"
-                targets.append(("Tap.az Targeted", TapAzScraper(), tap_url))
+        ln = loc_names[0] if loc_names else (search.district or search.metro_station or "")
+        if ln:
+            loc_encoded = urllib.parse.quote(ln)
+            tap_url = f"https://tap.az/elanlar/dasinmaz-emlak/{tap_cat}?keywords={loc_encoded}&order=new" if tap_cat else f"https://tap.az/elanlar/dasinmaz-emlak?keywords={loc_encoded}&order=new"
+            targets.append((f"Tap.az ({ln})", TapAzScraper(), tap_url))
 
         return targets
 
@@ -511,30 +505,6 @@ class IngestionService:
                 await db.commit()
                 return existing_listing
             else:
-                if item.external_id:
-                    try:
-                        details = await IngestionService._fetch_details_for_item(item.external_id, item.listing_url)
-                        if details:
-                            if details.get("phone_number"):
-                                item.phone_number = details["phone_number"]
-                            if details.get("price") and (not item.price or item.price == 0):
-                                item.price = details["price"]
-                                item.currency = details.get("currency", item.currency or "AZN")
-                            elif (not item.price or item.price == 0) and details.get("price_per_sqm") and item.area_sqm:
-                                item.price = round(details["price_per_sqm"] * item.area_sqm)
-                            if details.get("seller_type"):
-                                item.seller_type = details["seller_type"]
-                            if details.get("property_type"):
-                                item.property_type = details["property_type"]
-                            if details.get("offer_type"):
-                                item.offer_type = details["offer_type"]
-                            if details.get("rooms") and not item.rooms:
-                                item.rooms = details["rooms"]
-                            if details.get("full_description") and len(details["full_description"]) > len(item.description or ""):
-                                item.description = details["full_description"]
-                    except Exception as e:
-                        logger.debug(f"[IngestionService] Detail fetch error for {item.external_id}: {e}")
-
                 # Sanity check: Baku apartments/houses with price <= 400 are daily or monthly rentals, not sale
                 if getattr(item, 'price', 0) and item.price <= 400 and getattr(item, 'offer_type', 'sale') == 'sale':
                     item.offer_type = 'daily_rent'

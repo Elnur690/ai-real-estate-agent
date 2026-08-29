@@ -8,7 +8,11 @@ engine_kwargs = {
     "echo": False,
     "future": True,
 }
-if "sqlite" not in settings.DATABASE_URL:
+if "sqlite" in settings.DATABASE_URL:
+    engine_kwargs.update({
+        "connect_args": {"check_same_thread": False, "timeout": 30}
+    })
+else:
     engine_kwargs.update({
         "pool_size": 25,
         "max_overflow": 25,
