@@ -17,12 +17,12 @@ class Ev10AzScraper(BaseScraper):
         try:
             headers = get_random_headers(referer="https://ev10.az/")
             headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(6.0, connect=3.0), follow_redirects=True) as client:
                 res = await client.get(url_or_handle, headers=headers)
                 if res.status_code == 200:
                     soup = BeautifulSoup(res.text, "html.parser")
                     links = soup.find_all("a", href=re.compile(r'/posting/(\d+)'))
-                    seen = {}
+                    seen = set()
 
                     for a in links:
                         href = a.get('href', '')
@@ -30,17 +30,13 @@ class Ev10AzScraper(BaseScraper):
                         if not m:
                             continue
                         ext_id = m.group(1)
-                        text = a.get_text(separator=" | ", strip=True)
-                        if not text:
-                            parent = a.find_parent("div", class_=lambda c: c and any(x in str(c) for x in ['MuiGrid-item', 'postingCard', 'item', 'card'])) or a.find_parent("div")
-                            if parent:
-                                text = parent.get_text(separator=" | ", strip=True)
-                        if ext_id not in seen or len(text) > len(seen[ext_id].get('text', '')):
-                            seen[ext_id] = {'href': href, 'text': text}
+                        if ext_id in seen:
+                            continue
+                        seen.add(ext_id)
 
-                    for ext_id, data in seen.items():
-                        href = data['href']
-                        raw_text = data['text']
+                        parent = a.find_parent("div", class_=lambda c: c and any(x in str(c) for x in ['MuiGrid-item', 'postingCard', 'item', 'card'])) or a.find_parent("div")
+                        raw_text = parent.get_text(separator=" | ", strip=True).replace('\xa0', ' ') if parent else a.get_text(strip=True).replace('\xa0', ' ')
+                        raw_lower = raw_text.lower()
 
                         price_m = re.search(r'([\d,.\s]+)\s*(?:AZN|₼|manat)', raw_text, re.IGNORECASE)
                         clean_pr_str = price_m.group(1).replace(" ", "").replace(",", "").replace("\xa0", "") if price_m else ""
@@ -87,7 +83,7 @@ class Ev10AzScraper(BaseScraper):
                         else:
                             title = f"{prop_name} ({loc_label})"
 
-                        bld_type = None if detected_prop in ["commercial", "office", "land"] else ("old" if "köhnə" in raw_text.lower() else "new")
+                        bld_type = None if detected_prop in ["commercial", "office", "land"] else ("old" if "köhnə" in raw_lower else "new")
                         clean_url = href if href.startswith("http") else f"https://ev10.az{href if href.startswith('/') else '/' + href}"
 
                         # Extract card photo
@@ -104,7 +100,7 @@ class Ev10AzScraper(BaseScraper):
                         items.append(RawListingItem(
                             external_id=f"ev10_{ext_id}",
                             title=title,
-                            description=f"Ev10.az elanı: {raw_text[:200]}",
+                            description=f"Ev10.az: {raw_text[:200]}",
                             price=price,
                             currency="AZN",
                             district=district,
@@ -120,11 +116,11 @@ class Ev10AzScraper(BaseScraper):
                             listing_url=clean_url,
                             photos=card_photos
                         ))
-                        if len(items) >= 25:
+                        if len(items) >= 20:
                             break
 
         except Exception as e:
-            logger.error(f"[Ev10AzScraper] Error scraping: {e}")
+            logger.debug(f"[Ev10AzScraper] Error scraping: {e}")
 
         logger.info(f"[Ev10AzScraper] Extracted {len(items)} listings.")
         return items

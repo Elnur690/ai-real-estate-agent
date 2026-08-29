@@ -96,12 +96,13 @@ class RahatEmlakAzScraper(BaseScraper):
     async def scrape_source(self, url_or_handle: str = "https://rahatemlak.az/alqi-satqi") -> List[RawListingItem]:
         logger.info(f"[RahatEmlakAzScraper] Fetching listings from {url_or_handle}")
         items: List[RawListingItem] = []
+        target_url = url_or_handle or self.LISTING_URL
 
         try:
             headers = get_random_headers(referer="https://rahatemlak.az/")
             headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-                res = await client.get(self.LISTING_URL, headers=headers)
+            async with httpx.AsyncClient(timeout=httpx.Timeout(6.0, connect=3.0), follow_redirects=True) as client:
+                res = await client.get(target_url, headers=headers)
                 if res.status_code == 200:
                     soup = BeautifulSoup(res.text, "html.parser")
                     links = soup.find_all("a", href=re.compile(r'/elan/|/item/|/alqi-satqi/|\.html|/\d+'))
@@ -192,12 +193,12 @@ class RahatEmlakAzScraper(BaseScraper):
                         if len(items) >= 20:
                             break
                 elif res.status_code == 403:
-                    logger.warning(f"[RahatEmlakAzScraper] Site returned 403 Forbidden. Skipped gracefully.")
+                    logger.debug(f"[RahatEmlakAzScraper] Site returned 403 Forbidden. Skipped gracefully.")
                 else:
-                    logger.warning(f"[RahatEmlakAzScraper] Unexpected HTTP status {res.status_code} fetching listings.")
+                    logger.debug(f"[RahatEmlakAzScraper] HTTP status {res.status_code} fetching listings.")
 
         except Exception as e:
-            logger.warning(f"[RahatEmlakAzScraper] Error scraping: {e}")
+            logger.debug(f"[RahatEmlakAzScraper] Notice scraping: {e}")
 
         logger.info(f"[RahatEmlakAzScraper] Extracted {len(items)} listings.")
         return items
