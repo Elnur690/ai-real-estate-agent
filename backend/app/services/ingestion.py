@@ -869,12 +869,16 @@ class IngestionService:
             if listing.seller_type == "owner" and not getattr(listing, 'is_makler', False):
                 return False
 
-        # 4. Price Limits
+        # 4. Price Limits (Auto-converts USD listings to AZN for accurate budget filtering)
+        effective_listing_price = listing.price
+        if getattr(listing, 'currency', 'AZN') == "USD" and effective_listing_price:
+            effective_listing_price = effective_listing_price * 1.70
+
         if search.min_price and search.min_price > 0:
-            if listing.price and listing.price < search.min_price:
+            if effective_listing_price and effective_listing_price < search.min_price:
                 return False
         if search.max_price and search.max_price > 0:
-            if listing.price and listing.price > search.max_price:
+            if effective_listing_price and effective_listing_price > search.max_price:
                 return False
 
         # 5. Room Count (Only enforce on residential apartments/houses; commercial open-space / shops are not restricted)
@@ -948,7 +952,7 @@ class IngestionService:
                                 valid_districts.add(parent.lower())
 
                 # If the listing's district is known and does NOT match target districts, strictly reject
-                if effective_listing_dist and not any(vd == effective_listing_dist or vd in effective_listing_dist or effective_listing_dist in vd for vd in valid_districts):
+                if effective_listing_dist and effective_listing_dist not in ["bakı", "baku"] and not any(vd == effective_listing_dist or vd in effective_listing_dist or effective_listing_dist in vd for vd in valid_districts):
                     settl_parent = SETTLEMENT_TO_DISTRICT.get(list_settl, '').lower() if list_settl else ''
                     metro_parent = METRO_TO_DISTRICT.get(list_metro, '').lower() if list_metro else ''
                     if not any(vd == settl_parent or vd == metro_parent for vd in valid_districts):
@@ -962,21 +966,21 @@ class IngestionService:
             if target_metros:
                 for tm in target_metros:
                     tm_lower = tm.lower().strip()
-                    tm_parent = METRO_TO_DISTRICT.get(tm, "").lower()
                     if list_metro and (tm_lower in list_metro.lower() or list_metro.lower() in tm_lower):
-                        if not effective_listing_dist or not tm_parent or effective_listing_dist == tm_parent or tm_parent in effective_listing_dist:
-                            matched_loc = True
-                            break
+                        matched_loc = True
+                        break
                     aliases = get_all_aliases_for_location(tm, is_metro_focus=True)
                     if any(alias in list_loc_text for alias in aliases):
-                        if not effective_listing_dist or not tm_parent or effective_listing_dist == tm_parent or tm_parent in effective_listing_dist:
-                            matched_loc = True
-                            break
+                        matched_loc = True
+                        break
 
             # Check target districts if specified
             if not matched_loc and target_districts:
                 for td in target_districts:
                     td_lower = td.lower().strip()
+                    if effective_listing_dist and (td_lower == effective_listing_dist or td_lower in effective_listing_dist or effective_listing_dist in td_lower):
+                        matched_loc = True
+                        break
                     if td_lower in list_loc_text:
                         matched_loc = True
                         break
@@ -1154,8 +1158,8 @@ class IngestionService:
                 "property_type": getattr(listing, 'property_type', 'apartment')
             }, criteria=criteria)
 
-            # Check if match already recorded for this tenant (prevents duplicate spam across searches)
-            stmt_m = select(Match).where(Match.tenant_id == tenant.id, Match.listing_id == listing.id)
+            # Check if match already recorded for this specific saved search
+            stmt_m = select(Match).where(Match.saved_search_id == search.id, Match.listing_id == listing.id)
             res_m = await db.execute(stmt_m)
             existing_match = res_m.scalars().first()
 

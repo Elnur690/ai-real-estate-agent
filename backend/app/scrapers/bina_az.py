@@ -360,18 +360,7 @@ class BinaAzScraper(BaseScraper):
             if "usd" in combined_lower or "$" in combined_text:
                 currency = "USD"
 
-            # 2. Offer Type (Sale, Monthly Rent, Daily Rent)
-            if "gunluk" in target_url or "daily" in target_url or "/ gün" in combined_text or "/gun" in combined_lower or "günlük" in combined_lower or "sutkalıq" in combined_lower or "günlük kirayə" in combined_lower:
-                offer_type = "daily_rent"
-            elif "/kiraye" in target_url or "leased=true" in target_url or "kiraye" in target_url or "/ ay" in combined_text or "aylıq" in combined_lower or "icarə" in combined_lower or "kirayə" in combined_lower:
-                offer_type = "rent"
-            elif price > 0 and price <= 350:
-                # Real estate in Baku is never sold for <= 350 AZN. If <= 350 AZN, it is daily/monthly rental.
-                offer_type = "daily_rent"
-            else:
-                offer_type = "sale"
-
-            # 3. Rooms, Floor, Area, and Land (Sot)
+            # 2. Rooms, Floor, Area, and Land (Sot)
             rooms_m = re.search(r'(\d+)\s*otaqlı', combined_text)
             rooms = int(rooms_m.group(1)) if rooms_m else None
 
@@ -387,7 +376,7 @@ class BinaAzScraper(BaseScraper):
                 floor = int(floor_m.group(1))
                 total_floors = int(floor_m.group(2))
 
-            # 4. Location Details (District, Settlement, Metro)
+            # 3. Location Details (District, Settlement, Metro)
             district = extract_baku_district(combined_text)
             settlement = extract_baku_settlement(combined_text)
             metro = extract_metro_station(combined_text)
@@ -399,25 +388,34 @@ class BinaAzScraper(BaseScraper):
                 elif metro and metro in METRO_TO_DISTRICT:
                     district = METRO_TO_DISTRICT[metro]
 
-            # 5. Property Category Classification based on card content & category_id
+            # 4. Property Category Classification based on card content & category_id
             if "sot" in combined_lower and "otaqlı" not in combined_lower and "mərtəbə" not in combined_lower:
                 detected_prop = "land"
             elif any(k in combined_lower for k in ["həyət evi", "heyet evi", "bağ evi", "bag evi", "villa"]):
                 detected_prop = "house"
-            elif "ofis" in combined_lower:
+            elif "ofis" in combined_lower or "category_id=7" in target_url:
                 detected_prop = "office"
-            elif "obyekt" in combined_lower:
+            elif "obyekt" in combined_lower or "category_id=10" in target_url or "obyekt" in target_url:
                 detected_prop = "commercial"
             elif "category_id=5" in target_url or "heyet-evleri" in target_url or "villa" in target_url:
                 detected_prop = "house"
-            elif "category_id=7" in target_url:
-                detected_prop = "office"
-            elif "category_id=10" in target_url or "obyekt" in target_url:
-                detected_prop = "commercial"
             elif "category_id=9" in target_url or "torpaq" in target_url:
                 detected_prop = "land"
             else:
                 detected_prop = "apartment"
+
+            # 5. Offer Type (Sale, Monthly Rent, Daily Rent)
+            if "gunluk" in target_url or "daily" in target_url or "/ gün" in combined_text or "/gun" in combined_lower or "günlük" in combined_lower or "sutkalıq" in combined_lower or "günlük kirayə" in combined_lower:
+                offer_type = "daily_rent"
+            elif "/kiraye" in target_url or "leased=true" in target_url or "kiraye" in target_url or "/ ay" in combined_text or "aylıq" in combined_lower or "icarə" in combined_lower or "kirayə" in combined_lower:
+                offer_type = "rent"
+            elif price > 0 and price <= 80:
+                offer_type = "daily_rent"
+            elif price > 0 and price <= 8000 and (detected_prop in ["apartment", "house", "office", "commercial"] or any(k in combined_lower for k in ["/ ay", "aylıq", "ayliq", "kirayə", "kiraye", "icarə", "icare", "depozit"])):
+                # Real estate in Baku is never sold for <= 8,000 AZN. Any apartment/house/office/commercial <= 8,000 AZN is a rental
+                offer_type = "rent"
+            else:
+                offer_type = "sale"
 
             detected_offer = offer_type
 
