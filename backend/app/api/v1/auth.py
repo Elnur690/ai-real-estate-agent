@@ -575,6 +575,24 @@ async def telegram_webapp_auth(
     tenant = res_t.scalars().first()
 
     if not tenant:
+        # Check User table by telegram_chat_id or handle
+        u_conds = [User.telegram_chat_id == tg_user_id, User.telegram_handle == tg_user_id]
+        if username:
+            u_conds.append(func.lower(User.telegram_handle) == username.lower())
+        stmt_u_lookup = select(User).where(or_(*u_conds))
+        res_u_lookup = await db.execute(stmt_u_lookup)
+        matched_u = res_u_lookup.scalars().first()
+        if matched_u and matched_u.tenant_id:
+            stmt_tu = select(Tenant).where(Tenant.id == matched_u.tenant_id)
+            res_tu = await db.execute(stmt_tu)
+            tenant = res_tu.scalars().first()
+        elif matched_u and matched_u.role == "admin":
+            # Platform admin opening TMA CRM
+            stmt_first = select(Tenant).order_by(Tenant.id.asc())
+            res_first = await db.execute(stmt_first)
+            tenant = res_first.scalars().first()
+
+    if not tenant:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Bu Telegram hesabı (@{username or tg_user_id}) heç bir agent profilinə bağlı deyil. Zəhmət olmasa əvvəlcə botda /start agent_<id> edin."

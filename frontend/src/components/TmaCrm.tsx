@@ -122,7 +122,16 @@ export function TmaCrm() {
         }
 
         if (!initData) {
-          setAuthError('Zəhmət olmasa bu tətbiqi Telegram Bot (@RealEstateBot) menyusu daxilində açın.');
+          // If already logged in to Dashboard via localStorage token, load CRM directly
+          const existingToken = localStorage.getItem('token');
+          if (existingToken) {
+            const currentUserName = localStorage.getItem('user_name') || 'Agent / Admin';
+            setAgentName(currentUserName);
+            await fetchAllData();
+            setLoading(false);
+            return;
+          }
+          setAuthError('Zəhmət olmasa bu tətbiqi Telegram Bot menyusu daxilində və ya İdarəetmə Panelinə daxil olaraq açın.');
           setLoading(false);
           return;
         }
