@@ -22,17 +22,18 @@ class MulkAzScraper(BaseScraper):
         try:
             headers = get_random_headers(referer="https://mulk.az/")
             headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            headers["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             headers["Accept-Language"] = "az,ru;q=0.9,en-US;q=0.8,en;q=0.7"
             async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
                 res = await client.get(self.BASE_URL, headers=headers)
                 if res.status_code == 200:
                     soup = BeautifulSoup(res.text, "html.parser")
-                    links = soup.find_all("a", href=re.compile(r'page\.php\?id=(\d+)|elan|view'))
+                    links = soup.find_all("a", href=re.compile(r'(\d+)\.mulk|page\.php\?id=(\d+)|elan'))
                     seen = set()
 
                     for a in links:
                         href = a.get('href', '')
-                        m = re.search(r'id=(\d+)', href)
+                        m = re.search(r'(\d+)\.mulk', href) or re.search(r'id=(\d+)', href) or re.search(r'(\d+)', href)
                         if not m:
                             continue
                         ext_id = m.group(1)
@@ -40,17 +41,17 @@ class MulkAzScraper(BaseScraper):
                             continue
                         seen.add(ext_id)
 
-                        parent = a.find_parent("div") or a.find_parent("tr")
+                        parent = a.find_parent("tr") or a.find_parent("table") or a.find_parent("div")
                         raw_text = parent.get_text(separator=" | ", strip=True).replace('\xa0', ' ') if parent else a.get_text(strip=True).replace('\xa0', ' ')
                         raw_lower = raw_text.lower()
 
-                        price_m = re.search(r'([\d\s]+)\s*(?:AZN|₼|manat)', raw_text) or re.search(r'([\d\s]+)\s*\|\s*AZN', raw_text)
+                        price_m = re.search(r'(?i)([\d\s]+)\s*(?:AZN|₼|manat|Azn|\$)', raw_text) or re.search(r'([\d\s]+)\s*\|\s*AZN', raw_text)
                         price = float(price_m.group(1).replace(" ", "")) if price_m else 0.0
 
                         rooms_m = re.search(r'(\d+)\s*otaq', raw_text)
                         rooms = int(rooms_m.group(1)) if rooms_m else None
 
-                        area_m = re.search(r'([\d.]+)\s*m²', raw_text) or re.search(r'([\d.]+)\s*kv', raw_text)
+                        area_m = re.search(r'([\d.]+)\s*m²', raw_text) or re.search(r'([\d.]+)\s*kv', raw_text) or re.search(r'([\d.]+)\s*sot', raw_text)
                         area = float(area_m.group(1)) if area_m else None
 
                         district = extract_baku_district(raw_text)
@@ -118,14 +119,14 @@ class MulkAzScraper(BaseScraper):
                             seller_type=detected_seller,
                             offer_type=detected_offer,
                             property_type=detected_prop,
-                            listing_url=f"{self.BASE_URL}/{href.lstrip('/')}",
+                            listing_url=f"{self.BASE_URL}/{href.lstrip('/')}" if not href.startswith('http') else href,
                             photos=card_photos
                         ))
-                        if len(items) >= 20:
+                        if len(items) >= 30:
                             break
 
         except Exception as e:
-            logger.warning(f"[MulkAzScraper] Source mulk.az temporarily unavailable: {e}")
+            logger.info(f"[MulkAzScraper] Mulk.az scrape status: {e}")
 
         logger.info(f"[MulkAzScraper] Extracted {len(items)} listings.")
         return items

@@ -1,5 +1,6 @@
 import re
 import logging
+import urllib.parse
 import httpx
 from bs4 import BeautifulSoup
 from typing import List
@@ -17,117 +18,133 @@ class KubAzScraper(BaseScraper):
         logger.info(f"[KubAzScraper] Fetching listings from {url_or_handle}")
         items: List[RawListingItem] = []
 
+        target_urls = [
+            url_or_handle,
+            "https://kub.az/1-otaqli-yeni-tikili-evler-satilir",
+            "https://kub.az/2-otaqli-yeni-tikili-evler-satilir",
+            "https://kub.az/3-otaqli-yeni-tikili-evler-satilir"
+        ] if url_or_handle == "https://kub.az/" else [url_or_handle]
+
+        seen = set()
         try:
             headers = get_random_headers(referer="https://kub.az/")
             headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-                res = await client.get(url_or_handle, headers=headers)
-                if res.status_code == 200:
-                    soup = BeautifulSoup(res.text, "html.parser")
-                    links = soup.find_all("a", href=re.compile(r'/(?:[a-zA-Z0-9_-]+)-(\d+)$|/elan/(\d+)'))
-                    seen = set()
+            headers["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                for target_url in target_urls:
+                    try:
+                        res = await client.get(target_url, headers=headers)
+                        if res.status_code == 200:
+                            soup = BeautifulSoup(res.text, "html.parser")
+                            links = soup.find_all("a", href=re.compile(r'/elan/|-id-(\d+)'))
 
-                    for a in links:
-                        href = a.get('href', '')
-                        m = re.search(r'-(\d+)$', href) or re.search(r'/elan/(\d+)', href)
-                        if not m:
-                            continue
-                        ext_id = m.group(1) or m.group(2)
-                        if ext_id in seen:
-                            continue
-                        seen.add(ext_id)
+                            for a in links:
+                                href = a.get('href', '')
+                                unquoted_href = urllib.parse.unquote(href)
+                                m = re.search(r'-id-(\d+)', href) or re.search(r'/elan/.*?(\d+)', href) or re.search(r'(\d+)', href)
+                                if not m:
+                                    continue
+                                ext_id = m.group(1)
+                                if ext_id in seen:
+                                    continue
+                                seen.add(ext_id)
 
-                        parent = a.find_parent("div") or a.find_parent("tr")
-                        raw_text = parent.get_text(separator=" | ", strip=True).replace('\xa0', ' ') if parent else a.get_text(strip=True).replace('\xa0', ' ')
-                        raw_lower = raw_text.lower()
+                                parent = a.find_parent("div") or a.find_parent("tr")
+                                raw_text = parent.get_text(separator=" | ", strip=True).replace('\xa0', ' ') if parent else a.get_text(strip=True).replace('\xa0', ' ')
+                                combined_text = f"{unquoted_href} | {raw_text}"
+                                raw_lower = combined_text.lower()
 
-                        price_m = re.search(r'([\d\s]+)\s*(?:AZN|₼|manat)', raw_text) or re.search(r'([\d\s]+)\s*\|\s*AZN', raw_text)
-                        price = safe_float(price_m.group(1) if price_m else None, default=0.0)
+                                price_m = re.search(r'(?i)([\d\s]+)\s*(?:AZN|₼|manat|Azn|\$)', combined_text) or re.search(r'([\d\s]+)\s*\|\s*AZN', combined_text) or re.search(r'-(\d{4,9})\s*azn', unquoted_href, re.I)
+                                price = safe_float(price_m.group(1) if price_m else None, default=0.0)
 
-                        rooms_m = re.search(r'(\d+)\s*otaq', raw_text)
-                        rooms = int(rooms_m.group(1)) if rooms_m else None
+                                rooms_m = re.search(r'(\d+)\s*otaq', combined_text)
+                                rooms = int(rooms_m.group(1)) if rooms_m else None
 
-                        area_m = re.search(r'([\d.]+)\s*m²', raw_text) or re.search(r'([\d.]+)\s*kv', raw_text)
-                        area = safe_optional_float(area_m.group(1) if area_m else None)
+                                area_m = re.search(r'([\d.]+)\s*m²', combined_text) or re.search(r'([\d.]+)\s*m2', combined_text) or re.search(r'([\d.]+)\s*kv', combined_text)
+                                area = safe_optional_float(area_m.group(1) if area_m else None)
 
-                        district = extract_baku_district(raw_text) or extract_baku_district(href) 
-                        settlement = extract_baku_settlement(raw_text) or extract_baku_settlement(href)
-                        metro = extract_metro_station(raw_text) or extract_metro_station(href)
+                                floor_m = re.search(r'(\d+)\s*Mərtəbə', unquoted_href, re.I) or re.search(r'(\d+)\s*/\s*(\d+)', combined_text)
+                                floor = int(floor_m.group(1)) if floor_m else None
 
-                        if not district:
-                            if settlement and settlement in SETTLEMENT_TO_DISTRICT:
-                                district = SETTLEMENT_TO_DISTRICT[settlement]
-                            elif metro and metro in METRO_TO_DISTRICT:
-                                district = METRO_TO_DISTRICT[metro]
+                                district = extract_baku_district(combined_text) or extract_baku_district(unquoted_href) 
+                                settlement = extract_baku_settlement(combined_text) or extract_baku_settlement(unquoted_href)
+                                metro = extract_metro_station(combined_text) or extract_metro_station(unquoted_href)
 
-                        is_rent = "kirayə" in raw_lower or "icarə" in raw_lower
-                        offer_type = "rent" if is_rent else "sale"
+                                if not district:
+                                    if settlement and settlement in SETTLEMENT_TO_DISTRICT:
+                                        district = SETTLEMENT_TO_DISTRICT[settlement]
+                                    elif metro and metro in METRO_TO_DISTRICT:
+                                        district = METRO_TO_DISTRICT[metro]
 
-                        from app.core.property_classifier import classify_property_and_offer
-                        detected_offer, detected_prop, detected_seller = classify_property_and_offer(
-                            title="",
-                            description=raw_text,
-                            url=href,
-                            raw_text=raw_text
-                        )
+                                is_rent = "kirayə" in raw_lower or "icarə" in raw_lower
+                                offer_type = "rent" if is_rent else "sale"
 
-                        prop_label_map = {
-                            "apartment": "Mənzil",
-                            "house": "Həyət evi / Villa",
-                            "office": "Ofis",
-                            "commercial": "Obyekt",
-                            "land": "Torpaq sahəsi"
-                        }
-                        prop_name = prop_label_map.get(detected_prop, "Əmlak")
-                        loc_label = settlement or metro or district or 'Bakı'
-                        if detected_prop == "commercial":
-                            title = f"{int(area)} m² Obyekt ({loc_label})" if area else f"Obyekt ({loc_label})"
-                        elif detected_prop == "office":
-                            title = f"{rooms} otaqlı Ofis ({loc_label})" if rooms else (f"{int(area)} m² Ofis ({loc_label})" if area else f"Ofis ({loc_label})")
-                        elif detected_prop == "land":
-                            title = f"{area} sot Torpaq ({loc_label})" if area else f"Torpaq sahəsi ({loc_label})"
-                        elif rooms:
-                            title = f"{rooms} otaqlı {prop_name} ({loc_label})"
-                        else:
-                            title = f"{prop_name} ({loc_label})"
+                                from app.core.property_classifier import classify_property_and_offer
+                                detected_offer, detected_prop, detected_seller = classify_property_and_offer(
+                                    title="",
+                                    description=raw_text,
+                                    url=href,
+                                    raw_text=raw_text
+                                )
 
-                        bld_type = None if detected_prop in ["commercial", "office", "land"] else ("old" if "köhnə" in raw_lower else "new")
+                                prop_label_map = {
+                                    "apartment": "Mənzil",
+                                    "house": "Həyət evi / Villa",
+                                    "office": "Ofis",
+                                    "commercial": "Obyekt",
+                                    "land": "Torpaq sahəsi"
+                                }
+                                prop_name = prop_label_map.get(detected_prop, "Əmlak")
+                                loc_label = settlement or metro or district or 'Bakı'
+                                if detected_prop == "commercial":
+                                    title = f"{int(area)} m² Obyekt ({loc_label})" if area else f"Obyekt ({loc_label})"
+                                elif detected_prop == "office":
+                                    title = f"{rooms} otaqlı Ofis ({loc_label})" if rooms else (f"{int(area)} m² Ofis ({loc_label})" if area else f"Ofis ({loc_label})")
+                                elif detected_prop == "land":
+                                    title = f"{area} sot Torpaq ({loc_label})" if area else f"Torpaq sahəsi ({loc_label})"
+                                elif rooms:
+                                    title = f"{rooms} otaqlı {prop_name} ({loc_label})"
+                                else:
+                                    title = f"{prop_name} ({loc_label})"
 
-                        # Extract card photo
-                        card_photos = []
-                        if parent:
-                            img_el = parent.find("img")
-                            if img_el:
-                                src_val = img_el.get("src") or img_el.get("data-src")
-                                if src_val and "http" in src_val:
-                                    card_photos.append(src_val)
-                                elif src_val and src_val.startswith("/"):
-                                    card_photos.append(f"https://kub.az{src_val}")
+                                bld_type = None if detected_prop in ["commercial", "office", "land"] else ("old" if "köhnə" in raw_lower else "new")
 
-                        items.append(RawListingItem(
-                            external_id=f"kub_{ext_id}",
-                            title=title,
-                            description=f"Kub.az elanı: {raw_text[:200]}",
-                            price=price,
-                            currency="AZN",
-                            district=district,
-                            metro_station=metro,
-                            rooms=rooms,
-                            area_sqm=area,
-                            building_type=bld_type,
-                            seller_type=detected_seller,
-                            offer_type=detected_offer,
-                            property_type=detected_prop,
-                            listing_url=f"https://kub.az{href}" if href.startswith('/') else href,
-                            photos=card_photos
-                        ))
-                        if len(items) >= 20:
-                            break
+                                # Extract card photo
+                                card_photos = []
+                                if parent:
+                                    img_el = parent.find("img")
+                                    if img_el:
+                                        src_val = img_el.get("src") or img_el.get("data-src")
+                                        if src_val and "http" in src_val:
+                                            card_photos.append(src_val)
+                                        elif src_val and src_val.startswith("/"):
+                                            card_photos.append(f"https://kub.az{src_val}")
 
-        except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError) as e:
-            logger.debug(f"[KubAzScraper] Source kub.az temporarily unreachable: {e}")
+                                items.append(RawListingItem(
+                                    external_id=f"kub_{ext_id}",
+                                    title=title,
+                                    description=f"Kub.az elanı: {raw_text[:200]}",
+                                    price=price,
+                                    currency="AZN",
+                                    district=district,
+                                    metro_station=metro,
+                                    rooms=rooms,
+                                    area_sqm=area,
+                                    building_type=bld_type,
+                                    seller_type=detected_seller,
+                                    offer_type=detected_offer,
+                                    property_type=detected_prop,
+                                    listing_url=f"https://kub.az{href}" if href.startswith('/') else href,
+                                    photos=card_photos
+                                ))
+                                if len(items) >= 30:
+                                    break
+                    except Exception as loop_err:
+                        logger.debug(f"[KubAzScraper] Error fetching {target_url}: {loop_err}")
+
         except Exception as e:
-            logger.warning(f"[KubAzScraper] Error scraping: {e}")
+            logger.info(f"[KubAzScraper] Kub.az scrape status: {e}")
 
         logger.info(f"[KubAzScraper] Extracted {len(items)} listings.")
         return items
