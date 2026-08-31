@@ -420,50 +420,30 @@ class IngestionService:
             dest_chat_id = getattr(search, 'destination_chat_id', None)
             inst_name = getattr(search, 'instance_name', None) or f"tenant_{tenant.id}"
 
-            tg_sent = False
-            wa_sent = False
-
-            # Deliver to Telegram
-            should_send_tg = (
-                (dest_channel in ["telegram", "both"]) or
-                (bool(tenant.telegram_chat_id) and not tenant.whatsapp_number)
-            )
-            if should_send_tg and (tenant.telegram_chat_id or (dest_channel == "telegram" and dest_chat_id)):
-                tg_id = (dest_chat_id if dest_channel == "telegram" else None) or tenant.telegram_chat_id
-                if tg_id:
-                    tg_sent = await send_telegram_notification(tg_id, msg)
-                    if tg_sent:
-                        delivered += 1
-
-            # Deliver to WhatsApp
-            should_send_wa = (
-                (dest_channel in ["whatsapp", "both"]) or
-                (bool(tenant.whatsapp_number) and not tenant.telegram_chat_id)
-            )
-            if should_send_wa and (tenant.whatsapp_number or (dest_channel == "whatsapp" and dest_chat_id)):
-                wa_id = (dest_chat_id if dest_channel == "whatsapp" else None) or tenant.whatsapp_number
-                if wa_id:
+            # Strict single-destination delivery
+            if dest_chat_id:
+                # If destination is explicitly set (group or chat where search was created), send ONLY there!
+                if "@g.us" in dest_chat_id or (dest_channel == "whatsapp" and "@" not in dest_chat_id):
+                    # WhatsApp destination
                     wa_sent = await WhatsAppAdapter.send_message(
-                        phone_number=wa_id,
+                        phone_number=dest_chat_id,
                         text=msg,
                         instance_name=inst_name
                     )
                     if wa_sent:
                         delivered += 1
-
-            # Resilient Cross-Channel Fallback
-            if not wa_sent and not tg_sent:
-                if tenant.telegram_chat_id:
-                    fallback_tg = await send_telegram_notification(tenant.telegram_chat_id, msg)
-                    if fallback_tg:
+                else:
+                    # Telegram destination
+                    tg_sent = await send_telegram_notification(dest_chat_id, msg)
+                    if tg_sent:
                         delivered += 1
-                elif tenant.whatsapp_number:
-                    fallback_wa = await WhatsAppAdapter.send_message(
-                        phone_number=tenant.whatsapp_number,
-                        text=msg,
-                        instance_name=inst_name
-                    )
-                    if fallback_wa:
+            else:
+                # No specific destination chat -> use tenant profile preferred channel
+                if dest_channel == "telegram" and tenant.telegram_chat_id:
+                    if await send_telegram_notification(tenant.telegram_chat_id, msg):
+                        delivered += 1
+                elif dest_channel == "whatsapp" and tenant.whatsapp_number:
+                    if await WhatsAppAdapter.send_message(phone_number=tenant.whatsapp_number, text=msg, instance_name=inst_name):
                         delivered += 1
 
         return delivered
@@ -1490,35 +1470,20 @@ class IngestionService:
                 tg_sent = False
                 wa_sent = False
 
-                # Deliver to Telegram
-                should_send_tg = (
-                    (dest_channel in ["telegram", "both"]) or
-                    (bool(tenant.telegram_chat_id) and not tenant.whatsapp_number)
-                )
-                if should_send_tg and (tenant.telegram_chat_id or (dest_channel == "telegram" and dest_chat_id)):
-                    tg_id = (dest_chat_id if dest_channel == "telegram" else None) or tenant.telegram_chat_id
-                    if tg_id:
-                        tg_sent = await send_telegram_notification(tg_id, msg_text)
-
-                # Deliver to WhatsApp
-                should_send_wa = (
-                    (dest_channel in ["whatsapp", "both"]) or
-                    (bool(tenant.whatsapp_number) and not tenant.telegram_chat_id)
-                )
-                if should_send_wa and (tenant.whatsapp_number or (dest_channel == "whatsapp" and dest_chat_id)):
-                    wa_id = (dest_chat_id if dest_channel == "whatsapp" else None) or tenant.whatsapp_number
-                    if wa_id:
-                        wa_sent = await WhatsAppAdapter.send_message(
-                            phone_number=wa_id,
+                # Strict single-destination delivery
+                if dest_chat_id:
+                    if "@g.us" in dest_chat_id or (dest_channel == "whatsapp" and "@" not in dest_chat_id):
+                        await WhatsAppAdapter.send_message(
+                            phone_number=dest_chat_id,
                             text=msg_text,
                             instance_name=inst_name
                         )
-
-                # Resilient Cross-Channel Fallback: If primary failed, try the other channel immediately
-                if not wa_sent and not tg_sent:
-                    if tenant.telegram_chat_id:
+                    else:
+                        await send_telegram_notification(dest_chat_id, msg_text)
+                else:
+                    if dest_channel == "telegram" and tenant.telegram_chat_id:
                         await send_telegram_notification(tenant.telegram_chat_id, msg_text)
-                    elif tenant.whatsapp_number:
+                    elif dest_channel == "whatsapp" and tenant.whatsapp_number:
                         await WhatsAppAdapter.send_message(
                             phone_number=tenant.whatsapp_number,
                             text=msg_text,

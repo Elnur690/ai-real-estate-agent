@@ -172,12 +172,23 @@ class BotCommandHandler:
                         break
 
         if not tenant:
-            # Handle start/help for unlinked users
+            # For unlinked/unknown WhatsApp callers:
+            # ONLY respond if they explicitly type a bot slash command (e.g. /start, /help, /status, /bagla, /connect, /hesab, /kod)
+            # NEVER send unsolicited messages or 'unregistered' warnings to third-party contacts, friends, or family!
+            if channel == "whatsapp":
+                if not raw_text_trimmed.startswith("/"):
+                    return None
+
             if text_lower in ["/start", "/help", "/kömək", "/komak", "kömək", "komak", "help", "menu", "menyu", "salam", "hi", "start"]:
                 return BotCommandHandler._get_start_message(app_name)
             return await BotCommandHandler._handle_onboarding(
                 db, channel, sender_id, sender_name, raw_text_trimmed, app_name
             )
+
+        # Ignore normal outgoing chats sent by the agent to other people
+        if channel == "whatsapp" and from_me and not is_group:
+            if not raw_text_trimmed.startswith("/"):
+                return None
 
         # 2. Strict Group Filtering for WhatsApp
         is_group = "@g.us" in sender_id
