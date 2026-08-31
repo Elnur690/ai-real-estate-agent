@@ -214,12 +214,33 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"[Startup Error] Auto-seeding encountered notice: {e}")
 
-    # Start Telegram Bot polling in background with resilient retry
+    # Start Telegram Bot polling in background with single-instance lock
     tg_app = None
     async def _start_telegram_bot():
         nonlocal tg_app
         if not settings.TELEGRAM_BOT_TOKEN:
             return
+
+        # Attempt to acquire distributed lock via Redis to ensure exactly one polling worker across processes
+        try:
+            import redis.asyncio as aioredis
+            r = aioredis.from_url(settings.REDIS_URL)
+            acquired = await r.set("telegram_bot_polling_lock", "active", nx=True, ex=60)
+            if not acquired:
+                logger.info("[Startup] Telegram Bot polling is already active in another worker process. Skipping in this worker.")
+                return
+            
+            async def _keep_tg_lock():
+                try:
+                    while True:
+                        await asyncio.sleep(25)
+                        await r.set("telegram_bot_polling_lock", "active", ex=60)
+                except Exception:
+                    pass
+            asyncio.create_task(_keep_tg_lock())
+        except Exception as e_lock:
+            logger.debug(f"[Startup] Redis lock check notice for Telegram Bot: {e_lock}")
+
         for attempt in range(1, 10):
             try:
                 tg_app = build_telegram_app()

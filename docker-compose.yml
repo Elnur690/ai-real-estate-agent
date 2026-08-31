@@ -39,7 +39,7 @@ services:
       - 8.8.8.8
       - 1.1.1.1
     command: >
-      sh -c "alembic -c alembic.ini upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
+      sh -c "alembic -c alembic.ini upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     environment:
       - DATABASE_URL
       - SYNC_DATABASE_URL
