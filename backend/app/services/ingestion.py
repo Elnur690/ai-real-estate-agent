@@ -746,6 +746,20 @@ class IngestionService:
                     logger.error(f"[IngestionService] Error processing item in {s_name}: {e}")
                     await db.rollback()
 
+        # 5. Update last_scraped_at timestamp for all processed sources
+        try:
+            scraped_source_ids = [s_id for s_id, _, _, _ in source_rows if s_id]
+            if scraped_source_ids:
+                now_utc = datetime.now(timezone.utc)
+                await db.execute(
+                    update(ListingSource)
+                    .where(ListingSource.id.in_(scraped_source_ids))
+                    .values(last_scraped_at=now_utc)
+                )
+                await db.commit()
+        except Exception as e_src:
+            logger.debug(f"[IngestionService] Notice updating source timestamps: {e_src}")
+
         logger.info(f"[IngestionService] Parallel cycle completed: {total_scraped} scraped, {total_matched} matches delivered.")
         return {"scraped_count": total_scraped, "matched_count": total_matched}
 

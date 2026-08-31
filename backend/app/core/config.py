@@ -74,4 +74,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY", None)
     CLAUDE_API_KEY: Optional[str] = os.getenv("CLAUDE_API_KEY", None)
 
+    # Optional Facebook Scraping Cookies (for closed/login-protected groups)
+    FACEBOOK_COOKIES: Optional[str] = os.getenv("FACEBOOK_COOKIES", None)
+
 settings = Settings()

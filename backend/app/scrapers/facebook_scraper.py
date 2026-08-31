@@ -3,6 +3,7 @@ import logging
 import httpx
 from bs4 import BeautifulSoup
 from typing import List, Optional
+from app.core.config import settings
 from app.scrapers.base import BaseScraper, RawListingItem
 from app.scrapers.utils import get_random_headers
 from app.core.baku_locations import (
@@ -37,6 +38,8 @@ class FacebookScraper(BaseScraper):
         headers = get_random_headers(referer="https://m.facebook.com/")
         headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
         headers["Accept-Language"] = "az,ru;q=0.9,en-US;q=0.8,en;q=0.7"
+        if getattr(settings, 'FACEBOOK_COOKIES', None):
+            headers["Cookie"] = settings.FACEBOOK_COOKIES
 
         try:
             async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
