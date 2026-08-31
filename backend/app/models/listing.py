@@ -78,5 +78,5 @@ class Listing(Base):
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
-    source = relationship("ListingSource", back_populates="listings", lazy="selectin")
+    source = relationship("ListingSource", back_populates="listings", lazy="noload")
     matches = relationship("Match", back_populates="listing", cascade="all, delete-orphan", lazy="noload")

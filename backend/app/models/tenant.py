@@ -79,11 +79,11 @@ class Tenant(Base):
     draft_search_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships
-    users = relationship("User", back_populates="tenant", cascade="all, delete-orphan", lazy="selectin")
-    saved_searches = relationship("SavedSearch", back_populates="tenant", cascade="all, delete-orphan", lazy="selectin")
+    users = relationship("User", back_populates="tenant", cascade="all, delete-orphan", lazy="noload")
+    saved_searches = relationship("SavedSearch", back_populates="tenant", cascade="all, delete-orphan", lazy="noload")
     matches = relationship("Match", back_populates="tenant", cascade="all, delete-orphan", lazy="noload")
     payments = relationship("Payment", back_populates="tenant", cascade="all, delete-orphan", lazy="noload")
-    seller = relationship("Seller", back_populates="agents", lazy="selectin")
-    seller_package = relationship("SellerPackage", back_populates="subscribed_agents", lazy="selectin")
-    crm_clients = relationship("CrmClient", back_populates="tenant", cascade="all, delete-orphan", lazy="selectin")
-    crm_deals = relationship("CrmDeal", back_populates="tenant", cascade="all, delete-orphan", lazy="selectin")
+    seller = relationship("Seller", back_populates="agents", lazy="noload")
+    seller_package = relationship("SellerPackage", back_populates="subscribed_agents", lazy="noload")
+    crm_clients = relationship("CrmClient", back_populates="tenant", cascade="all, delete-orphan", lazy="noload")
+    crm_deals = relationship("CrmDeal", back_populates="tenant", cascade="all, delete-orphan", lazy="noload")

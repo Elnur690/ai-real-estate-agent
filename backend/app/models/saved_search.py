@@ -47,6 +47,6 @@ class SavedSearch(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Relationships
-    tenant = relationship("Tenant", back_populates="saved_searches", lazy="selectin")
-    user = relationship("User", back_populates="saved_searches", lazy="selectin")
+    tenant = relationship("Tenant", back_populates="saved_searches", lazy="noload")
+    user = relationship("User", back_populates="saved_searches", lazy="noload")
     matches = relationship("Match", back_populates="saved_search", cascade="all, delete-orphan", lazy="noload")
