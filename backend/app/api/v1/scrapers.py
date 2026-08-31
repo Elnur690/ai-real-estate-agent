@@ -85,17 +85,20 @@ async def _bg_run_ingestion():
     logger = logging.getLogger("scrapers_api")
     logger.info("[ManualTrigger] Manual scraping and matching triggered from Admin Dashboard...")
     try:
-        # Try delegating to Celery worker if available
-        try:
-            from app.tasks.jobs import run_scheduled_ingestion
-            run_scheduled_ingestion.delay()
-            logger.info("[ManualTrigger] Ingestion task dispatched to Celery worker queue.")
-            return
-        except Exception as e_celery:
-            logger.debug(f"[ManualTrigger] Celery dispatch fallback to direct async task: {e_celery}")
+        from app.db.session import AsyncSessionLocal
+        from app.services.ingestion import IngestionService
+        from app.models.saved_search import SavedSearch
 
-        result = await IngestionService.run_ingestion_cycle()
-        logger.info(f"[ManualTrigger] Direct ingestion cycle completed: {result}")
+        async with AsyncSessionLocal() as db:
+            result = await IngestionService.run_ingestion_cycle(db)
+            logger.info(f"[ManualTrigger] Ingestion cycle completed: {result}")
+
+            # Run backfill for all active saved searches to deliver matching listings immediately
+            stmt_s = select(SavedSearch).where(SavedSearch.is_active == True)
+            res_s = await db.execute(stmt_s)
+            active_searches = res_s.scalars().all()
+            for s in active_searches:
+                await IngestionService.run_targeted_instant_backfill(db, s)
     except Exception as e:
         logger.error(f"[ManualTrigger] Error during manual scraping cycle: {e}")
 

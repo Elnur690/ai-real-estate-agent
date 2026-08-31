@@ -123,7 +123,6 @@ class WhatsAppAdapter:
         except Exception as e:
             logger.error(f"[WhatsAppAdapter] Webhook error: {e}", exc_info=True)
             return None
-            return None
 
     @staticmethod
     def normalize_recipient(phone_number: str) -> str:
