@@ -680,18 +680,29 @@ class IngestionService:
         return delivered
 
     @staticmethod
-    async def run_ingestion_cycle(db: AsyncSession) -> dict:
-        await IngestionService.seed_default_sources(db)
-        
-        # 1. Select all active default sources
-        stmt = select(ListingSource.id, ListingSource.name, ListingSource.type, ListingSource.url_or_handle).where(ListingSource.status != "paused")
-        res = await db.execute(stmt)
-        source_rows = res.all()
+    async def run_ingestion_cycle(db: Optional[AsyncSession] = None) -> dict:
+        from app.db.session import AsyncSessionLocal
 
-        # 2. Select active SavedSearch criteria for dynamic targeted scraping
-        stmt_s = select(SavedSearch).where(SavedSearch.is_active == True)
-        res_s = await db.execute(stmt_s)
-        active_searches = res_s.scalars().all()
+        # 1. Read sources and saved searches with short-lived session
+        if db is not None:
+            await IngestionService.seed_default_sources(db)
+            stmt = select(ListingSource.id, ListingSource.name, ListingSource.type, ListingSource.url_or_handle).where(ListingSource.status != "paused")
+            res = await db.execute(stmt)
+            source_rows = res.all()
+
+            stmt_s = select(SavedSearch).where(SavedSearch.is_active == True)
+            res_s = await db.execute(stmt_s)
+            active_searches = res_s.scalars().all()
+        else:
+            async with AsyncSessionLocal() as session:
+                await IngestionService.seed_default_sources(session)
+                stmt = select(ListingSource.id, ListingSource.name, ListingSource.type, ListingSource.url_or_handle).where(ListingSource.status != "paused")
+                res = await session.execute(stmt)
+                source_rows = res.all()
+
+                stmt_s = select(SavedSearch).where(SavedSearch.is_active == True)
+                res_s = await session.execute(stmt_s)
+                active_searches = res_s.scalars().all()
 
         targeted_tasks = []
         seen_target_urls = set()
@@ -704,7 +715,8 @@ class IngestionService:
         total_scraped = 0
         total_matched = 0
 
-        # 3. High-Speed Concurrent Scrape with Bounded Concurrency Pool (6 polite parallel workers)
+        # 2. High-Speed Concurrent Scrape with Bounded Concurrency Pool (6 polite parallel workers)
+        # Note: Scrapers run purely in-memory over HTTP WITHOUT holding any database connection or lock
         sem = asyncio.Semaphore(6)
 
         async def fetch_source(s_id, s_name, scraper, url):
@@ -727,38 +739,46 @@ class IngestionService:
 
         scrape_results = await asyncio.gather(*scrape_jobs, return_exceptions=True)
 
-        # 4. Ingest and Match all scraped items
-        for res_entry in scrape_results:
-            if isinstance(res_entry, Exception) or not res_entry:
-                continue
-            s_id, s_name, items = res_entry
-            if not items:
-                continue
+        # 3. Ingest, deduplicate, and match all scraped items in a dedicated session
+        async def _save_scraped_results(session: AsyncSession):
+            nonlocal total_scraped, total_matched
+            for res_entry in scrape_results:
+                if isinstance(res_entry, Exception) or not res_entry:
+                    continue
+                s_id, s_name, items = res_entry
+                if not items:
+                    continue
 
-            for item in items:
-                try:
-                    db_listing = await IngestionService._ingest_single_raw_item(db, item, source_id=s_id)
-                    if db_listing:
-                        total_scraped += 1
-                        matches_created = await IngestionService._evaluate_and_deliver_matches(db, db_listing, enrich_live=False)
-                        total_matched += matches_created
-                except Exception as e:
-                    logger.error(f"[IngestionService] Error processing item in {s_name}: {e}")
-                    await db.rollback()
+                for item in items:
+                    try:
+                        db_listing = await IngestionService._ingest_single_raw_item(session, item, source_id=s_id)
+                        if db_listing:
+                            total_scraped += 1
+                            matches_created = await IngestionService._evaluate_and_deliver_matches(session, db_listing, enrich_live=False)
+                            total_matched += matches_created
+                    except Exception as e:
+                        logger.error(f"[IngestionService] Error processing item in {s_name}: {e}")
+                        await session.rollback()
 
-        # 5. Update last_scraped_at timestamp for all processed sources
-        try:
-            scraped_source_ids = [s_id for s_id, _, _, _ in source_rows if s_id]
-            if scraped_source_ids:
-                now_utc = datetime.now(timezone.utc)
-                await db.execute(
-                    update(ListingSource)
-                    .where(ListingSource.id.in_(scraped_source_ids))
-                    .values(last_scraped_at=now_utc)
-                )
-                await db.commit()
-        except Exception as e_src:
-            logger.debug(f"[IngestionService] Notice updating source timestamps: {e_src}")
+            # 4. Update last_scraped_at timestamp for all processed sources
+            try:
+                scraped_source_ids = [s_id for s_id, _, _, _ in source_rows if s_id]
+                if scraped_source_ids:
+                    now_utc = datetime.now(timezone.utc)
+                    await session.execute(
+                        update(ListingSource)
+                        .where(ListingSource.id.in_(scraped_source_ids))
+                        .values(last_scraped_at=now_utc)
+                    )
+                    await session.commit()
+            except Exception as e_src:
+                logger.debug(f"[IngestionService] Notice updating source timestamps: {e_src}")
+
+        if db is not None:
+            await _save_scraped_results(db)
+        else:
+            async with AsyncSessionLocal() as session:
+                await _save_scraped_results(session)
 
         logger.info(f"[IngestionService] Parallel cycle completed: {total_scraped} scraped, {total_matched} matches delivered.")
         return {"scraped_count": total_scraped, "matched_count": total_matched}

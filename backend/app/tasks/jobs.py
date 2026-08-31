@@ -16,11 +16,9 @@ def run_scheduled_ingestion(self):
     logger.info("[CeleryJob] Starting scheduled ingestion cycle...")
     
     async def _runner():
-        from app.db.session import AsyncSessionLocal
-        async with AsyncSessionLocal() as db:
-            result = await IngestionService.run_ingestion_cycle(db)
-            logger.info(f"[CeleryJob] Cycle complete: {result}")
-            return result
+        result = await IngestionService.run_ingestion_cycle()
+        logger.info(f"[CeleryJob] Cycle complete: {result}")
+        return result
 
     try:
         return asyncio.run(_runner())

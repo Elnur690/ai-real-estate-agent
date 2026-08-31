@@ -252,14 +252,12 @@ async def lifespan(app: FastAPI):
     # Start background continuous scraper ingestion loop
     async def _background_ingestion_loop():
         from app.services.ingestion import IngestionService
-        from app.db.session import AsyncSessionLocal
-        logger.info("[Startup] Ingestion worker initialized. Running first scraping cycle in 10s...")
+        logger.info("[Startup] Ingestion worker initialized. Running first scraping cycle in 5s...")
         await asyncio.sleep(5)
         while True:
             try:
-                async with AsyncSessionLocal() as db:
-                    res = await IngestionService.run_ingestion_cycle(db)
-                    logger.info(f"[BackgroundIngestion] Scraping & matching cycle completed: {res}")
+                res = await IngestionService.run_ingestion_cycle()
+                logger.info(f"[BackgroundIngestion] Scraping & matching cycle completed: {res}")
             except Exception as e:
                 logger.error(f"[BackgroundIngestion] Error during ingestion cycle: {e}")
             await asyncio.sleep(25) # Real-time: Fast 25s parallel cycle
