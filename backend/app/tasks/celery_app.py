@@ -4,7 +4,8 @@ from app.core.config import settings
 celery_app = Celery(
     "realestate_tasks",
     broker=settings.REDIS_URL,
-    backend=settings.REDIS_URL
+    backend=settings.REDIS_URL,
+    include=["app.tasks.jobs"]
 )
 
 celery_app.conf.update(
@@ -28,3 +29,6 @@ celery_app.conf.update(
         }
     }
 )
+
+# Explicitly import jobs to ensure tasks are registered in all worker environments
+import app.tasks.jobs  # noqa: F401, E402
