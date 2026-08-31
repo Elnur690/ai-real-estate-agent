@@ -124,7 +124,7 @@ class BotCommandHandler:
                     tenant = matched_t
 
         elif channel == "whatsapp":
-            # First try matching by instance_name (e.g. tenant_1 -> ID 1)
+            # 1. First try matching by instance_name (e.g. tenant_1 -> ID 1)
             if instance_name and instance_name.startswith("tenant_"):
                 try:
                     t_id = int(instance_name.replace("tenant_", ""))
@@ -134,16 +134,41 @@ class BotCommandHandler:
                 except ValueError:
                     pass
 
+            # 2. Match by phone digits (support 9-digit suffix matching for any international prefix format)
             if not tenant:
-                clean_sender = sender_id.replace("+", "").replace(" ", "").split("@")[0]
+                clean_digits = re.sub(r'\D', '', str(sender_id).split("@")[0])
+                sender_suffix = clean_digits[-9:] if len(clean_digits) >= 9 else clean_digits
+
                 stmt_w = select(Tenant)
                 res_w = await db.execute(stmt_w)
                 all_w = res_w.scalars().all()
                 for t in all_w:
-                    t_wa = (t.whatsapp_number or "").replace("+", "").replace(" ", "")
-                    t_ph = (t.phone or "").replace("+", "").replace(" ", "")
-                    if (t_wa and (t_wa in clean_sender or clean_sender in t_wa)) or (t_ph and (t_ph in clean_sender or clean_sender in t_ph)):
+                    t_wa = re.sub(r'\D', '', t.whatsapp_number or "")
+                    t_ph = re.sub(r'\D', '', t.phone or "")
+                    if sender_suffix and ((t_wa and (t_wa[-9:] == sender_suffix or sender_suffix in t_wa)) or (t_ph and (t_ph[-9:] == sender_suffix or sender_suffix in t_ph))):
                         tenant = t
+                        if not t.whatsapp_number:
+                            t.whatsapp_number = clean_digits
+                            await db.commit()
+                        break
+
+            # 3. Match via User table if admin configured phone on user
+            if not tenant and sender_id:
+                clean_digits = re.sub(r'\D', '', str(sender_id).split("@")[0])
+                sender_suffix = clean_digits[-9:] if len(clean_digits) >= 9 else clean_digits
+                from app.models.user import User
+                stmt_u = select(User)
+                res_u = await db.execute(stmt_u)
+                all_u = res_u.scalars().all()
+                for u in all_u:
+                    u_ph = re.sub(r'\D', '', u.phone or "")
+                    if sender_suffix and u_ph and (u_ph[-9:] == sender_suffix or sender_suffix in u_ph) and u.tenant_id:
+                        stmt_tu = select(Tenant).where(Tenant.id == u.tenant_id)
+                        res_tu = await db.execute(stmt_tu)
+                        tenant = res_tu.scalars().first()
+                        if tenant and not tenant.whatsapp_number:
+                            tenant.whatsapp_number = clean_digits
+                            await db.commit()
                         break
 
         if not tenant:

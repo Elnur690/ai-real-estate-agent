@@ -62,100 +62,44 @@ class WhatsAppAdapter:
                 or "İşçi WhatsApp Qrupu"
             )
 
-            # Resolve tenant for this WhatsApp instance
+            # 1. Extract message text
+            message = data.get("message", {})
+            if not isinstance(message, dict):
+                message = {}
+
+            raw_text = (
+                message.get("conversation") or
+                message.get("extendedTextMessage", {}).get("text") or
+                message.get("imageMessage", {}).get("caption") or
+                message.get("videoMessage", {}).get("caption") or
+                ""
+            )
+
+            # 2. Check for voice note / audio message
+            audio_msg = message.get("audioMessage") or message.get("pttMessage")
+            if not raw_text and audio_msg and isinstance(audio_msg, dict):
+                audio_url = audio_msg.get("url")
+                if audio_url:
+                    from app.services.audio_transcriber import AudioTranscriberService
+                    headers = {}
+                    if settings.EVOLUTION_API_KEY:
+                        headers["apikey"] = str(settings.EVOLUTION_API_KEY)
+                    audio_mime = audio_msg.get("mimetype") or "audio/ogg"
+                    logger.info(f"[WhatsAppAdapter] Voice note received ({audio_mime}). Transcribing audio...")
+                    transcribed = await AudioTranscriberService.transcribe_audio_url(audio_url, headers=headers, mime_type=audio_mime)
+                    if transcribed:
+                        raw_text = transcribed
+
+            if not raw_text:
+                return None
+
+            clean_digits = re.sub(r'\D', '', remote_jid.split("@")[0])
+            sender_id = remote_jid if is_group else (clean_digits or remote_jid)
+            sender_name = group_subject if is_group else (data.get("pushName") or "Agent")
+
+            logger.info(f"[WhatsAppAdapter] Processing incoming message from {sender_name} ({sender_id}) via instance '{instance_name}': '{raw_text}'")
+
             async with AsyncSessionLocal() as db:
-                tenant = None
-                if instance_name and instance_name.startswith("tenant_"):
-                    try:
-                        t_id = int(instance_name.replace("tenant_", ""))
-                        stmt_id = select(Tenant).where(Tenant.id == t_id)
-                        res_id = await db.execute(stmt_id)
-                        tenant = res_id.scalars().first()
-                    except ValueError:
-                        pass
-
-                if not tenant:
-                    clean_remote = re.sub(r'\D', '', remote_jid.split("@")[0])
-                    stmt_w = select(Tenant)
-                    res_w = await db.execute(stmt_w)
-                    all_w = res_w.scalars().all()
-                    for t in all_w:
-                        t_wa = re.sub(r'\D', '', t.whatsapp_number or "")
-                        t_ph = re.sub(r'\D', '', t.phone or "")
-                        if (t_wa and (t_wa in clean_remote or clean_remote in t_wa)) or (t_ph and (t_ph in clean_remote or clean_remote in t_ph)):
-                            tenant = t
-                            break
-
-                if not tenant:
-                    logger.info(f"[WhatsAppAdapter] No registered tenant found for instance '{instance_name}' / remote '{remote_jid}'. Ignoring.")
-                    return None
-
-                # STRICT SENDER PRIVACY CHECK (Step 1: Check authorization before downloading/transcribing any data)
-                allowed_groups = list(tenant.allowed_group_jids or [])
-                remote_digits = re.sub(r'\D', '', remote_jid.split("@")[0])
-                tenant_digits = [
-                    re.sub(r'\D', '', t.whatsapp_number or "") for t in [tenant] if t.whatsapp_number
-                ] + [
-                    re.sub(r'\D', '', t.phone or "") for t in [tenant] if t.phone
-                ]
-                tenant_digits = [d for d in tenant_digits if d]
-                is_self_chat = any(td and (td in remote_digits or remote_digits in td) for td in tenant_digits)
-
-                # Case A: 1-on-1 Direct Chat -> MUST ONLY BE AGENT'S OWN NUMBER (Self-chat)
-                if not is_group:
-                    if not is_self_chat:
-                        # Private conversation between agent and a 3rd party (client, friend, family). SILENTLY DROP!
-                        return None
-                    sender_id = remote_digits
-                    sender_name = data.get("pushName") or tenant.name or "Agent"
-
-                # Case B: WhatsApp Group Chat (@g.us)
-                else:
-                    sender_id = remote_jid
-                    sender_name = group_subject or "WhatsApp Group"
-
-                # Extract message text
-                message = data.get("message", {})
-                if not isinstance(message, dict):
-                    message = {}
-
-                raw_text = (
-                    message.get("conversation") or
-                    message.get("extendedTextMessage", {}).get("text") or
-                    message.get("imageMessage", {}).get("caption") or
-                    message.get("videoMessage", {}).get("caption") or
-                    ""
-                )
-                text_lower = raw_text.strip().lower()
-
-                # Group Pairing Filter
-                if is_group and remote_jid not in allowed_groups:
-                    is_pair_cmd = any(cmd in text_lower for cmd in ["/pair_group", "/set_group", "/bot_here", "/group_pair", "pair group", "bot qoş", "bot qos", "bot burda", "bot burada"])
-                    is_unpair_cmd = any(cmd in text_lower for cmd in ["/unpair_group", "/remove_group", "/bot_leave", "/leave_group", "/bot_exit", "bot ayır", "bot ayir", "bot çıx", "bot cix", "bot sil", "botu çıxar", "botu cixar"])
-                    if not is_pair_cmd and not is_unpair_cmd:
-                        # Un-paired group and not a pairing command -> SILENTLY DROP without downloading media!
-                        return None
-
-                # Check for voice note / audio message (Only for authorized self-chat or paired group!)
-                audio_msg = message.get("audioMessage") or message.get("pttMessage")
-                if not raw_text and audio_msg and isinstance(audio_msg, dict):
-                    audio_url = audio_msg.get("url")
-                    if audio_url:
-                        from app.services.audio_transcriber import AudioTranscriberService
-                        headers = {}
-                        if settings.EVOLUTION_API_KEY:
-                            headers["apikey"] = str(settings.EVOLUTION_API_KEY)
-                        audio_mime = audio_msg.get("mimetype") or "audio/ogg"
-                        logger.info(f"[WhatsAppAdapter] Authorized voice note received ({audio_mime}). Transcribing audio...")
-                        transcribed = await AudioTranscriberService.transcribe_audio_url(audio_url, headers=headers, mime_type=audio_mime)
-                        if transcribed:
-                            raw_text = transcribed
-
-                if not raw_text:
-                    return None
-
-                logger.info(f"[WhatsAppAdapter] Processing valid agent message from {sender_name} ({sender_id}): '{raw_text}'")
-
                 response_text = await BotCommandHandler.handle_incoming_message(
                     db=db,
                     channel="whatsapp",
@@ -167,17 +111,18 @@ class WhatsAppAdapter:
                     group_subject=group_subject
                 )
 
-                if response_text:
-                    logger.info(f"[WhatsAppAdapter] Sending AI response to {sender_id} via instance '{instance_name}'...")
-                    await WhatsAppAdapter.send_message(
-                        phone_number=sender_id,
-                        text=response_text,
-                        instance_name=instance_name
-                    )
+            if response_text:
+                logger.info(f"[WhatsAppAdapter] Sending AI response to {sender_id} via instance '{instance_name}'...")
+                await WhatsAppAdapter.send_message(
+                    phone_number=sender_id,
+                    text=response_text,
+                    instance_name=instance_name
+                )
 
-                return response_text
+            return response_text
         except Exception as e:
             logger.error(f"[WhatsAppAdapter] Webhook error: {e}", exc_info=True)
+            return None
             return None
 
     @staticmethod
