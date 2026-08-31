@@ -119,7 +119,26 @@ class BinaAzScraper(BaseScraper):
                 else:
                     detected_prop = "apartment"
 
-                # 4. Extract Seller Type & Agency Status from Page
+                # 4. Extract Seller Type & Agency Status from Page and __NEXT_DATA__ JSON
+                next_data_script = soup.find("script", id="__NEXT_DATA__")
+                next_item_data = {}
+                if next_data_script and next_data_script.string:
+                    try:
+                        next_json = json.loads(next_data_script.string)
+                        next_item_data = next_json.get("props", {}).get("pageProps", {}).get("currentItemData", {}) or {}
+                    except Exception:
+                        pass
+
+                contact_type_raw = str(next_item_data.get("contactTypeName") or "").lower()
+                has_next_company = bool(next_item_data.get("company"))
+                next_desc = next_item_data.get("description")
+                if next_desc and len(next_desc) > len(full_desc):
+                    full_desc = next_desc
+
+                owner_info_els = soup.find_all(attrs={"data-cy": re.compile(r'owner-info', re.I)})
+                owner_info_texts = [el.get_text(separator=" ", strip=True).lower() for el in owner_info_els]
+                combined_owner_info = " ".join(owner_info_texts)
+
                 owner_region_el = (
                     soup.find(class_='product-owner__info-region') or
                     soup.find(class_=re.compile(r'product-owner__info-region|seller_region|author-region', re.I)) or
@@ -149,7 +168,7 @@ class BinaAzScraper(BaseScraper):
                 # Check scripts or JSON payloads on the page for agency indicators
                 script_agency_flag = False
                 for script in soup.find_all("script"):
-                    if script.string and any(k in script.string.lower() for k in ['"is_agency":true', '"is_agent":true', '"seller_type":"agency"', '"user_type":"agent"', '"is_vasiteci":true']):
+                    if script.string and any(k in script.string.lower() for k in ['"is_agency":true', '"is_agent":true', '"seller_type":"agency"', '"user_type":"agent"', '"is_vasiteci":true', 'vasitəçi (agent)', 'vasiteci (agent)']):
                         script_agency_flag = True
                         break
 
@@ -175,13 +194,20 @@ class BinaAzScraper(BaseScraper):
                 is_author_agent = (
                     has_specific_agency_link or
                     script_agency_flag or
+                    has_next_company or
+                    any(k in contact_type_raw for k in ["vasitəçi", "vasiteci", "agent", "agentlik", "şirkət", "sirket", "rieltor", "makler"]) or
+                    any(k in combined_owner_info for k in ["vasitəçi", "vasiteci", "agent", "agentlik", "şirkət", "sirket", "rieltor", "makler"]) or
                     any(k in owner_region_text for k in ["vasitəçi", "vasiteci", "agent", "agentlik", "şirkət", "sirket", "rieltor", "makler"]) or
                     any(k in combined_author_text for k in ["vasitəçi (agent)", "vasiteci (agent)", "vasitəçi", "vasiteci", "agentlik", "şirkət"]) or
                     any(k in param_text for k in ["vasitəçi", "vasiteci", "agent", "agentlik"])
                 )
 
                 is_author_owner = (
-                    ("mülkiyyətçi" in owner_region_text or "sahibindən" in owner_region_text) and
+                    (
+                        "mülkiyyətçi" in contact_type_raw or "sahibindən" in contact_type_raw or
+                        "mülkiyyətçi" in combined_owner_info or "sahibindən" in combined_owner_info or
+                        "mülkiyyətçi" in owner_region_text or "sahibindən" in owner_region_text
+                    ) and
                     not is_author_agent
                 )
 
@@ -458,13 +484,15 @@ class BinaAzScraper(BaseScraper):
                     or c.find(class_=re.compile(r'agency|shop|complex|developer|broker|company|rieltor|items-i-agency', re.I))
                     or c.find("img", src=re.compile(r'agency|logo|shop', re.I))
                     or "agentlik" in combined_lower
+                    or "vasitəçi (agent)" in combined_lower
+                    or "vasiteci (agent)" in combined_lower
                 )
-            )
+            ) or ("vasitəçi" in combined_lower and not any(k in combined_lower for k in ["vasitəçisiz", "vasitecisiz", "vasitəçi yoxdur", "vasitəçi deyiləm"]))
 
-            if "owner_type=owner" in target_url:
-                seller_type = "owner"
-            elif has_agency_badge:
+            if has_agency_badge:
                 seller_type = "agency"
+            elif "owner_type=owner" in target_url:
+                seller_type = "owner"
             else:
                 from app.core.property_classifier import classify_property_and_offer
                 _, _, detected_seller = classify_property_and_offer(

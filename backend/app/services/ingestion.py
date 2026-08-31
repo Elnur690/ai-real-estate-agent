@@ -1069,7 +1069,7 @@ class IngestionService:
         if enrich_live and listing.external_id:
             try:
                 details = await IngestionService._fetch_details_for_item(listing.external_id, listing.listing_url)
-                if details:
+                if isinstance(details, dict) and details:
                     if details.get("phone_number") and not listing.phone_number:
                         listing.phone_number = details["phone_number"]
                     if details.get("price") and (not listing.price or listing.price == 0):
