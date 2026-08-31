@@ -255,3 +255,64 @@ async def test_bot_crm_command_flow(test_db: AsyncSession):
     assert "4 otaqlı lüks mənzil Elmlər" in resp_c
     assert "250,000 AZN" in resp_c
     assert "startapp=deal_" in resp_c
+
+@pytest.mark.asyncio
+async def test_tenant_creation_auto_payment_and_crm_access(client: AsyncClient, test_db: AsyncSession):
+    from app.models.user import User
+    from app.api.v1.auth import get_password_hash
+    from app.models.payment import Payment
+    from sqlalchemy import select
+
+    # Create admin user
+    admin = User(
+        email="admin@realestate.az",
+        name="System Admin",
+        role="admin",
+        password_hash=get_password_hash("adminpass123")
+    )
+    test_db.add(admin)
+    await test_db.commit()
+    await test_db.refresh(admin)
+
+    admin_token = create_access_token(admin.id)
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    # 1. Admin creates a new tenant with pro plan, numeric Telegram ID in handle, and feature_crm=True
+    create_res = await client.post("/api/v1/tenants", headers=admin_headers, json={
+        "name": "Rashad Karim",
+        "phone": "+994559876543",
+        "plan": "pro",
+        "telegram_handle": "987654321",
+        "feature_crm": True,
+        "addon_crm_price": 15.0
+    })
+    assert create_res.status_code == 201
+    t_data = create_res.json()
+    assert t_data["feature_crm"] is True
+    assert t_data["status"] == "active"
+    assert t_data["telegram_chat_id"] == "987654321"
+
+    # Verify payment record was automatically created
+    stmt_p = select(Payment).where(Payment.tenant_id == t_data["id"])
+    res_p = await test_db.execute(stmt_p)
+    payments = res_p.scalars().all()
+    assert len(payments) == 1
+    assert payments[0].amount > 0
+    assert "Initial Provisioning" in (payments[0].notes or "")
+
+    # 2. Agent opens TMA using mock init_data with tg_id 987654321
+    tma_auth_res = await client.post("/api/v1/auth/telegram-webapp", json={
+        "init_data": "mock_telegram_987654321"
+    })
+    assert tma_auth_res.status_code == 200
+    tma_auth_data = tma_auth_res.json()
+    assert tma_auth_data["tenant_id"] == t_data["id"]
+    assert tma_auth_data["feature_crm"] is True
+
+    agent_token = tma_auth_data["access_token"]
+    agent_headers = {"Authorization": f"Bearer {agent_token}"}
+
+    # 3. Agent can successfully query CRM stats and deals
+    stats_res = await client.get("/api/v1/crm/stats", headers=agent_headers)
+    assert stats_res.status_code == 200
+    assert stats_res.json()["total_deals"] == 0

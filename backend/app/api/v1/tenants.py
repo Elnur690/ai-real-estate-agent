@@ -43,6 +43,7 @@ class CreateTenantRequest(BaseModel):
 class UpdateTenantRequest(BaseModel):
     name: Optional[str] = None
     phone: Optional[str] = None
+    telegram_handle: Optional[str] = None
     status: Optional[str] = None # active | expired | suspended | pending
     plan: Optional[str] = None
     plan_period: Optional[str] = None
@@ -162,6 +163,7 @@ async def list_tenants(db: AsyncSession = Depends(get_db), current_admin = Depen
 @router.post("", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
 async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
     from app.models.plan import Plan
+    from app.models.payment import Payment
     
     plan_code = body.plan.lower().strip()
     is_free = plan_code == "free"
@@ -171,19 +173,30 @@ async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(ge
     res_p = await db.execute(stmt_p)
     db_plan = res_p.scalars().first()
 
-    # Paid plans start as 'pending' until cash/subscription payment is recorded
-    initial_status = "active" if is_free else "pending"
-    trial_days_count = body.trial_days if body.trial_days and body.trial_days > 0 else 7
-    expires_at = (datetime.now(timezone.utc) + timedelta(days=trial_days_count)) if is_free else None
+    now_utc = datetime.now(timezone.utc)
+    trial_days_count = body.trial_days if (body.trial_days and body.trial_days > 0) else (7 if is_free else 30)
+    expires_at = now_utc + timedelta(days=trial_days_count)
+
+    # Normalize telegram handle and chat_id
+    raw_handle = body.telegram_handle.strip().lstrip('@') if body.telegram_handle else None
+    raw_chat_id = body.telegram_chat_id.strip() if body.telegram_chat_id else None
+    
+    if raw_handle and raw_handle.isdigit() and not raw_chat_id:
+        raw_chat_id = raw_handle
+    elif raw_chat_id and raw_chat_id.isdigit() and not raw_handle:
+        raw_handle = raw_chat_id
+
+    has_crm = getattr(db_plan, 'feature_crm', False) or body.feature_crm
+    crm_exp = expires_at if has_crm else None
     
     tenant = Tenant(
         name=body.name,
         type=body.type,
         phone=body.phone,
-        telegram_handle=body.telegram_handle,
+        telegram_handle=raw_handle,
         preferred_channel=body.preferred_channel,
         whatsapp_number=body.whatsapp_number,
-        telegram_chat_id=body.telegram_chat_id,
+        telegram_chat_id=raw_chat_id,
         plan=plan_code,
         plan_period=body.plan_period,
         backup_enabled=db_plan.backup_enabled if db_plan else body.backup_enabled,
@@ -196,15 +209,37 @@ async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(ge
         max_locations_per_search=db_plan.max_locations_per_search if db_plan else body.max_locations_per_search,
         feature_aged_listings=getattr(db_plan, 'feature_aged_listings', False) or body.feature_aged_listings,
         addon_aged_max_months=body.addon_aged_max_months or 12,
-        feature_crm=getattr(db_plan, 'feature_crm', False) or body.feature_crm,
+        aged_expires_at=expires_at if (getattr(db_plan, 'feature_aged_listings', False) or body.feature_aged_listings) else None,
+        feature_crm=has_crm,
         addon_crm_price=getattr(db_plan, 'addon_crm_price', 0.0) if body.addon_crm_price == 0.0 else body.addon_crm_price,
-        plan_started_at=datetime.now(timezone.utc),
+        crm_expires_at=crm_exp,
+        plan_started_at=now_utc,
         plan_expires_at=expires_at,
-        status=initial_status
+        status="active"
     )
     db.add(tenant)
     await db.commit()
     await db.refresh(tenant)
+
+    # Automatically create confirmed initial Payment record
+    plan_price = db_plan.price if (db_plan and not is_free) else 0.0
+    crm_price = (body.addon_crm_price or getattr(db_plan, 'addon_crm_price', 15.0) or 15.0) if has_crm else 0.0
+    aged_price = (getattr(db_plan, 'addon_aged_listings_price', 15.0) or 15.0) if tenant.feature_aged_listings else 0.0
+    total_amount = round(plan_price + crm_price + aged_price, 2)
+
+    pay_record = Payment(
+        tenant_id=tenant.id,
+        amount=total_amount,
+        currency="AZN",
+        period_covered_start=now_utc,
+        period_covered_end=expires_at,
+        received_by=current_admin.id,
+        received_at=now_utc,
+        notes=f"Initial Provisioning: {tenant.name} ({plan_code.upper()} Plan) [CRM: {'Active' if has_crm else 'Off'}]"
+    )
+    db.add(pay_record)
+    await db.commit()
+
     return tenant
 
 @router.get("/{tenant_id}")
@@ -243,6 +278,26 @@ async def update_tenant(tenant_id: int, body: UpdateTenantRequest, db: AsyncSess
 
     update_data = body.model_dump(exclude_unset=True)
 
+    # Handle telegram username and chat_id normalization
+    if "telegram_handle" in update_data:
+        h = (update_data["telegram_handle"] or "").strip().lstrip('@')
+        tenant.telegram_handle = h or None
+        if h and h.isdigit() and not update_data.get("telegram_chat_id"):
+            tenant.telegram_chat_id = h
+
+    if "telegram_chat_id" in update_data:
+        cid = (update_data["telegram_chat_id"] or "").strip()
+        tenant.telegram_chat_id = cid or None
+        if cid and cid.isdigit() and not tenant.telegram_handle:
+            tenant.telegram_handle = cid
+
+    # If CRM feature is enabled, ensure crm_expires_at is populated
+    if "feature_crm" in update_data and update_data["feature_crm"]:
+        tenant.feature_crm = True
+        now_utc = datetime.now(timezone.utc)
+        if not tenant.crm_expires_at or tenant.crm_expires_at < now_utc:
+            tenant.crm_expires_at = tenant.plan_expires_at or (now_utc + timedelta(days=30))
+
     # If plan is updated, fetch new plan features if available
     if "plan" in update_data and update_data["plan"]:
         plan_code = update_data["plan"].lower().strip()
@@ -262,9 +317,12 @@ async def update_tenant(tenant_id: int, body: UpdateTenantRequest, db: AsyncSess
                 tenant.feature_aged_listings = True
             if getattr(db_plan, 'feature_crm', False):
                 tenant.feature_crm = True
+                if not tenant.crm_expires_at:
+                    tenant.crm_expires_at = tenant.plan_expires_at or (datetime.now(timezone.utc) + timedelta(days=30))
 
     for field, val in update_data.items():
-        setattr(tenant, field, val)
+        if field not in ["telegram_handle", "telegram_chat_id", "feature_crm"]:
+            setattr(tenant, field, val)
 
     await db.commit()
     await db.refresh(tenant)

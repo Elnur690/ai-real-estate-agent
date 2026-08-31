@@ -126,6 +126,7 @@ class RegisterSellerAgentRequest(BaseModel):
     phone: str
     email: Optional[str] = None
     telegram_handle: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
     whatsapp_number: Optional[str] = None
     preferred_channel: str = "telegram"
     package_id: Optional[int] = None
@@ -145,6 +146,7 @@ class UpdateSellerAgentRequest(BaseModel):
     name: Optional[str] = None
     phone: Optional[str] = None
     telegram_handle: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
     whatsapp_number: Optional[str] = None
     preferred_channel: Optional[str] = None
     preferred_billing_day: Optional[int] = None
@@ -887,7 +889,15 @@ async def update_my_agent(
     if body.name is not None and body.name.strip():
         agent.name = body.name.strip()
     if body.telegram_handle is not None:
-        agent.telegram_handle = body.telegram_handle.strip().lstrip('@') or None
+        h = body.telegram_handle.strip().lstrip('@')
+        agent.telegram_handle = h or None
+        if h and h.isdigit() and not body.telegram_chat_id:
+            agent.telegram_chat_id = h
+    if body.telegram_chat_id is not None:
+        cid = body.telegram_chat_id.strip()
+        agent.telegram_chat_id = cid or None
+        if cid and cid.isdigit() and not agent.telegram_handle:
+            agent.telegram_handle = cid
     if body.whatsapp_number is not None:
         agent.whatsapp_number = body.whatsapp_number.strip() or None
     if body.preferred_channel is not None:
@@ -924,6 +934,10 @@ async def update_my_agent(
         agent.addon_image_requests_used = body.addon_image_requests_used
     if body.feature_crm is not None:
         agent.feature_crm = body.feature_crm
+        if body.feature_crm:
+            now_utc = datetime.now(timezone.utc)
+            if not agent.crm_expires_at or agent.crm_expires_at < now_utc:
+                agent.crm_expires_at = agent.plan_expires_at or (now_utc + timedelta(days=30))
 
     await db.commit()
     await db.refresh(agent)
@@ -1304,10 +1318,18 @@ async def register_my_agent(
     crm_exp = (now_utc + timedelta(days=crm_months * 30)) if crm_enabled else None
     aged_exp = (now_utc + timedelta(days=int(body.selected_aged_months) * 30)) if (body.selected_aged_months and body.selected_aged_months > 0) else None
 
+    raw_handle = body.telegram_handle.strip().lstrip('@') if body.telegram_handle else None
+    raw_chat_id = body.telegram_chat_id.strip() if body.telegram_chat_id else None
+    if raw_handle and raw_handle.isdigit() and not raw_chat_id:
+        raw_chat_id = raw_handle
+    elif raw_chat_id and raw_chat_id.isdigit() and not raw_handle:
+        raw_handle = raw_chat_id
+
     agent = Tenant(
         name=body.name,
         phone=formatted_phone,
-        telegram_handle=body.telegram_handle.strip().lstrip('@') if body.telegram_handle else None,
+        telegram_handle=raw_handle,
+        telegram_chat_id=raw_chat_id,
         whatsapp_number=body.whatsapp_number or formatted_phone,
         preferred_channel=body.preferred_channel,
         preferred_billing_day=max(1, min(28, int(body.preferred_billing_day or 1))),
@@ -1341,24 +1363,28 @@ async def register_my_agent(
     await db.commit()
     await db.refresh(agent)
 
-    # 4. Calculate Commission & Financials if package has price
-    if package and package.price > 0:
-        rank_map = await get_seller_rank_config_map(db)
-        rank_info = rank_map.get(seller.rank, rank_map.get("Bronze", {}))
-        bonus_pct = rank_info.get("bonus_commission", 0.0)
-        effective_commission_pct = min(100.0, seller.commission_rate + bonus_pct)
+    # 4. Calculate Commission & Financials
+    rank_map = await get_seller_rank_config_map(db)
+    rank_info = rank_map.get(seller.rank, rank_map.get("Bronze", {}))
+    bonus_pct = rank_info.get("bonus_commission", 0.0)
+    effective_commission_pct = min(100.0, seller.commission_rate + bonus_pct)
 
+    effective_pkg_price = 0.0
+    pkg_name = package.name if package else "Custom/Trial"
+    pkg_id = package.id if package else None
+    if package and package.price > 0 and not is_trial:
         effective_pkg_price = package.price
         if getattr(package, 'sale_enabled', False) and getattr(package, 'sale_price', None) is not None and package.sale_price > 0:
             effective_pkg_price = package.sale_price
 
-        # Dynamic Addon Pricing Calculation
-        selected_aged_price = max(0.0, float(body.selected_aged_price or 0.0))
-        selected_extra_searches_price = max(0.0, float(body.selected_extra_searches_price or 0.0))
-        selected_image_price = max(0.0, float(body.selected_image_price or 0.0))
-        selected_crm_price = max(0.0, float(body.selected_crm_price or 0.0))
-        gross_amount = round(effective_pkg_price + selected_aged_price + selected_extra_searches_price + selected_image_price + selected_crm_price, 2)
+    # Dynamic Addon Pricing Calculation
+    selected_aged_price = max(0.0, float(body.selected_aged_price or 0.0))
+    selected_extra_searches_price = max(0.0, float(body.selected_extra_searches_price or 0.0))
+    selected_image_price = max(0.0, float(body.selected_image_price or 0.0))
+    selected_crm_price = max(0.0, float(body.selected_crm_price or 0.0))
+    gross_amount = round(effective_pkg_price + selected_aged_price + selected_extra_searches_price + selected_image_price + selected_crm_price, 2)
 
+    if gross_amount > 0:
         seller_profit = round(gross_amount * (effective_commission_pct / 100.0), 2)
         platform_fee = round(gross_amount - seller_profit, 2)
 
@@ -1377,30 +1403,30 @@ async def register_my_agent(
         tx = SellerTransaction(
             seller_id=seller.id,
             tenant_id=agent.id,
-            package_id=package.id,
+            package_id=pkg_id,
             amount=gross_amount,
             commission_rate=effective_commission_pct,
             seller_profit=seller_profit,
             platform_fee=platform_fee,
             type="subscription_sale",
-            description=f"Agent abunəsi: {agent.name} ({package.name}) [Bonus: +{bonus_pct}%]"
+            description=f"Agent abunəsi: {agent.name} ({pkg_name}) [Bonus: +{bonus_pct}%]"
         )
         db.add(tx)
 
-        # Create confirmed Payment record for this agent
-        pay_record = Payment(
-            tenant_id=agent.id,
-            amount=gross_amount,
-            currency="AZN",
-            period_covered_start=now_utc,
-            period_covered_end=expires_at,
-            received_at=now_utc,
-            notes=f"Seller Registration: {agent.name} ({package.name}) (Aged: {selected_aged_price} AZN, CRM: {selected_crm_price} AZN)"
-        )
-        db.add(pay_record)
+    # Always create confirmed Payment record for this agent
+    pay_record = Payment(
+        tenant_id=agent.id,
+        amount=gross_amount,
+        currency="AZN",
+        period_covered_start=now_utc,
+        period_covered_end=expires_at,
+        received_at=now_utc,
+        notes=f"Seller Registration: {agent.name} ({pkg_name}) (Aged: {selected_aged_price} AZN, CRM: {selected_crm_price} AZN)"
+    )
+    db.add(pay_record)
 
-        await db.commit()
-        await db.refresh(seller)
+    await db.commit()
+    await db.refresh(seller)
 
     return {
         "message": "Agent uğurla qeydiyyatdan keçirildi",

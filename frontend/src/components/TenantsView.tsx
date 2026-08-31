@@ -39,6 +39,7 @@ export const TenantsView: React.FC = () => {
     plan: 'starter',
     trial_days: 7,
     telegram_handle: '',
+    telegram_chat_id: '',
     whatsapp_number: '',
     backup_enabled: false,
     backup_frequency_days: 7,
@@ -75,6 +76,7 @@ export const TenantsView: React.FC = () => {
     plan: 'free',
     preferred_channel: 'telegram',
     whatsapp_number: '',
+    telegram_handle: '',
     telegram_chat_id: '',
     backup_enabled: false,
     backup_frequency_days: 7,
@@ -241,6 +243,7 @@ export const TenantsView: React.FC = () => {
         plan: availablePlans[0]?.code || 'starter',
         trial_days: 7,
         telegram_handle: '',
+        telegram_chat_id: '',
         whatsapp_number: '',
         backup_enabled: false,
         backup_frequency_days: 7,
@@ -996,12 +999,19 @@ export const TenantsView: React.FC = () => {
                 <label className="text-xs text-slate-400 block mb-1">Telegram Chat ID / Username</label>
                 <input
                   type="text"
-                    value={editFormData.telegram_chat_id || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, telegram_chat_id: e.target.value })}
-                    className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
-                    placeholder="12345678 və ya @username"
-                  />
-                </div>
+                  value={editFormData.telegram_chat_id || editFormData.telegram_handle || ''}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setEditFormData({
+                      ...editFormData,
+                      telegram_handle: val,
+                      telegram_chat_id: val.replace('@', '')
+                    });
+                  }}
+                  className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
+                  placeholder="12345678 və ya @username"
+                />
+              </div>
 
               {/* CRM Mini App Addon */}
               <div className="pt-2 border-t border-slate-800">
@@ -1269,12 +1279,19 @@ export const TenantsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-xs text-slate-400 block mb-1">Telegram İstifadəçi Adı / Chat ID</label>
+                <label className="text-xs text-slate-400 block mb-1">Telegram Chat ID / İstifadəçi Adı</label>
                 <input
                   type="text"
-                  placeholder="@agent_username"
-                  value={newTenant.telegram_handle}
-                  onChange={(e) => setNewTenant({ ...newTenant, telegram_handle: e.target.value })}
+                  placeholder="12345678 və ya @agent_username"
+                  value={newTenant.telegram_chat_id || newTenant.telegram_handle}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setNewTenant({
+                      ...newTenant,
+                      telegram_handle: val,
+                      telegram_chat_id: val.replace('@', '')
+                    });
+                  }}
                   className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
                 />
               </div>

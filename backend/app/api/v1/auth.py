@@ -551,16 +551,22 @@ async def telegram_webapp_auth(
             detail="Etibarsız Telegram WebApp imzası (Invalid initData hash)."
         )
 
-    tg_user_id = str(user_info["id"])
+    tg_user_id = str(user_info["id"]).strip()
     first_name = user_info.get("first_name", "Agent")
     username = (user_info.get("username") or "").strip().lstrip("@")
 
     # Look up Tenant by telegram_chat_id, telegram_handle, or ID (dev/mock)
     conditions = [
         Tenant.telegram_chat_id == tg_user_id,
+        Tenant.telegram_handle == tg_user_id,
+        Tenant.telegram_chat_id.ilike(f"%{tg_user_id}%"),
+        Tenant.telegram_handle.ilike(f"%{tg_user_id}%"),
     ]
     if username:
         conditions.append(func.lower(Tenant.telegram_handle) == username.lower())
+        conditions.append(func.lower(Tenant.telegram_chat_id) == username.lower())
+        conditions.append(Tenant.telegram_handle.ilike(f"%{username.lower()}%"))
+        conditions.append(Tenant.telegram_chat_id.ilike(f"%{username.lower()}%"))
     if body.init_data.startswith("mock_telegram_") and tg_user_id.isdigit() and int(tg_user_id) <= 2147483647:
         conditions.append(Tenant.id == int(tg_user_id))
 
@@ -581,9 +587,19 @@ async def telegram_webapp_auth(
             detail=f"Hörmətli {tenant.name}, hesabınızda Real Estate CRM Add-on aktivləşdirilməyib. Zəhmət olmasa administrator və ya satıcı ilə əlaqə saxlayın."
         )
 
-    # Ensure telegram_chat_id is linked if matched by handle
-    if not tenant.telegram_chat_id:
+    # Ensure telegram_chat_id is linked and crm_expires_at is populated
+    updated_needed = False
+    if not tenant.telegram_chat_id or tenant.telegram_chat_id != tg_user_id:
         tenant.telegram_chat_id = tg_user_id
+        updated_needed = True
+    if username and not tenant.telegram_handle:
+        tenant.telegram_handle = username
+        updated_needed = True
+    if tenant.feature_crm and not tenant.crm_expires_at:
+        now_utc = datetime.now(timezone.utc)
+        tenant.crm_expires_at = tenant.plan_expires_at or (now_utc + timedelta(days=30))
+        updated_needed = True
+    if updated_needed:
         await db.commit()
         await db.refresh(tenant)
 

@@ -232,6 +232,8 @@ async def process_tenant_cash_payment(
     # Update tenant plan expiration & status
     tenant.plan_expires_at = end_date
     tenant.status = "active"
+    if tenant.feature_crm:
+        tenant.crm_expires_at = end_date
 
     await db.commit()
     await db.refresh(payment)
@@ -255,6 +257,8 @@ async def record_cash_payment(body: CreatePaymentRequest, db: AsyncSession = Dep
             addon_saved_searches=body.addon_saved_searches,
             feature_watermark_free_images=body.feature_watermark_free_images,
             addon_image_requests_limit=body.addon_image_requests_limit,
+            include_crm_addon=body.include_crm_addon,
+            addon_crm_price=body.addon_crm_price,
             use_referral_balance=body.use_referral_balance,
             notes=body.notes
         )
