@@ -83,12 +83,19 @@ async def delete_source(source_id: int, db: AsyncSession = Depends(get_db), curr
 async def _bg_run_ingestion():
     import logging
     logger = logging.getLogger("scrapers_api")
-    from app.db.session import AsyncSessionLocal
     logger.info("[ManualTrigger] Manual scraping and matching triggered from Admin Dashboard...")
     try:
-        async with AsyncSessionLocal() as db:
-            result = await IngestionService.run_ingestion_cycle(db)
-            logger.info(f"[ManualTrigger] Completed: {result}")
+        # Try delegating to Celery worker if available
+        try:
+            from app.tasks.jobs import run_scheduled_ingestion
+            run_scheduled_ingestion.delay()
+            logger.info("[ManualTrigger] Ingestion task dispatched to Celery worker queue.")
+            return
+        except Exception as e_celery:
+            logger.debug(f"[ManualTrigger] Celery dispatch fallback to direct async task: {e_celery}")
+
+        result = await IngestionService.run_ingestion_cycle()
+        logger.info(f"[ManualTrigger] Direct ingestion cycle completed: {result}")
     except Exception as e:
         logger.error(f"[ManualTrigger] Error during manual scraping cycle: {e}")
 
