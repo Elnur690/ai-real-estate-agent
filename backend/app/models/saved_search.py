@@ -49,4 +49,4 @@ class SavedSearch(Base):
     # Relationships
     tenant = relationship("Tenant", back_populates="saved_searches", lazy="selectin")
     user = relationship("User", back_populates="saved_searches", lazy="selectin")
-    matches = relationship("Match", back_populates="saved_search", cascade="all, delete-orphan", lazy="selectin")
+    matches = relationship("Match", back_populates="saved_search", cascade="all, delete-orphan", lazy="noload")

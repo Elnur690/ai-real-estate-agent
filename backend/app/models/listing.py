@@ -17,7 +17,7 @@ class ListingSource(Base):
     last_scraped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
-    listings = relationship("Listing", back_populates="source", cascade="all, delete-orphan", lazy="selectin")
+    listings = relationship("Listing", back_populates="source", cascade="all, delete-orphan", lazy="noload")
 
 
 class Listing(Base):
@@ -79,4 +79,4 @@ class Listing(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     source = relationship("ListingSource", back_populates="listings", lazy="selectin")
-    matches = relationship("Match", back_populates="listing", cascade="all, delete-orphan", lazy="selectin")
+    matches = relationship("Match", back_populates="listing", cascade="all, delete-orphan", lazy="noload")

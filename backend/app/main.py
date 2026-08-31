@@ -251,8 +251,14 @@ async def lifespan(app: FastAPI):
 
     # Start background continuous scraper ingestion loop
     async def _background_ingestion_loop():
+        # In multi-container Docker cluster deployment, Celery workers handle scheduled scraping
+        # We only run the in-process fallback loop in standalone local mode without dedicated Celery
+        if settings.REDIS_URL and ("redis" in settings.REDIS_URL.lower() and "localhost" not in settings.REDIS_URL and "127.0.0.1" not in settings.REDIS_URL):
+            logger.info("[Startup] Celery cluster active. Background ingestion handled by dedicated Celery workers.")
+            return
+
         from app.services.ingestion import IngestionService
-        logger.info("[Startup] Ingestion worker initialized. Running first scraping cycle in 5s...")
+        logger.info("[Startup] Standalone mode: Ingestion worker initialized. Running first scraping cycle in 5s...")
         await asyncio.sleep(5)
         while True:
             try:

@@ -81,8 +81,8 @@ class Tenant(Base):
     # Relationships
     users = relationship("User", back_populates="tenant", cascade="all, delete-orphan", lazy="selectin")
     saved_searches = relationship("SavedSearch", back_populates="tenant", cascade="all, delete-orphan", lazy="selectin")
-    matches = relationship("Match", back_populates="tenant", cascade="all, delete-orphan", lazy="selectin")
-    payments = relationship("Payment", back_populates="tenant", cascade="all, delete-orphan", lazy="selectin")
+    matches = relationship("Match", back_populates="tenant", cascade="all, delete-orphan", lazy="noload")
+    payments = relationship("Payment", back_populates="tenant", cascade="all, delete-orphan", lazy="noload")
     seller = relationship("Seller", back_populates="agents", lazy="selectin")
     seller_package = relationship("SellerPackage", back_populates="subscribed_agents", lazy="selectin")
     crm_clients = relationship("CrmClient", back_populates="tenant", cascade="all, delete-orphan", lazy="selectin")
