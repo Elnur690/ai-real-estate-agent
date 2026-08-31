@@ -176,13 +176,20 @@ async def list_crm_clients(
     res = await db.execute(stmt)
     clients = res.scalars().all()
 
-    # Get deal counts per client
-    result = []
-    for c in clients:
-        stmt_count = select(func.count(CrmDeal.id)).where(CrmDeal.client_id == c.id, CrmDeal.is_archived == False)
-        res_count = await db.execute(stmt_count)
-        d_count = res_count.scalar() or 0
-        result.append(CrmClientResponse(
+    # Bulk fetch deal counts per client
+    client_ids = [c.id for c in clients]
+    deal_counts = {}
+    if client_ids:
+        stmt_counts = (
+            select(CrmDeal.client_id, func.count(CrmDeal.id))
+            .where(CrmDeal.client_id.in_(client_ids), CrmDeal.is_archived == False)
+            .group_by(CrmDeal.client_id)
+        )
+        res_counts = await db.execute(stmt_counts)
+        deal_counts = dict(res_counts.all())
+
+    result = [
+        CrmClientResponse(
             id=c.id,
             tenant_id=c.tenant_id,
             name=c.name,
@@ -196,10 +203,11 @@ async def list_crm_clients(
             rooms_max=c.rooms_max,
             districts=c.districts or [],
             notes=c.notes,
-            deals_count=d_count,
+            deals_count=deal_counts.get(c.id, 0),
             created_at=c.created_at,
             updated_at=c.updated_at
-        ))
+        ) for c in clients
+    ]
     return result
 
 
@@ -342,21 +350,35 @@ async def list_crm_deals(
     res = await db.execute(stmt)
     deals = res.scalars().all()
 
+    # Bulk fetch referenced clients
+    client_ids = {d.client_id for d in deals if d.client_id}
+    clients_map = {}
+    if client_ids:
+        stmt_c = select(CrmClient).where(CrmClient.id.in_(client_ids))
+        res_c = await db.execute(stmt_c)
+        clients_map = {c.id: c for c in res_c.scalars().all()}
+
+    # Bulk fetch recent activities
+    deal_ids = [d.id for d in deals]
+    activities_map = {d_id: [] for d_id in deal_ids}
+    if deal_ids:
+        stmt_act = select(CrmActivity).where(CrmActivity.deal_id.in_(deal_ids)).order_by(desc(CrmActivity.created_at))
+        res_act = await db.execute(stmt_act)
+        for a in res_act.scalars().all():
+            if len(activities_map.get(a.deal_id, [])) < 5:
+                activities_map[a.deal_id].append(CrmActivityResponse(
+                    id=a.id,
+                    deal_id=a.deal_id,
+                    action_type=a.action_type,
+                    description=a.description,
+                    created_at=a.created_at
+                ))
+
     result = []
     for d in deals:
-        client_name = None
-        client_phone = None
-        if d.client_id:
-            stmt_c = select(CrmClient).where(CrmClient.id == d.client_id)
-            res_c = await db.execute(stmt_c)
-            c = res_c.scalars().first()
-            if c:
-                client_name = c.name
-                client_phone = c.phone or c.whatsapp_number
-
-        stmt_act = select(CrmActivity).where(CrmActivity.deal_id == d.id).order_by(desc(CrmActivity.created_at)).limit(5)
-        res_act = await db.execute(stmt_act)
-        acts = res_act.scalars().all()
+        c = clients_map.get(d.client_id) if d.client_id else None
+        client_name = c.name if c else None
+        client_phone = (c.phone or c.whatsapp_number) if c else None
 
         result.append(CrmDealResponse(
             id=d.id,
@@ -380,15 +402,7 @@ async def list_crm_deals(
             is_archived=d.is_archived,
             created_at=d.created_at,
             updated_at=d.updated_at,
-            activities=[
-                CrmActivityResponse(
-                    id=a.id,
-                    deal_id=a.deal_id,
-                    action_type=a.action_type,
-                    description=a.description,
-                    created_at=a.created_at
-                ) for a in acts
-            ]
+            activities=activities_map.get(d.id, [])
         ))
     return result
 
