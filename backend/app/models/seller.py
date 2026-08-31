@@ -51,10 +51,10 @@ class Seller(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
-    user = relationship("User", back_populates="seller_profile")
-    packages = relationship("SellerPackage", back_populates="seller", cascade="all, delete-orphan")
-    agents = relationship("Tenant", back_populates="seller")
-    transactions = relationship("SellerTransaction", back_populates="seller", cascade="all, delete-orphan")
+    user = relationship("User", back_populates="seller_profile", lazy="noload")
+    packages = relationship("SellerPackage", back_populates="seller", cascade="all, delete-orphan", lazy="noload")
+    agents = relationship("Tenant", back_populates="seller", lazy="noload")
+    transactions = relationship("SellerTransaction", back_populates="seller", cascade="all, delete-orphan", lazy="noload")
 
 
 class SellerPackage(Base):
@@ -113,8 +113,8 @@ class SellerPackage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Relationships
-    seller = relationship("Seller", back_populates="packages")
-    subscribed_agents = relationship("Tenant", back_populates="seller_package")
+    seller = relationship("Seller", back_populates="packages", lazy="noload")
+    subscribed_agents = relationship("Tenant", back_populates="seller_package", lazy="noload")
 
 
 class SellerTransaction(Base):
@@ -135,9 +135,9 @@ class SellerTransaction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Relationships
-    seller = relationship("Seller", back_populates="transactions")
-    agent = relationship("Tenant")
-    package = relationship("SellerPackage")
+    seller = relationship("Seller", back_populates="transactions", lazy="noload")
+    agent = relationship("Tenant", lazy="noload")
+    package = relationship("SellerPackage", lazy="noload")
 
 
 SELLER_RANK_CONFIG: Dict[str, Dict[str, Any]] = {

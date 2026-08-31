@@ -27,8 +27,8 @@ class CrmClient(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
-    tenant = relationship("Tenant", back_populates="crm_clients")
-    deals = relationship("CrmDeal", back_populates="client", cascade="all, delete-orphan")
+    tenant = relationship("Tenant", back_populates="crm_clients", lazy="noload")
+    deals = relationship("CrmDeal", back_populates="client", cascade="all, delete-orphan", lazy="noload")
 
 
 class CrmDeal(Base):
@@ -63,10 +63,10 @@ class CrmDeal(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
-    tenant = relationship("Tenant", back_populates="crm_deals")
-    client = relationship("CrmClient", back_populates="deals")
-    listing = relationship("Listing")
-    activities = relationship("CrmActivity", back_populates="deal", cascade="all, delete-orphan")
+    tenant = relationship("Tenant", back_populates="crm_deals", lazy="noload")
+    client = relationship("CrmClient", back_populates="deals", lazy="noload")
+    listing = relationship("Listing", lazy="noload")
+    activities = relationship("CrmActivity", back_populates="deal", cascade="all, delete-orphan", lazy="noload")
 
 
 class CrmActivity(Base):
@@ -80,4 +80,4 @@ class CrmActivity(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
-    deal = relationship("CrmDeal", back_populates="activities")
+    deal = relationship("CrmDeal", back_populates="activities", lazy="noload")

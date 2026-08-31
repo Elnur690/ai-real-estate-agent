@@ -24,6 +24,6 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Relationships
-    tenant = relationship("Tenant", back_populates="users")
-    saved_searches = relationship("SavedSearch", back_populates="user")
-    seller_profile = relationship("Seller", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    tenant = relationship("Tenant", back_populates="users", lazy="noload")
+    saved_searches = relationship("SavedSearch", back_populates="user", lazy="noload")
+    seller_profile = relationship("Seller", back_populates="user", uselist=False, cascade="all, delete-orphan", lazy="noload")

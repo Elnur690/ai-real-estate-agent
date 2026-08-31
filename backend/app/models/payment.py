@@ -18,4 +18,4 @@ class Payment(Base):
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    tenant = relationship("Tenant", back_populates="payments")
+    tenant = relationship("Tenant", back_populates="payments", lazy="noload")
