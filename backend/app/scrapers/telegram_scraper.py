@@ -25,47 +25,54 @@ class TelegramChannelScraper(BaseScraper):
             target_url = f"https://t.me/s/{clean_handle}"
             headers = get_random_headers(referer="https://t.me/")
             headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            headers["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
                 res = await client.get(target_url, headers=headers)
                 if res.status_code == 200:
-                    soup = BeautifulSoup(res.text, "html.parser")
-                    messages = soup.find_all("div", class_=re.compile(r'tgme_widget_message_wrap'))
+                    # Check if Telegram redirected to a private or contact page
+                    if "/s/" not in str(res.url):
+                        logger.debug(f"[TelegramChannelScraper] @{clean_handle} does not provide a public web preview (redirected to {res.url}).")
+                    else:
+                        soup = BeautifulSoup(res.text, "html.parser")
+                        messages = soup.find_all("div", class_=re.compile(r'tgme_widget_message_wrap'))
 
-                    for m in messages:
-                        text_div = m.find("div", class_=re.compile(r'tgme_widget_message_text'))
-                        if not text_div:
-                            continue
-                        raw_text = text_div.get_text(separator=" | ", strip=True)
-                        if len(raw_text) < 15:
-                            continue
+                        for m in messages:
+                            text_div = m.find("div", class_=re.compile(r'tgme_widget_message_text'))
+                            if not text_div:
+                                continue
+                            raw_text = text_div.get_text(separator=" | ", strip=True)
+                            if len(raw_text) < 15:
+                                continue
 
-                        link_tag = m.find("a", class_=re.compile(r'tgme_widget_message_date'))
-                        msg_url = link_tag['href'] if link_tag and 'href' in link_tag.attrs else f"https://t.me/{clean_handle}"
-                        msg_id = msg_url.split('/')[-1] if '/' in msg_url else str(hash(raw_text))
+                            link_tag = m.find("a", class_=re.compile(r'tgme_widget_message_date'))
+                            msg_url = link_tag['href'] if link_tag and 'href' in link_tag.attrs else f"https://t.me/{clean_handle}"
+                            msg_id = msg_url.split('/')[-1] if '/' in msg_url else str(hash(raw_text))
 
-                        photos = []
-                        photo_tag = m.find("a", class_=re.compile(r'tgme_widget_message_photo_wrap'))
-                        if photo_tag and 'style' in photo_tag.attrs:
-                            bg_match = re.search(r"background-image:url\('([^']+)'\)", photo_tag['style'])
-                            if bg_match:
-                                photos.append(bg_match.group(1))
+                            photos = []
+                            photo_tag = m.find("a", class_=re.compile(r'tgme_widget_message_photo_wrap'))
+                            if photo_tag and 'style' in photo_tag.attrs:
+                                bg_match = re.search(r"background-image:url\('([^']+)'\)", photo_tag['style'])
+                                if bg_match:
+                                    photos.append(bg_match.group(1))
 
-                        parsed_item = self.parse_telegram_message_text(
-                            text=raw_text,
-                            msg_url=msg_url,
-                            msg_id=f"tg_{clean_handle}_{msg_id}",
-                            channel_handle=clean_handle,
-                            photos=photos
-                        )
-                        if parsed_item:
-                            items.append(parsed_item)
+                            parsed_item = self.parse_telegram_message_text(
+                                text=raw_text,
+                                msg_url=msg_url,
+                                msg_id=f"tg_{clean_handle}_{msg_id}",
+                                channel_handle=clean_handle,
+                                photos=photos
+                            )
+                            if parsed_item:
+                                items.append(parsed_item)
 
-                        if len(items) >= 30:
-                            break
+                            if len(items) >= 30:
+                                break
 
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError) as e:
+            logger.debug(f"[TelegramChannelScraper] Network unreachable for @{clean_handle}: {e}")
         except Exception as e:
-            logger.warning(f"[TelegramChannelScraper] Web preview error: {e}")
+            logger.info(f"[TelegramChannelScraper] Web preview error for @{clean_handle}: {e}")
 
         # 2. Optional Telethon fallback if credentials configured
         if not items and settings.TELEGRAM_API_ID and settings.TELEGRAM_API_HASH:
