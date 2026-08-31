@@ -42,23 +42,28 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
 
     chat_id = str(update.effective_chat.id)
     user_name = update.effective_user.username or update.effective_user.first_name or "Agent"
-    raw_text = update.effective_message.text or ""
+    raw_text = update.effective_message.text or update.effective_message.caption or ""
 
-    async with AsyncSessionLocal() as db:
-        response_text = await BotCommandHandler.handle_incoming_message(
-            db=db,
-            channel="telegram",
-            sender_id=chat_id,
-            sender_name=user_name,
-            raw_text=raw_text
-        )
+    logger.info(f"[TelegramBot] Incoming message from chat_id={chat_id} ({user_name}): {raw_text}")
 
-    if response_text:
-        try:
-            await update.effective_message.reply_text(response_text, parse_mode="Markdown")
-        except Exception:
-            # Fallback to plain text if Markdown parser encounters unmatched characters
-            await update.effective_message.reply_text(response_text)
+    try:
+        async with AsyncSessionLocal() as db:
+            response_text = await BotCommandHandler.handle_incoming_message(
+                db=db,
+                channel="telegram",
+                sender_id=chat_id,
+                sender_name=user_name,
+                raw_text=raw_text
+            )
+
+        if response_text:
+            try:
+                await update.effective_message.reply_text(response_text, parse_mode="Markdown")
+            except Exception as e_md:
+                logger.warning(f"[TelegramBot] Markdown reply failed ({e_md}), retrying plain text...")
+                await update.effective_message.reply_text(response_text)
+    except Exception as e_h:
+        logger.error(f"[TelegramBot] Error handling message from {chat_id}: {e_h}", exc_info=True)
 
 
 async def send_telegram_notification(chat_id: str, message_text: str) -> bool:
@@ -156,8 +161,6 @@ def build_telegram_app() -> Optional[Application]:
         return None
     req = get_telegram_request()
     app = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).request(req).build()
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, telegram_message_handler))
-    app.add_handler(CommandHandler("start", telegram_message_handler))
-    app.add_handler(CommandHandler("help", telegram_message_handler))
+    app.add_handler(MessageHandler(filters.ALL, telegram_message_handler))
     app.add_error_handler(telegram_error_handler)
     return app

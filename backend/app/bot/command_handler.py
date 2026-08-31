@@ -98,6 +98,20 @@ class BotCommandHandler:
             res = await db.execute(stmt)
             tenant = res.scalars().first()
 
+            if not tenant:
+                # Also resolve via User table if admin assigned telegram_chat_id to User
+                from app.models.user import User
+                stmt_u = select(User).where(User.telegram_chat_id == sender_id)
+                res_u = await db.execute(stmt_u)
+                matched_user = res_u.scalars().first()
+                if matched_user and matched_user.tenant_id:
+                    stmt_tu = select(Tenant).where(Tenant.id == matched_user.tenant_id)
+                    res_tu = await db.execute(stmt_tu)
+                    tenant = res_tu.scalars().first()
+                    if tenant and not tenant.telegram_chat_id:
+                        tenant.telegram_chat_id = sender_id
+                        await db.commit()
+
             if not tenant and sender_name:
                 clean_handle = sender_name.lstrip("@").lower()
                 stmt_h = select(Tenant).where(Tenant.telegram_handle.ilike(f"%{clean_handle}%"))
@@ -919,7 +933,17 @@ class BotCommandHandler:
         if "@g.us" in sender_id:
             return None
 
-        # Inform unknown 1-on-1 callers without creating a database tenant record
+        # Inform unknown 1-on-1 callers with clear instructions and their chat ID
+        if channel == "telegram":
+            return (
+                f"⚠️ *{app_name}*\n\n"
+                f"Sizin Telegram ID-niz: `{sender_id}`\n\n"
+                f"Bu Telegram hesabı hələ heç bir agent profilinə bağlanmayıb.\n\n"
+                f"🔗 *Hesabınızı bağlamaq üçün:*\n"
+                f"1. SaaS İdarəetmə Panelində (Dashboard) Telegram ID bölməsinə `{sender_id}` qeyd edin, və ya\n"
+                f"2. Bota `/start <Agent_ID>` (məsələn: `/start 1`) göndərin."
+            )
+
         return (
             f"⚠️ *{app_name}*\n\n"
             f"Sizin nömrəniz ({sender_id}) sistemdə abunəçi kimi qeydiyyatdan keçməyib.\n"
