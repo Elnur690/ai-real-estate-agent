@@ -130,3 +130,84 @@ def test_get_all_aliases_includes_educational_landmarks():
     assert "azii" in may28_aliases
     assert "dillər universiteti" in may28_aliases
     assert "160 nömrəli məktəb" in may28_aliases
+
+
+def test_regional_school_number_collisions_and_distinctions():
+    from app.core.baku_locations import (
+        extract_baku_school, extract_baku_district, extract_baku_settlement,
+        extract_all_landmarks
+    )
+
+    # Khirdalan school distinction
+    assert extract_baku_school("Xırdalanda 2 nömrəli məktəbin yanında 3 otaqlı ev") == "Xırdalan 2 nömrəli məktəb"
+    assert extract_baku_district("Xırdalanda 2 nömrəli məktəbin yanında") == "Abşeron"
+    assert extract_baku_settlement("Xırdalanda 2 nömrəli məktəbin yanında") == "Xırdalan"
+
+    assert extract_baku_school("Xırdalan 1 nömrəli məktəb yanı") == "Xırdalan 1 nömrəli məktəb"
+    assert extract_baku_district("Xırdalan 1 nömrəli məktəb yanı") == "Abşeron"
+
+    # Masazir school distinction
+    assert extract_baku_school("Masazırda 1 saylı məktəb yaxınlığında ev") == "Masazır 1 nömrəli məktəb"
+    assert extract_baku_district("Masazırda 1 saylı məktəb yaxınlığında") == "Abşeron"
+    assert extract_baku_settlement("Masazırda 1 saylı məktəb yaxınlığında") == "Masazır"
+
+    assert extract_baku_school("Masazır 2 nömrəli məktəb yanı") == "Masazır 2 nömrəli məktəb"
+    assert extract_baku_district("Masazır 2 nömrəli məktəb yanı") == "Abşeron"
+
+    # Saray & Mehdiabad school distinctions
+    assert extract_baku_school("Sarayda 2 saylı məktəbin yaxınlığı") == "Saray 2 nömrəli məktəb"
+    assert extract_baku_district("Sarayda 2 saylı məktəb") == "Abşeron"
+
+    assert extract_baku_school("Mehdiabad 1 nömrəli məktəb yanı") == "Mehdiabad 1 nömrəli məktəb"
+    assert extract_baku_district("Mehdiabad 1 nömrəli məktəb yanı") == "Abşeron"
+
+    # Sumgayit school distinction
+    assert extract_baku_school("Sumqayıt 11 nömrəli məktəbin yaxınlığı") == "Sumqayıt 11 nömrəli məktəb"
+    assert extract_baku_district("Sumqayıt 11 nömrəli məktəb") == "Sumqayıt"
+
+    # Central Baku schools (without regional prefix) default to Baku districts
+    assert extract_baku_school("23 nömrəli məktəb yanı") == "23 nömrəli məktəb"
+    assert extract_baku_district("23 nömrəli məktəb yanı") == "Səbail"
+
+    assert extract_baku_school("6 nömrəli məktəbin ətrafında") == "6 nömrəli məktəb"
+    assert extract_baku_district("6 nömrəli məktəbin ətrafında") == "Səbail"
+
+
+def test_regional_landmark_distinctions():
+    from app.core.baku_locations import (
+        extract_baku_district, extract_baku_settlement, extract_all_landmarks
+    )
+
+    # Kristal Absheron multi-location distinction
+    assert extract_baku_district("Kristal Abşeron Xırdalan layihəsində") == "Abşeron"
+    assert extract_baku_settlement("Kristal Abşeron Xırdalan layihəsində") == "Xırdalan"
+
+    assert extract_baku_district("Kristal Abşeron Masazırda 2 otaqlı") == "Abşeron"
+    assert extract_baku_settlement("Kristal Abşeron Masazırda 2 otaqlı") == "Masazır"
+
+    assert extract_baku_district("Kristal Abşeron Yeni Yasamal kompleksində") == "Yasamal"
+    assert extract_baku_settlement("Kristal Abşeron Yeni Yasamal kompleksində") == "Yeni Yasamal"
+
+    assert extract_baku_district("Kristal Abşeron Qara Qarayev m.") == "Nizami"
+
+    # MIDA social housing distinction
+    assert extract_baku_district("MİDA Yasamal 2 otaqlı") == "Yasamal"
+    assert extract_baku_settlement("MİDA Yasamal 2 otaqlı") == "Yeni Yasamal"
+
+    assert extract_baku_district("MİDA Hövsan binalarında kupçalı") == "Suraxanı"
+    assert extract_baku_settlement("MİDA Hövsan binalarında kupçalı") == "Hövsan"
+
+    # AAAF Park, Qurtulus 93, ASAN & Bazars
+    assert extract_baku_district("Qurtuluş 93 massivində ev") == "Abşeron"
+    assert extract_baku_settlement("Qurtuluş 93 massivində ev") == "Masazır"
+
+    assert extract_baku_district("AAAF Park kompleksində") == "Abşeron"
+    assert extract_baku_settlement("AAAF Park kompleksində") == "Xırdalan"
+
+    assert extract_baku_district("3 saylı ASAN xidmətin yanı") == "Yasamal"
+    assert extract_baku_district("Xırdalan bazarı yaxınlığında") == "Abşeron"
+    assert extract_baku_settlement("Xırdalan bazarı yaxınlığında") == "Xırdalan"
+
+    assert extract_baku_district("Heydər Əliyev parkı Xırdalanda") == "Abşeron"
+    assert extract_baku_district("Heydər Əliyev Mərkəzi yanında") == "Nərimanov"
+

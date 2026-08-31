@@ -44,7 +44,7 @@ from app.core.property_classifier import (
     normalize_az_text, AGENCY_KEYWORDS, OWNER_KEYWORDS, COMMISSION_REGEX,
     RENTAL_KEYWORDS, SALE_KEYWORDS
 )
-from app.core.baku_locations import get_bina_location_slug
+from app.core.baku_locations import get_bina_location_slug, get_bina_location_ids
 from app.core.cache import CacheManager
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ class IngestionService:
         if not sources or len(sources) < 19:
             existing_handles = {s.url_or_handle for s in sources}
             default_sources = [
-                ListingSource(type="website", name="Bina.az", url_or_handle="https://bina.az/items?leased=false&category_id=1&city_id=1", status="active"),
+                ListingSource(type="website", name="Bina.az", url_or_handle="https://bina.az/items?city_id=1&category_id=1&leased=false&sort_by=created_at_desc", status="active"),
                 ListingSource(type="website", name="Tap.az", url_or_handle="https://tap.az/elanlar/dasinmaz-emlak/menziller", status="active"),
                 ListingSource(type="website", name="YeniEmlak.az", url_or_handle="https://yeniemlak.az/elan/axtar", status="active"),
                 ListingSource(type="website", name="EvOnline.az", url_or_handle="https://evonline.az/index.php", status="active"),
@@ -186,30 +186,30 @@ class IngestionService:
         if search.max_price and search.max_price > 0:
             price_params.append(f"price_max={int(search.max_price)}")
 
-        # Location extraction & slug lookup for instantaneous location-specific Bina.az feed
-        found_slugs = get_bina_location_slug(district=search.district, metro=search.metro_station)
+        # Location extraction & parameter IDs lookup for instantaneous location-specific Bina.az feed
+        found_loc_ids = get_bina_location_ids(district=search.district, metro=search.metro_station)
         loc_names = []
         if search.district:
             loc_names.extend([p.strip() for p in re.split(r'[,;/|\+]', search.district) if p.strip()])
         if search.metro_station:
             loc_names.extend([p.strip() for p in re.split(r'[,;/|\+]', search.metro_station) if p.strip()])
 
-        # Direct Location-Specific Bina.az Slugs (100% precision for requested locations)
-        if found_slugs:
-            p_slug = prop_slugs[0]
-            for loc_slug in found_slugs:
-                slug_params = ["sort_by=created_at_desc"]
+        cat_id = categories_to_query[0] if categories_to_query else "1"
+
+        # Direct Location-Specific Bina.az parameter queries (100% precision for requested locations)
+        if found_loc_ids:
+            for lid in found_loc_ids:
+                loc_params = [f"city_id=1", f"leased={leased_str}", f"category_id={cat_id}", f"location_ids[]={lid}", "sort_by=created_at_desc"]
                 if is_owner:
-                    slug_params.append("owner_type=owner")
+                    loc_params.append("owner_type=owner")
                 if prop in ["apartment", "house"] and rooms_params:
-                    slug_params.extend(rooms_params)
-                slug_params.extend(price_params)
+                    loc_params.extend(rooms_params)
+                loc_params.extend(price_params)
                 
-                bina_slug_url = f"https://bina.az/baki/{deal_slug}/{p_slug}/{loc_slug}?{'&'.join(slug_params)}"
-                targets.append((f"Bina.az ({loc_slug})", BinaAzScraper(), bina_slug_url))
+                bina_loc_url = f"https://bina.az/items?{'&'.join(loc_params)}"
+                targets.append((f"Bina.az (loc #{lid})", BinaAzScraper(), bina_loc_url))
 
         # Primary Parameterized Targeted Query Feed on Bina.az
-        cat_id = categories_to_query[0] if categories_to_query else "1"
         bina_params = [f"city_id=1", f"leased={leased_str}", f"category_id={cat_id}", "sort_by=created_at_desc"]
         if is_owner:
             bina_params.append("owner_type=owner")

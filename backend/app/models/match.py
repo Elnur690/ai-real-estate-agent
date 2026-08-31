@@ -18,6 +18,6 @@ class Match(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
-    listing = relationship("Listing", back_populates="matches")
-    saved_search = relationship("SavedSearch", back_populates="matches")
-    tenant = relationship("Tenant", back_populates="matches")
+    listing = relationship("Listing", back_populates="matches", lazy="selectin")
+    saved_search = relationship("SavedSearch", back_populates="matches", lazy="selectin")
+    tenant = relationship("Tenant", back_populates="matches", lazy="selectin")

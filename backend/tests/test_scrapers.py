@@ -206,15 +206,22 @@ async def test_telegram_scraper_message_parsing():
 async def test_bina_az_normalize_url_location_slug_preservation():
     from app.scrapers.bina_az import normalize_bina_url
 
-    # Location slugs should NOT be stripped
+    # Legacy/slug URLs should be normalized to valid parameter URLs with location IDs
     url_metro = "https://bina.az/baki/kiraye/menziller/elmler-akademiyasi-m"
-    assert normalize_bina_url(url_metro) == url_metro
+    norm_metro = normalize_bina_url(url_metro)
+    assert "city_id=1" in norm_metro
+    assert "leased=true" in norm_metro
+    assert "sort_by=created_at_desc" in norm_metro
 
     url_district = "https://bina.az/baki/alqi-satqi/menziller/yasamal-r"
-    assert normalize_bina_url(url_district) == url_district
+    norm_dist = normalize_bina_url(url_district)
+    assert "city_id=1" in norm_dist
+    assert "leased=false" in norm_dist
 
     url_commercial = "https://bina.az/baki/kiraye/obyektler/elmler-akademiyasi-m"
-    assert normalize_bina_url(url_commercial) == url_commercial
+    norm_comm = normalize_bina_url(url_commercial)
+    assert "category_id=10" in norm_comm
+    assert "leased=true" in norm_comm
 
 
 @pytest.mark.asyncio
@@ -238,11 +245,11 @@ async def test_targeted_search_url_generation_with_location_slugs():
     targets = IngestionService.build_targeted_search_urls(search)
     target_urls = [t[2] for t in targets]
 
-    # Must contain direct location-slugged Bina.az URLs
-    has_elmler_slug = any("elmlar-akademiyasi-m" in u and "obyektler" in u and "kiraye" in u for u in target_urls)
-    has_yasamal_slug = any("yasamal-r" in u and "obyektler" in u and "kiraye" in u for u in target_urls)
+    # Must contain direct location_ids parameter Bina.az URLs
+    has_elmler_loc = any("location_ids[]=34" in u and "category_id=10" in u and "leased=true" in u for u in target_urls)
+    has_yasamal_loc = any("location_ids[]=56" in u and "category_id=10" in u and "leased=true" in u for u in target_urls)
     has_price_params = any("price_min=1300" in u and "price_max=1600" in u for u in target_urls)
 
-    assert has_elmler_slug, f"Missing Elmlər slug target in {target_urls}"
-    assert has_yasamal_slug, f"Missing Yasamal slug target in {target_urls}"
+    assert has_elmler_loc, f"Missing Elmlər location ID target in {target_urls}"
+    assert has_yasamal_loc, f"Missing Yasamal location ID target in {target_urls}"
     assert has_price_params, f"Missing price params in {target_urls}"

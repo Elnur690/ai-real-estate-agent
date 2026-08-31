@@ -15,9 +15,9 @@ from app.core.property_classifier import classify_property_and_offer
 logger = logging.getLogger(__name__)
 
 def normalize_bina_url(url: str) -> str:
-    """Preserves location slugs or converts short user-facing URLs to internal query URLs."""
+    """Converts user-facing or legacy slug URLs to valid parameterized internal query URLs."""
     u = url.lower().strip()
-    if "category_id=" in u or any(slug in u for slug in ['-r', '-m', '-q', 'khirdalan', 'sumqayit']) or ("/baki/" in u and len(u.split("/")) > 4):
+    if "category_id=" in u and "city_id=" in u:
         return url
 
     leased = "true" if ("/kiraye" in u or "leased=true" in u) else "false"
@@ -25,13 +25,13 @@ def normalize_bina_url(url: str) -> str:
 
     if any(k in u for k in ["heyet-evleri", "villa", "bag-evleri", "villalar"]):
         cat = "5"
-    elif "yeni-tikili" in u:
+    elif "yeni-tikili" in u or "yeni-tikililer" in u:
         cat = "2"
-    elif "kohne-tikili" in u:
+    elif "kohne-tikili" in u or "kohne-tikililer" in u:
         cat = "3"
-    elif "ofis" in u:
+    elif "ofis" in u or "ofisler" in u:
         cat = "7"
-    elif "obyekt" in u:
+    elif "obyekt" in u or "obyektler" in u:
         cat = "10"
     elif "torpaq" in u:
         cat = "9"
@@ -40,11 +40,19 @@ def normalize_bina_url(url: str) -> str:
     else:
         cat = "1"
 
-    params = [f"city_id={city}", f"category_id={cat}", f"leased={leased}"]
+    params = [f"city_id={city}", f"category_id={cat}", f"leased={leased}", "sort_by=created_at_desc"]
     if "gunluk" in u or "daily" in u:
         params.append("leased_type=daily")
     if "owner_type=owner" in u or "sahibinden" in u:
         params.append("owner_type=owner")
+
+    # Extract location ID if legacy slug is present in URL
+    from app.core.baku_locations import get_bina_location_ids
+    for part in u.split("/"):
+        loc_ids = get_bina_location_ids(district=part, metro=part)
+        for lid in loc_ids:
+            if f"location_ids[]={lid}" not in params:
+                params.append(f"location_ids[]={lid}")
 
     return f"https://bina.az/items?{'&'.join(params)}"
 
@@ -276,11 +284,17 @@ class BinaAzScraper(BaseScraper):
         else:
             # High-speed master streams covering all newly published real estate categories
             urls_to_fetch = [
-                "https://bina.az/items?sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&leased=false&sort_by=created_at_desc",
                 "https://bina.az/items?city_id=1&leased=true&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=1&leased=false&owner_type=owner&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=1&leased=false&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=2&leased=false&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=3&leased=false&sort_by=created_at_desc",
                 "https://bina.az/items?city_id=1&category_id=5&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=10&leased=false&sort_by=created_at_desc"
+                "https://bina.az/items?city_id=1&category_id=7&leased=false&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=10&leased=false&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=9&leased=false&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&category_id=1&leased=false&owner_type=owner&sort_by=created_at_desc",
+                "https://bina.az/items?city_id=1&leased=true&owner_type=owner&sort_by=created_at_desc"
             ]
 
         sem = asyncio.Semaphore(4)
