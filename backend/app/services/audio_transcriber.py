@@ -56,7 +56,15 @@ class AudioTranscriberService:
         from google.genai import types
 
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        candidate_models = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"]
+        # Production Gemini stable multimodal speech-to-text models
+        candidate_models = [
+            "gemini-2.5-flash",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
+            "gemini-2.0-flash-lite",
+            "gemini-1.5-pro",
+            "gemini-3.7-flash"
+        ]
 
         gen_config = types.GenerateContentConfig(
             temperature=0.0,
@@ -141,6 +149,25 @@ class AudioTranscriberService:
                         return clean_t
                 except Exception as e:
                     logger.warning(f"[AudioTranscriber] File API transcription attempt with {model_name} failed ({e}).")
+
+            # Method 3: OpenAI Whisper fallback (if OPENAI_API_KEY configured)
+            if settings.OPENAI_API_KEY and temp_path and os.path.exists(temp_path):
+                try:
+                    from openai import OpenAI
+                    oa_client = OpenAI(api_key=settings.OPENAI_API_KEY)
+                    with open(temp_path, "rb") as f_audio:
+                        whisper_res = oa_client.audio.transcriptions.create(
+                            model="whisper-1",
+                            file=f_audio
+                        )
+                    if whisper_res and whisper_res.text:
+                        clean_w = whisper_res.text.strip()
+                        if _is_valid_transcript(clean_w):
+                            logger.info(f"[AudioTranscriber] Audio transcribed successfully with OpenAI Whisper: '{clean_w}'")
+                            return clean_w
+                except Exception as e_w:
+                    logger.warning(f"[AudioTranscriber] OpenAI Whisper fallback failed: {e_w}")
+
             return None
         except Exception as e:
             logger.error(f"[AudioTranscriber] Gemini audio transcription error: {e}", exc_info=True)
