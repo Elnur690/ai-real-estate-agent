@@ -75,9 +75,25 @@ class WhatsAppAdapter:
                 ""
             )
 
-            # 2. Check for voice note / audio message
+            # 2. Check for voice note / audio message (STRICT PRIVACY: ONLY in verified paired groups)
             audio_msg = message.get("audioMessage") or message.get("pttMessage")
             if not raw_text and audio_msg and isinstance(audio_msg, dict):
+                # Personal 1-on-1 chats: NEVER listen to or transcribe personal voice notes!
+                if not is_group:
+                    logger.debug(f"[WhatsAppAdapter] Silently ignoring personal 1-on-1 voice note from {remote_jid}")
+                    return None
+
+                # In groups, verify the group is paired before processing any media
+                async with AsyncSessionLocal() as db:
+                    t_id = int(instance_name.replace("tenant_", "")) if instance_name and instance_name.startswith("tenant_") else None
+                    if t_id:
+                        stmt_t = select(Tenant).where(Tenant.id == t_id)
+                        t_res = await db.execute(stmt_t)
+                        t_obj = t_res.scalars().first()
+                        if t_obj and remote_jid not in (t_obj.allowed_group_jids or []):
+                            logger.debug(f"[WhatsAppAdapter] Silently ignoring voice note in un-paired group {remote_jid}")
+                            return None
+
                 import base64
                 from app.services.audio_transcriber import AudioTranscriberService
                 audio_mime = audio_msg.get("mimetype") or "audio/ogg"
@@ -137,7 +153,7 @@ class WhatsAppAdapter:
                         logger.debug(f"[WhatsAppAdapter] HTTP audio download notice: {e_dl}")
 
                 if audio_bytes:
-                    logger.info(f"[WhatsAppAdapter] Voice note received ({audio_mime}, {len(audio_bytes)} bytes). Transcribing audio with Gemini...")
+                    logger.info(f"[WhatsAppAdapter] Voice note received in group {remote_jid} ({audio_mime}, {len(audio_bytes)} bytes). Transcribing audio with Gemini...")
                     transcribed = await AudioTranscriberService.transcribe_audio_bytes(audio_bytes, mime_type=audio_mime)
                     if transcribed:
                         raw_text = transcribed
