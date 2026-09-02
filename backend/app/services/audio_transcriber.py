@@ -58,10 +58,10 @@ class AudioTranscriberService:
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
         candidate_models = [
             "gemini-3.6-flash",
-            "gemini-3.5-flash-lite",
             "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
             "gemini-3.7-flash",
-            "gemini-3.5-pro"
+            "gemini-3.7-pro"
         ]
 
         gen_config = types.GenerateContentConfig(
@@ -83,27 +83,36 @@ class AudioTranscriberService:
 
         # Method 1: Inline binary part (Fastest, zero temp files, no upload delay)
         for model_name in candidate_models:
-            try:
-                part = types.Part.from_bytes(
-                    data=audio_bytes,
-                    mime_type=clean_mime
-                )
+            for retry in range(2):
+                try:
+                    part = types.Part.from_bytes(
+                        data=audio_bytes,
+                        mime_type=clean_mime
+                    )
 
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=[part, prompt],
-                    config=gen_config
-                )
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=[part, prompt],
+                        config=gen_config
+                    )
 
-                transcript = response.text.strip() if response and response.text else None
-                if _is_valid_transcript(transcript):
-                    clean_t = transcript.strip().strip('"').strip("'")
-                    logger.info(f"[AudioTranscriber] Audio transcribed successfully with {model_name} via inline bytes: '{clean_t}'")
-                    return clean_t
-                elif transcript:
-                    logger.info(f"[AudioTranscriber] Filtered out noise/unintelligible transcript from {model_name}: '{transcript[:60]}...'")
-            except Exception as e:
-                logger.warning(f"[AudioTranscriber] Inline audio transcription attempt with {model_name} failed ({e}).")
+                    transcript = response.text.strip() if response and response.text else None
+                    if _is_valid_transcript(transcript):
+                        clean_t = transcript.strip().strip('"').strip("'")
+                        logger.info(f"[AudioTranscriber] Audio transcribed successfully with {model_name} via inline bytes: '{clean_t}'")
+                        return clean_t
+                    elif transcript:
+                        logger.info(f"[AudioTranscriber] Filtered out noise/unintelligible transcript from {model_name}: '{transcript[:60]}...'")
+                    break
+                except Exception as e:
+                    err_str = str(e)
+                    is_transient = "503" in err_str or "429" in err_str or "UNAVAILABLE" in err_str or "high demand" in err_str
+                    if is_transient and retry == 0:
+                        import time
+                        time.sleep(0.5)
+                        continue
+                    logger.warning(f"[AudioTranscriber] Inline audio transcription attempt with {model_name} failed ({e}).")
+                    break
 
         logger.info("[AudioTranscriber] Trying File API fallback across candidate models...")
 
@@ -133,20 +142,29 @@ class AudioTranscriberService:
                 audio_file = client.files.upload(file=temp_path)
 
             for model_name in candidate_models:
-                try:
-                    response = client.models.generate_content(
-                        model=model_name,
-                        contents=[audio_file, prompt],
-                        config=gen_config
-                    )
+                for retry in range(2):
+                    try:
+                        response = client.models.generate_content(
+                            model=model_name,
+                            contents=[audio_file, prompt],
+                            config=gen_config
+                        )
 
-                    transcript = response.text.strip() if response and response.text else None
-                    if _is_valid_transcript(transcript):
-                        clean_t = transcript.strip().strip('"').strip("'")
-                        logger.info(f"[AudioTranscriber] Audio transcribed successfully with {model_name} via File API: '{clean_t}'")
-                        return clean_t
-                except Exception as e:
-                    logger.warning(f"[AudioTranscriber] File API transcription attempt with {model_name} failed ({e}).")
+                        transcript = response.text.strip() if response and response.text else None
+                        if _is_valid_transcript(transcript):
+                            clean_t = transcript.strip().strip('"').strip("'")
+                            logger.info(f"[AudioTranscriber] Audio transcribed successfully with {model_name} via File API: '{clean_t}'")
+                            return clean_t
+                        break
+                    except Exception as e:
+                        err_str = str(e)
+                        is_transient = "503" in err_str or "429" in err_str or "UNAVAILABLE" in err_str or "high demand" in err_str
+                        if is_transient and retry == 0:
+                            import time
+                            time.sleep(0.5)
+                            continue
+                        logger.warning(f"[AudioTranscriber] File API transcription attempt with {model_name} failed ({e}).")
+                        break
 
             # Method 3: OpenAI Whisper fallback (if OPENAI_API_KEY configured)
             if settings.OPENAI_API_KEY and temp_path and os.path.exists(temp_path):
