@@ -78,15 +78,67 @@ class WhatsAppAdapter:
             # 2. Check for voice note / audio message
             audio_msg = message.get("audioMessage") or message.get("pttMessage")
             if not raw_text and audio_msg and isinstance(audio_msg, dict):
+                import base64
+                from app.services.audio_transcriber import AudioTranscriberService
+                audio_mime = audio_msg.get("mimetype") or "audio/ogg"
+                audio_bytes = None
+
+                # Source A: Check direct base64 in payload
+                b64_str = (
+                    audio_msg.get("base64") or
+                    message.get("base64") or
+                    data.get("base64") or
+                    payload.get("base64")
+                )
+                if b64_str and isinstance(b64_str, str):
+                    try:
+                        clean_b64 = b64_str.split(",")[-1]
+                        audio_bytes = base64.b64decode(clean_b64)
+                    except Exception as e_b64:
+                        logger.debug(f"[WhatsAppAdapter] Direct base64 decode notice: {e_b64}")
+
+                # Source B: Fetch decrypted media via Evolution API /chat/getBase64FromMediaMessage
+                if not audio_bytes and settings.EVOLUTION_API_URL and instance_name and data.get("key"):
+                    try:
+                        media_endpoint = f"{settings.EVOLUTION_API_URL.rstrip('/')}/chat/getBase64FromMediaMessage/{instance_name}"
+                        headers = {"Content-Type": "application/json"}
+                        if settings.EVOLUTION_API_KEY:
+                            headers["apikey"] = str(settings.EVOLUTION_API_KEY)
+                        async with httpx.AsyncClient(timeout=15.0) as client:
+                            req_body = {
+                                "message": {
+                                    "key": data.get("key"),
+                                    "message": message
+                                },
+                                "convertToMp4": False
+                            }
+                            res = await client.post(media_endpoint, json=req_body, headers=headers)
+                            if res.status_code == 200:
+                                res_json = res.json()
+                                b64_res = res_json.get("base64")
+                                if b64_res:
+                                    clean_b64 = b64_res.split(",")[-1]
+                                    audio_bytes = base64.b64decode(clean_b64)
+                    except Exception as e_evo_media:
+                        logger.debug(f"[WhatsAppAdapter] Evolution media endpoint notice: {e_evo_media}")
+
+                # Source C: Download audio via URL
                 audio_url = audio_msg.get("url")
-                if audio_url:
-                    from app.services.audio_transcriber import AudioTranscriberService
+                if not audio_bytes and audio_url:
                     headers = {}
                     if settings.EVOLUTION_API_KEY:
                         headers["apikey"] = str(settings.EVOLUTION_API_KEY)
-                    audio_mime = audio_msg.get("mimetype") or "audio/ogg"
-                    logger.info(f"[WhatsAppAdapter] Voice note received ({audio_mime}). Transcribing audio...")
-                    transcribed = await AudioTranscriberService.transcribe_audio_url(audio_url, headers=headers, mime_type=audio_mime)
+                    try:
+                        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                            res = await client.get(audio_url, headers=headers)
+                            if res.status_code == 200:
+                                audio_bytes = res.content
+                    except Exception as e_dl:
+                        logger.debug(f"[WhatsAppAdapter] HTTP audio download notice: {e_dl}")
+
+                if audio_bytes:
+                    logger.info(f"[WhatsAppAdapter] Voice note received ({audio_mime}, {len(audio_bytes)} bytes). Transcribing audio with Gemini...")
+                    transcribed = await AudioTranscriberService.transcribe_audio_bytes(audio_bytes, mime_type=audio_mime)
                     if transcribed:
                         raw_text = transcribed
 
