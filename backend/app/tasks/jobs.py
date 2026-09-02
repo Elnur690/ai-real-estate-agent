@@ -16,8 +16,21 @@ def run_scheduled_ingestion(self):
     logger.info("[CeleryJob] Starting scheduled ingestion cycle...")
     
     async def _runner():
+        from app.db.session import AsyncSessionLocal
+        from app.models.saved_search import SavedSearch
         result = await IngestionService.run_ingestion_cycle()
         logger.info(f"[CeleryJob] Cycle complete: {result}")
+
+        try:
+            async with AsyncSessionLocal() as db:
+                stmt_s = select(SavedSearch).where(SavedSearch.is_active == True)
+                res_s = await db.execute(stmt_s)
+                active_searches = res_s.scalars().all()
+                for s in active_searches:
+                    await IngestionService.run_targeted_instant_backfill(db, s)
+        except Exception as e_bf:
+            logger.debug(f"[CeleryJob] Backfill notice: {e_bf}")
+
         return result
 
     try:
@@ -25,6 +38,23 @@ def run_scheduled_ingestion(self):
     except Exception as exc:
         logger.error(f"[CeleryJob] Ingestion cycle error: {exc}. Retrying...")
         raise self.retry(exc=exc)
+
+
+@celery_app.task(bind=True, max_retries=2, default_retry_delay=60)
+def run_historical_recheck(self, limit: int = 1000):
+    """Celery job to heal and re-evaluate historical database listings."""
+    logger.info(f"[CeleryJob] Starting historical listings recheck (limit: {limit})...")
+    
+    async def _runner():
+        from app.db.session import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            return await IngestionService.recheck_and_heal_all_listings(db, limit=limit)
+
+    try:
+        return asyncio.run(_runner())
+    except Exception as exc:
+        logger.error(f"[CeleryJob] Recheck error: {exc}")
+        return {"error": str(exc)}
 
 
 @celery_app.task

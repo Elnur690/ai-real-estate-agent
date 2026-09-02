@@ -171,12 +171,22 @@ class BotCommandHandler:
                             await db.commit()
                         break
 
+        is_group = "@g.us" in sender_id
+        is_cmd = (
+            raw_text_trimmed.startswith("/") or
+            any(raw_text_trimmed.lower().startswith(p) for p in [
+                "sil", "delete", "foto", "photo", "keç", "kec", "skip", "təqdimat", "teqdimat",
+                "maraqlanıram", "maraqlaniram", "crm", "satılıb", "satilib", "sold", "yeni",
+                "axtarış", "axtaris", "status", "plan", "kanal", "channel", "kömək", "komek", "komak", "help", "menu", "menyu"
+            ])
+        )
+
         if not tenant:
             # For unlinked/unknown WhatsApp callers:
-            # ONLY respond if they explicitly type a bot slash command (e.g. /start, /help, /status, /bagla, /connect, /hesab, /kod)
+            # ONLY respond if they explicitly type a bot slash command or command keyword
             # NEVER send unsolicited messages or 'unregistered' warnings to third-party contacts, friends, or family!
             if channel == "whatsapp":
-                if not raw_text_trimmed.startswith("/"):
+                if not is_cmd:
                     return None
 
             if text_lower in ["/start", "/help", "/kömək", "/komak", "kömək", "komak", "help", "menu", "menyu", "salam", "hi", "start"]:
@@ -185,36 +195,36 @@ class BotCommandHandler:
                 db, channel, sender_id, sender_name, raw_text_trimmed, app_name
             )
 
-        # Ignore normal outgoing chats sent by the agent to other people
-        if channel == "whatsapp" and from_me and not is_group:
-            if not raw_text_trimmed.startswith("/"):
-                return None
+        # 2. Strict Privacy & Group Filtering for WhatsApp
+        if channel == "whatsapp":
+            if not is_group:
+                # On 1-on-1 personal chats: NEVER reply to casual conversations, client inquiries, or personal messages
+                # ONLY respond if an explicit command was typed
+                if not is_cmd:
+                    return None
+            else:
+                allowed_groups = list(tenant.allowed_group_jids or [])
 
-        # 2. Strict Group Filtering for WhatsApp
-        is_group = "@g.us" in sender_id
-        if channel == "whatsapp" and is_group:
-            allowed_groups = list(tenant.allowed_group_jids or [])
+                is_pair_cmd = any(cmd in text_lower for cmd in ["/pair_group", "/set_group", "/bot_here", "/group_pair", "pair group", "bot qoş", "bot qos", "bot burda", "bot burada"])
+                is_unpair_cmd = any(cmd in text_lower for cmd in ["/unpair_group", "/remove_group", "/bot_leave", "/leave_group", "/bot_exit", "bot ayır", "bot ayir", "bot çıx", "bot cix", "bot sil", "botu çıxar", "botu cixar"])
 
-            is_pair_cmd = any(cmd in text_lower for cmd in ["/pair_group", "/set_group", "/bot_here", "/group_pair", "pair group", "bot qoş", "bot qos", "bot burda", "bot burada"])
-            is_unpair_cmd = any(cmd in text_lower for cmd in ["/unpair_group", "/remove_group", "/bot_leave", "/leave_group", "/bot_exit", "bot ayır", "bot ayir", "bot çıx", "bot cix", "bot sil", "botu çıxar", "botu cixar"])
+                if is_pair_cmd:
+                    if sender_id not in allowed_groups:
+                        allowed_groups.append(sender_id)
+                        tenant.allowed_group_jids = allowed_groups
+                        await db.commit()
+                    return f"✅ Bu WhatsApp qrupu (*{group_subject or 'AI Working Group'}*) AI Əmlak Agentinə uğurla qoşuldu və aktivləşdirildi! 🚀"
 
-            if is_pair_cmd:
+                if is_unpair_cmd:
+                    if sender_id in allowed_groups:
+                        allowed_groups.remove(sender_id)
+                        tenant.allowed_group_jids = allowed_groups
+                        await db.commit()
+                    return f"🛑 Bu WhatsApp qrupu AI Əmlak Agentindən ayrıldı (Bot bu qrupda deaktiv edildi)."
+
                 if sender_id not in allowed_groups:
-                    allowed_groups.append(sender_id)
-                    tenant.allowed_group_jids = allowed_groups
-                    await db.commit()
-                return f"✅ Bu WhatsApp qrupu (*{group_subject or 'AI Working Group'}*) AI Əmlak Agentinə uğurla qoşuldu və aktivləşdirildi! 🚀"
-
-            if is_unpair_cmd:
-                if sender_id in allowed_groups:
-                    allowed_groups.remove(sender_id)
-                    tenant.allowed_group_jids = allowed_groups
-                    await db.commit()
-                return f"🛑 Bu WhatsApp qrupu AI Əmlak Agentindən ayrıldı (Bot bu qrupda deaktiv edildi)."
-
-            if sender_id not in allowed_groups:
-                # Message in an un-paired WhatsApp group -> SILENTLY IGNORE!
-                return None
+                    # Message in an un-paired WhatsApp group -> SILENTLY IGNORE!
+                    return None
 
         # 3. Handle Slash Commands & Fast-Path Menu Shortcuts
         if text_lower in ["/command", "/commands", "/komanda", "/komandalar", "/əmrlər", "/emrler", "command", "commands", "komanda", "komandalar", "əmrlər", "emrler", "2"]:

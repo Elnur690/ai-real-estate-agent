@@ -28,6 +28,7 @@ async def test_run_targeted_instant_backfill_historical_matching(test_db):
         name="Test Agent",
         phone="994501234567",
         whatsapp_number="994501234567",
+        allowed_group_jids=["120363000000000001@g.us"],
         preferred_channel="whatsapp",
         status="active"
     )
@@ -109,6 +110,7 @@ async def test_run_targeted_instant_backfill_historical_matching(test_db):
         offer_type="sale",
         property_type="apartment",
         seller_type="any",
+        destination_chat_id="120363000000000001@g.us",
         is_active=True
     )
     test_db.add(search)
@@ -142,6 +144,7 @@ async def test_evaluate_and_deliver_matches_target_search_id(test_db):
         name="Agent 2",
         phone="994509876543",
         whatsapp_number="994509876543",
+        allowed_group_jids=["120363000000000002@g.us"],
         preferred_channel="whatsapp",
         status="active"
     )
@@ -156,6 +159,7 @@ async def test_evaluate_and_deliver_matches_target_search_id(test_db):
         district="Nəsimi",
         offer_type="sale",
         property_type="apartment",
+        destination_chat_id="120363000000000002@g.us",
         is_active=True
     )
     search2 = SavedSearch(

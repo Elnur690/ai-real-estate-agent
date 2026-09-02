@@ -420,30 +420,30 @@ class IngestionService:
             dest_chat_id = getattr(search, 'destination_chat_id', None)
             inst_name = getattr(search, 'instance_name', None) or f"tenant_{tenant.id}"
 
-            # Strict single-destination delivery
-            if dest_chat_id:
-                # If destination is explicitly set (group or chat where search was created), send ONLY there!
-                if "@g.us" in dest_chat_id or (dest_channel == "whatsapp" and "@" not in dest_chat_id):
-                    # WhatsApp destination
-                    wa_sent = await WhatsAppAdapter.send_message(
-                        phone_number=dest_chat_id,
-                        text=msg,
-                        instance_name=inst_name
-                    )
-                    if wa_sent:
-                        delivered += 1
-                else:
-                    # Telegram destination
+            # Strict destination delivery
+            if dest_channel == "whatsapp":
+                # For WhatsApp, deliver ONLY to paired groups (@g.us) where /bot_here was run
+                if not dest_chat_id or "@g.us" not in dest_chat_id:
+                    allowed = list(tenant.allowed_group_jids or [])
+                    dest_chat_id = allowed[0] if allowed else None
+                if not dest_chat_id or "@g.us" not in dest_chat_id:
+                    logger.debug(f"[IngestionService] Skipping WhatsApp price drop alert for search #{search.id}: No paired group (@g.us) found.")
+                    continue
+
+                wa_sent = await WhatsAppAdapter.send_message(
+                    phone_number=dest_chat_id,
+                    text=msg,
+                    instance_name=inst_name
+                )
+                if wa_sent:
+                    delivered += 1
+            else:
+                # Telegram destination
+                if not dest_chat_id:
+                    dest_chat_id = tenant.telegram_chat_id
+                if dest_chat_id:
                     tg_sent = await send_telegram_notification(dest_chat_id, msg)
                     if tg_sent:
-                        delivered += 1
-            else:
-                # No specific destination chat -> use tenant profile preferred channel
-                if dest_channel == "telegram" and tenant.telegram_chat_id:
-                    if await send_telegram_notification(tenant.telegram_chat_id, msg):
-                        delivered += 1
-                elif dest_channel == "whatsapp" and tenant.whatsapp_number:
-                    if await WhatsAppAdapter.send_message(phone_number=tenant.whatsapp_number, text=msg, instance_name=inst_name):
                         delivered += 1
 
         return delivered
@@ -1329,19 +1329,25 @@ class IngestionService:
 
                 details_block = "\n".join(extra_details) + "\n\n" if extra_details else "\n"
 
-                # Direct delivery strictly to the creator's exact destination (group or 1-on-1 chat)
+                # Direct delivery strictly to the creator's exact destination (paired group or Telegram chat)
                 dest_channel = getattr(search, 'channel', None) or tenant.preferred_channel or "whatsapp"
                 dest_chat_id = getattr(search, 'destination_chat_id', None)
-                if not dest_chat_id:
-                    allowed = list(tenant.allowed_group_jids or [])
-                    if allowed and dest_channel == "whatsapp":
-                        dest_chat_id = allowed[0]
-                    else:
-                        dest_chat_id = tenant.whatsapp_number if dest_channel == "whatsapp" else tenant.telegram_chat_id
+
+                if dest_channel == "whatsapp":
+                    # For WhatsApp, deliver ONLY to paired groups (@g.us) where /bot_here was run
+                    if not dest_chat_id or "@g.us" not in dest_chat_id:
+                        allowed = list(tenant.allowed_group_jids or [])
+                        dest_chat_id = allowed[0] if allowed else None
+                    if not dest_chat_id or "@g.us" not in dest_chat_id:
+                        logger.debug(f"[IngestionService] Skipping match delivery for search #{search.id}: No paired WhatsApp group (@g.us) configured.")
+                        continue
+                else:
+                    if not dest_chat_id:
+                        dest_chat_id = tenant.telegram_chat_id
+                    if not dest_chat_id:
+                        continue
 
                 inst_name = getattr(search, 'instance_name', None) or f"tenant_{tenant.id}"
-                tenant_tg_id = tenant.telegram_chat_id
-                tenant_wa_num = tenant.whatsapp_number
 
                 # 1-Tap Speed-Dial and WhatsApp Direct Chat formatting
                 from app.core.baku_locations import extract_az_phone, extract_baku_settlement
@@ -1470,25 +1476,15 @@ class IngestionService:
                 tg_sent = False
                 wa_sent = False
 
-                # Strict single-destination delivery
-                if dest_chat_id:
-                    if "@g.us" in dest_chat_id or (dest_channel == "whatsapp" and "@" not in dest_chat_id):
-                        await WhatsAppAdapter.send_message(
-                            phone_number=dest_chat_id,
-                            text=msg_text,
-                            instance_name=inst_name
-                        )
-                    else:
-                        await send_telegram_notification(dest_chat_id, msg_text)
-                else:
-                    if dest_channel == "telegram" and tenant.telegram_chat_id:
-                        await send_telegram_notification(tenant.telegram_chat_id, msg_text)
-                    elif dest_channel == "whatsapp" and tenant.whatsapp_number:
-                        await WhatsAppAdapter.send_message(
-                            phone_number=tenant.whatsapp_number,
-                            text=msg_text,
-                            instance_name=inst_name
-                        )
+                # Strict destination delivery
+                if dest_channel == "whatsapp" and dest_chat_id and "@g.us" in dest_chat_id:
+                    await WhatsAppAdapter.send_message(
+                        phone_number=dest_chat_id,
+                        text=msg_text,
+                        instance_name=inst_name
+                    )
+                elif dest_channel == "telegram" and dest_chat_id:
+                    await send_telegram_notification(dest_chat_id, msg_text)
 
         return matches_count
 

@@ -85,34 +85,22 @@ async def _bg_run_ingestion():
     logger = logging.getLogger("scrapers_api")
     logger.info("[ManualTrigger] Manual scraping and matching triggered from Admin Dashboard...")
     try:
-        from app.db.session import AsyncSessionLocal
-        from app.services.ingestion import IngestionService
-        from app.models.saved_search import SavedSearch
-
-        async with AsyncSessionLocal() as db:
-            result = await IngestionService.run_ingestion_cycle(db)
-            logger.info(f"[ManualTrigger] Ingestion cycle completed: {result}")
-
-            # Run backfill for all active saved searches to deliver matching listings immediately
-            stmt_s = select(SavedSearch).where(SavedSearch.is_active == True)
-            res_s = await db.execute(stmt_s)
-            active_searches = res_s.scalars().all()
-            for s in active_searches:
-                await IngestionService.run_targeted_instant_backfill(db, s)
+        from app.tasks.jobs import run_scheduled_ingestion
+        run_scheduled_ingestion.delay()
+        logger.info("[ManualTrigger] Ingestion task successfully dispatched to Celery worker queue.")
     except Exception as e:
-        logger.error(f"[ManualTrigger] Error during manual scraping cycle: {e}")
+        logger.error(f"[ManualTrigger] Error dispatching to Celery: {e}")
 
 async def _bg_recheck_listings(limit: int = 1000):
     import logging
     logger = logging.getLogger("scrapers_api")
-    from app.db.session import AsyncSessionLocal
-    logger.info(f"[ManualRecheck] Healing and re-evaluating top {limit} listings...")
+    logger.info(f"[ManualRecheck] Recheck task queued for top {limit} listings...")
     try:
-        async with AsyncSessionLocal() as db:
-            result = await IngestionService.recheck_and_heal_all_listings(db, limit=limit)
-            logger.info(f"[ManualRecheck] Completed: {result}")
+        from app.tasks.jobs import run_historical_recheck
+        run_historical_recheck.delay(limit)
+        logger.info("[ManualRecheck] Recheck task successfully dispatched to Celery worker queue.")
     except Exception as e:
-        logger.error(f"[ManualRecheck] Error during listings recheck: {e}")
+        logger.error(f"[ManualRecheck] Error dispatching recheck to Celery: {e}")
 
 @router.post("/recheck")
 async def recheck_historical_listings(background_tasks: BackgroundTasks, current_admin = Depends(get_current_admin)):

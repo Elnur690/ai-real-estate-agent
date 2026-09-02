@@ -13,16 +13,18 @@ class TrialTrackerService:
     @staticmethod
     async def _dispatch_message(tenant: Tenant, msg: str):
         """Helper to send message to tenant via preferred channel."""
-        if tenant.preferred_channel == "whatsapp" and (tenant.whatsapp_number or tenant.phone):
-            target_num = tenant.whatsapp_number or tenant.phone
-            try:
-                await WhatsAppAdapter.send_message(
-                    phone_number=target_num,
-                    text=msg,
-                    instance_name=f"tenant_{tenant.id}"
-                )
-            except Exception as e_wa:
-                logger.error(f"[TrialTracker] Error sending WhatsApp expiry message to {target_num}: {e_wa}")
+        if tenant.preferred_channel == "whatsapp":
+            allowed_groups = list(tenant.allowed_group_jids or [])
+            if allowed_groups:
+                target_group = allowed_groups[0]
+                try:
+                    await WhatsAppAdapter.send_message(
+                        phone_number=target_group,
+                        text=msg,
+                        instance_name=f"tenant_{tenant.id}"
+                    )
+                except Exception as e_wa:
+                    logger.error(f"[TrialTracker] Error sending WhatsApp expiry message to group {target_group}: {e_wa}")
         elif tenant.telegram_chat_id:
             try:
                 from app.bot.telegram_adapter import send_telegram_notification
