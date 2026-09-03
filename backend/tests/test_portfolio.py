@@ -306,3 +306,96 @@ async def test_portfolio_payment_creation_and_list_payments(test_db: AsyncSessio
     assert matching[0]["amount"] == 20.0
     assert "Portfolio" in matching[0]["notes"]
 
+
+@pytest.mark.asyncio
+async def test_portfolio_friendly_urls(test_db: AsyncSession, client: AsyncClient):
+    # 1. Create Admin
+    admin_tenant = Tenant(name="Admin Base", phone="+994501112233", plan="agency", status="active")
+    test_db.add(admin_tenant)
+    await test_db.commit()
+    await test_db.refresh(admin_tenant)
+
+    admin = User(name="Super Admin", email="admin_slug@system.az", password_hash=get_password_hash("admin123"), role="admin", tenant_id=admin_tenant.id)
+    test_db.add(admin)
+    await test_db.commit()
+    await test_db.refresh(admin)
+
+    admin_headers = {"Authorization": f"Bearer {create_access_token(admin.id)}"}
+
+    # 2. Create tenant with Azerbaijani characters in name
+    r_create = await client.post(
+        "/api/v1/tenants",
+        json={
+            "name": "Elnur Məmmədov",
+            "phone": "+994507778899",
+            "type": "individual_agent",
+            "plan": "pro",
+            "feature_portfolio": True,
+            "portfolio_limit": 30
+        },
+        headers=admin_headers
+    )
+    assert r_create.status_code == 201
+    t_data = r_create.json()
+    assert t_data["portfolio_slug"] == "elnur-memmedov"
+    assert "/v/elnur-memmedov" in t_data["portfolio_vitrin_url"]
+
+    agent_id = t_data["id"]
+
+    # 3. Add a portfolio listing
+    agent_user = User(name="Elnur M", email="elnur@test.az", password_hash=get_password_hash("pass123"), role="agent", tenant_id=agent_id)
+    test_db.add(agent_user)
+    await test_db.commit()
+    agent_headers = {"Authorization": f"Bearer {create_access_token(agent_user.id)}"}
+
+    r_add = await client.post(
+        "/api/v1/portfolio",
+        json={
+            "title": "Nərimanovda 3 otaqlı lüks mənzil",
+            "price": 240000.0,
+            "district": "Nərimanov",
+            "rooms": 3,
+            "area_sqm": 120.0
+        },
+        headers=agent_headers
+    )
+    assert r_add.status_code in [200, 201]
+    port_item = r_add.json()
+    listing_id = port_item["id"]
+
+    # 4. Access showcase by friendly slug
+    r_showcase = await client.get("/api/v1/portfolio/public/agent/elnur-memmedov")
+    assert r_showcase.status_code == 200
+    showcase_items = r_showcase.json()
+    assert len(showcase_items) == 1
+    assert showcase_items[0]["agent_slug"] == "elnur-memmedov"
+    assert f"/v/elnur-memmedov/{listing_id}" in showcase_items[0]["share_url"]
+
+    # 5. Access single listing by friendly slug + listing id (/v/elnur-memmedov/1)
+    r_single_friendly = await client.get(f"/api/v1/portfolio/public/agent/elnur-memmedov/{listing_id}")
+    assert r_single_friendly.status_code == 200
+    single_item = r_single_friendly.json()
+    assert single_item["id"] == listing_id
+    assert single_item["title"] == "Nərimanovda 3 otaqlı lüks mənzil"
+    assert single_item["agent_slug"] == "elnur-memmedov"
+
+    # 6. Access single listing by numeric id (/p/1)
+    r_single_num = await client.get(f"/api/v1/portfolio/public/{listing_id}")
+    assert r_single_num.status_code == 200
+    assert r_single_num.json()["id"] == listing_id
+
+    # 7. Customize slug via PATCH /tenants/{id}
+    r_slug_update = await client.patch(
+        f"/api/v1/tenants/{agent_id}",
+        json={"portfolio_slug": "elnur-emlak"},
+        headers=admin_headers
+    )
+    assert r_slug_update.status_code == 200
+    assert r_slug_update.json()["portfolio_slug"] == "elnur-emlak"
+
+    # Verify new custom slug works immediately
+    r_new_slug = await client.get("/api/v1/portfolio/public/agent/elnur-emlak")
+    assert r_new_slug.status_code == 200
+    assert r_new_slug.json()[0]["agent_slug"] == "elnur-emlak"
+
+

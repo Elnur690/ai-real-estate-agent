@@ -19,9 +19,15 @@ import { useTranslation } from './i18n';
 export function App() {
   const isPortfolioPublic = Boolean(
     window.location.pathname.startsWith('/p/') ||
+    window.location.pathname.startsWith('/v/') ||
+    window.location.pathname.startsWith('/@') ||
     window.location.pathname.startsWith('/portfolio/') ||
+    window.location.pathname.startsWith('/vitrin/') ||
     window.location.hash.startsWith('#/p/') ||
-    window.location.hash.startsWith('#/portfolio/')
+    window.location.hash.startsWith('#/v/') ||
+    window.location.hash.startsWith('#/@') ||
+    window.location.hash.startsWith('#/portfolio/') ||
+    window.location.hash.startsWith('#/vitrin/')
   );
 
   const isTmaMode = Boolean(

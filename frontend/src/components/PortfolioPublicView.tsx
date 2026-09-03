@@ -23,9 +23,12 @@ interface PublicListing {
   offer_type: string;
   photos: string[];
   share_code: string;
+  share_url?: string;
   agent_name: string;
   agent_phone: string;
   agent_whatsapp?: string;
+  agent_slug?: string;
+  agent_vitrin_url?: string;
   whatsapp_message_url: string;
   created_at: string;
 }
@@ -35,6 +38,7 @@ interface AgentShowcase {
   agent_name: string;
   agent_phone: string;
   agent_whatsapp?: string;
+  agent_slug?: string;
   active_listings_count: number;
   listings: Array<{
     id: number;
@@ -62,18 +66,28 @@ export function PortfolioPublicView() {
   // Parse path or hash
   const path = window.location.pathname || '';
   const hash = window.location.hash || '';
-  const currentUrl = path + hash;
+  const currentUrl = (path + (hash.startsWith('#') ? hash.substring(1) : hash)).replace(/^\/+/, '/');
 
-  // Check if agent vitrin showcase mode: /portfolio/agent/:tenantId
-  const agentMatch = currentUrl.match(/(?:\/portfolio\/agent\/)(\d+)/);
-  const agentTenantId = agentMatch ? agentMatch[1] : null;
+  // 1. Single listing under agent: /v/:slug/:id or /p/:slug/:id or /vitrin/:slug/:id
+  const agentListingMatch = currentUrl.match(/(?:\/v\/|\/p\/|\/vitrin\/|\/portfolio\/agent\/)([a-zA-Z0-9_\-]+)\/([a-zA-Z0-9_\-]+)/);
+  const agentSlugFromListing = agentListingMatch ? agentListingMatch[1] : null;
+  const listingIdFromSlug = agentListingMatch ? agentListingMatch[2] : null;
 
-  // Check if single listing: /p/:shareCode or /portfolio/:shareCode
-  let shareCode: string | null = null;
-  if (!agentTenantId) {
-    const pMatch = currentUrl.match(/(?:\/p\/|\/portfolio\/)([\w\-]+)/);
+  // 2. Agent showcase: /v/:slug, /@:slug, /vitrin/:slug, /portfolio/agent/:id
+  let agentIdentifier: string | null = null;
+  if (!listingIdFromSlug) {
+    const vMatch = currentUrl.match(/(?:\/v\/|\/vitrin\/|\/portfolio\/agent\/|\/@)([a-zA-Z0-9_\-]+)/);
+    if (vMatch) {
+      agentIdentifier = vMatch[1];
+    }
+  }
+
+  // 3. Standalone share code or numeric listing ID: /p/:code or /portfolio/:code
+  let directShareCode: string | null = null;
+  if (!agentIdentifier && !listingIdFromSlug) {
+    const pMatch = currentUrl.match(/(?:\/p\/|\/portfolio\/)([a-zA-Z0-9_\-]+)/);
     if (pMatch && pMatch[1] !== 'agent') {
-      shareCode = pMatch[1];
+      directShareCode = pMatch[1];
     }
   }
 
@@ -82,16 +96,93 @@ export function PortfolioPublicView() {
       setLoading(true);
       setError(null);
       try {
-        if (agentTenantId) {
-          const res = await fetch(`/api/v1/portfolio/agent/${agentTenantId}/public`);
+        if (agentSlugFromListing && listingIdFromSlug) {
+          // Fetch single listing by agent slug and listing ID
+          const res = await fetch(`/api/v1/portfolio/public/agent/${agentSlugFromListing}/${listingIdFromSlug}`);
           if (!res.ok) {
+            // Fallback to direct share code
+            const fallbackRes = await fetch(`/api/v1/portfolio/public/${listingIdFromSlug}`);
+            if (!fallbackRes.ok) {
+              throw new Error('Bu elan artıq aktiv deyil və ya portfeldən silinib.');
+            }
+            const data = await fallbackRes.json();
+            setListing(data);
+          } else {
+            const data = await res.json();
+            setListing(data);
+          }
+        } else if (agentIdentifier) {
+          // Fetch agent showcase
+          const res = await fetch(`/api/v1/portfolio/public/agent/${agentIdentifier}`);
+          if (!res.ok) {
+            // Fallback: check if agentIdentifier was actually a listing share_code
+            const fallbackRes = await fetch(`/api/v1/portfolio/public/${agentIdentifier}`);
+            if (fallbackRes.ok) {
+              const data = await fallbackRes.json();
+              setListing(data);
+              return;
+            }
             throw new Error('Agent vitrini tapılmadı və ya aktiv deyil.');
           }
           const data = await res.json();
-          setShowcase(data);
-        } else if (shareCode) {
-          const res = await fetch(`/api/v1/portfolio/public/${shareCode}`);
+          if (Array.isArray(data)) {
+            const first = data[0];
+            setShowcase({
+              tenant_id: first?.id || 0,
+              agent_name: first?.agent_name || agentIdentifier,
+              agent_phone: first?.agent_phone || '',
+              agent_whatsapp: first?.agent_whatsapp || '',
+              agent_slug: first?.agent_slug || agentIdentifier,
+              active_listings_count: data.length,
+              listings: data.map((d: any) => ({
+                id: d.id,
+                title: d.title,
+                price: d.price,
+                currency: d.currency,
+                district: d.district,
+                rooms: d.rooms,
+                area_sqm: d.area_sqm,
+                photos: d.photos || [],
+                share_code: d.share_code,
+                share_url: d.share_url || `/v/${first?.agent_slug || agentIdentifier}/${d.id}`
+              }))
+            });
+          } else {
+            setShowcase(data);
+          }
+        } else if (directShareCode) {
+          // Direct share code or ID lookup
+          const res = await fetch(`/api/v1/portfolio/public/${directShareCode}`);
           if (!res.ok) {
+            // Check if it's an agent showcase
+            const agentRes = await fetch(`/api/v1/portfolio/public/agent/${directShareCode}`);
+            if (agentRes.ok) {
+              const data = await agentRes.json();
+              if (Array.isArray(data)) {
+                const first = data[0];
+                setShowcase({
+                  tenant_id: first?.id || 0,
+                  agent_name: first?.agent_name || directShareCode,
+                  agent_phone: first?.agent_phone || '',
+                  agent_whatsapp: first?.agent_whatsapp || '',
+                  agent_slug: first?.agent_slug || directShareCode,
+                  active_listings_count: data.length,
+                  listings: data.map((d: any) => ({
+                    id: d.id,
+                    title: d.title,
+                    price: d.price,
+                    currency: d.currency,
+                    district: d.district,
+                    rooms: d.rooms,
+                    area_sqm: d.area_sqm,
+                    photos: d.photos || [],
+                    share_code: d.share_code,
+                    share_url: d.share_url || `/v/${first?.agent_slug || directShareCode}/${d.id}`
+                  }))
+                });
+                return;
+              }
+            }
             throw new Error('Bu elan artıq aktiv deyil və ya portfeldən silinib.');
           }
           const data = await res.json();
@@ -107,7 +198,7 @@ export function PortfolioPublicView() {
     };
 
     fetchPublicData();
-  }, [shareCode, agentTenantId]);
+  }, [currentUrl]);
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -309,16 +400,26 @@ export function PortfolioPublicView() {
       <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 py-3">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-300 font-bold text-sm">
-              {listing.agent_name.charAt(0).toUpperCase()}
-            </div>
-            <div>
-              <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                <span>{listing.agent_name}</span>
-                <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />
+            <a
+              href={listing.agent_vitrin_url || `/v/${listing.agent_slug || ''}`}
+              className="flex items-center gap-2 group hover:opacity-90 transition"
+              title="Agentin bütün elanlarına bax"
+            >
+              <div className="w-9 h-9 rounded-xl bg-purple-600/20 border border-purple-500/30 flex items-center justify-center text-purple-300 font-bold text-sm group-hover:bg-purple-600 group-hover:text-white transition">
+                {listing.agent_name.charAt(0).toUpperCase()}
               </div>
-              <div className="text-[10px] text-slate-400 font-medium">Təsdiqlənmiş Əmlak Portfeli</div>
-            </div>
+              <div>
+                <div className="text-xs font-bold text-white flex items-center gap-1.5 group-hover:text-purple-300 transition">
+                  <span>{listing.agent_name}</span>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />
+                </div>
+                <div className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                  <span>Vitrin</span>
+                  <span>•</span>
+                  <span className="text-purple-400 underline decoration-purple-400/50">Bütün Elanlar</span>
+                </div>
+              </div>
+            </a>
           </div>
 
           <div className="flex items-center gap-2">

@@ -36,6 +36,8 @@ export interface Tenant {
   portfolio_limit?: number;
   addon_portfolio_price?: number;
   portfolio_expires_at?: string;
+  portfolio_slug?: string;
+  portfolio_vitrin_url?: string;
   active_searches_count?: number;
   max_saved_searches?: number;
   referral_code?: string;

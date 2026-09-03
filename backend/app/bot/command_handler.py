@@ -560,7 +560,8 @@ class BotCommandHandler:
             limit = getattr(tenant, 'portfolio_limit', 25) or 25
 
             base_fe = (settings.FRONTEND_BASE_URL or "https://realtor.erma.shop").rstrip('/')
-            vitrin_url = f"{base_fe}/portfolio/agent/{tenant.id}"
+            agent_slug = tenant.portfolio_slug or str(tenant.id)
+            vitrin_url = f"{base_fe}/v/{agent_slug}"
 
             stmt_recent = select(PortfolioListing).where(
                 PortfolioListing.tenant_id == tenant.id,
@@ -571,7 +572,7 @@ class BotCommandHandler:
 
             lines = []
             for item in recent_items:
-                share_url = f"{base_fe}/p/{item.share_code}"
+                share_url = f"{base_fe}/v/{agent_slug}/{item.id}"
                 p_price = f"{int(item.price):,} {item.currency}" if item.price else "Razılaşma ilə"
                 lines.append(f"• *#{item.id}* {item.title or 'Mənzil'} ({p_price})\n  🔗 {share_url}")
 
@@ -684,7 +685,9 @@ class BotCommandHandler:
             await db.refresh(new_port)
 
             new_count = curr_active + 1
-            share_url = f"{base_fe}/p/{new_port.share_code}"
+            agent_slug = tenant.portfolio_slug or str(tenant.id)
+            share_url = f"{base_fe}/v/{agent_slug}/{new_port.id}"
+            short_url = f"{base_fe}/p/{new_port.share_code}"
 
             return (
                 f"✅ *Elan Portfelinizə əlavə edildi!* 🗂️ (ID: #{new_port.id})\n\n"
@@ -692,8 +695,9 @@ class BotCommandHandler:
                 f"💰 *Qiymət:* {int(new_port.price):,} {new_port.currency}\n"
                 f"📍 *Məkan:* {p_location}\n"
                 f"📊 *Portfel limiti:* {new_count}/{limit} istifadə olunub (Boş yuva: {max(0, limit - new_count)})\n\n"
-                f"🔗 *Müştəriyə göndərmək üçün təmiz link (Su nişansız və rəqibsiz):*\n"
-                f"{share_url}\n\n"
+                f"🔗 *Müştəriyə göndərmək üçün təmiz link:*\n"
+                f"{share_url}\n"
+                f"*(Qısa link: {short_url})*\n\n"
                 f"💡 *Qeyd:* Elanın müddəti bitdikdə və ya satıldıqda `/portfel_sil {new_port.id}` ilə silə bilərsiniz (yuva dərhal boşalacaq)."
             )
 

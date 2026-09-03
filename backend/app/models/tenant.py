@@ -66,6 +66,7 @@ class Tenant(Base):
     portfolio_limit: Mapped[int] = mapped_column(default=25)
     portfolio_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     addon_portfolio_price: Mapped[float] = mapped_column(default=0.0)
+    portfolio_slug: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True, index=True)
 
     # 🎁 Referral System & Promo Code Reward Options
     referral_code: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True)
@@ -94,3 +95,27 @@ class Tenant(Base):
     crm_clients = relationship("CrmClient", back_populates="tenant", cascade="all, delete-orphan", lazy="noload")
     crm_deals = relationship("CrmDeal", back_populates="tenant", cascade="all, delete-orphan", lazy="noload")
     portfolio_listings = relationship("PortfolioListing", back_populates="tenant", cascade="all, delete-orphan", lazy="noload")
+
+    @property
+    def portfolio_vitrin_url(self) -> str:
+        slug = self.portfolio_slug or str(self.id)
+        return f"/v/{slug}"
+
+
+
+def slugify_portfolio_name(name: str) -> str:
+    """Creates a clean, URL-friendly slug from an agent or agency name with Azerbaijani character support."""
+    if not name:
+        return ""
+    import re
+    az_map = {
+        'ə': 'e', 'Ə': 'e', 'ı': 'i', 'I': 'i', 'İ': 'i',
+        'ö': 'o', 'Ö': 'o', 'ü': 'u', 'Ü': 'u', 'ş': 's',
+        'Ş': 's', 'ç': 'c', 'Ç': 'c', 'ğ': 'g', 'Ğ': 'g'
+    }
+    clean = name
+    for k, v in az_map.items():
+        clean = clean.replace(k, v)
+    clean = re.sub(r'[^\w\s-]', '', clean.lower()).strip()
+    return re.sub(r'[-\s]+', '-', clean)
+

@@ -43,6 +43,7 @@ class CreateTenantRequest(BaseModel):
     feature_portfolio: bool = False
     portfolio_limit: int = 25
     addon_portfolio_price: float = 15.0
+    portfolio_slug: Optional[str] = None
 
 class UpdateTenantRequest(BaseModel):
     name: Optional[str] = None
@@ -76,6 +77,7 @@ class UpdateTenantRequest(BaseModel):
     feature_portfolio: Optional[bool] = None
     portfolio_limit: Optional[int] = None
     addon_portfolio_price: Optional[float] = None
+    portfolio_slug: Optional[str] = None
 
 class TenantResponse(BaseModel):
     id: int
@@ -117,6 +119,8 @@ class TenantResponse(BaseModel):
     portfolio_limit: int = 25
     addon_portfolio_price: float = 15.0
     portfolio_expires_at: Optional[datetime] = None
+    portfolio_slug: Optional[str] = None
+    portfolio_vitrin_url: Optional[str] = None
     active_searches_count: int = 0
     max_saved_searches: int = 10
     referral_code: Optional[str] = None
@@ -166,15 +170,33 @@ async def list_tenants(db: AsyncSession = Depends(get_db), current_admin = Depen
         t_resp.seller_id = t.seller_id
         t_resp.seller_name = seller_obj.name if seller_obj else None
         t_resp.seller_company = seller_obj.company_name if seller_obj else None
+        t_resp.portfolio_vitrin_url = f"/v/{t.portfolio_slug or t.id}"
         
         resp.append(t_resp)
 
     return resp
 
+async def ensure_unique_slug(db: AsyncSession, base_slug: str, tenant_id: Optional[int] = None) -> str:
+    """Ensures a tenant portfolio slug is strictly unique across the database."""
+    from app.models.tenant import Tenant
+    clean_base = base_slug.strip().lower() or "agent"
+    slug = clean_base
+    idx = 1
+    while True:
+        stmt = select(Tenant).where(Tenant.portfolio_slug == slug)
+        if tenant_id:
+            stmt = stmt.where(Tenant.id != tenant_id)
+        res = await db.execute(stmt)
+        if not res.scalars().first():
+            return slug
+        idx += 1
+        slug = f"{clean_base}-{idx}"
+
 @router.post("", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
 async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
     from app.models.plan import Plan
     from app.models.payment import Payment
+    from app.models.tenant import slugify_portfolio_name
     
     plan_code = body.plan.lower().strip()
     is_free = plan_code == "free"
@@ -204,6 +226,9 @@ async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(ge
     portfolio_limit = getattr(db_plan, 'addon_portfolio_limit', 25) or body.portfolio_limit or 25
     portfolio_price = (body.addon_portfolio_price or getattr(db_plan, 'addon_portfolio_price', 15.0) or 15.0) if has_portfolio else 0.0
     portfolio_exp = expires_at if has_portfolio else None
+
+    raw_slug = slugify_portfolio_name(body.portfolio_slug or body.name or "agent")
+    unique_slug = await ensure_unique_slug(db, raw_slug)
     
     tenant = Tenant(
         name=body.name,
@@ -233,6 +258,7 @@ async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(ge
         portfolio_limit=portfolio_limit,
         portfolio_expires_at=portfolio_exp,
         addon_portfolio_price=portfolio_price,
+        portfolio_slug=unique_slug,
         plan_started_at=now_utc,
         plan_expires_at=expires_at,
         status="active"
@@ -365,6 +391,15 @@ async def update_tenant(tenant_id: int, body: UpdateTenantRequest, db: AsyncSess
                 db.add(pay_record)
         else:
             tenant.addon_portfolio_price = 0.0
+
+    # Portfolio slug customization
+    if "portfolio_slug" in update_data and update_data["portfolio_slug"]:
+        from app.models.tenant import slugify_portfolio_name
+        req_slug = slugify_portfolio_name(str(update_data["portfolio_slug"]))
+        tenant.portfolio_slug = await ensure_unique_slug(db, req_slug, tenant_id=tenant.id)
+    elif not tenant.portfolio_slug and tenant.name:
+        from app.models.tenant import slugify_portfolio_name
+        tenant.portfolio_slug = await ensure_unique_slug(db, slugify_portfolio_name(tenant.name), tenant_id=tenant.id)
 
     # If plan is updated, fetch new plan features if available
     if "plan" in update_data and update_data["plan"]:

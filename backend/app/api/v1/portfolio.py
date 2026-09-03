@@ -122,9 +122,12 @@ class PublicPortfolioListingResponse(BaseModel):
     offer_type: str = "sale"
     photos: List[Any] = []
     share_code: str
+    share_url: Optional[str] = None
     agent_name: str
     agent_phone: str
     agent_whatsapp: Optional[str] = None
+    agent_slug: Optional[str] = None
+    agent_vitrin_url: Optional[str] = None
     whatsapp_message_url: str
     created_at: datetime
 
@@ -473,13 +476,16 @@ async def get_public_portfolio_listing(
 ):
     """
     Public Client Presentation:
-    Fetches property details via public share_code with agent branding and WhatsApp contact button.
+    Fetches property details via public share_code (or numeric listing ID) with agent branding and WhatsApp contact button.
     Does not expose competitors, broker portals, or internal private notes.
     """
-    stmt = select(PortfolioListing).where(
-        PortfolioListing.share_code == share_code,
-        PortfolioListing.is_active == True
-    )
+    clean_code = share_code.strip()
+    stmt = select(PortfolioListing).where(PortfolioListing.is_active == True)
+    if clean_code.isdigit():
+        stmt = stmt.where((PortfolioListing.id == int(clean_code)) | (PortfolioListing.share_code == clean_code))
+    else:
+        stmt = stmt.where(PortfolioListing.share_code == clean_code)
+
     res = await db.execute(stmt)
     item = res.scalars().first()
     if not item:
@@ -493,6 +499,9 @@ async def get_public_portfolio_listing(
     agent_name = item.contact_name or (tenant.name if tenant else "Əmlak Agentliyi")
     agent_phone = item.contact_phone or (tenant.phone if tenant else "")
     agent_whatsapp = (tenant.whatsapp_number or agent_phone) if tenant else agent_phone
+    agent_slug = tenant.portfolio_slug or str(tenant.id) if tenant else None
+    agent_vitrin_url = f"/v/{agent_slug}" if agent_slug else None
+    share_url = f"/v/{agent_slug}/{item.id}" if agent_slug else f"/p/{item.share_code}"
 
     clean_wa = "".join(filter(str.isdigit, agent_whatsapp or ""))
     wa_msg = f"Salam, {agent_name}. Sizin portfelinizdəki bu elanla bağlı əlaqə saxlayıram: {item.title} (Kod: {item.share_code})"
@@ -518,28 +527,41 @@ async def get_public_portfolio_listing(
         offer_type=item.offer_type or "sale",
         photos=item.photos or [],
         share_code=item.share_code,
+        share_url=share_url,
         agent_name=agent_name,
         agent_phone=agent_phone,
         agent_whatsapp=agent_whatsapp,
+        agent_slug=agent_slug,
+        agent_vitrin_url=agent_vitrin_url,
         whatsapp_message_url=wa_url,
         created_at=item.created_at
     )
 
 
-@router.get("/public/agent/{tenant_id}", response_model=List[PublicPortfolioListingResponse])
+@router.get("/public/agent/{identifier}", response_model=List[PublicPortfolioListingResponse])
+@router.get("/agent/{identifier}/public", response_model=List[PublicPortfolioListingResponse])
 async def get_agent_public_catalog(
-    tenant_id: int,
+    identifier: str,
     db: AsyncSession = Depends(get_db)
 ):
-    """Public showcase of all active properties for an agent."""
-    stmt_t = select(Tenant).where(Tenant.id == tenant_id)
+    """Public showcase of all active properties for an agent via numeric ID or friendly slug."""
+    clean_id = identifier.strip().lower()
+    stmt_t = select(Tenant)
+    if clean_id.isdigit():
+        stmt_t = stmt_t.where(Tenant.id == int(clean_id))
+    else:
+        stmt_t = stmt_t.where(
+            (Tenant.portfolio_slug == clean_id) |
+            (Tenant.referral_code == clean_id) |
+            (Tenant.name.ilike(clean_id))
+        )
     res_t = await db.execute(stmt_t)
     tenant = res_t.scalars().first()
     if not tenant:
-        raise HTTPException(status_code=404, detail="Agent hesabı tapılmadı.")
+        raise HTTPException(status_code=404, detail="Agent vitrini tapılmadı və ya aktiv deyil.")
 
     stmt = select(PortfolioListing).where(
-        PortfolioListing.tenant_id == tenant_id,
+        PortfolioListing.tenant_id == tenant.id,
         PortfolioListing.is_active == True,
         PortfolioListing.status == "active"
     ).order_by(desc(PortfolioListing.created_at))
@@ -548,9 +570,14 @@ async def get_agent_public_catalog(
 
     output = []
     clean_wa = "".join(filter(str.isdigit, tenant.whatsapp_number or tenant.phone or ""))
+    agent_slug = tenant.portfolio_slug or str(tenant.id)
+    vitrin_url = f"/v/{agent_slug}"
+
     for it in items:
         wa_msg = f"Salam, {tenant.name}. Sizin portfelinizdəki bu elanla bağlı maraqlanıram: {it.title} (Kod: {it.share_code})"
         wa_url = f"https://wa.me/{clean_wa}?text={urllib.parse.quote(wa_msg)}" if clean_wa else ""
+        share_url = f"/v/{agent_slug}/{it.id}"
+
         output.append(PublicPortfolioListingResponse(
             id=it.id,
             title=it.title,
@@ -570,11 +597,93 @@ async def get_agent_public_catalog(
             offer_type=it.offer_type or "sale",
             photos=it.photos or [],
             share_code=it.share_code,
+            share_url=share_url,
             agent_name=it.contact_name or tenant.name,
             agent_phone=it.contact_phone or tenant.phone,
             agent_whatsapp=tenant.whatsapp_number or tenant.phone,
+            agent_slug=agent_slug,
+            agent_vitrin_url=vitrin_url,
             whatsapp_message_url=wa_url,
             created_at=it.created_at
         ))
 
     return output
+
+
+@router.get("/public/agent/{agent_identifier}/{listing_identifier}", response_model=PublicPortfolioListingResponse)
+@router.get("/agent/{agent_identifier}/{listing_identifier}/public", response_model=PublicPortfolioListingResponse)
+async def get_public_listing_by_agent_and_id(
+    agent_identifier: str,
+    listing_identifier: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Lookup a single portfolio listing under an agent using friendly URL path (e.g. /v/elnur/1042)."""
+    clean_agent = agent_identifier.strip().lower()
+    clean_listing = listing_identifier.strip()
+
+    stmt_t = select(Tenant)
+    if clean_agent.isdigit():
+        stmt_t = stmt_t.where(Tenant.id == int(clean_agent))
+    else:
+        stmt_t = stmt_t.where(
+            (Tenant.portfolio_slug == clean_agent) |
+            (Tenant.referral_code == clean_agent) |
+            (Tenant.name.ilike(clean_agent))
+        )
+    res_t = await db.execute(stmt_t)
+    tenant = res_t.scalars().first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Agent vitrini tapılmadı.")
+
+    stmt_l = select(PortfolioListing).where(
+        PortfolioListing.tenant_id == tenant.id,
+        PortfolioListing.is_active == True
+    )
+    if clean_listing.isdigit():
+        stmt_l = stmt_l.where((PortfolioListing.id == int(clean_listing)) | (PortfolioListing.share_code == clean_listing))
+    else:
+        stmt_l = stmt_l.where(PortfolioListing.share_code == clean_listing)
+
+    res_l = await db.execute(stmt_l)
+    item = res_l.scalars().first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Elan tapılmadı və ya aktivliyi dayandırılıb.")
+
+    agent_name = item.contact_name or tenant.name
+    agent_phone = item.contact_phone or tenant.phone
+    agent_whatsapp = tenant.whatsapp_number or agent_phone
+    clean_wa = "".join(filter(str.isdigit, agent_whatsapp or ""))
+    wa_msg = f"Salam, {agent_name}. Sizin portfelinizdəki bu elanla bağlı əlaqə saxlayıram: {item.title} (Kod: {item.share_code})"
+    encoded_msg = urllib.parse.quote(wa_msg)
+    wa_url = f"https://wa.me/{clean_wa}?text={encoded_msg}" if clean_wa else ""
+
+    agent_slug = tenant.portfolio_slug or str(tenant.id)
+
+    return PublicPortfolioListingResponse(
+        id=item.id,
+        title=item.title,
+        description=item.description,
+        price=item.price,
+        currency=item.currency or "AZN",
+        price_usd=item.price_usd,
+        district=item.district,
+        metro_station=item.metro_station,
+        address=item.address,
+        rooms=item.rooms,
+        area_sqm=item.area_sqm,
+        floor=item.floor,
+        total_floors=item.total_floors,
+        building_type=item.building_type,
+        property_type=item.property_type or "apartment",
+        offer_type=item.offer_type or "sale",
+        photos=item.photos or [],
+        share_code=item.share_code,
+        share_url=f"/v/{agent_slug}/{item.id}",
+        agent_name=agent_name,
+        agent_phone=agent_phone,
+        agent_whatsapp=agent_whatsapp,
+        agent_slug=agent_slug,
+        agent_vitrin_url=f"/v/{agent_slug}",
+        whatsapp_message_url=wa_url,
+        created_at=item.created_at
+    )

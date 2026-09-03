@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { UserPlus, Search, ShieldCheck, Clock, AlertCircle, Phone, MessageSquare, Plus, CheckCircle, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff, DollarSign, Edit3, Trash2, X, AlertTriangle, Users, MapPin, Store, Sparkles, Briefcase } from 'lucide-react';
+import { UserPlus, Search, ShieldCheck, Clock, AlertCircle, Phone, MessageSquare, Plus, CheckCircle, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff, DollarSign, Edit3, Trash2, X, AlertTriangle, Users, MapPin, Store, Sparkles, Briefcase, ExternalLink } from 'lucide-react';
 import api from '../api';
 import { Tenant, SavedSearch } from '../types';
 
@@ -53,6 +53,7 @@ export const TenantsView: React.FC = () => {
     feature_portfolio: false,
     portfolio_limit: 25,
     addon_portfolio_price: 15.0,
+    portfolio_slug: '',
   });
 
   const [availablePlans, setAvailablePlans] = useState<any[]>([]);
@@ -94,6 +95,7 @@ export const TenantsView: React.FC = () => {
     feature_portfolio: false,
     portfolio_limit: 25,
     addon_portfolio_price: 15.0,
+    portfolio_slug: '',
   });
 
   // Delete Confirmation Modal State
@@ -208,7 +210,8 @@ export const TenantsView: React.FC = () => {
       addon_crm_price: t.addon_crm_price ?? 0.0,
       feature_portfolio: t.feature_portfolio ?? false,
       portfolio_limit: t.portfolio_limit ?? 25,
-      addon_portfolio_price: t.addon_portfolio_price ?? 15.0
+      addon_portfolio_price: t.addon_portfolio_price ?? 15.0,
+      portfolio_slug: t.portfolio_slug || ''
     });
   };
 
@@ -270,6 +273,7 @@ export const TenantsView: React.FC = () => {
         feature_portfolio: false,
         portfolio_limit: 25,
         addon_portfolio_price: 15.0,
+        portfolio_slug: '',
       });
       loadTenants();
     } catch (e: any) {
@@ -651,9 +655,19 @@ export const TenantsView: React.FC = () => {
                       </div>
                     )}
                     {t.feature_portfolio && (
-                      <div className="text-[11px] text-purple-400 font-medium flex items-center gap-1 mt-0.5">
+                      <div className="text-[11px] text-purple-400 font-medium flex items-center gap-1.5 mt-0.5">
                         <span>🗂️</span>
-                        Portfel ({t.portfolio_limit || 25} elan)
+                        <span>Portfel ({t.portfolio_limit || 25} elan)</span>
+                        <a
+                          href={`/v/${t.portfolio_slug || t.id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-1.5 py-0.5 rounded bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-mono text-[10px] border border-purple-500/30 flex items-center gap-0.5"
+                          title="Vitrini Aç"
+                        >
+                          <span>/v/{t.portfolio_slug || t.id}</span>
+                          <ExternalLink className="w-2.5 h-2.5" />
+                        </a>
                       </div>
                     )}
                     {t.feature_watermark_free_images && (
@@ -1086,17 +1100,32 @@ export const TenantsView: React.FC = () => {
                   </div>
                 </label>
                 {editFormData.feature_portfolio && (
-                  <div className="flex items-center justify-between px-3 py-2 bg-dark-950 rounded-xl border border-slate-800 text-xs">
-                    <span className="text-slate-400">Portfel Limiti (Aktiv Elan Sayı):</span>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="number"
-                        min="1"
-                        value={editFormData.portfolio_limit || 25}
-                        onChange={(e) => setEditFormData({ ...editFormData, portfolio_limit: Number(e.target.value) })}
-                        className="w-20 bg-dark-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs font-bold text-center"
-                      />
-                      <span className="text-slate-400">elan</span>
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between px-3 py-2 bg-dark-950 rounded-xl border border-slate-800 text-xs">
+                      <span className="text-slate-400">Portfel Limiti (Aktiv Elan Sayı):</span>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min="1"
+                          value={editFormData.portfolio_limit || 25}
+                          onChange={(e) => setEditFormData({ ...editFormData, portfolio_limit: Number(e.target.value) })}
+                          className="w-20 bg-dark-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs font-bold text-center"
+                        />
+                        <span className="text-slate-400">elan</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-2 bg-dark-950 rounded-xl border border-slate-800 text-xs">
+                      <span className="text-slate-400">Fərdi Vitrin URL (Slug):</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-500 font-mono text-[11px]">/v/</span>
+                        <input
+                          type="text"
+                          placeholder="elnur-emlak"
+                          value={editFormData.portfolio_slug || ''}
+                          onChange={(e) => setEditFormData({ ...editFormData, portfolio_slug: e.target.value })}
+                          className="w-36 bg-dark-900 border border-slate-700 rounded-lg px-2 py-1 text-purple-300 font-mono text-xs focus:border-purple-500"
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1400,17 +1429,32 @@ export const TenantsView: React.FC = () => {
                   </div>
                 </label>
                 {newTenant.feature_portfolio && (
-                  <div className="flex items-center justify-between px-3 py-2 bg-dark-950 rounded-xl border border-slate-800 text-xs">
-                    <span className="text-slate-400">Portfel Limiti (Aktiv Elan Sayı):</span>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="number"
-                        min="1"
-                        value={newTenant.portfolio_limit || 25}
-                        onChange={(e) => setNewTenant({ ...newTenant, portfolio_limit: Number(e.target.value) })}
-                        className="w-20 bg-dark-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs font-bold text-center"
-                      />
-                      <span className="text-slate-400">elan</span>
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between px-3 py-2 bg-dark-950 rounded-xl border border-slate-800 text-xs">
+                      <span className="text-slate-400">Portfel Limiti (Aktiv Elan Sayı):</span>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min="1"
+                          value={newTenant.portfolio_limit || 25}
+                          onChange={(e) => setNewTenant({ ...newTenant, portfolio_limit: Number(e.target.value) })}
+                          className="w-20 bg-dark-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs font-bold text-center"
+                        />
+                        <span className="text-slate-400">elan</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-2 bg-dark-950 rounded-xl border border-slate-800 text-xs">
+                      <span className="text-slate-400">Fərdi Vitrin URL (Slug):</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-500 font-mono text-[11px]">/v/</span>
+                        <input
+                          type="text"
+                          placeholder="elnur-emlak (boş qalsa avtomatik yaradılacaq)"
+                          value={newTenant.portfolio_slug || ''}
+                          onChange={(e) => setNewTenant({ ...newTenant, portfolio_slug: e.target.value })}
+                          className="w-48 bg-dark-900 border border-slate-700 rounded-lg px-2 py-1 text-purple-300 font-mono text-xs focus:border-purple-500"
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
