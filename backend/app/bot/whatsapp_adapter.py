@@ -24,9 +24,14 @@ class WhatsAppAdapter:
             from sqlalchemy import select
             from app.models.tenant import Tenant
 
-            event = payload.get("event")
+            event = str(payload.get("event") or "").lower().strip()
             instance_name = payload.get("instance") or settings.EVOLUTION_INSTANCE_NAME
             logger.info(f"[WhatsAppAdapter] Received webhook event: '{event}', instance: '{instance_name}'")
+
+            # Ignore calls, call offers, presence updates, contact syncing, chats updates, etc.
+            if event and event not in ["messages.upsert", "messages_upsert", "send_message"]:
+                logger.debug(f"[WhatsAppAdapter] Skipping non-message event '{event}'")
+                return None
 
             data = payload.get("data", {})
             if isinstance(data, list):
@@ -54,6 +59,11 @@ class WhatsAppAdapter:
                 return None
 
             is_group = "@g.us" in remote_jid
+
+            # STRICT PRIVACY: In 1-on-1 personal chats, NEVER process outbound messages/calls sent by user to other contacts
+            if from_me and not is_group:
+                return None
+
             group_metadata = payload.get("data", {}).get("groupMetadata", {})
             group_subject = (
                 group_metadata.get("subject")
@@ -75,24 +85,32 @@ class WhatsAppAdapter:
                 ""
             )
 
-            # 2. Check for voice note / audio message (STRICT PRIVACY: ONLY in verified paired groups)
+            # 2. Check for voice note / audio message (STRICT PRIVACY: ONLY incoming in verified paired groups)
             audio_msg = message.get("audioMessage") or message.get("pttMessage")
             if not raw_text and audio_msg and isinstance(audio_msg, dict):
-                # Personal 1-on-1 chats: NEVER listen to or transcribe personal voice notes!
+                # Personal 1-on-1 chats: NEVER listen to or transcribe personal voice notes or calls!
                 if not is_group:
-                    logger.debug(f"[WhatsAppAdapter] Silently ignoring personal 1-on-1 voice note from {remote_jid}")
+                    logger.debug(f"[WhatsAppAdapter] Silently ignoring personal 1-on-1 voice note/call from {remote_jid}")
                     return None
 
-                # In groups, verify the group is paired before processing any media
+                # Outbound voice notes/calls from self: NEVER transcribe!
+                if from_me:
+                    logger.debug(f"[WhatsAppAdapter] Silently ignoring outbound audio from self to {remote_jid}")
+                    return None
+
+                # In groups, verify that the group is EXPLICITLY paired (/bot_here) before downloading/transcribing media
                 async with AsyncSessionLocal() as db:
-                    t_id = int(instance_name.replace("tenant_", "")) if instance_name and instance_name.startswith("tenant_") else None
-                    if t_id:
-                        stmt_t = select(Tenant).where(Tenant.id == t_id)
-                        t_res = await db.execute(stmt_t)
-                        t_obj = t_res.scalars().first()
-                        if t_obj and remote_jid not in (t_obj.allowed_group_jids or []):
-                            logger.debug(f"[WhatsAppAdapter] Silently ignoring voice note in un-paired group {remote_jid}")
-                            return None
+                    stmt_t = select(Tenant).where(Tenant.status == "active")
+                    t_res = await db.execute(stmt_t)
+                    active_tenants = t_res.scalars().all()
+
+                    is_paired = any(
+                        remote_jid in (t.allowed_group_jids or [])
+                        for t in active_tenants
+                    )
+                    if not is_paired:
+                        logger.debug(f"[WhatsAppAdapter] Silently ignoring voice note in un-paired group {remote_jid}")
+                        return None
 
                 import base64
                 from app.services.audio_transcriber import AudioTranscriberService
