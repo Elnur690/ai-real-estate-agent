@@ -236,3 +236,73 @@ async def test_portfolio_bot_commands(test_db: AsyncSession):
     )
     assert "Portfeldən Silindi!" in resp_del
     assert "0/25 aktiv elan" in resp_del
+
+
+@pytest.mark.asyncio
+async def test_portfolio_payment_creation_and_list_payments(test_db: AsyncSession, client: AsyncClient):
+    # 1. Create admin user
+    admin_tenant = Tenant(
+        name="System Tenant",
+        phone="+994500000000",
+        plan="agency",
+        status="active"
+    )
+    test_db.add(admin_tenant)
+    await test_db.commit()
+    await test_db.refresh(admin_tenant)
+
+    admin = User(
+        name="Admin User",
+        email="admin@system.az",
+        password_hash=get_password_hash("admin123"),
+        role="admin",
+        tenant_id=admin_tenant.id
+    )
+    test_db.add(admin)
+    await test_db.commit()
+    await test_db.refresh(admin)
+
+    admin_token = create_access_token(admin.id)
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    # 2. Test GET /api/v1/payments (verify desc bug is resolved)
+    r_pay_list = await client.get("/api/v1/payments", headers=admin_headers)
+    assert r_pay_list.status_code == 200
+    assert isinstance(r_pay_list.json(), list)
+
+    # 3. Create a tenant without portfolio
+    agent_t = Tenant(
+        name="Portfolio Agent",
+        phone="+994508887766",
+        plan="starter",
+        status="active",
+        feature_portfolio=False
+    )
+    test_db.add(agent_t)
+    await test_db.commit()
+    await test_db.refresh(agent_t)
+
+    # 4. Save portfolio add-on via PATCH /api/v1/tenants/{id}
+    r_patch = await client.patch(
+        f"/api/v1/tenants/{agent_t.id}",
+        json={
+            "feature_portfolio": True,
+            "portfolio_limit": 50,
+            "addon_portfolio_price": 20.0
+        },
+        headers=admin_headers
+    )
+    assert r_patch.status_code == 200
+    data = r_patch.json()
+    assert data["feature_portfolio"] is True
+    assert data["portfolio_limit"] == 50
+
+    # 5. Verify payment was automatically created for this add-on activation
+    r_pay_after = await client.get("/api/v1/payments", headers=admin_headers)
+    assert r_pay_after.status_code == 200
+    payments = r_pay_after.json()
+    matching = [p for p in payments if p["tenant_id"] == agent_t.id]
+    assert len(matching) >= 1
+    assert matching[0]["amount"] == 20.0
+    assert "Portfolio" in matching[0]["notes"]
+

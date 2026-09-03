@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_current_admin
 from app.models.tenant import Tenant
+from app.models.payment import Payment
 from app.models.saved_search import SavedSearch
 
 router = APIRouter(prefix="/tenants", tags=["Tenants"])
@@ -39,6 +40,9 @@ class CreateTenantRequest(BaseModel):
     addon_image_requests_price: float = 0.0
     feature_crm: bool = False
     addon_crm_price: float = 0.0
+    feature_portfolio: bool = False
+    portfolio_limit: int = 25
+    addon_portfolio_price: float = 15.0
 
 class UpdateTenantRequest(BaseModel):
     name: Optional[str] = None
@@ -69,6 +73,9 @@ class UpdateTenantRequest(BaseModel):
     addon_image_requests_price: Optional[float] = None
     feature_crm: Optional[bool] = None
     addon_crm_price: Optional[float] = None
+    feature_portfolio: Optional[bool] = None
+    portfolio_limit: Optional[int] = None
+    addon_portfolio_price: Optional[float] = None
 
 class TenantResponse(BaseModel):
     id: int
@@ -106,6 +113,10 @@ class TenantResponse(BaseModel):
     feature_crm: bool = False
     addon_crm_price: float = 0.0
     crm_expires_at: Optional[datetime] = None
+    feature_portfolio: bool = False
+    portfolio_limit: int = 25
+    addon_portfolio_price: float = 15.0
+    portfolio_expires_at: Optional[datetime] = None
     active_searches_count: int = 0
     max_saved_searches: int = 10
     referral_code: Optional[str] = None
@@ -188,6 +199,11 @@ async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(ge
 
     has_crm = getattr(db_plan, 'feature_crm', False) or body.feature_crm
     crm_exp = expires_at if has_crm else None
+
+    has_portfolio = getattr(db_plan, 'feature_portfolio', False) or body.feature_portfolio
+    portfolio_limit = getattr(db_plan, 'addon_portfolio_limit', 25) or body.portfolio_limit or 25
+    portfolio_price = (body.addon_portfolio_price or getattr(db_plan, 'addon_portfolio_price', 15.0) or 15.0) if has_portfolio else 0.0
+    portfolio_exp = expires_at if has_portfolio else None
     
     tenant = Tenant(
         name=body.name,
@@ -213,6 +229,10 @@ async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(ge
         feature_crm=has_crm,
         addon_crm_price=getattr(db_plan, 'addon_crm_price', 0.0) if body.addon_crm_price == 0.0 else body.addon_crm_price,
         crm_expires_at=crm_exp,
+        feature_portfolio=has_portfolio,
+        portfolio_limit=portfolio_limit,
+        portfolio_expires_at=portfolio_exp,
+        addon_portfolio_price=portfolio_price,
         plan_started_at=now_utc,
         plan_expires_at=expires_at,
         status="active"
@@ -225,7 +245,8 @@ async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(ge
     plan_price = db_plan.price if (db_plan and not is_free) else 0.0
     crm_price = (body.addon_crm_price or getattr(db_plan, 'addon_crm_price', 15.0) or 15.0) if has_crm else 0.0
     aged_price = (getattr(db_plan, 'addon_aged_listings_price', 15.0) or 15.0) if tenant.feature_aged_listings else 0.0
-    total_amount = round(plan_price + crm_price + aged_price, 2)
+    port_fee = portfolio_price if has_portfolio else 0.0
+    total_amount = round(plan_price + crm_price + aged_price + port_fee, 2)
 
     pay_record = Payment(
         tenant_id=tenant.id,
@@ -235,7 +256,7 @@ async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(ge
         period_covered_end=expires_at,
         received_by=current_admin.id,
         received_at=now_utc,
-        notes=f"Initial Provisioning: {tenant.name} ({plan_code.upper()} Plan) [CRM: {'Active' if has_crm else 'Off'}]"
+        notes=f"Initial Provisioning: {tenant.name} ({plan_code.upper()} Plan) [CRM: {'Active' if has_crm else 'Off'}, Portfel: {'Active (' + str(portfolio_limit) + ')' if has_portfolio else 'Off'}]"
     )
     db.add(pay_record)
     await db.commit()
@@ -291,12 +312,59 @@ async def update_tenant(tenant_id: int, body: UpdateTenantRequest, db: AsyncSess
         if cid and cid.isdigit() and not tenant.telegram_handle:
             tenant.telegram_handle = cid
 
-    # If CRM feature is enabled, ensure crm_expires_at is populated
-    if "feature_crm" in update_data and update_data["feature_crm"]:
-        tenant.feature_crm = True
-        now_utc = datetime.now(timezone.utc)
-        if not tenant.crm_expires_at or tenant.crm_expires_at < now_utc:
-            tenant.crm_expires_at = tenant.plan_expires_at or (now_utc + timedelta(days=30))
+    now_utc = datetime.now(timezone.utc)
+
+    # CRM feature update & payment creation if newly activated
+    if "feature_crm" in update_data:
+        new_crm = bool(update_data["feature_crm"])
+        was_crm = tenant.feature_crm
+        tenant.feature_crm = new_crm
+        if new_crm:
+            if not tenant.crm_expires_at or tenant.crm_expires_at < now_utc:
+                tenant.crm_expires_at = tenant.plan_expires_at or (now_utc + timedelta(days=30))
+            if not was_crm:
+                crm_price = tenant.addon_crm_price if (tenant.addon_crm_price and tenant.addon_crm_price > 0) else 15.0
+                pay_record = Payment(
+                    tenant_id=tenant.id,
+                    amount=round(crm_price, 2),
+                    currency="AZN",
+                    period_covered_start=now_utc,
+                    period_covered_end=tenant.crm_expires_at,
+                    received_by=current_admin.id,
+                    received_at=now_utc,
+                    notes=f"Add-on Activation: CRM Mini App for {tenant.name}"
+                )
+                db.add(pay_record)
+        else:
+            tenant.addon_crm_price = 0.0
+
+    # Portfolio feature update & payment creation if newly activated
+    if "feature_portfolio" in update_data:
+        new_portfolio = bool(update_data["feature_portfolio"])
+        was_portfolio = tenant.feature_portfolio
+        tenant.feature_portfolio = new_portfolio
+        if new_portfolio:
+            if not tenant.portfolio_expires_at or tenant.portfolio_expires_at < now_utc:
+                tenant.portfolio_expires_at = tenant.plan_expires_at or (now_utc + timedelta(days=30))
+            if "portfolio_limit" in update_data and update_data["portfolio_limit"]:
+                tenant.portfolio_limit = int(update_data["portfolio_limit"])
+            if "addon_portfolio_price" in update_data and update_data["addon_portfolio_price"] is not None:
+                tenant.addon_portfolio_price = float(update_data["addon_portfolio_price"])
+            if not was_portfolio:
+                port_price = tenant.addon_portfolio_price if (tenant.addon_portfolio_price and tenant.addon_portfolio_price > 0) else 15.0
+                pay_record = Payment(
+                    tenant_id=tenant.id,
+                    amount=round(port_price, 2),
+                    currency="AZN",
+                    period_covered_start=now_utc,
+                    period_covered_end=tenant.portfolio_expires_at,
+                    received_by=current_admin.id,
+                    received_at=now_utc,
+                    notes=f"Add-on Activation: Agent Portfolio ({tenant.portfolio_limit or 25} elan) for {tenant.name}"
+                )
+                db.add(pay_record)
+        else:
+            tenant.addon_portfolio_price = 0.0
 
     # If plan is updated, fetch new plan features if available
     if "plan" in update_data and update_data["plan"]:
@@ -319,9 +387,14 @@ async def update_tenant(tenant_id: int, body: UpdateTenantRequest, db: AsyncSess
                 tenant.feature_crm = True
                 if not tenant.crm_expires_at:
                     tenant.crm_expires_at = tenant.plan_expires_at or (datetime.now(timezone.utc) + timedelta(days=30))
+            if getattr(db_plan, 'feature_portfolio', False):
+                tenant.feature_portfolio = True
+                tenant.portfolio_limit = getattr(db_plan, 'addon_portfolio_limit', 25) or 25
+                if not tenant.portfolio_expires_at:
+                    tenant.portfolio_expires_at = tenant.plan_expires_at or (datetime.now(timezone.utc) + timedelta(days=30))
 
     for field, val in update_data.items():
-        if field not in ["telegram_handle", "telegram_chat_id", "feature_crm"]:
+        if field not in ["telegram_handle", "telegram_chat_id", "feature_crm", "feature_portfolio"]:
             setattr(tenant, field, val)
 
     await db.commit()
@@ -341,6 +414,9 @@ class TenantCashPaymentRequest(BaseModel):
     addon_image_requests_limit: Optional[int] = None
     include_crm_addon: Optional[bool] = None
     addon_crm_price: Optional[float] = None
+    include_portfolio_addon: Optional[bool] = None
+    addon_portfolio_limit: Optional[int] = None
+    addon_portfolio_price: Optional[float] = None
     use_referral_balance: bool = True
     notes: Optional[str] = None
 
@@ -368,6 +444,9 @@ async def record_tenant_cash_payment(
         addon_image_requests_limit=body.addon_image_requests_limit,
         include_crm_addon=body.include_crm_addon,
         addon_crm_price=body.addon_crm_price,
+        include_portfolio_addon=body.include_portfolio_addon,
+        addon_portfolio_limit=body.addon_portfolio_limit,
+        addon_portfolio_price=body.addon_portfolio_price,
         use_referral_balance=body.use_referral_balance,
         notes=body.notes
     )

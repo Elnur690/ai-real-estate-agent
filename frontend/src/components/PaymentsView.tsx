@@ -19,23 +19,30 @@ export const PaymentsView: React.FC = () => {
     payment_category: 'full',
     include_aged_listings: false,
     addon_aged_max_months: 12,
+    include_portfolio_addon: false,
+    addon_portfolio_limit: 25,
+    addon_portfolio_price: 15,
     notes: ''
   });
 
-  const calculatePaymentAmount = (tenantId: number, days: number, includeAged: boolean, category: string = paymentCategory) => {
+  const calculatePaymentAmount = (tenantId: number, days: number, includeAged: boolean, includePortfolio: boolean = false, category: string = paymentCategory) => {
     const selected = tenants.find(t => t.id === tenantId);
     const planCode = selected ? selected.plan : 'starter';
     const planObj = plans.find(p => p.code.toLowerCase() === planCode.toLowerCase());
     const basePrice = planObj ? planObj.price : 29.0;
     const addonPrice = planObj?.addon_aged_listings_price !== undefined ? planObj.addon_aged_listings_price : 15.0;
+    const portPrice = planObj?.addon_portfolio_price !== undefined ? planObj.addon_portfolio_price : 15.0;
     const multiplier = days === 365 ? 10 : (days === 180 ? 5 : (days === 90 ? 2.7 : (days === 60 ? 2.0 : 1)));
 
+    const agedFee = includeAged ? (addonPrice * multiplier) : 0;
+    const portFee = includePortfolio ? (portPrice * multiplier) : 0;
+
     if (category === 'addon_only') {
-      return Math.round(addonPrice * multiplier);
+      return Math.round(agedFee + portFee);
     } else if (category === 'plan_only') {
       return Math.round(basePrice * multiplier);
     } else {
-      return Math.round((basePrice * multiplier) + (includeAged ? (addonPrice * multiplier) : 0));
+      return Math.round((basePrice * multiplier) + agedFee + portFee);
     }
   };
 
@@ -57,10 +64,13 @@ export const PaymentsView: React.FC = () => {
         const firstTenant = fetchedTenants[0];
         const isAged = !!firstTenant.feature_aged_listings;
         const maxMonths = firstTenant.addon_aged_max_months || 12;
+        const isPort = !!firstTenant.feature_portfolio;
+        const portLimit = firstTenant.portfolio_limit || 25;
         const matchPlan = fetchedPlans.find((p: any) => p.code.toLowerCase() === firstTenant.plan.toLowerCase());
         const basePrice = matchPlan ? matchPlan.price : 29.0;
         const addonPrice = matchPlan?.addon_aged_listings_price !== undefined ? matchPlan.addon_aged_listings_price : 15.0;
-        const total = Math.round(basePrice + (isAged ? addonPrice : 0));
+        const portPrice = firstTenant.addon_portfolio_price || matchPlan?.addon_portfolio_price || 15.0;
+        const total = Math.round(basePrice + (isAged ? addonPrice : 0) + (isPort ? portPrice : 0));
 
         setNewPayment({
           tenant_id: firstTenant.id,
@@ -70,6 +80,9 @@ export const PaymentsView: React.FC = () => {
           payment_category: 'full',
           include_aged_listings: isAged,
           addon_aged_max_months: maxMonths,
+          include_portfolio_addon: isPort,
+          addon_portfolio_limit: portLimit,
+          addon_portfolio_price: portPrice,
           notes: `Cash collected for ${firstTenant.name} (${firstTenant.plan.toUpperCase()} Plan)`
         });
       }
@@ -90,7 +103,10 @@ export const PaymentsView: React.FC = () => {
       const matchPlan = plans.find(p => p.code.toLowerCase() === selected.plan.toLowerCase());
       const isAged = !!selected.feature_aged_listings;
       const maxMonths = selected.addon_aged_max_months || 12;
-      const total = calculatePaymentAmount(tenantId, newPayment.days_covered, isAged, paymentCategory);
+      const isPort = !!selected.feature_portfolio;
+      const portLimit = selected.portfolio_limit || 25;
+      const portPrice = selected.addon_portfolio_price || matchPlan?.addon_portfolio_price || 15.0;
+      const total = calculatePaymentAmount(tenantId, newPayment.days_covered, isAged, isPort, paymentCategory);
 
       setNewPayment(prev => ({
         ...prev,
@@ -99,19 +115,25 @@ export const PaymentsView: React.FC = () => {
         currency: matchPlan ? matchPlan.currency : 'AZN',
         include_aged_listings: isAged,
         addon_aged_max_months: maxMonths,
+        include_portfolio_addon: isPort,
+        addon_portfolio_limit: portLimit,
+        addon_portfolio_price: portPrice,
         notes: `Cash collected for ${selected.name} (${selected.plan.toUpperCase()} Plan)`
       }));
     }
   };
 
-  const handlePeriodOrAddonChange = (days: number, includeAged: boolean, category: 'full' | 'addon_only' | 'plan_only' = paymentCategory) => {
+  const handlePeriodOrAddonChange = (days: number, includeAged: boolean, includePortfolio: boolean = newPayment.include_portfolio_addon, category: 'full' | 'addon_only' | 'plan_only' = paymentCategory) => {
     setPaymentCategory(category);
-    const total = calculatePaymentAmount(newPayment.tenant_id, days, includeAged, category);
+    const effectiveAged = category === 'addon_only' ? includeAged : (category === 'plan_only' ? false : includeAged);
+    const effectivePort = category === 'addon_only' ? includePortfolio : (category === 'plan_only' ? false : includePortfolio);
+    const total = calculatePaymentAmount(newPayment.tenant_id, days, effectiveAged, effectivePort, category);
     setNewPayment(prev => ({
       ...prev,
       days_covered: days,
       payment_category: category,
-      include_aged_listings: category === 'addon_only' ? true : (category === 'plan_only' ? false : includeAged),
+      include_aged_listings: effectiveAged,
+      include_portfolio_addon: effectivePort,
       amount: total
     }));
   };
@@ -197,7 +219,7 @@ export const PaymentsView: React.FC = () => {
                 <div className="grid grid-cols-3 gap-1.5 p-1 bg-dark-900 rounded-xl border border-slate-800 text-xs font-medium">
                   <button
                     type="button"
-                    onClick={() => handlePeriodOrAddonChange(newPayment.days_covered, newPayment.include_aged_listings, 'full')}
+                    onClick={() => handlePeriodOrAddonChange(newPayment.days_covered, newPayment.include_aged_listings, newPayment.include_portfolio_addon, 'full')}
                     className={`py-1.5 rounded-lg text-center transition-all ${
                       paymentCategory === 'full' 
                         ? 'bg-emerald-500 text-white shadow-md font-semibold' 
@@ -208,7 +230,7 @@ export const PaymentsView: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => handlePeriodOrAddonChange(newPayment.days_covered, true, 'addon_only')}
+                    onClick={() => handlePeriodOrAddonChange(newPayment.days_covered, true, true, 'addon_only')}
                     className={`py-1.5 rounded-lg text-center transition-all ${
                       paymentCategory === 'addon_only' 
                         ? 'bg-purple-600 text-white shadow-md font-semibold' 
@@ -219,7 +241,7 @@ export const PaymentsView: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => handlePeriodOrAddonChange(newPayment.days_covered, false, 'plan_only')}
+                    onClick={() => handlePeriodOrAddonChange(newPayment.days_covered, false, false, 'plan_only')}
                     className={`py-1.5 rounded-lg text-center transition-all ${
                       paymentCategory === 'plan_only' 
                         ? 'bg-blue-600 text-white shadow-md font-semibold' 
@@ -262,7 +284,7 @@ export const PaymentsView: React.FC = () => {
                   <label className="text-xs text-slate-400 block mb-1">Coverage Period</label>
                   <select
                     value={newPayment.days_covered}
-                    onChange={(e) => handlePeriodOrAddonChange(Number(e.target.value), newPayment.include_aged_listings, paymentCategory)}
+                    onChange={(e) => handlePeriodOrAddonChange(Number(e.target.value), newPayment.include_aged_listings, newPayment.include_portfolio_addon, paymentCategory)}
                     className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
                   >
                     <option value={30}>1 Month (30 Days)</option>
@@ -284,7 +306,7 @@ export const PaymentsView: React.FC = () => {
                         checked={newPayment.include_aged_listings}
                         onChange={(e) => {
                           const val = e.target.checked;
-                          handlePeriodOrAddonChange(newPayment.days_covered, val, paymentCategory);
+                          handlePeriodOrAddonChange(newPayment.days_covered, val, newPayment.include_portfolio_addon, paymentCategory);
                         }}
                         className="rounded accent-emerald-500"
                       />
@@ -336,6 +358,47 @@ export const PaymentsView: React.FC = () => {
                       <option value={24}>24 Months (2 Years)</option>
                     </select>
                   </div>
+                </div>
+              )}
+
+              {/* Agent Portfolio Addon Option */}
+              {(paymentCategory === 'full' || paymentCategory === 'addon_only') && (
+                <div className="p-3 bg-dark-900/80 rounded-xl border border-blue-500/30 space-y-2">
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={newPayment.include_portfolio_addon}
+                        onChange={(e) => {
+                          const val = e.target.checked;
+                          handlePeriodOrAddonChange(newPayment.days_covered, newPayment.include_aged_listings, val, paymentCategory);
+                        }}
+                        className="rounded accent-blue-500"
+                      />
+                      <span className="text-xs font-semibold text-slate-200">
+                        Include Agent Portfolio & Digital Vitrin Add-on
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-blue-400 font-mono font-semibold">
+                      +{newPayment.addon_portfolio_price || 15} AZN/mo
+                    </span>
+                  </label>
+
+                  {newPayment.include_portfolio_addon && (
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-xs">
+                      <span className="text-slate-400">Portfel Limiti:</span>
+                      <select
+                        value={newPayment.addon_portfolio_limit}
+                        onChange={(e) => setNewPayment({ ...newPayment, addon_portfolio_limit: Number(e.target.value) })}
+                        className="bg-dark-800 border border-slate-700 text-white rounded-lg px-2 py-1 text-xs font-medium"
+                      >
+                        <option value={25}>25 Elan (Standart)</option>
+                        <option value={50}>50 Elan (Genişləndirilmiş)</option>
+                        <option value={100}>100 Elan (Pro)</option>
+                        <option value={250}>250 Elan (Agency / Limitsiz)</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
               )}
 

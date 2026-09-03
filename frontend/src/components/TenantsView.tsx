@@ -118,6 +118,9 @@ export const TenantsView: React.FC = () => {
   const [cashFeatureImages, setCashFeatureImages] = useState<boolean>(false);
   const [cashExtraImages, setCashExtraImages] = useState<number>(0);
   const [cashIncludeCrm, setCashIncludeCrm] = useState<boolean>(false);
+  const [cashIncludePortfolio, setCashIncludePortfolio] = useState<boolean>(false);
+  const [cashPortfolioLimit, setCashPortfolioLimit] = useState<number>(25);
+  const [cashPortfolioPrice, setCashPortfolioPrice] = useState<number>(15);
   const [cashNotes, setCashNotes] = useState<string>('');
 
   const loadTenants = async () => {
@@ -379,7 +382,9 @@ export const TenantsView: React.FC = () => {
     extraSearches: number = cashExtraSearches,
     category: string = paymentCategory,
     extraImages: number = cashExtraImages,
-    includeCrm: boolean = cashIncludeCrm
+    includeCrm: boolean = cashIncludeCrm,
+    includePortfolio: boolean = cashIncludePortfolio,
+    portPriceVal: number = cashPortfolioPrice
   ) => {
     const planObj = availablePlans.find(p => p.code === planCode);
     const basePrice = planObj ? planObj.price : 29.0;
@@ -387,19 +392,21 @@ export const TenantsView: React.FC = () => {
     const searchPackPrice = planObj?.addon_saved_searches_price !== undefined ? planObj.addon_saved_searches_price : 10.0;
     const imagePackPrice = planObj?.addon_image_requests_price !== undefined ? planObj.addon_image_requests_price : 10.0;
     const crmPrice = planObj?.addon_crm_price !== undefined ? planObj.addon_crm_price : 15.0;
+    const portfolioPrice = portPriceVal || (planObj?.addon_portfolio_price !== undefined ? planObj.addon_portfolio_price : 15.0);
     const multiplier = days === 365 ? 10 : (days === 180 ? 5 : (days === 90 ? 2.7 : (days === 60 ? 2.0 : 1)));
 
     const agedFee = includeAged ? (addonPrice * multiplier) : 0;
     const searchFee = extraSearches > 0 ? ((extraSearches / 5.0) * searchPackPrice * multiplier) : 0;
     const imageFee = extraImages > 0 ? ((extraImages / 25.0) * imagePackPrice * multiplier) : 0;
     const crmFee = includeCrm ? (crmPrice * multiplier) : 0;
+    const portfolioFee = includePortfolio ? (portfolioPrice * multiplier) : 0;
 
     if (category === 'addon_only') {
-      return Math.round(agedFee + searchFee + imageFee + crmFee);
+      return Math.round(agedFee + searchFee + imageFee + crmFee + portfolioFee);
     } else if (category === 'plan_only') {
       return Math.round(basePrice * multiplier);
     } else {
-      return Math.round((basePrice * multiplier) + agedFee + searchFee + imageFee + crmFee);
+      return Math.round((basePrice * multiplier) + agedFee + searchFee + imageFee + crmFee + portfolioFee);
     }
   };
 
@@ -413,6 +420,9 @@ export const TenantsView: React.FC = () => {
     const isImageActive = defaultCategory === 'addon_only' ? true : !!t.feature_watermark_free_images;
     const extraImages = t.addon_image_requests_limit || 0;
     const isCrmActive = defaultCategory === 'addon_only' ? true : !!t.feature_crm;
+    const isPortfolioActive = defaultCategory === 'addon_only' ? true : !!t.feature_portfolio;
+    const portLimit = t.portfolio_limit || 25;
+    const portPrice = t.addon_portfolio_price || 15;
     
     setPaymentCategory(defaultCategory);
     setPaymentPlan(initialPlan);
@@ -423,8 +433,11 @@ export const TenantsView: React.FC = () => {
     setCashFeatureImages(isImageActive);
     setCashExtraImages(extraImages);
     setCashIncludeCrm(isCrmActive);
+    setCashIncludePortfolio(isPortfolioActive);
+    setCashPortfolioLimit(portLimit);
+    setCashPortfolioPrice(portPrice);
 
-    const initialAmount = calculateCashTotal(initialPlan, 30, isAgedActive, extraSearches, defaultCategory, extraImages, isCrmActive);
+    const initialAmount = calculateCashTotal(initialPlan, 30, isAgedActive, extraSearches, defaultCategory, extraImages, isCrmActive, isPortfolioActive, portPrice);
     setCashAmount(initialAmount);
     const notePrefix = defaultCategory === 'addon_only' 
       ? `Cash payment for Addons ONLY - ${t.name}`
@@ -440,7 +453,10 @@ export const TenantsView: React.FC = () => {
     extraSearches: number = cashExtraSearches,
     extraImages: number = cashExtraImages,
     featureImages: boolean = cashFeatureImages,
-    includeCrm: boolean = cashIncludeCrm
+    includeCrm: boolean = cashIncludeCrm,
+    includePortfolio: boolean = cashIncludePortfolio,
+    portLimit: number = cashPortfolioLimit,
+    portPrice: number = cashPortfolioPrice
   ) => {
     setPaymentPlan(planCode);
     setCashDays(days);
@@ -450,13 +466,17 @@ export const TenantsView: React.FC = () => {
     setCashExtraImages(extraImages);
     setCashFeatureImages(featureImages);
     setCashIncludeCrm(includeCrm);
-    const calculatedAmount = calculateCashTotal(planCode, days, includeAged, extraSearches, category, extraImages, includeCrm);
+    setCashIncludePortfolio(includePortfolio);
+    setCashPortfolioLimit(portLimit);
+    setCashPortfolioPrice(portPrice);
+    const calculatedAmount = calculateCashTotal(planCode, days, includeAged, extraSearches, category, extraImages, includeCrm, includePortfolio, portPrice);
     setCashAmount(calculatedAmount);
     const label = category === 'addon_only' ? 'Addons Only' : `${planCode.toUpperCase()} Plan`;
     const searchTag = extraSearches > 0 ? ` + ${extraSearches} Searches` : '';
     const imgTag = extraImages > 0 ? ` + ${extraImages} Photos` : '';
     const crmTag = includeCrm ? ` + Telegram CRM` : '';
-    setCashNotes(`Cash payment for ${label}${searchTag}${imgTag}${crmTag} (${days} days)`);
+    const portTag = includePortfolio ? ` + Portfel (${portLimit} elan)` : '';
+    setCashNotes(`Cash payment for ${label}${searchTag}${imgTag}${crmTag}${portTag} (${days} days)`);
   };
 
   const handleRecordCashPayment = async (e: React.FormEvent) => {
@@ -474,6 +494,9 @@ export const TenantsView: React.FC = () => {
         feature_watermark_free_images: cashFeatureImages || (cashExtraImages > 0),
         addon_image_requests_limit: cashExtraImages,
         include_crm_addon: paymentCategory === 'addon_only' ? cashIncludeCrm : (paymentCategory === 'plan_only' ? false : cashIncludeCrm),
+        include_portfolio_addon: paymentCategory === 'addon_only' ? cashIncludePortfolio : (paymentCategory === 'plan_only' ? false : cashIncludePortfolio),
+        addon_portfolio_limit: cashPortfolioLimit,
+        addon_portfolio_price: cashPortfolioPrice,
         notes: cashNotes
       });
       setPaymentModalTenant(null);
@@ -1729,6 +1752,57 @@ export const TenantsView: React.FC = () => {
                       +{((availablePlans.find(p => p.code === paymentPlan)?.addon_crm_price) ?? 15)} AZN/ay
                     </span>
                   </label>
+                </div>
+              )}
+
+              {/* Agent Portfolio & Digital Showcase Add-on Option */}
+              {(paymentCategory === 'full' || paymentCategory === 'addon_only') && (
+                <div className="p-3 bg-dark-900/80 rounded-xl border border-blue-500/30 space-y-2">
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <div className="flex items-center gap-2.5">
+                      <input
+                        type="checkbox"
+                        checked={cashIncludePortfolio}
+                        onChange={(e) => {
+                          const val = e.target.checked;
+                          setCashIncludePortfolio(val);
+                          handlePlanOrPeriodChange(paymentPlan, cashDays, cashIncludeAgedListings, paymentCategory, cashExtraSearches, cashExtraImages, cashFeatureImages, cashIncludeCrm, val, cashPortfolioLimit, cashPortfolioPrice);
+                        }}
+                        className="w-4 h-4 rounded accent-blue-500"
+                      />
+                      <div>
+                        <span className="text-xs font-semibold text-blue-200 block">
+                          🗂️ Agent Portfeli & Rəqəmsal Vitrin Add-on
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          1-kliklə elan əlavəsi, fərdi brendinq və ictimai müştəri vitrini
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-[11px] text-blue-400 font-mono font-semibold">
+                      +{cashPortfolioPrice || ((availablePlans.find(p => p.code === paymentPlan)?.addon_portfolio_price) ?? 15)} AZN/ay
+                    </span>
+                  </label>
+
+                  {cashIncludePortfolio && (
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-xs">
+                      <span className="text-slate-400">Maksimum Portfel Elan Limiti:</span>
+                      <select
+                        value={cashPortfolioLimit}
+                        onChange={(e) => {
+                          const lim = Number(e.target.value);
+                          setCashPortfolioLimit(lim);
+                          handlePlanOrPeriodChange(paymentPlan, cashDays, cashIncludeAgedListings, paymentCategory, cashExtraSearches, cashExtraImages, cashFeatureImages, cashIncludeCrm, true, lim, cashPortfolioPrice);
+                        }}
+                        className="bg-dark-800 border border-slate-700 text-white rounded-lg px-2 py-1 text-xs font-medium"
+                      >
+                        <option value={25}>25 Elan (Standart)</option>
+                        <option value={50}>50 Elan (Genişləndirilmiş)</option>
+                        <option value={100}>100 Elan (Pro)</option>
+                        <option value={250}>250 Elan (Agency / Limitsiz)</option>
+                      </select>
+                    </div>
+                  )}
                 </div>
               )}
 

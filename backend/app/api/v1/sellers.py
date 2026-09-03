@@ -961,21 +961,83 @@ async def update_my_agent(
     if body.addon_image_requests_used is not None:
         agent.addon_image_requests_used = body.addon_image_requests_used
     if body.feature_crm is not None:
+        was_crm = agent.feature_crm
         agent.feature_crm = body.feature_crm
         if body.feature_crm:
             now_utc = datetime.now(timezone.utc)
             if not agent.crm_expires_at or agent.crm_expires_at < now_utc:
                 agent.crm_expires_at = agent.plan_expires_at or (now_utc + timedelta(days=30))
+            if not was_crm:
+                crm_price = agent.addon_crm_price if (agent.addon_crm_price and agent.addon_crm_price > 0) else 15.0
+                effective_comm = min(100.0, seller.commission_rate)
+                seller_profit = round(crm_price * (effective_comm / 100.0), 2)
+                platform_fee = round(crm_price - seller_profit, 2)
+                seller.balance += seller_profit
+                seller.total_earnings += seller_profit
+                seller.total_sales_volume += crm_price
+                tx = SellerTransaction(
+                    seller_id=seller.id,
+                    tenant_id=agent.id,
+                    amount=crm_price,
+                    commission_rate=effective_comm,
+                    seller_profit=seller_profit,
+                    platform_fee=platform_fee,
+                    type="addon_sale",
+                    description=f"CRM Add-on Aktivasiyası: {agent.name}"
+                )
+                db.add(tx)
+                pay_record = Payment(
+                    tenant_id=agent.id,
+                    amount=crm_price,
+                    currency="AZN",
+                    period_covered_start=now_utc,
+                    period_covered_end=agent.crm_expires_at,
+                    received_at=now_utc,
+                    notes=f"Seller Add-on: CRM Mini App for {agent.name}"
+                )
+                db.add(pay_record)
+
+    if body.portfolio_limit is not None:
+        agent.portfolio_limit = body.portfolio_limit
+    if body.addon_portfolio_price is not None:
+        agent.addon_portfolio_price = body.addon_portfolio_price
+
     if body.feature_portfolio is not None:
+        was_port = agent.feature_portfolio
         agent.feature_portfolio = body.feature_portfolio
         if body.feature_portfolio:
             now_utc = datetime.now(timezone.utc)
             if not agent.portfolio_expires_at or agent.portfolio_expires_at < now_utc:
                 agent.portfolio_expires_at = agent.plan_expires_at or (now_utc + timedelta(days=30))
-    if body.portfolio_limit is not None:
-        agent.portfolio_limit = body.portfolio_limit
-    if body.addon_portfolio_price is not None:
-        agent.addon_portfolio_price = body.addon_portfolio_price
+            if not was_port:
+                port_price = agent.addon_portfolio_price if (agent.addon_portfolio_price and agent.addon_portfolio_price > 0) else 15.0
+                effective_comm = min(100.0, seller.commission_rate)
+                seller_profit = round(port_price * (effective_comm / 100.0), 2)
+                platform_fee = round(port_price - seller_profit, 2)
+                seller.balance += seller_profit
+                seller.total_earnings += seller_profit
+                seller.total_sales_volume += port_price
+                tx = SellerTransaction(
+                    seller_id=seller.id,
+                    tenant_id=agent.id,
+                    amount=port_price,
+                    commission_rate=effective_comm,
+                    seller_profit=seller_profit,
+                    platform_fee=platform_fee,
+                    type="addon_sale",
+                    description=f"Portfel Add-on Aktivasiyası: {agent.name} ({agent.portfolio_limit or 25} elan)"
+                )
+                db.add(tx)
+                pay_record = Payment(
+                    tenant_id=agent.id,
+                    amount=port_price,
+                    currency="AZN",
+                    period_covered_start=now_utc,
+                    period_covered_end=agent.portfolio_expires_at,
+                    received_at=now_utc,
+                    notes=f"Seller Add-on: Agent Portfolio ({agent.portfolio_limit or 25} elan) for {agent.name}"
+                )
+                db.add(pay_record)
 
     await db.commit()
     await db.refresh(agent)
