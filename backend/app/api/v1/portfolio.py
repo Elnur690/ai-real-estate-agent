@@ -1,0 +1,580 @@
+from datetime import datetime, timezone
+from typing import Optional, List, Dict, Any
+import urllib.parse
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from pydantic import BaseModel
+from sqlalchemy import select, func, desc, update, delete
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_db, get_current_user
+from app.models.user import User
+from app.models.tenant import Tenant
+from app.models.listing import Listing
+from app.models.portfolio import PortfolioListing, generate_share_code
+
+router = APIRouter(prefix="/portfolio", tags=["Portfolio"])
+
+
+# --- Pydantic Schemas ---
+
+class PortfolioListingCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    price: float
+    currency: str = "AZN"
+    price_usd: Optional[float] = None
+    district: Optional[str] = None
+    metro_station: Optional[str] = None
+    address: Optional[str] = None
+    rooms: Optional[int] = None
+    area_sqm: Optional[float] = None
+    floor: Optional[int] = None
+    total_floors: Optional[int] = None
+    building_type: Optional[str] = None
+    property_type: Optional[str] = "apartment"
+    offer_type: Optional[str] = "sale"
+    photos: Optional[List[Any]] = []
+    contact_name: Optional[str] = None
+    contact_phone: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class PortfolioListingUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[float] = None
+    currency: Optional[str] = None
+    price_usd: Optional[float] = None
+    district: Optional[str] = None
+    metro_station: Optional[str] = None
+    address: Optional[str] = None
+    rooms: Optional[int] = None
+    area_sqm: Optional[float] = None
+    floor: Optional[int] = None
+    total_floors: Optional[int] = None
+    building_type: Optional[str] = None
+    property_type: Optional[str] = None
+    offer_type: Optional[str] = None
+    photos: Optional[List[Any]] = None
+    contact_name: Optional[str] = None
+    contact_phone: Optional[str] = None
+    notes: Optional[str] = None
+    status: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class PortfolioListingResponse(BaseModel):
+    id: int
+    tenant_id: int
+    listing_id: Optional[int] = None
+    title: str
+    description: Optional[str] = None
+    price: float
+    currency: str = "AZN"
+    price_usd: Optional[float] = None
+    district: Optional[str] = None
+    metro_station: Optional[str] = None
+    address: Optional[str] = None
+    rooms: Optional[int] = None
+    area_sqm: Optional[float] = None
+    floor: Optional[int] = None
+    total_floors: Optional[int] = None
+    building_type: Optional[str] = None
+    property_type: Optional[str] = "apartment"
+    offer_type: Optional[str] = "sale"
+    photos: Optional[List[Any]] = []
+    contact_name: Optional[str] = None
+    contact_phone: Optional[str] = None
+    notes: Optional[str] = None
+    share_code: str
+    share_url: Optional[str] = None
+    is_active: bool = True
+    status: str = "active"
+    created_at: datetime
+    updated_at: datetime
+
+
+class PortfolioOverviewResponse(BaseModel):
+    items: List[PortfolioListingResponse]
+    active_count: int
+    portfolio_limit: int
+    is_limit_reached: bool
+    feature_enabled: bool
+    expires_at: Optional[datetime] = None
+
+
+class PublicPortfolioListingResponse(BaseModel):
+    id: int
+    title: str
+    description: Optional[str] = None
+    price: float
+    currency: str = "AZN"
+    price_usd: Optional[float] = None
+    district: Optional[str] = None
+    metro_station: Optional[str] = None
+    address: Optional[str] = None
+    rooms: Optional[int] = None
+    area_sqm: Optional[float] = None
+    floor: Optional[int] = None
+    total_floors: Optional[int] = None
+    building_type: Optional[str] = None
+    property_type: str = "apartment"
+    offer_type: str = "sale"
+    photos: List[Any] = []
+    share_code: str
+    agent_name: str
+    agent_phone: str
+    agent_whatsapp: Optional[str] = None
+    whatsapp_message_url: str
+    created_at: datetime
+
+
+# --- Helpers ---
+
+async def get_tenant_for_portfolio(db: AsyncSession, user: User, tenant_id_override: Optional[int] = None) -> Tenant:
+    if user.role == "admin" and tenant_id_override:
+        stmt = select(Tenant).where(Tenant.id == tenant_id_override)
+        res = await db.execute(stmt)
+        t = res.scalars().first()
+        if t:
+            return t
+
+    if user.role == "admin":
+        stmt = select(Tenant).order_by(Tenant.id.asc())
+        res = await db.execute(stmt)
+        tenant = res.scalars().first()
+        if not tenant:
+            raise HTTPException(status_code=404, detail="No tenant accounts found.")
+        return tenant
+
+    if not user.tenant_id:
+        raise HTTPException(status_code=403, detail="User is not linked to any tenant account.")
+
+    stmt = select(Tenant).where(Tenant.id == user.tenant_id)
+    res = await db.execute(stmt)
+    tenant = res.scalars().first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant account not found.")
+    return tenant
+
+
+async def count_active_portfolio_listings(db: AsyncSession, tenant_id: int) -> int:
+    stmt = select(func.count(PortfolioListing.id)).where(
+        PortfolioListing.tenant_id == tenant_id,
+        PortfolioListing.is_active == True
+    )
+    res = await db.execute(stmt)
+    return res.scalar_one() or 0
+
+
+def format_listing_response(item: PortfolioListing) -> PortfolioListingResponse:
+    data = {
+        "id": item.id,
+        "tenant_id": item.tenant_id,
+        "listing_id": item.listing_id,
+        "title": item.title,
+        "description": item.description,
+        "price": item.price,
+        "currency": item.currency or "AZN",
+        "price_usd": item.price_usd,
+        "district": item.district,
+        "metro_station": item.metro_station,
+        "address": item.address,
+        "rooms": item.rooms,
+        "area_sqm": item.area_sqm,
+        "floor": item.floor,
+        "total_floors": item.total_floors,
+        "building_type": item.building_type,
+        "property_type": item.property_type or "apartment",
+        "offer_type": item.offer_type or "sale",
+        "photos": item.photos or [],
+        "contact_name": item.contact_name,
+        "contact_phone": item.contact_phone,
+        "notes": item.notes,
+        "share_code": item.share_code,
+        "share_url": f"/p/{item.share_code}",
+        "is_active": item.is_active,
+        "status": item.status,
+        "created_at": item.created_at,
+        "updated_at": item.updated_at
+    }
+    return PortfolioListingResponse(**data)
+
+
+# --- Endpoints ---
+
+@router.get("", response_model=PortfolioOverviewResponse)
+async def list_portfolio_listings(
+    status_filter: Optional[str] = None,
+    tenant_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """List authenticated agent's portfolio listings with quota and limit metrics."""
+    tenant = await get_tenant_for_portfolio(db, current_user, tenant_id)
+
+    stmt = select(PortfolioListing).where(PortfolioListing.tenant_id == tenant.id)
+    if status_filter:
+        stmt = stmt.where(PortfolioListing.status == status_filter)
+    stmt = stmt.order_by(desc(PortfolioListing.created_at))
+
+    res = await db.execute(stmt)
+    listings = res.scalars().all()
+
+    active_count = await count_active_portfolio_listings(db, tenant.id)
+    limit = getattr(tenant, 'portfolio_limit', 25) or 25
+    feature_enabled = bool(getattr(tenant, 'feature_portfolio', False))
+
+    return PortfolioOverviewResponse(
+        items=[format_listing_response(item) for item in listings],
+        active_count=active_count,
+        portfolio_limit=limit,
+        is_limit_reached=(active_count >= limit),
+        feature_enabled=feature_enabled,
+        expires_at=getattr(tenant, 'portfolio_expires_at', None)
+    )
+
+
+@router.post("/from-listing/{listing_id}", response_model=PortfolioListingResponse)
+async def add_to_portfolio_from_listing(
+    listing_id: int,
+    tenant_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    1-Click Add: Clone a received listing into the agent's private portfolio.
+    Checks portfolio add-on activation and enforces portfolio listing quota/limit.
+    """
+    tenant = await get_tenant_for_portfolio(db, current_user, tenant_id)
+
+    # 1. Check feature toggle
+    if not getattr(tenant, "feature_portfolio", False):
+        price = getattr(tenant, "addon_portfolio_price", 15.0) or 15.0
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Agent Portfeli add-on aktiv deyil. Hesabınızda portfel modulunu aktivləşdirin ({price} AZN / ay)."
+        )
+
+    # 2. Check active quota vs limit
+    active_count = await count_active_portfolio_listings(db, tenant.id)
+    limit = getattr(tenant, "portfolio_limit", 25) or 25
+    if active_count >= limit:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Portfel limitiniz dolub ({active_count}/{limit} elan istifadə edilib). Zəhmət olmasa vaxtı bitmiş elanları silin və ya paketinizi artırın."
+        )
+
+    # 3. Fetch source listing
+    stmt = select(Listing).where(Listing.id == listing_id)
+    res = await db.execute(stmt)
+    listing = res.scalars().first()
+    if not listing:
+        raise HTTPException(status_code=404, detail="Göstərilən elan tapılmadı.")
+
+    # 4. Clone fields into PortfolioListing
+    portfolio_item = PortfolioListing(
+        tenant_id=tenant.id,
+        listing_id=listing.id,
+        title=listing.title,
+        description=listing.description,
+        price=listing.price,
+        currency=listing.currency or "AZN",
+        price_usd=listing.price_usd,
+        district=listing.district,
+        metro_station=listing.metro_station,
+        address=listing.address_raw,
+        rooms=listing.rooms,
+        area_sqm=listing.area_sqm,
+        floor=listing.floor,
+        total_floors=listing.total_floors,
+        building_type=listing.building_type,
+        property_type=listing.property_type or "apartment",
+        offer_type=listing.offer_type or "sale",
+        photos=listing.photos or [],
+        contact_name=tenant.name,
+        contact_phone=tenant.phone,
+        notes=f"Elan portaldan əlavə edildi (Mənbə ID: #{listing.id})",
+        share_code=generate_share_code(),
+        is_active=True,
+        status="active"
+    )
+
+    db.add(portfolio_item)
+    await db.commit()
+    await db.refresh(portfolio_item)
+
+    return format_listing_response(portfolio_item)
+
+
+@router.post("", response_model=PortfolioListingResponse)
+async def create_portfolio_listing(
+    payload: PortfolioListingCreate,
+    tenant_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Manually create a new property listing inside agent's portfolio."""
+    tenant = await get_tenant_for_portfolio(db, current_user, tenant_id)
+
+    if not getattr(tenant, "feature_portfolio", False):
+        price = getattr(tenant, "addon_portfolio_price", 15.0) or 15.0
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Agent Portfeli add-on aktiv deyil. Aktivləşdirmək üçün: {price} AZN / ay."
+        )
+
+    active_count = await count_active_portfolio_listings(db, tenant.id)
+    limit = getattr(tenant, "portfolio_limit", 25) or 25
+    if active_count >= limit:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Portfel limitiniz dolub ({active_count}/{limit}). Zəhmət olmasa vaxtı bitmiş elanları silin və ya paketinizi artırın."
+        )
+
+    item = PortfolioListing(
+        tenant_id=tenant.id,
+        title=payload.title,
+        description=payload.description,
+        price=payload.price,
+        currency=payload.currency or "AZN",
+        price_usd=payload.price_usd,
+        district=payload.district,
+        metro_station=payload.metro_station,
+        address=payload.address,
+        rooms=payload.rooms,
+        area_sqm=payload.area_sqm,
+        floor=payload.floor,
+        total_floors=payload.total_floors,
+        building_type=payload.building_type,
+        property_type=payload.property_type or "apartment",
+        offer_type=payload.offer_type or "sale",
+        photos=payload.photos or [],
+        contact_name=payload.contact_name or tenant.name,
+        contact_phone=payload.contact_phone or tenant.phone,
+        notes=payload.notes,
+        share_code=generate_share_code(),
+        is_active=True,
+        status="active"
+    )
+
+    db.add(item)
+    await db.commit()
+    await db.refresh(item)
+
+    return format_listing_response(item)
+
+
+@router.get("/{id}", response_model=PortfolioListingResponse)
+async def get_portfolio_listing(
+    id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Retrieve details of a single portfolio listing."""
+    tenant = await get_tenant_for_portfolio(db, current_user)
+
+    stmt = select(PortfolioListing).where(
+        PortfolioListing.id == id,
+        PortfolioListing.tenant_id == tenant.id
+    )
+    res = await db.execute(stmt)
+    item = res.scalars().first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Portfel elanı tapılmadı.")
+
+    return format_listing_response(item)
+
+
+@router.put("/{id}", response_model=PortfolioListingResponse)
+async def update_portfolio_listing(
+    id: int,
+    payload: PortfolioListingUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Update details of a portfolio listing field-by-field.
+    Allows agent to customize description, price, contact, photos, status, etc.
+    """
+    tenant = await get_tenant_for_portfolio(db, current_user)
+
+    stmt = select(PortfolioListing).where(
+        PortfolioListing.id == id,
+        PortfolioListing.tenant_id == tenant.id
+    )
+    res = await db.execute(stmt)
+    item = res.scalars().first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Portfel elanı tapılmadı.")
+
+    # If reactivating an inactive listing, check limit
+    if payload.is_active is True and item.is_active is False:
+        active_count = await count_active_portfolio_listings(db, tenant.id)
+        limit = getattr(tenant, "portfolio_limit", 25) or 25
+        if active_count >= limit:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Portfel limiti ({limit}) dolub. Yeni elan aktivləşdirmək üçün köhnələri silin."
+            )
+
+    update_dict = payload.model_dump(exclude_unset=True)
+    for field, val in update_dict.items():
+        setattr(item, field, val)
+
+    item.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(item)
+
+    return format_listing_response(item)
+
+
+@router.delete("/{id}")
+async def delete_portfolio_listing(
+    id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete an expired or sold listing from portfolio.
+    Instantly frees up limit slot for the agent.
+    """
+    tenant = await get_tenant_for_portfolio(db, current_user)
+
+    stmt = select(PortfolioListing).where(
+        PortfolioListing.id == id,
+        PortfolioListing.tenant_id == tenant.id
+    )
+    res = await db.execute(stmt)
+    item = res.scalars().first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Portfel elanı tapılmadı.")
+
+    await db.delete(item)
+    await db.commit()
+
+    new_active_count = await count_active_portfolio_listings(db, tenant.id)
+    limit = getattr(tenant, "portfolio_limit", 25) or 25
+
+    return {
+        "message": "Elan portfeldən uğurla silindi və limit yuvası azad edildi.",
+        "active_count": new_active_count,
+        "portfolio_limit": limit,
+        "remaining_slots": max(0, limit - new_active_count)
+    }
+
+
+# --- Public Client Sharing Endpoints (No Auth Required) ---
+
+@router.get("/public/{share_code}", response_model=PublicPortfolioListingResponse)
+async def get_public_portfolio_listing(
+    share_code: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Public Client Presentation:
+    Fetches property details via public share_code with agent branding and WhatsApp contact button.
+    Does not expose competitors, broker portals, or internal private notes.
+    """
+    stmt = select(PortfolioListing).where(
+        PortfolioListing.share_code == share_code,
+        PortfolioListing.is_active == True
+    )
+    res = await db.execute(stmt)
+    item = res.scalars().first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Elan tapılmadı və ya aktivliyi dayandırılıb.")
+
+    # Resolve tenant contact info
+    stmt_t = select(Tenant).where(Tenant.id == item.tenant_id)
+    res_t = await db.execute(stmt_t)
+    tenant = res_t.scalars().first()
+
+    agent_name = item.contact_name or (tenant.name if tenant else "Əmlak Agentliyi")
+    agent_phone = item.contact_phone or (tenant.phone if tenant else "")
+    agent_whatsapp = (tenant.whatsapp_number or agent_phone) if tenant else agent_phone
+
+    clean_wa = "".join(filter(str.isdigit, agent_whatsapp or ""))
+    wa_msg = f"Salam, {agent_name}. Sizin portfelinizdəki bu elanla bağlı əlaqə saxlayıram: {item.title} (Kod: {item.share_code})"
+    encoded_msg = urllib.parse.quote(wa_msg)
+    wa_url = f"https://wa.me/{clean_wa}?text={encoded_msg}" if clean_wa else ""
+
+    return PublicPortfolioListingResponse(
+        id=item.id,
+        title=item.title,
+        description=item.description,
+        price=item.price,
+        currency=item.currency or "AZN",
+        price_usd=item.price_usd,
+        district=item.district,
+        metro_station=item.metro_station,
+        address=item.address,
+        rooms=item.rooms,
+        area_sqm=item.area_sqm,
+        floor=item.floor,
+        total_floors=item.total_floors,
+        building_type=item.building_type,
+        property_type=item.property_type or "apartment",
+        offer_type=item.offer_type or "sale",
+        photos=item.photos or [],
+        share_code=item.share_code,
+        agent_name=agent_name,
+        agent_phone=agent_phone,
+        agent_whatsapp=agent_whatsapp,
+        whatsapp_message_url=wa_url,
+        created_at=item.created_at
+    )
+
+
+@router.get("/public/agent/{tenant_id}", response_model=List[PublicPortfolioListingResponse])
+async def get_agent_public_catalog(
+    tenant_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Public showcase of all active properties for an agent."""
+    stmt_t = select(Tenant).where(Tenant.id == tenant_id)
+    res_t = await db.execute(stmt_t)
+    tenant = res_t.scalars().first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Agent hesabı tapılmadı.")
+
+    stmt = select(PortfolioListing).where(
+        PortfolioListing.tenant_id == tenant_id,
+        PortfolioListing.is_active == True,
+        PortfolioListing.status == "active"
+    ).order_by(desc(PortfolioListing.created_at))
+    res = await db.execute(stmt)
+    items = res.scalars().all()
+
+    output = []
+    clean_wa = "".join(filter(str.isdigit, tenant.whatsapp_number or tenant.phone or ""))
+    for it in items:
+        wa_msg = f"Salam, {tenant.name}. Sizin portfelinizdəki bu elanla bağlı maraqlanıram: {it.title} (Kod: {it.share_code})"
+        wa_url = f"https://wa.me/{clean_wa}?text={urllib.parse.quote(wa_msg)}" if clean_wa else ""
+        output.append(PublicPortfolioListingResponse(
+            id=it.id,
+            title=it.title,
+            description=it.description,
+            price=it.price,
+            currency=it.currency or "AZN",
+            price_usd=it.price_usd,
+            district=it.district,
+            metro_station=it.metro_station,
+            address=it.address,
+            rooms=it.rooms,
+            area_sqm=it.area_sqm,
+            floor=it.floor,
+            total_floors=it.total_floors,
+            building_type=it.building_type,
+            property_type=it.property_type or "apartment",
+            offer_type=it.offer_type or "sale",
+            photos=it.photos or [],
+            share_code=it.share_code,
+            agent_name=it.contact_name or tenant.name,
+            agent_phone=it.contact_phone or tenant.phone,
+            agent_whatsapp=tenant.whatsapp_number or tenant.phone,
+            whatsapp_message_url=wa_url,
+            created_at=it.created_at
+        ))
+
+    return output

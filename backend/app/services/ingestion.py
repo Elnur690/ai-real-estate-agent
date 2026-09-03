@@ -1470,7 +1470,7 @@ class IngestionService:
                     f"{contact_line}"
                     f"🔗 [Elana keçid et]({listing_url_val})\n\n"
                     f"💬 *Reaksiya bildirin:*\n"
-                    f"`Təqdimat {new_match.id}` | `Foto {new_match.id}` | `CRM {new_match.id}` | `Maraqlanıram {new_match.id}` | `Keç {new_match.id}` | `Satılıb {new_match.id}`"
+                    f"`Təqdimat {new_match.id}` | `Foto {new_match.id}` | `Portfel {new_match.id}` | `CRM {new_match.id}` | `Maraqlanıram {new_match.id}` | `Keç {new_match.id}` | `Satılıb {new_match.id}`"
                 )
 
                 tg_sent = False

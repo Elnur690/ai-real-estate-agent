@@ -87,6 +87,10 @@ export interface SellerAgent {
   addon_image_requests_price?: number;
   feature_crm?: boolean;
   crm_expires_at?: string;
+  feature_portfolio?: boolean;
+  portfolio_limit?: number;
+  portfolio_expires_at?: string;
+  addon_portfolio_price?: number;
   preferred_billing_day?: number;
   seller_package_id?: number;
   package_data?: any;
@@ -127,6 +131,10 @@ export interface SellerPackageItem {
   feature_crm?: boolean;
   addon_crm_price?: number;
   addon_crm_tiers?: { months: number; price: number }[];
+  feature_portfolio?: boolean;
+  addon_portfolio_price?: number;
+  addon_portfolio_limit?: number;
+  addon_portfolio_tiers?: { listings: number; price: number }[];
   sale_enabled?: boolean;
   sale_price?: number;
   sale_discount_percent?: number;
@@ -239,6 +247,8 @@ export function SellerPortalView() {
   const [trialMultiLocation, setTrialMultiLocation] = useState(true);
   const [trialWatermarkImages, setTrialWatermarkImages] = useState(true);
   const [trialImageRequests, setTrialImageRequests] = useState(5);
+  const [trialPortfolio, setTrialPortfolio] = useState(false);
+  const [trialPortfolioLimit, setTrialPortfolioLimit] = useState(10);
   const [savingTrial, setSavingTrial] = useState(false);
   const [trialSavedMsg, setTrialSavedMsg] = useState(false);
 
@@ -269,6 +279,14 @@ export function SellerPortalView() {
   const [pkgIncludedImages, setPkgIncludedImages] = useState<number>(0);
   const [pkgAddonImagesPrice, setPkgAddonImagesPrice] = useState<number>(10);
   const [pkgImageTiers, setPkgImageTiers] = useState<{ requests: number; price: number }[]>([]);
+  const [pkgPortfolio, setPkgPortfolio] = useState(false);
+  const [pkgPortfolioPrice, setPkgPortfolioPrice] = useState<number>(15);
+  const [pkgPortfolioLimit, setPkgPortfolioLimit] = useState<number>(25);
+  const [pkgPortfolioTiers, setPkgPortfolioTiers] = useState<{ listings: number; price: number }[]>([
+    { listings: 25, price: 15 },
+    { listings: 50, price: 25 },
+    { listings: 100, price: 40 }
+  ]);
   
   // Package Promotional Sale State
   const [pkgSaleEnabled, setPkgSaleEnabled] = useState(false);
@@ -290,6 +308,9 @@ export function SellerPortalView() {
   const [agentSelectedImageRequests, setAgentSelectedImageRequests] = useState<number>(0);
   const [agentSelectedImagePrice, setAgentSelectedImagePrice] = useState<number>(0);
   const [agentSelectedCrmMonths, setAgentSelectedCrmMonths] = useState<number>(1);
+  const [agentPortfolio, setAgentPortfolio] = useState(false);
+  const [agentSelectedPortfolioLimit, setAgentSelectedPortfolioLimit] = useState<number>(25);
+  const [agentSelectedPortfolioPrice, setAgentSelectedPortfolioPrice] = useState<number>(15);
 
   // Agent Detail & Management Modal State
   const [isAgentDetailOpen, setIsAgentDetailOpen] = useState(false);
@@ -319,6 +340,8 @@ export function SellerPortalView() {
   const [editAgentImageLimit, setEditAgentImageLimit] = useState(0);
   const [editAgentImageUsed, setEditAgentImageUsed] = useState(0);
   const [editAgentCrm, setEditAgentCrm] = useState(false);
+  const [editAgentPortfolio, setEditAgentPortfolio] = useState(false);
+  const [editAgentPortfolioLimit, setEditAgentPortfolioLimit] = useState<number>(25);
   const [savingAgentEdit, setSavingAgentEdit] = useState(false);
   const [agentEditError, setAgentEditError] = useState<string | null>(null);
   const [agentEditSuccessMsg, setAgentEditSuccessMsg] = useState<string | null>(null);
@@ -335,6 +358,9 @@ export function SellerPortalView() {
   const [renewCrm, setRenewCrm] = useState<boolean>(false);
   const [renewCrmMonths, setRenewCrmMonths] = useState<number>(1);
   const [renewCrmPrice, setRenewCrmPrice] = useState<number>(0);
+  const [renewPortfolio, setRenewPortfolio] = useState<boolean>(false);
+  const [renewPortfolioLimit, setRenewPortfolioLimit] = useState<number>(25);
+  const [renewPortfolioPrice, setRenewPortfolioPrice] = useState<number>(15);
   const [renewingAgent, setRenewingAgent] = useState(false);
   const [renewError, setRenewError] = useState<string | null>(null);
   const [renewSuccessMsg, setRenewSuccessMsg] = useState<string | null>(null);
@@ -357,6 +383,8 @@ export function SellerPortalView() {
         setTrialMultiLocation(res.data.free_trial_feature_multi_location ?? true);
         setTrialWatermarkImages(res.data.free_trial_feature_watermark_images ?? true);
         setTrialImageRequests(res.data.free_trial_image_requests || 5);
+        setTrialPortfolio(res.data.free_trial_feature_portfolio ?? false);
+        setTrialPortfolioLimit(res.data.free_trial_portfolio_limit || 10);
       }
     } catch (err) {
       console.error('Error fetching seller dashboard:', err);
@@ -378,7 +406,9 @@ export function SellerPortalView() {
         free_trial_feature_social_brochure: trialBrochure,
         free_trial_feature_multi_location: trialMultiLocation,
         free_trial_feature_watermark_images: trialWatermarkImages,
-        free_trial_image_requests: trialImageRequests
+        free_trial_image_requests: trialImageRequests,
+        free_trial_feature_portfolio: trialPortfolio,
+        free_trial_portfolio_limit: trialPortfolioLimit
       });
       setTrialSavedMsg(true);
       setIsTrialModalOpen(false);
@@ -639,7 +669,11 @@ export function SellerPortalView() {
         selected_image_price: agentSelectedImagePrice > 0 ? agentSelectedImagePrice : undefined,
         selected_crm_enabled: agentCrm,
         selected_crm_months: agentSelectedCrmMonths,
-        selected_crm_price: (agentCrm && !isTrial) ? (packages.find(p => p.id === agentPkgId)?.addon_crm_price || 15) : 0
+        selected_crm_price: (agentCrm && !isTrial) ? (packages.find(p => p.id === agentPkgId)?.addon_crm_price || 15) : 0,
+        feature_portfolio: agentPortfolio,
+        selected_portfolio_enabled: agentPortfolio,
+        selected_portfolio_limit: agentPortfolio ? agentSelectedPortfolioLimit : undefined,
+        selected_portfolio_price: (agentPortfolio && !isTrial) ? agentSelectedPortfolioPrice : 0
       });
       setIsAddAgentOpen(false);
       setAgentName('');
@@ -647,6 +681,7 @@ export function SellerPortalView() {
       setAgentTg('');
       setAgentWhatsapp('');
       setAgentCrm(false);
+      setAgentPortfolio(false);
       setAgentPkgId(undefined);
       setAgentBillingDay(1);
       setAgentSelectedAgedMonths(0);
@@ -656,6 +691,8 @@ export function SellerPortalView() {
       setAgentSelectedImageRequests(0);
       setAgentSelectedImagePrice(0);
       setAgentSelectedCrmMonths(1);
+      setAgentSelectedPortfolioLimit(25);
+      setAgentSelectedPortfolioPrice(15);
       reloadAll();
     } catch (err: any) {
       setAgentError(err.response?.data?.detail || 'Xəta baş verdi');
@@ -709,6 +746,9 @@ export function SellerPortalView() {
     setRenewCrm(agent.feature_crm ?? false);
     setRenewCrmMonths(1);
     setRenewCrmPrice(agent.feature_crm ? 15.0 : 0);
+    setRenewPortfolio(agent.feature_portfolio ?? false);
+    setRenewPortfolioLimit(agent.portfolio_limit ?? 25);
+    setRenewPortfolioPrice(agent.feature_portfolio ? 15.0 : 0);
 
     // Fetch fresh details with counts & QR URLs
     setLoadingAgentDetail(true);
@@ -737,7 +777,11 @@ export function SellerPortalView() {
         setEditAgentImageLimit(res.data.addon_image_requests_limit || 0);
         setEditAgentImageUsed(res.data.addon_image_requests_used || 0);
         setEditAgentCrm(res.data.feature_crm ?? false);
+        setEditAgentPortfolio(res.data.feature_portfolio ?? false);
+        setEditAgentPortfolioLimit(res.data.portfolio_limit || 25);
         setRenewBillingDay(res.data.preferred_billing_day || 1);
+        setRenewPortfolio(res.data.feature_portfolio ?? false);
+        setRenewPortfolioLimit(res.data.portfolio_limit || 25);
         if (res.data.seller_package_id) {
           setRenewPkgId(res.data.seller_package_id);
         } else {
@@ -781,7 +825,9 @@ export function SellerPortalView() {
         feature_watermark_free_images: editAgentWatermarkImages,
         addon_image_requests_limit: editAgentImageLimit,
         addon_image_requests_used: editAgentImageUsed,
-        feature_crm: editAgentCrm
+        feature_crm: editAgentCrm,
+        feature_portfolio: editAgentPortfolio,
+        portfolio_limit: editAgentPortfolioLimit
       });
 
       setAgentEditSuccessMsg('Agent məlumatları uğurla yeniləndi!');
@@ -817,7 +863,10 @@ export function SellerPortalView() {
         selected_image_price: renewImagePrice > 0 ? renewImagePrice : undefined,
         selected_crm_enabled: renewCrm,
         selected_crm_months: renewCrmMonths,
-        selected_crm_price: renewCrm ? renewCrmPrice : 0
+        selected_crm_price: renewCrm ? renewCrmPrice : 0,
+        selected_portfolio_enabled: renewPortfolio,
+        selected_portfolio_limit: renewPortfolio ? renewPortfolioLimit : undefined,
+        selected_portfolio_price: renewPortfolio ? renewPortfolioPrice : 0
       });
 
       setRenewSuccessMsg(res.data.message || 'Abunə uğurla yeniləndi!');
@@ -861,6 +910,10 @@ export function SellerPortalView() {
         included_image_requests: pkgIncludedImages,
         addon_image_requests_price: pkgAddonImagesPrice,
         addon_image_tiers: pkgImageTiers,
+        feature_portfolio: pkgPortfolio,
+        addon_portfolio_price: pkgPortfolioPrice,
+        addon_portfolio_limit: pkgPortfolioLimit,
+        addon_portfolio_tiers: pkgPortfolioTiers,
         sale_enabled: pkgSaleEnabled,
         sale_price: pkgSaleEnabled ? pkgSalePrice : undefined,
         sale_discount_percent: pkgSaleEnabled ? pkgSaleDiscountPercent : undefined,
@@ -920,6 +973,10 @@ export function SellerPortalView() {
     setPkgIncludedImages(0);
     setPkgAddonImagesPrice(10);
     setPkgImageTiers([{ requests: 25, price: 10 }, { requests: 50, price: 18 }, { requests: 100, price: 30 }]);
+    setPkgPortfolio(false);
+    setPkgPortfolioPrice(15);
+    setPkgPortfolioLimit(25);
+    setPkgPortfolioTiers([{ listings: 25, price: 15 }, { listings: 50, price: 25 }, { listings: 100, price: 40 }]);
     setPkgSaleEnabled(false);
     setPkgSalePrice(undefined);
     setPkgSaleDiscountPercent(undefined);
@@ -958,6 +1015,14 @@ export function SellerPortalView() {
       { requests: 25, price: 10 },
       { requests: 50, price: 18 },
       { requests: 100, price: 30 }
+    ]);
+    setPkgPortfolio(pkg.feature_portfolio ?? false);
+    setPkgPortfolioPrice(pkg.addon_portfolio_price ?? 15);
+    setPkgPortfolioLimit(pkg.addon_portfolio_limit ?? 25);
+    setPkgPortfolioTiers(pkg.addon_portfolio_tiers && pkg.addon_portfolio_tiers.length > 0 ? pkg.addon_portfolio_tiers : [
+      { listings: 25, price: 15 },
+      { listings: 50, price: 25 },
+      { listings: 100, price: 40 }
     ]);
     setPkgSaleEnabled(pkg.sale_enabled ?? false);
     setPkgSalePrice(pkg.sale_price);
@@ -1306,6 +1371,11 @@ export function SellerPortalView() {
                                 💼 CRM {a.crm_expires_at ? `(${new Date(a.crm_expires_at).toLocaleDateString('az-AZ')})` : ''}
                               </span>
                             )}
+                            {a.feature_portfolio && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20 font-semibold">
+                                🗂️ Portfel ({a.portfolio_limit || 25} elan)
+                              </span>
+                            )}
                             {a.feature_aged_listings && (
                               <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
                                 📦 Arxiv ({a.addon_aged_max_months || 12}ay)
@@ -1629,6 +1699,11 @@ export function SellerPortalView() {
                     {pkg.feature_watermark_free_images && (
                       <div className="flex items-center gap-2 text-teal-400 font-semibold bg-teal-500/10 px-2 py-1 rounded-lg border border-teal-500/20">
                         <span>🖼️ Su Nişansız Foto ({pkg.included_image_requests || 0} daxildir)</span>
+                      </div>
+                    )}
+                    {pkg.feature_portfolio && (
+                      <div className="flex items-center gap-2 text-purple-400 font-semibold bg-purple-500/10 px-2 py-1 rounded-lg border border-purple-500/20">
+                        <span>🗂️ Agent Portfeli ({pkg.addon_portfolio_limit || 25} elan) (+{pkg.addon_portfolio_price || 15} AZN)</span>
                       </div>
                     )}
                   </div>
@@ -2556,6 +2631,14 @@ export function SellerPortalView() {
                       </span>
                     </div>
                   )}
+                  {selectedAgent.feature_portfolio && (
+                    <div className="flex justify-between py-1 border-b border-slate-800/60 text-purple-300">
+                      <span>🗂️ Portfel Add-on ({selectedAgent.portfolio_limit || 25} elan):</span>
+                      <span className="font-bold">
+                        {selectedAgent.portfolio_expires_at ? new Date(selectedAgent.portfolio_expires_at).toLocaleDateString('az-AZ') : 'Aktiv'}
+                      </span>
+                    </div>
+                  )}
                   {selectedAgent.feature_aged_listings && (
                     <div className="flex justify-between py-1 text-amber-300">
                       <span>📦 Arxiv Add-on Bitmə Tarixi:</span>
@@ -2616,6 +2699,12 @@ export function SellerPortalView() {
                       <div className="flex items-center gap-2 text-teal-400 col-span-2 font-medium">
                         <span>✓</span>
                         <span>Su Nişansız Şəkillər ({selectedAgent.addon_image_requests_used || 0} / {selectedAgent.addon_image_requests_limit || 0} foto istifadə edilib)</span>
+                      </div>
+                    )}
+                    {selectedAgent.feature_portfolio && (
+                      <div className="flex items-center gap-2 text-purple-400 col-span-2 font-medium">
+                        <span>✓</span>
+                        <span>Agent Portfeli & Rəqəmsal Vitrin (Limit: {selectedAgent.portfolio_limit || 25} elan)</span>
                       </div>
                     )}
                   </div>
@@ -2776,7 +2865,15 @@ export function SellerPortalView() {
                     else crmPriceVal = (currentPkg?.addon_crm_price ?? 15.0) * renewCrmMonths;
                   }
 
-                  const totalGross = basePrice + renewAgedPrice + renewExtraSearchesPrice + renewImagePrice + crmPriceVal;
+                  let portfolioPriceVal = 0;
+                  if (renewPortfolio) {
+                    if (renewPortfolioLimit === 25) portfolioPriceVal = currentPkg?.addon_portfolio_price ?? 15.0;
+                    else if (renewPortfolioLimit === 50) portfolioPriceVal = 25.0;
+                    else if (renewPortfolioLimit === 100) portfolioPriceVal = 40.0;
+                    else portfolioPriceVal = currentPkg?.addon_portfolio_price ?? 15.0;
+                  }
+
+                  const totalGross = basePrice + renewAgedPrice + renewExtraSearchesPrice + renewImagePrice + crmPriceVal + portfolioPriceVal;
                   const commRate = dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70;
                   const sellerProfit = (totalGross * commRate) / 100;
 
@@ -2926,6 +3023,58 @@ export function SellerPortalView() {
                         )}
                       </div>
 
+                      {/* Agent Portfolio Add-on Selector */}
+                      <div className="p-3 bg-purple-500/10 border border-purple-500/30 rounded-xl space-y-2.5">
+                        <label className="flex items-center justify-between cursor-pointer">
+                          <div className="flex items-center gap-2.5">
+                            <input
+                              type="checkbox"
+                              checked={renewPortfolio}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setRenewPortfolio(checked);
+                                setRenewPortfolioPrice(checked ? (currentPkg?.addon_portfolio_price ?? 15.0) : 0);
+                              }}
+                              className="w-4 h-4 rounded accent-purple-500"
+                            />
+                            <div>
+                              <span className="text-xs font-semibold text-purple-200 block">
+                                🗂️ Agent Portfeli & Rəqəmsal Vitrin Add-on
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                1 kliklə klonlama, təmiz su nişansız müştəri linki (/p/:id) və fərdi vitrin
+                              </span>
+                            </div>
+                          </div>
+                          <span className="text-[11px] text-purple-400 font-mono font-semibold">
+                            +{portfolioPriceVal.toFixed(2)} AZN
+                          </span>
+                        </label>
+
+                        {renewPortfolio && (
+                          <div className="pt-2 border-t border-purple-500/20 flex items-center justify-between text-xs">
+                            <span className="text-slate-300">Portfel Limiti:</span>
+                            <select
+                              value={renewPortfolioLimit}
+                              onChange={(e) => {
+                                const lim = Number(e.target.value);
+                                setRenewPortfolioLimit(lim);
+                                let p = 15.0;
+                                if (lim === 25) p = currentPkg?.addon_portfolio_price ?? 15.0;
+                                else if (lim === 50) p = 25.0;
+                                else if (lim === 100) p = 40.0;
+                                setRenewPortfolioPrice(p);
+                              }}
+                              className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-white text-xs font-bold"
+                            >
+                              <option value={25}>25 Elan — +{(currentPkg?.addon_portfolio_price ?? 15.0)} AZN / ay</option>
+                              <option value={50}>50 Elan — +25.00 AZN / ay (🔥 Ən Çox Seçilən)</option>
+                              <option value={100}>100 Elan — +40.00 AZN / ay (🔥 VIP Portfel)</option>
+                            </select>
+                          </div>
+                        )}
+                      </div>
+
                       {/* Renewal Price Summary */}
                       <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl space-y-1.5">
                         <div className="flex justify-between text-xs text-slate-300">
@@ -2954,6 +3103,12 @@ export function SellerPortalView() {
                           <div className="flex justify-between text-xs text-indigo-300">
                             <span>💼 Telegram CRM ({renewCrmMonths} ay):</span>
                             <span>+{crmPriceVal.toFixed(2)} AZN</span>
+                          </div>
+                        )}
+                        {renewPortfolio && (
+                          <div className="flex justify-between text-xs text-purple-300">
+                            <span>🗂️ Agent Portfeli ({renewPortfolioLimit} elan):</span>
+                            <span>+{portfolioPriceVal.toFixed(2)} AZN</span>
                           </div>
                         )}
                         <div className="border-t border-emerald-500/30 pt-1.5 flex justify-between text-sm font-bold">
@@ -3225,6 +3380,41 @@ export function SellerPortalView() {
                       </div>
                       <span className="text-[11px] font-mono font-bold text-indigo-400">+15.00 AZN/ay</span>
                     </label>
+                  </div>
+
+                  {/* Agent Portfolio Addon */}
+                  <div className="p-3 bg-purple-500/10 border border-purple-500/30 rounded-xl space-y-2">
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <div className="flex items-center gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={editAgentPortfolio}
+                          onChange={(e) => setEditAgentPortfolio(e.target.checked)}
+                          className="w-4 h-4 rounded bg-slate-900 border-slate-700 text-purple-600"
+                        />
+                        <div>
+                          <div className="text-xs font-bold text-purple-200">🗂️ Agent Portfeli & Rəqəmsal Vitrin</div>
+                          <div className="text-[10px] text-slate-400">1 kliklə klonlama, təmiz su nişansız müştəri linki (/p/:id) və fərdi vitrin</div>
+                        </div>
+                      </div>
+                      <span className="text-[11px] font-mono font-bold text-purple-400">+15.00 AZN/ay</span>
+                    </label>
+
+                    {editAgentPortfolio && (
+                      <div className="flex items-center justify-between pt-2 border-t border-purple-500/20 text-xs">
+                        <span className="text-slate-400">Portfel Limiti:</span>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min="1"
+                            value={editAgentPortfolioLimit}
+                            onChange={(e) => setEditAgentPortfolioLimit(Number(e.target.value))}
+                            className="w-20 bg-slate-900 border border-slate-700 text-white rounded-lg px-2 py-1 text-xs text-center font-bold"
+                          />
+                          <span className="text-slate-400">elan</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Aged Listings Addon */}
@@ -3500,6 +3690,43 @@ export function SellerPortalView() {
                   )}
                 </div>
 
+                {/* Agent Portfolio Addon */}
+                <div className="pt-1 p-2.5 bg-purple-500/10 border border-purple-500/30 rounded-xl space-y-2">
+                  <label className="flex items-center gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={agentPortfolio}
+                      onChange={(e) => setAgentPortfolio(e.target.checked)}
+                      className="rounded bg-slate-900 border-slate-700 text-purple-600 focus:ring-purple-500"
+                    />
+                    <div className="flex-1">
+                      <div className="text-xs font-bold text-purple-300">🗂️ Agent Portfeli & Rəqəmsal Vitrin Add-on</div>
+                      <div className="text-[10px] text-slate-400">1 kliklə klonlama, təmiz su nişansız müştəri linki (/p/:id) və fərdi vitrin</div>
+                    </div>
+                  </label>
+
+                  {agentPortfolio && (
+                    <div className="pt-2 border-t border-purple-500/20 flex items-center justify-between text-xs">
+                      <span className="text-slate-300 text-xs">Portfel Limiti:</span>
+                      <select
+                        value={agentSelectedPortfolioLimit}
+                        onChange={(e) => {
+                          const lim = Number(e.target.value);
+                          setAgentSelectedPortfolioLimit(lim);
+                          if (lim === 25) setAgentSelectedPortfolioPrice(15);
+                          else if (lim === 50) setAgentSelectedPortfolioPrice(25);
+                          else if (lim === 100) setAgentSelectedPortfolioPrice(40);
+                        }}
+                        className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-white text-xs font-bold"
+                      >
+                        <option value={25}>25 Elan — +15.00 AZN / ay</option>
+                        <option value={50}>50 Elan — +25.00 AZN / ay (🔥 Ən Çox Seçilən)</option>
+                        <option value={100}>100 Elan — +40.00 AZN / ay (🔥 VIP Portfel)</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-slate-400 mb-1">Təyin Ediləcək Plan / Paket *</label>
                   <select
@@ -3532,11 +3759,12 @@ export function SellerPortalView() {
                 const hasAgedTiers = selectedPkg.addon_aged_tiers && selectedPkg.addon_aged_tiers.length > 0;
                 const hasSearchTiers = selectedPkg.addon_search_tiers && selectedPkg.addon_search_tiers.length > 0;
                 const hasImageTiers = selectedPkg.feature_watermark_free_images && selectedPkg.addon_image_tiers && selectedPkg.addon_image_tiers.length > 0;
-                if (!hasAgedTiers && !hasSearchTiers && !hasImageTiers) return null;
+                if (!hasAgedTiers && !hasSearchTiers && !hasImageTiers && !agentPortfolio) return null;
 
                 const basePrice = selectedPkg.price;
                 const crmAddonPrice = agentCrm ? (selectedPkg.addon_crm_price ?? 15.0) : 0;
-                const totalGross = basePrice + agentSelectedAgedPrice + agentSelectedExtraSearchesPrice + agentSelectedImagePrice + crmAddonPrice;
+                const portfolioAddonPrice = agentPortfolio ? agentSelectedPortfolioPrice : 0;
+                const totalGross = basePrice + agentSelectedAgedPrice + agentSelectedExtraSearchesPrice + agentSelectedImagePrice + crmAddonPrice + portfolioAddonPrice;
                 const commRate = dashboard?.effective_commission_rate ?? dashboard?.commission_rate ?? 70;
                 const sellerProfit = (totalGross * commRate) / 100;
 
@@ -3661,6 +3889,12 @@ export function SellerPortalView() {
                         <div className="flex justify-between text-xs text-indigo-300">
                           <span>💼 Telegram CRM Mini App:</span>
                           <span className="font-medium">+{crmAddonPrice.toFixed(2)} AZN</span>
+                        </div>
+                      )}
+                      {portfolioAddonPrice > 0 && (
+                        <div className="flex justify-between text-xs text-purple-300">
+                          <span>🗂️ Agent Portfeli ({agentSelectedPortfolioLimit} elan):</span>
+                          <span className="font-medium">+{portfolioAddonPrice.toFixed(2)} AZN</span>
                         </div>
                       )}
                       <div className="border-t border-emerald-500/30 pt-1.5 flex justify-between text-sm font-bold">
@@ -3957,6 +4191,38 @@ export function SellerPortalView() {
                     </div>
                     <p className="text-[11px] text-slate-400 leading-relaxed">
                       Sınaq müddətində agentlərə portal su nişanı silinmiş orijinal şəkilləri (/foto elan_id) əldə etmək üçün pulsuz limit verir.
+                    </p>
+                  </div>
+
+                  {/* Portfolio Add-on */}
+                  <div className="p-3 bg-purple-500/10 border border-purple-500/30 rounded-xl space-y-1.5 col-span-1 sm:col-span-2">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-xs font-semibold text-purple-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={trialPortfolio}
+                          onChange={(e) => setTrialPortfolio(e.target.checked)}
+                          className="rounded bg-slate-900 border-slate-700 text-purple-500 focus:ring-0"
+                        />
+                        <span>🗂️ Agent Portfeli & Rəqəmsal Vitrin Add-on</span>
+                      </label>
+                      {trialPortfolio && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px] text-slate-400">Sınaq Portfel Limiti:</span>
+                          <input
+                            type="number"
+                            min="1"
+                            max="50"
+                            value={trialPortfolioLimit}
+                            onChange={(e) => setTrialPortfolioLimit(Number(e.target.value))}
+                            className="w-16 bg-slate-900 border border-slate-700 rounded-lg px-2 py-0.5 text-white text-xs text-center font-bold"
+                          />
+                          <span className="text-[11px] text-slate-400">elan</span>
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      Sınaq müddətində agentlərə portfellərinə 1 kliklə elan əlavə etmək və təmiz vitrin linklərini sınaqdan keçirmək imkanı yaradır.
                     </p>
                   </div>
                 </div>
@@ -4632,6 +4898,51 @@ export function SellerPortalView() {
                         <p className="text-[10px] text-slate-600 italic py-1">Heç bir əlavə foto paketi pilləsi yoxdur.</p>
                       )}
                     </>
+                  )}
+                </div>
+
+                {/* Agent Portfolio Addon in Package Builder */}
+                <div className="p-3 bg-purple-500/10 border border-purple-500/30 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-purple-300">
+                      <input
+                        type="checkbox"
+                        checked={pkgPortfolio}
+                        onChange={(e) => setPkgPortfolio(e.target.checked)}
+                        className="rounded bg-slate-900 border-slate-700 text-purple-500 focus:ring-0"
+                      />
+                      <span>🗂️ Agent Portfeli & Rəqəmsal Vitrin Add-on</span>
+                    </label>
+                  </div>
+                  {pkgPortfolio && (
+                    <div className="space-y-3 pt-1">
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Standart Elan Limiti</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={pkgPortfolioLimit}
+                            onChange={(e) => setPkgPortfolioLimit(Number(e.target.value))}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-white text-xs font-bold text-center"
+                            placeholder="25"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-400 block mb-0.5">Aylıq Əlavə Qiymət (AZN)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            value={pkgPortfolioPrice}
+                            onChange={(e) => setPkgPortfolioPrice(Number(e.target.value))}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-white text-xs font-bold text-center text-purple-400"
+                            placeholder="15"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-500">Agentlər bu paketlə öz portfellərini idarə edə, silinən elanların yuvalarını dərhal azad edə bilirlər.</p>
+                    </div>
                   )}
                 </div>
               </div>

@@ -502,6 +502,201 @@ class BotCommandHandler:
                     f"Müştəri adı, təklif qiyməti və şəxsi qeydlərinizi Mini App vasitəsilə dərhal redaktə edə bilərsiniz."
                 )
 
+        # Agent Portfolio Commands
+        # 1. Delete from Portfolio (/portfel_sil <id>, /portfolio_sil <id>)
+        port_del_match = re.search(r'^(?:/portfel_sil|portfel_sil|/portfolio_sil|portfolio_sil)\s*#?\s*(\d+)', text_lower)
+        if port_del_match:
+            del_id = int(port_del_match.group(1))
+            from app.models.portfolio import PortfolioListing
+            stmt_del = select(PortfolioListing).where(
+                or_(
+                    and_(PortfolioListing.id == del_id, PortfolioListing.tenant_id == tenant.id),
+                    and_(PortfolioListing.listing_id == del_id, PortfolioListing.tenant_id == tenant.id)
+                ),
+                PortfolioListing.is_active == True
+            )
+            res_del = await db.execute(stmt_del)
+            port_item = res_del.scalars().first()
+            if not port_item:
+                return f"⚠️ #{del_id} nömrəli aktiv portfel elanı tapılmadı."
+            
+            port_item.is_active = False
+            port_item.status = "deleted"
+            await db.commit()
+
+            # Recalculate remaining active count
+            stmt_cnt = select(func.count(PortfolioListing.id)).where(
+                PortfolioListing.tenant_id == tenant.id,
+                PortfolioListing.is_active == True
+            )
+            res_cnt = await db.execute(stmt_cnt)
+            curr_active = res_cnt.scalar() or 0
+            limit = getattr(tenant, 'portfolio_limit', 25) or 25
+
+            return (
+                f"🗑️ *Portfeldən Silindi!* (#{port_item.id} - {port_item.title or 'Elan'})\n\n"
+                f"✅ Elan portfelinizdən çıxarıldı və 1 elan yuvanız dərhal azad olundu.\n"
+                f"📊 *Cari Portfel:* {curr_active}/{limit} aktiv elan (Qalan boş yuva: {max(0, limit - curr_active)})"
+            )
+
+        # 2. Portfolio Overview (/portfel, /portfolio)
+        if text_lower in ["/portfel", "portfel", "/portfolio", "portfolio"]:
+            from app.models.portfolio import PortfolioListing
+            if not getattr(tenant, "feature_portfolio", False):
+                price = getattr(tenant, 'addon_portfolio_price', 15.0) or 15.0
+                return (
+                    f"🔒 *Agent Portfeli və Rəqəmsal Vitrin Add-on aktiv deyil!*\n\n"
+                    f"Gələn elanları 1 toxunuşla portfelinizə yığmaq, redaktə etmək və müştərilərinizə su nişansız xüsusi linklə təqdim etmək üçün Portfel modulunu aktivləşdirin.\n\n"
+                    f"💰 *Qiymət:* {price} AZN/ay\n"
+                    f"📞 Aktivləşdirmək üçün admin ilə əlaqə saxlayın və ya `/al portfel 25` göndərin."
+                )
+
+            stmt_cnt = select(func.count(PortfolioListing.id)).where(
+                PortfolioListing.tenant_id == tenant.id,
+                PortfolioListing.is_active == True
+            )
+            res_cnt = await db.execute(stmt_cnt)
+            curr_active = res_cnt.scalar() or 0
+            limit = getattr(tenant, 'portfolio_limit', 25) or 25
+
+            base_fe = (settings.FRONTEND_BASE_URL or "https://realtor.erma.shop").rstrip('/')
+            vitrin_url = f"{base_fe}/portfolio/agent/{tenant.id}"
+
+            stmt_recent = select(PortfolioListing).where(
+                PortfolioListing.tenant_id == tenant.id,
+                PortfolioListing.is_active == True
+            ).order_by(PortfolioListing.created_at.desc()).limit(5)
+            res_recent = await db.execute(stmt_recent)
+            recent_items = res_recent.scalars().all()
+
+            lines = []
+            for item in recent_items:
+                share_url = f"{base_fe}/p/{item.share_code}"
+                p_price = f"{int(item.price):,} {item.currency}" if item.price else "Razılaşma ilə"
+                lines.append(f"• *#{item.id}* {item.title or 'Mənzil'} ({p_price})\n  🔗 {share_url}")
+
+            recent_str = "\n".join(lines) if lines else "Hələ portfelinizdə heç bir elan yoxdur."
+
+            return (
+                f"🗂️ *Agent Portfeliniz & Rəqəmsal Vitrin ({app_name}):*\n\n"
+                f"📊 *İstifadə:* {curr_active}/{limit} aktiv elan (Boş yuva: {max(0, limit - curr_active)})\n"
+                f"🌐 *Ümumi Vitrin Linkiniz:* {vitrin_url}\n\n"
+                f"📋 *Son Elanlar:*\n{recent_str}\n\n"
+                f"💡 *Əmrlər:*\n"
+                f"• `/portfel <elan_id>` - Yeni elanı dərhal portfelə əlavə et\n"
+                f"• `/portfel_sil <portfel_id>` - Elanı portfeldən sil (yuva dərhal azad olur)"
+            )
+
+        # 3. 1-Click Clone to Portfolio (/portfel <id>, /portfolio <id>, portfel <id>, portfolio <id>)
+        port_match = re.search(r'^(?:/portfel|portfel|/portfolio|portfolio)\s*#?\s*(\d+)', text_lower)
+        if port_match:
+            input_id = int(port_match.group(1))
+
+            # 1. Check feature
+            if not getattr(tenant, "feature_portfolio", False):
+                price = getattr(tenant, 'addon_portfolio_price', 15.0) or 15.0
+                return (
+                    f"🔒 *Agent Portfeli Add-on aktiv deyil!*\n\n"
+                    f"Elanları bir toxunuşla portfelinizə əlavə etmək və təmiz müştəri linki almaq üçün Portfel paketini aktivləşdirin.\n\n"
+                    f"💰 *Qiymət:* {price} AZN/ay\n"
+                    f"Sifariş üçün: `/al portfel 25`"
+                )
+
+            # 2. Resolve Match ID or direct Listing ID
+            stmt_m = select(Match.listing_id).where(Match.id == input_id, Match.tenant_id == tenant.id)
+            res_m = await db.execute(stmt_m)
+            matched_listing_id = res_m.scalar_one_or_none()
+            target_listing_id = matched_listing_id if matched_listing_id else input_id
+
+            from app.models.listing import Listing
+            from app.models.portfolio import PortfolioListing, generate_share_code
+
+            # 3. Check if already in active portfolio
+            stmt_exist = select(PortfolioListing).where(
+                PortfolioListing.tenant_id == tenant.id,
+                PortfolioListing.listing_id == target_listing_id,
+                PortfolioListing.is_active == True
+            )
+            res_exist = await db.execute(stmt_exist)
+            existing_port = res_exist.scalars().first()
+            base_fe = (settings.FRONTEND_BASE_URL or "https://realtor.erma.shop").rstrip('/')
+
+            if existing_port:
+                share_url = f"{base_fe}/p/{existing_port.share_code}"
+                return (
+                    f"ℹ️ *Bu elan artıq sizin portfelinizdə mövcuddur!* 🗂️ (ID: #{existing_port.id})\n\n"
+                    f"🏠 *{existing_port.title}*\n"
+                    f"💰 *Qiymət:* {int(existing_port.price):,} {existing_port.currency}\n"
+                    f"📍 *Məkan:* {existing_port.district or 'Bakı'}\n\n"
+                    f"🔗 *Müştəriyə göndərmək üçün təmiz link:*\n{share_url}\n\n"
+                    f"Silmək üçün: `/portfel_sil {existing_port.id}`"
+                )
+
+            # 4. Check active quota limit
+            stmt_cnt = select(func.count(PortfolioListing.id)).where(
+                PortfolioListing.tenant_id == tenant.id,
+                PortfolioListing.is_active == True
+            )
+            res_cnt = await db.execute(stmt_cnt)
+            curr_active = res_cnt.scalar() or 0
+            limit = getattr(tenant, 'portfolio_limit', 25) or 25
+
+            if curr_active >= limit:
+                return (
+                    f"⚠️ *Portfel limitiniz dolub! ({curr_active}/{limit} aktiv elan)*\n\n"
+                    f"Yeni elan əlavə etmək üçün:\n"
+                    f"1️⃣ Satılmış və ya müddəti bitmiş elanları `/portfel_sil <id>` ilə silin (elan yuvası dərhal azad olunacaq).\n"
+                    f"2️⃣ Və ya limitinizi artırmaq üçün `/al portfel 50` göndərin."
+                )
+
+            # 5. Fetch source listing
+            stmt_l = select(Listing).where(Listing.id == target_listing_id)
+            res_l = await db.execute(stmt_l)
+            listing = res_l.scalars().first()
+            if not listing:
+                return f"❌ #{input_id} nömrəli elan tapılmadı."
+
+            p_title = listing.title or f"{listing.rooms or ''} otaqlı mənzil {listing.district or ''}"
+            p_location = listing.district or listing.metro_station or "Bakı"
+            share_code = generate_share_code()
+
+            new_port = PortfolioListing(
+                tenant_id=tenant.id,
+                listing_id=listing.id,
+                title=p_title,
+                description=listing.description,
+                price=listing.price or 0.0,
+                currency=listing.currency or "AZN",
+                district=p_location,
+                rooms=listing.rooms,
+                area_sqm=listing.area_sqm,
+                floor=listing.floor,
+                total_floors=listing.total_floors,
+                photos=listing.photos or [],
+                contact_name=tenant.name,
+                contact_phone=tenant.whatsapp_number or tenant.phone,
+                share_code=share_code,
+                is_active=True,
+                status="active"
+            )
+            db.add(new_port)
+            await db.commit()
+            await db.refresh(new_port)
+
+            new_count = curr_active + 1
+            share_url = f"{base_fe}/p/{new_port.share_code}"
+
+            return (
+                f"✅ *Elan Portfelinizə əlavə edildi!* 🗂️ (ID: #{new_port.id})\n\n"
+                f"🏠 *{new_port.title}*\n"
+                f"💰 *Qiymət:* {int(new_port.price):,} {new_port.currency}\n"
+                f"📍 *Məkan:* {p_location}\n"
+                f"📊 *Portfel limiti:* {new_count}/{limit} istifadə olunub (Boş yuva: {max(0, limit - new_count)})\n\n"
+                f"🔗 *Müştəriyə göndərmək üçün təmiz link (Su nişansız və rəqibsiz):*\n"
+                f"{share_url}\n\n"
+                f"💡 *Qeyd:* Elanın müddəti bitdikdə və ya satıldıqda `/portfel_sil {new_port.id}` ilə silə bilərsiniz (yuva dərhal boşalacaq)."
+            )
+
         # Watermark-Free Listing Photos Command (/foto <id>, /image <id>, /şəkil <id>, /sekil <id>)
         photo_match = re.search(r'^(?:/foto|foto|/image|image|/şəkil|şəkil|/sekil|sekil)\s*#?\s*(\d+)', text_lower)
         if photo_match:
@@ -699,10 +894,14 @@ class BotCommandHandler:
                 f"• *25 Elan Şəkli:* 10 AZN / ay (Sifariş üçün: `/al foto 25`)\n"
                 f"• *50 Elan Şəkli:* 18 AZN / ay (Sifariş üçün: `/al foto 50`)\n"
                 f"• *100 Elan Şəkli:* 30 AZN / ay (Sifariş üçün: `/al foto 100`)\n\n"
+                f"🔹 *Agent Portfeli və Rəqəmsal Vitrin (Agent Portfolio):*\n"
+                f"• *25 Elan Limiti:* 15 AZN / ay (Sifariş üçün: `/al portfel 25`)\n"
+                f"• *50 Elan Limiti:* 25 AZN / ay (Sifariş üçün: `/al portfel 50`)\n"
+                f"• *100 Elan Limiti:* 40 AZN / ay (Sifariş üçün: `/al portfel 100`)\n\n"
                 f"💳 *Qeyd:* Sifariş verdikdən sonra ödəniş təsdiqlənən kimi xidmət dərhal aktivləşir."
             )
 
-        buy_match = re.search(r'^(?:/al|al)\s+(limit|arxiv|foto)\s+(\d+)', text_lower)
+        buy_match = re.search(r'^(?:/al|al)\s+(limit|arxiv|foto|portfel)\s+(\d+)', text_lower)
         if buy_match:
             item_type, val_str = buy_match.group(1), int(buy_match.group(2))
             from app.models.payment import Payment
@@ -716,6 +915,10 @@ class BotCommandHandler:
                 pricing = {25: 10.0, 50: 18.0, 100: 30.0}
                 amount = pricing.get(val_str, float(val_str * 0.4))
                 desc = f"+{val_str} Su Nişansız Foto Limiti Add-on"
+            elif item_type == "portfel":
+                pricing = {25: 15.0, 50: 25.0, 100: 40.0}
+                amount = pricing.get(val_str, float(val_str * 0.6))
+                desc = f"+{val_str} Elanlıq Agent Portfeli & Vitrin Add-on"
             else:
                 pricing = {3: 15.0, 6: 25.0, 12: 40.0, 24: 60.0}
                 amount = pricing.get(val_str, float(val_str * 4.0))

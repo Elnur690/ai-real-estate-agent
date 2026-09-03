@@ -49,6 +49,12 @@ class Plan(Base):
     addon_crm_price: Mapped[float] = mapped_column(Float, default=15.0)
     addon_crm_tiers: Mapped[list[dict] | None] = mapped_column(JSON, default=list) # e.g. [{"months": 1, "price": 15.0}, {"months": 3, "price": 35.0}]
 
+    # 🗂️ Agent Portfolio & Showcase Add-on
+    feature_portfolio: Mapped[bool] = mapped_column(Boolean, default=False)
+    addon_portfolio_price: Mapped[float] = mapped_column(Float, default=15.0)
+    addon_portfolio_limit: Mapped[int] = mapped_column(Integer, default=25)
+    addon_portfolio_tiers: Mapped[list[dict] | None] = mapped_column(JSON, default=list) # e.g. [{"listings": 25, "price": 15.0}, {"listings": 50, "price": 25.0}]
+
     # 🏷️ Promotional Sale & Discount Campaign Features for SaaS Plans
     sale_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     sale_price: Mapped[float | None] = mapped_column(Float, nullable=True) # e.g. 29.0 AZN

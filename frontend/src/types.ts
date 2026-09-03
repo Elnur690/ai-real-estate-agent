@@ -32,6 +32,10 @@ export interface Tenant {
   addon_image_requests_price?: number;
   feature_crm?: boolean;
   addon_crm_price?: number;
+  feature_portfolio?: boolean;
+  portfolio_limit?: number;
+  addon_portfolio_price?: number;
+  portfolio_expires_at?: string;
   active_searches_count?: number;
   max_saved_searches?: number;
   referral_code?: string;

@@ -78,6 +78,10 @@ class CreatePackageRequest(BaseModel):
     feature_crm: bool = False
     addon_crm_price: float = 15.0
     addon_crm_tiers: Optional[List[Dict[str, Any]]] = None
+    feature_portfolio: bool = False
+    addon_portfolio_price: float = 15.0
+    addon_portfolio_limit: int = 25
+    addon_portfolio_tiers: Optional[List[Dict[str, Any]]] = None
     sale_enabled: bool = False
     sale_price: Optional[float] = None
     sale_discount_percent: Optional[float] = None
@@ -113,6 +117,10 @@ class UpdatePackageRequest(BaseModel):
     feature_crm: Optional[bool] = None
     addon_crm_price: Optional[float] = None
     addon_crm_tiers: Optional[List[Dict[str, Any]]] = None
+    feature_portfolio: Optional[bool] = None
+    addon_portfolio_price: Optional[float] = None
+    addon_portfolio_limit: Optional[int] = None
+    addon_portfolio_tiers: Optional[List[Dict[str, Any]]] = None
     sale_enabled: Optional[bool] = None
     sale_price: Optional[float] = None
     sale_discount_percent: Optional[float] = None
@@ -141,6 +149,9 @@ class RegisterSellerAgentRequest(BaseModel):
     selected_crm_enabled: Optional[bool] = None
     selected_crm_months: Optional[int] = None
     selected_crm_price: Optional[float] = None
+    selected_portfolio_enabled: Optional[bool] = None
+    selected_portfolio_limit: Optional[int] = None
+    selected_portfolio_price: Optional[float] = None
 
 class UpdateSellerAgentRequest(BaseModel):
     name: Optional[str] = None
@@ -166,6 +177,9 @@ class UpdateSellerAgentRequest(BaseModel):
     addon_image_requests_used: Optional[int] = None
     feature_crm: Optional[bool] = None
     addon_crm_price: Optional[float] = None
+    feature_portfolio: Optional[bool] = None
+    portfolio_limit: Optional[int] = None
+    addon_portfolio_price: Optional[float] = None
 
 class RenewSellerAgentRequest(BaseModel):
     package_id: Optional[int] = None
@@ -180,6 +194,9 @@ class RenewSellerAgentRequest(BaseModel):
     selected_crm_enabled: Optional[bool] = None
     selected_crm_months: Optional[int] = None
     selected_crm_price: Optional[float] = None
+    selected_portfolio_enabled: Optional[bool] = None
+    selected_portfolio_limit: Optional[int] = None
+    selected_portfolio_price: Optional[float] = None
 
 class UpdateFreeTrialSettingsRequest(BaseModel):
     free_trial_enabled: Optional[bool] = None
@@ -192,6 +209,9 @@ class UpdateFreeTrialSettingsRequest(BaseModel):
     free_trial_feature_multi_location: Optional[bool] = None
     free_trial_feature_watermark_images: Optional[bool] = None
     free_trial_image_requests: Optional[int] = None
+    free_trial_feature_crm: Optional[bool] = None
+    free_trial_feature_portfolio: Optional[bool] = None
+    free_trial_portfolio_limit: Optional[int] = None
 
 class PayoutRequest(BaseModel):
     amount: float
@@ -709,6 +729,10 @@ async def get_my_agents(
             "addon_image_requests_price": getattr(a, 'addon_image_requests_price', 0.0),
             "feature_crm": getattr(a, 'feature_crm', False),
             "crm_expires_at": a.crm_expires_at.isoformat() if getattr(a, 'crm_expires_at', None) else None,
+            "feature_portfolio": getattr(a, 'feature_portfolio', False),
+            "portfolio_limit": getattr(a, 'portfolio_limit', 25),
+            "portfolio_expires_at": a.portfolio_expires_at.isoformat() if getattr(a, 'portfolio_expires_at', None) else None,
+            "addon_portfolio_price": getattr(a, 'addon_portfolio_price', 0.0),
             "seller_package_id": a.seller_package_id,
             "created_at": a.created_at.isoformat() if a.created_at else None,
             "telegram_bot_url": tg_url,
@@ -830,6 +854,10 @@ async def get_my_agent_detail(
         "addon_image_requests_price": getattr(agent, 'addon_image_requests_price', 0.0),
         "feature_crm": getattr(agent, 'feature_crm', False),
         "crm_expires_at": agent.crm_expires_at.isoformat() if getattr(agent, 'crm_expires_at', None) else None,
+        "feature_portfolio": getattr(agent, 'feature_portfolio', False),
+        "portfolio_limit": getattr(agent, 'portfolio_limit', 25),
+        "portfolio_expires_at": agent.portfolio_expires_at.isoformat() if getattr(agent, 'portfolio_expires_at', None) else None,
+        "addon_portfolio_price": getattr(agent, 'addon_portfolio_price', 0.0),
         "seller_package_id": agent.seller_package_id,
         "package_data": pkg_data,
         "saved_searches_count": saved_searches_count,
@@ -938,6 +966,16 @@ async def update_my_agent(
             now_utc = datetime.now(timezone.utc)
             if not agent.crm_expires_at or agent.crm_expires_at < now_utc:
                 agent.crm_expires_at = agent.plan_expires_at or (now_utc + timedelta(days=30))
+    if body.feature_portfolio is not None:
+        agent.feature_portfolio = body.feature_portfolio
+        if body.feature_portfolio:
+            now_utc = datetime.now(timezone.utc)
+            if not agent.portfolio_expires_at or agent.portfolio_expires_at < now_utc:
+                agent.portfolio_expires_at = agent.plan_expires_at or (now_utc + timedelta(days=30))
+    if body.portfolio_limit is not None:
+        agent.portfolio_limit = body.portfolio_limit
+    if body.addon_portfolio_price is not None:
+        agent.addon_portfolio_price = body.addon_portfolio_price
 
     await db.commit()
     await db.refresh(agent)
@@ -1055,6 +1093,31 @@ async def renew_my_agent(
                 base_crm_exp = norm_crm_exp if (norm_crm_exp and norm_crm_exp > now_utc) else now_utc
                 agent.crm_expires_at = base_crm_exp + timedelta(days=30)
 
+        # Agent Portfolio Add-on Handling with Independent Expiry
+        selected_portfolio_price = max(0.0, float(body.selected_portfolio_price or 0.0))
+        portfolio_limit_val = int(body.selected_portfolio_limit or 25)
+        norm_port_exp = _normalize_dt(agent.portfolio_expires_at)
+        if body.selected_portfolio_enabled is not None:
+            agent.feature_portfolio = bool(body.selected_portfolio_enabled)
+            agent.portfolio_limit = portfolio_limit_val
+            agent.addon_portfolio_price = selected_portfolio_price if body.selected_portfolio_enabled else 0.0
+            if body.selected_portfolio_enabled:
+                base_port_exp = norm_port_exp if (norm_port_exp and norm_port_exp > now_utc) else now_utc
+                agent.portfolio_expires_at = base_port_exp + timedelta(days=30)
+        elif selected_portfolio_price > 0:
+            agent.feature_portfolio = True
+            agent.portfolio_limit = portfolio_limit_val
+            agent.addon_portfolio_price = selected_portfolio_price
+            base_port_exp = norm_port_exp if (norm_port_exp and norm_port_exp > now_utc) else now_utc
+            agent.portfolio_expires_at = base_port_exp + timedelta(days=30)
+        else:
+            agent.feature_portfolio = getattr(package, 'feature_portfolio', False)
+            agent.portfolio_limit = getattr(package, 'addon_portfolio_limit', 25) or 25
+            agent.addon_portfolio_price = getattr(package, 'addon_portfolio_price', 0.0) if getattr(package, 'feature_portfolio', False) else 0.0
+            if getattr(package, 'feature_portfolio', False):
+                base_port_exp = norm_port_exp if (norm_port_exp and norm_port_exp > now_utc) else now_utc
+                agent.portfolio_expires_at = base_port_exp + timedelta(days=30)
+
         # Aged Archive Add-on Handling with Independent Expiry
         if body.selected_aged_months is not None and body.selected_aged_months > 0:
             norm_aged_exp = _normalize_dt(agent.aged_expires_at)
@@ -1094,6 +1157,24 @@ async def renew_my_agent(
             base_crm_exp = norm_crm_exp if (norm_crm_exp and norm_crm_exp > now_utc) else now_utc
             agent.crm_expires_at = base_crm_exp + timedelta(days=crm_months * 30)
 
+        # Agent Portfolio Add-on Handling for custom/transferred
+        selected_portfolio_price = max(0.0, float(body.selected_portfolio_price or 0.0))
+        portfolio_limit_val = int(body.selected_portfolio_limit or 25)
+        norm_port_exp = _normalize_dt(agent.portfolio_expires_at)
+        if body.selected_portfolio_enabled is not None:
+            agent.feature_portfolio = bool(body.selected_portfolio_enabled)
+            agent.portfolio_limit = portfolio_limit_val
+            agent.addon_portfolio_price = selected_portfolio_price if body.selected_portfolio_enabled else 0.0
+            if body.selected_portfolio_enabled:
+                base_port_exp = norm_port_exp if (norm_port_exp and norm_port_exp > now_utc) else now_utc
+                agent.portfolio_expires_at = base_port_exp + timedelta(days=30)
+        elif selected_portfolio_price > 0:
+            agent.feature_portfolio = True
+            agent.portfolio_limit = portfolio_limit_val
+            agent.addon_portfolio_price = selected_portfolio_price
+            base_port_exp = norm_port_exp if (norm_port_exp and norm_port_exp > now_utc) else now_utc
+            agent.portfolio_expires_at = base_port_exp + timedelta(days=30)
+
         # Aged Archive Add-on Handling with Independent Expiry
         if body.selected_aged_months is not None and body.selected_aged_months > 0:
             agent.feature_aged_listings = True
@@ -1127,7 +1208,7 @@ async def renew_my_agent(
         pkg_tx_id = agent.seller_package_id
         desc_plan = f"Köçürülmüş Plan Yenilənməsi: {agent.name} ({agent.plan})"
 
-    if base_price > 0 or selected_crm_price > 0:
+    if base_price > 0 or selected_crm_price > 0 or selected_portfolio_price > 0:
         rank_map = await get_seller_rank_config_map(db)
         rank_info = rank_map.get(seller.rank, rank_map.get("Bronze", {}))
         bonus_pct = rank_info.get("bonus_commission", 0.0)
@@ -1136,7 +1217,7 @@ async def renew_my_agent(
         selected_aged_price = max(0.0, float(body.selected_aged_price or 0.0))
         selected_extra_searches_price = max(0.0, float(body.selected_extra_searches_price or 0.0))
         selected_image_price = max(0.0, float(body.selected_image_price or 0.0))
-        gross_amount = round(base_price + selected_aged_price + selected_extra_searches_price + selected_image_price + selected_crm_price, 2)
+        gross_amount = round(base_price + selected_aged_price + selected_extra_searches_price + selected_image_price + selected_crm_price + selected_portfolio_price, 2)
 
         seller_profit = round(gross_amount * (effective_commission_pct / 100.0), 2)
         platform_fee = round(gross_amount - seller_profit, 2)
@@ -1171,7 +1252,7 @@ async def renew_my_agent(
             period_covered_start=base_expiry,
             period_covered_end=new_expires_at,
             received_at=datetime.now(timezone.utc),
-            notes=f"Seller Renewal: {desc_plan} (Aged: {selected_aged_price} AZN, Searches: {selected_extra_searches_price} AZN, Images: {selected_image_price} AZN, CRM: {selected_crm_price} AZN)"
+            notes=f"Seller Renewal: {desc_plan} (Aged: {selected_aged_price} AZN, Searches: {selected_extra_searches_price} AZN, Images: {selected_image_price} AZN, CRM: {selected_crm_price} AZN, Portfel: {selected_portfolio_price} AZN)"
         )
         db.add(pay_record)
 
@@ -1276,6 +1357,9 @@ async def register_my_agent(
         f_images = getattr(seller, 'free_trial_feature_watermark_images', False)
         addon_images = getattr(seller, 'free_trial_image_requests', 5) if f_images else 0
         addon_images_price = 0.0
+        f_portfolio = getattr(seller, 'free_trial_feature_portfolio', False)
+        portfolio_limit = getattr(seller, 'free_trial_portfolio_limit', 25) or 25
+        portfolio_price = 0.0
     else:
         expires_at = now_utc + timedelta(days=package.duration_days if package else 30)
         agent_plan = package.name if package else "starter"
@@ -1313,10 +1397,25 @@ async def register_my_agent(
             addon_images = getattr(package, 'included_image_requests', 0) if package else 0
             addon_images_price = getattr(package, 'addon_image_requests_price', 0.0) if package else 0.0
 
+        # Determine portfolio addon
+        if body.selected_portfolio_enabled is not None:
+            f_portfolio = bool(body.selected_portfolio_enabled)
+            portfolio_limit = int(body.selected_portfolio_limit or 25)
+            portfolio_price = float(body.selected_portfolio_price or 0.0)
+        elif body.selected_portfolio_price and float(body.selected_portfolio_price) > 0:
+            f_portfolio = True
+            portfolio_limit = int(body.selected_portfolio_limit or 25)
+            portfolio_price = float(body.selected_portfolio_price)
+        else:
+            f_portfolio = getattr(package, 'feature_portfolio', False) if package else False
+            portfolio_limit = getattr(package, 'addon_portfolio_limit', 25) if package else 25
+            portfolio_price = getattr(package, 'addon_portfolio_price', 0.0) if package else 0.0
+
     crm_enabled = bool(body.selected_crm_enabled or (body.selected_crm_price and body.selected_crm_price > 0))
     crm_months = int(body.selected_crm_months or 1)
     crm_exp = (now_utc + timedelta(days=crm_months * 30)) if crm_enabled else None
     aged_exp = (now_utc + timedelta(days=int(body.selected_aged_months) * 30)) if (body.selected_aged_months and body.selected_aged_months > 0) else None
+    portfolio_exp = (now_utc + timedelta(days=30)) if f_portfolio else None
 
     raw_handle = body.telegram_handle.strip().lstrip('@') if body.telegram_handle else None
     raw_chat_id = body.telegram_chat_id.strip() if body.telegram_chat_id else None
@@ -1357,7 +1456,11 @@ async def register_my_agent(
         addon_image_requests_price=addon_images_price,
         feature_crm=crm_enabled,
         addon_crm_price=float(body.selected_crm_price or 0.0) if crm_enabled else 0.0,
-        crm_expires_at=crm_exp
+        crm_expires_at=crm_exp,
+        feature_portfolio=f_portfolio,
+        portfolio_limit=portfolio_limit,
+        portfolio_expires_at=portfolio_exp,
+        addon_portfolio_price=portfolio_price
     )
     db.add(agent)
     await db.commit()
@@ -1382,7 +1485,8 @@ async def register_my_agent(
     selected_extra_searches_price = max(0.0, float(body.selected_extra_searches_price or 0.0))
     selected_image_price = max(0.0, float(body.selected_image_price or 0.0))
     selected_crm_price = max(0.0, float(body.selected_crm_price or 0.0))
-    gross_amount = round(effective_pkg_price + selected_aged_price + selected_extra_searches_price + selected_image_price + selected_crm_price, 2)
+    selected_portfolio_price = max(0.0, float(body.selected_portfolio_price or 0.0))
+    gross_amount = round(effective_pkg_price + selected_aged_price + selected_extra_searches_price + selected_image_price + selected_crm_price + selected_portfolio_price, 2)
 
     if gross_amount > 0:
         seller_profit = round(gross_amount * (effective_commission_pct / 100.0), 2)
@@ -1457,6 +1561,11 @@ async def get_my_trial_settings(
         "free_trial_feature_avm": seller.free_trial_feature_avm,
         "free_trial_feature_social_brochure": seller.free_trial_feature_social_brochure,
         "free_trial_feature_multi_location": seller.free_trial_feature_multi_location,
+        "free_trial_feature_watermark_images": getattr(seller, 'free_trial_feature_watermark_images', False),
+        "free_trial_image_requests": getattr(seller, 'free_trial_image_requests', 5),
+        "free_trial_feature_crm": getattr(seller, 'free_trial_feature_crm', False),
+        "free_trial_feature_portfolio": getattr(seller, 'free_trial_feature_portfolio', False),
+        "free_trial_portfolio_limit": getattr(seller, 'free_trial_portfolio_limit', 25),
         "admin_max_trial_days": max_trial_days
     }
 
@@ -1500,6 +1609,12 @@ async def update_my_trial_settings(
         seller.free_trial_feature_watermark_images = body.free_trial_feature_watermark_images
     if body.free_trial_image_requests is not None:
         seller.free_trial_image_requests = max(0, min(50, body.free_trial_image_requests))
+    if body.free_trial_feature_crm is not None:
+        seller.free_trial_feature_crm = body.free_trial_feature_crm
+    if body.free_trial_feature_portfolio is not None:
+        seller.free_trial_feature_portfolio = body.free_trial_feature_portfolio
+    if body.free_trial_portfolio_limit is not None:
+        seller.free_trial_portfolio_limit = max(1, min(100, body.free_trial_portfolio_limit))
 
     await db.commit()
     await db.refresh(seller)
@@ -1547,6 +1662,13 @@ async def get_my_packages(
         "included_image_requests": getattr(p, 'included_image_requests', 0),
         "addon_image_requests_price": getattr(p, 'addon_image_requests_price', 10.0),
         "addon_image_tiers": getattr(p, 'addon_image_tiers', []) or [],
+        "feature_crm": getattr(p, 'feature_crm', False),
+        "addon_crm_price": getattr(p, 'addon_crm_price', 15.0),
+        "addon_crm_tiers": getattr(p, 'addon_crm_tiers', []) or [],
+        "feature_portfolio": getattr(p, 'feature_portfolio', False),
+        "addon_portfolio_price": getattr(p, 'addon_portfolio_price', 15.0),
+        "addon_portfolio_limit": getattr(p, 'addon_portfolio_limit', 25),
+        "addon_portfolio_tiers": getattr(p, 'addon_portfolio_tiers', []) or [],
         "sale_enabled": getattr(p, 'sale_enabled', False),
         "sale_price": getattr(p, 'sale_price', None),
         "sale_discount_percent": getattr(p, 'sale_discount_percent', None),
@@ -1646,6 +1768,13 @@ async def create_my_package(
         included_image_requests=body.included_image_requests,
         addon_image_requests_price=body.addon_image_requests_price,
         addon_image_tiers=body.addon_image_tiers or [],
+        feature_crm=body.feature_crm,
+        addon_crm_price=body.addon_crm_price,
+        addon_crm_tiers=body.addon_crm_tiers or [],
+        feature_portfolio=body.feature_portfolio,
+        addon_portfolio_price=body.addon_portfolio_price,
+        addon_portfolio_limit=body.addon_portfolio_limit,
+        addon_portfolio_tiers=body.addon_portfolio_tiers or [],
         sale_enabled=body.sale_enabled,
         sale_price=final_sale_price,
         sale_discount_percent=final_discount_pct,
@@ -1737,6 +1866,20 @@ async def update_my_package(
         pkg.addon_image_requests_price = body.addon_image_requests_price
     if body.addon_image_tiers is not None:
         pkg.addon_image_tiers = body.addon_image_tiers
+    if body.feature_crm is not None:
+        pkg.feature_crm = body.feature_crm
+    if body.addon_crm_price is not None:
+        pkg.addon_crm_price = body.addon_crm_price
+    if body.addon_crm_tiers is not None:
+        pkg.addon_crm_tiers = body.addon_crm_tiers
+    if body.feature_portfolio is not None:
+        pkg.feature_portfolio = body.feature_portfolio
+    if body.addon_portfolio_price is not None:
+        pkg.addon_portfolio_price = body.addon_portfolio_price
+    if body.addon_portfolio_limit is not None:
+        pkg.addon_portfolio_limit = body.addon_portfolio_limit
+    if body.addon_portfolio_tiers is not None:
+        pkg.addon_portfolio_tiers = body.addon_portfolio_tiers
     if body.sale_enabled is not None:
         pkg.sale_enabled = body.sale_enabled
     if body.sale_price is not None:

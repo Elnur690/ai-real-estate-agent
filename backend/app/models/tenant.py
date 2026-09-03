@@ -61,6 +61,12 @@ class Tenant(Base):
     addon_crm_price: Mapped[float] = mapped_column(default=0.0)
     crm_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # 🗂️ Agent Portfolio & Showcase Add-on
+    feature_portfolio: Mapped[bool] = mapped_column(default=False)
+    portfolio_limit: Mapped[int] = mapped_column(default=25)
+    portfolio_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    addon_portfolio_price: Mapped[float] = mapped_column(default=0.0)
+
     # 🎁 Referral System & Promo Code Reward Options
     referral_code: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True)
     referred_by_tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True)
@@ -87,3 +93,4 @@ class Tenant(Base):
     seller_package = relationship("SellerPackage", back_populates="subscribed_agents", lazy="noload")
     crm_clients = relationship("CrmClient", back_populates="tenant", cascade="all, delete-orphan", lazy="noload")
     crm_deals = relationship("CrmDeal", back_populates="tenant", cascade="all, delete-orphan", lazy="noload")
+    portfolio_listings = relationship("PortfolioListing", back_populates="tenant", cascade="all, delete-orphan", lazy="noload")

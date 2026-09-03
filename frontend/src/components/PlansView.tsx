@@ -34,6 +34,10 @@ export interface PlanItem {
   feature_crm?: boolean;
   addon_crm_price?: number;
   addon_crm_tiers?: Array<{ months: number; price: number }>;
+  feature_portfolio?: boolean;
+  addon_portfolio_price?: number;
+  addon_portfolio_limit?: number;
+  addon_portfolio_tiers?: Array<{ listings: number; price: number }>;
   sale_enabled?: boolean;
   sale_price?: number;
   sale_discount_percent?: number;
@@ -116,6 +120,15 @@ export function PlansView() {
     { months: 1, price: 15 },
     { months: 3, price: 35 },
     { months: 6, price: 65 }
+  ]);
+
+  const [formPortfolio, setFormPortfolio] = useState(false);
+  const [formAddonPortfolioPrice, setFormAddonPortfolioPrice] = useState<number>(15);
+  const [formAddonPortfolioLimit, setFormAddonPortfolioLimit] = useState<number>(25);
+  const [formPortfolioTiers, setFormPortfolioTiers] = useState<Array<{ listings: number; price: number }>>([
+    { listings: 25, price: 15 },
+    { listings: 50, price: 25 },
+    { listings: 100, price: 40 }
   ]);
 
   // Promotional Sale State
@@ -231,6 +244,16 @@ export function PlansView() {
       { requests: 50, price: 18 },
       { requests: 100, price: 30 }
     ]);
+    setFormCrm(false);
+    setFormAddonCrmPrice(15);
+    setFormPortfolio(false);
+    setFormAddonPortfolioPrice(15);
+    setFormAddonPortfolioLimit(25);
+    setFormPortfolioTiers([
+      { listings: 25, price: 15 },
+      { listings: 50, price: 25 },
+      { listings: 100, price: 40 }
+    ]);
     setFormSaleEnabled(false);
     setFormSalePrice(undefined);
     setFormSaleDiscountPercent(undefined);
@@ -290,6 +313,14 @@ export function PlansView() {
       { months: 3, price: 35 },
       { months: 6, price: 65 }
     ]);
+    setFormPortfolio(!!plan.feature_portfolio);
+    setFormAddonPortfolioPrice(plan.addon_portfolio_price || 15);
+    setFormAddonPortfolioLimit(plan.addon_portfolio_limit || 25);
+    setFormPortfolioTiers(plan.addon_portfolio_tiers && plan.addon_portfolio_tiers.length > 0 ? plan.addon_portfolio_tiers : [
+      { listings: 25, price: 15 },
+      { listings: 50, price: 25 },
+      { listings: 100, price: 40 }
+    ]);
     setFormSaleEnabled(plan.sale_enabled ?? false);
     setFormSalePrice(plan.sale_price);
     setFormSaleDiscountPercent(plan.sale_discount_percent);
@@ -335,6 +366,10 @@ export function PlansView() {
           feature_crm: formCrm,
           addon_crm_price: formAddonCrmPrice,
           addon_crm_tiers: formCrmTiers,
+          feature_portfolio: formPortfolio,
+          addon_portfolio_price: formAddonPortfolioPrice,
+          addon_portfolio_limit: formAddonPortfolioLimit,
+          addon_portfolio_tiers: formPortfolioTiers,
           sale_enabled: formSaleEnabled,
           sale_price: formSaleEnabled ? formSalePrice : undefined,
           sale_discount_percent: formSaleEnabled ? formSaleDiscountPercent : undefined,
@@ -375,6 +410,10 @@ export function PlansView() {
           feature_crm: formCrm,
           addon_crm_price: formAddonCrmPrice,
           addon_crm_tiers: formCrmTiers,
+          feature_portfolio: formPortfolio,
+          addon_portfolio_price: formAddonPortfolioPrice,
+          addon_portfolio_limit: formAddonPortfolioLimit,
+          addon_portfolio_tiers: formPortfolioTiers,
           sale_enabled: formSaleEnabled,
           sale_price: formSaleEnabled ? formSalePrice : undefined,
           sale_discount_percent: formSaleEnabled ? formSaleDiscountPercent : undefined,
@@ -767,6 +806,35 @@ export function PlansView() {
                       ) : null}
                     </div>
                   </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        {plan.feature_portfolio ? (
+                          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                        ) : (
+                          <X className="w-4 h-4 text-slate-600 shrink-0" />
+                        )}
+                        <span className={plan.feature_portfolio ? 'text-slate-200 font-semibold' : 'text-slate-500 line-through'}>
+                          🗂️ Agent Portfeli & Vitrin ({plan.addon_portfolio_limit || 25} elan)
+                        </span>
+                      </div>
+                      {plan.addon_portfolio_price && plan.addon_portfolio_price > 0 ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/15 text-purple-300 font-semibold">
+                          +{plan.addon_portfolio_price} AZN Addon
+                        </span>
+                      ) : null}
+                    </div>
+                    {plan.feature_portfolio && plan.addon_portfolio_tiers && plan.addon_portfolio_tiers.length > 0 && (
+                      <div className="flex flex-wrap gap-1 pl-6">
+                        {plan.addon_portfolio_tiers.map((t, idx) => (
+                          <span key={idx} className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                            {t.listings} elan ({t.price} ₼)
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -838,7 +906,7 @@ export function PlansView() {
                         <div className="flex flex-wrap gap-1.5">
                           {addon.tiers.map((t: any, idx: number) => (
                             <span key={idx} className="px-2 py-1 rounded-lg bg-dark-950 border border-slate-800 text-[11px] font-mono text-indigo-300">
-                              {t.months ? `${t.months} ay` : t.searches ? `+${t.searches} axtarış` : `+${t.requests} foto`}: <strong>{t.price} AZN</strong>
+                              {t.months ? `${t.months} ay` : t.searches ? `+${t.searches} axtarış` : t.requests ? `+${t.requests} foto` : t.listings ? `${t.listings} elan` : ''}: <strong>{t.price} AZN</strong>
                             </span>
                           ))}
                         </div>
@@ -911,7 +979,7 @@ export function PlansView() {
                     {addonTiersInput.map((tier: any, idx: number) => (
                       <div key={idx} className="flex items-center gap-3 bg-dark-950/60 p-2.5 rounded-xl border border-slate-800">
                         <span className="text-xs text-slate-300 font-mono w-28">
-                          {tier.months ? `${tier.months} Ay` : tier.searches ? `+${tier.searches} Axtarış` : `+${tier.requests} Foto`}
+                          {tier.months ? `${tier.months} Ay` : tier.searches ? `+${tier.searches} Axtarış` : tier.requests ? `+${tier.requests} Foto` : tier.listings ? `${tier.listings} Elan` : ''}
                         </span>
                         <div className="flex items-center gap-1.5 flex-1">
                           <input
@@ -1636,6 +1704,62 @@ export function PlansView() {
                       </div>
                       <p className="text-[11px] text-slate-400">
                         Bu parametr aktiv olduqda, həmin tarifdəki agentlər həm WhatsApp, həm Telegram-da <code className="text-blue-400">/crm &lt;id&gt;</code> əmri vasitəsilə elanları CRM-ə göndərə və Telegram Mini App-dən idarə edə bilərlər.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Agent Portfolio Addon Section */}
+                <div className="p-3.5 bg-dark-900/60 border border-slate-800 rounded-2xl space-y-3 mt-2">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formPortfolio}
+                        onChange={(e) => setFormPortfolio(e.target.checked)}
+                        className="rounded accent-purple-500"
+                      />
+                      <span className="font-bold text-purple-300 text-xs">🗂️ Agent Portfeli & Rəqəmsal Vitrin Add-on</span>
+                    </label>
+                  </div>
+
+                  {formPortfolio && (
+                    <div className="space-y-3 pt-1">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[11px] text-slate-400 font-semibold block">Standart Limit (Aktiv Elan Sayı):</label>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min="1"
+                              value={formAddonPortfolioLimit}
+                              onChange={(e) => setFormAddonPortfolioLimit(Number(e.target.value))}
+                              className="w-full bg-dark-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white text-xs text-center font-bold"
+                              placeholder="25"
+                            />
+                            <span className="text-xs text-slate-400">elan</span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[11px] text-slate-400 font-semibold block">Aylıq Əlavə Qiymət (AZN):</label>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              value={formAddonPortfolioPrice}
+                              onChange={(e) => setFormAddonPortfolioPrice(Number(e.target.value))}
+                              className="w-full bg-dark-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white text-xs text-center font-bold"
+                              placeholder="15"
+                            />
+                            <span className="text-xs text-slate-400">AZN/ay</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <p className="text-[11px] text-slate-400">
+                        Agentlər gələn bildirişlərdən və ya bot-dan 1 kliklə elanı öz portfellərinə kopyalaya, hər parametri redaktə edə və müştəriyə rəqib portalların loqosu olmadan təmiz link göndərə bilərlər. Elan satıldıqda və ya vaxtı bitdikdə silindikdə boşalan limit yuvası dərhal azad olunur.
                       </p>
                     </div>
                   )}

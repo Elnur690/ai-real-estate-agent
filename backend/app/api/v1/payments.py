@@ -26,6 +26,9 @@ class CreatePaymentRequest(BaseModel):
     addon_image_requests_limit: Optional[int] = None
     include_crm_addon: Optional[bool] = None
     addon_crm_price: Optional[float] = None
+    include_portfolio_addon: Optional[bool] = None
+    addon_portfolio_limit: Optional[int] = None
+    addon_portfolio_price: Optional[float] = None
     use_referral_balance: bool = True
     notes: Optional[str] = None
 
@@ -43,10 +46,18 @@ class PaymentResponse(BaseModel):
     notes: Optional[str] = None
 
 @router.get("", response_model=List[PaymentResponse])
-async def list_payments(db: AsyncSession = Depends(get_db), current_admin = Depends(get_current_admin)):
-    stmt = select(Payment).order_by(Payment.id.desc())
-    res = await db.execute(stmt)
-    payments = res.scalars().all()
+async def list_payments(
+    tenant_id: Optional[int] = None,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+    current_admin = Depends(get_current_admin)
+):
+    """List all recorded cash payments."""
+    stmt = select(Payment).order_by(desc(Payment.received_at)).limit(limit)
+    if tenant_id:
+        stmt = stmt.where(Payment.tenant_id == tenant_id)
+    result = await db.execute(stmt)
+    payments = result.scalars().all()
     return payments
 
 async def process_tenant_cash_payment(
@@ -65,6 +76,9 @@ async def process_tenant_cash_payment(
     addon_image_requests_limit: Optional[int] = None,
     include_crm_addon: Optional[bool] = None,
     addon_crm_price: Optional[float] = None,
+    include_portfolio_addon: Optional[bool] = None,
+    addon_portfolio_limit: Optional[int] = None,
+    addon_portfolio_price: Optional[float] = None,
     use_referral_balance: bool = True,
     notes: Optional[str] = None
 ) -> Payment:
@@ -155,6 +169,21 @@ async def process_tenant_cash_payment(
         crm_price_per_month = tenant.addon_crm_price or 15.0
         crm_addon_fee = round(crm_price_per_month * multiplier, 2)
 
+    portfolio_addon_fee = 0.0
+    if include_portfolio_addon is not None:
+        tenant.feature_portfolio = bool(include_portfolio_addon)
+        if include_portfolio_addon:
+            port_limit = addon_portfolio_limit or getattr(db_plan, 'addon_portfolio_limit', 25) or 25
+            tenant.portfolio_limit = port_limit
+            port_price_per_month = addon_portfolio_price if (addon_portfolio_price is not None and addon_portfolio_price > 0) else (getattr(db_plan, 'addon_portfolio_price', 15.0) or 15.0)
+            portfolio_addon_fee = round(port_price_per_month * multiplier, 2)
+            tenant.addon_portfolio_price = port_price_per_month
+        else:
+            tenant.addon_portfolio_price = 0.0
+    elif tenant.feature_portfolio:
+        port_price_per_month = tenant.addon_portfolio_price or 15.0
+        portfolio_addon_fee = round(port_price_per_month * multiplier, 2)
+
     if category == "addon_only":
         # Addon only payment
         base_price = 0.0
@@ -184,9 +213,10 @@ async def process_tenant_cash_payment(
         search_label = f" + Extra {tenant.addon_saved_searches} Searches" if (tenant.addon_saved_searches and tenant.addon_saved_searches > 0) else ""
         image_label = f" + Extra {tenant.addon_image_requests_limit} Clean Images" if (tenant.addon_image_requests_limit and tenant.addon_image_requests_limit > 0) else ""
         crm_label = " + Telegram CRM Mini App Addon" if tenant.feature_crm else ""
-        default_notes = f"Cash payment received for {plan_code.upper()} plan{addon_label}{search_label}{image_label}{crm_label} ({days_covered} days coverage)"
+        portfolio_label = f" + Agent Portfolio ({tenant.portfolio_limit or 25} listings)" if tenant.feature_portfolio else ""
+        default_notes = f"Cash payment received for {plan_code.upper()} plan{addon_label}{search_label}{image_label}{crm_label}{portfolio_label} ({days_covered} days coverage)"
 
-    final_amount = amount if (amount is not None and amount > 0) else round(base_price + addon_fee + search_addon_fee + image_addon_fee + crm_addon_fee, 2)
+    final_amount = amount if (amount is not None and amount > 0) else round(base_price + addon_fee + search_addon_fee + image_addon_fee + crm_addon_fee + portfolio_addon_fee, 2)
     pay_currency = currency or (db_plan.currency if db_plan else "AZN")
 
     # Referral bonus discount
@@ -234,6 +264,8 @@ async def process_tenant_cash_payment(
     tenant.status = "active"
     if tenant.feature_crm:
         tenant.crm_expires_at = end_date
+    if tenant.feature_portfolio:
+        tenant.portfolio_expires_at = end_date
 
     await db.commit()
     await db.refresh(payment)
@@ -259,6 +291,9 @@ async def record_cash_payment(body: CreatePaymentRequest, db: AsyncSession = Dep
             addon_image_requests_limit=body.addon_image_requests_limit,
             include_crm_addon=body.include_crm_addon,
             addon_crm_price=body.addon_crm_price,
+            include_portfolio_addon=body.include_portfolio_addon,
+            addon_portfolio_limit=body.addon_portfolio_limit,
+            addon_portfolio_price=body.addon_portfolio_price,
             use_referral_balance=body.use_referral_balance,
             notes=body.notes
         )

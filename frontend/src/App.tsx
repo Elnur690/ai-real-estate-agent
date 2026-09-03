@@ -13,9 +13,17 @@ import { AdminProfileModal } from './components/AdminProfileModal';
 import { SellersAdminView } from './components/SellersAdminView';
 import { SellerPortalView } from './components/SellerPortalView';
 import { TmaCrm } from './components/TmaCrm';
+import { PortfolioPublicView } from './components/PortfolioPublicView';
 import { useTranslation } from './i18n';
 
 export function App() {
+  const isPortfolioPublic = Boolean(
+    window.location.pathname.startsWith('/p/') ||
+    window.location.pathname.startsWith('/portfolio/') ||
+    window.location.hash.startsWith('#/p/') ||
+    window.location.hash.startsWith('#/portfolio/')
+  );
+
   const isTmaMode = Boolean(
     window.location.hash.includes('tgWebAppData') ||
     window.location.search.includes('tgWebAppData') ||
@@ -84,6 +92,11 @@ export function App() {
     setActiveTab(tab);
     setMobileMenuOpen(false);
   };
+
+  // If public portfolio / shared property link, render public view without auth
+  if (isPortfolioPublic) {
+    return <PortfolioPublicView />;
+  }
 
   // If in Telegram Mini App mode, render TMA CRM directly
   if (isTmaMode) {

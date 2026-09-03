@@ -50,6 +50,9 @@ export const TenantsView: React.FC = () => {
     addon_image_requests_limit: 0,
     feature_crm: false,
     addon_crm_price: 0.0,
+    feature_portfolio: false,
+    portfolio_limit: 25,
+    addon_portfolio_price: 15.0,
   });
 
   const [availablePlans, setAvailablePlans] = useState<any[]>([]);
@@ -88,6 +91,9 @@ export const TenantsView: React.FC = () => {
     addon_image_requests_used: 0,
     feature_crm: false,
     addon_crm_price: 0.0,
+    feature_portfolio: false,
+    portfolio_limit: 25,
+    addon_portfolio_price: 15.0,
   });
 
   // Delete Confirmation Modal State
@@ -195,7 +201,11 @@ export const TenantsView: React.FC = () => {
       feature_watermark_free_images: t.feature_watermark_free_images || false,
       addon_image_requests_limit: t.addon_image_requests_limit || 0,
       addon_image_requests_used: t.addon_image_requests_used || 0,
-      feature_crm: t.feature_crm ?? false
+      feature_crm: t.feature_crm ?? false,
+      addon_crm_price: t.addon_crm_price ?? 0.0,
+      feature_portfolio: t.feature_portfolio ?? false,
+      portfolio_limit: t.portfolio_limit ?? 25,
+      addon_portfolio_price: t.addon_portfolio_price ?? 15.0
     });
   };
 
@@ -254,6 +264,9 @@ export const TenantsView: React.FC = () => {
         addon_image_requests_limit: 0,
         feature_crm: false,
         addon_crm_price: 0.0,
+        feature_portfolio: false,
+        portfolio_limit: 25,
+        addon_portfolio_price: 15.0,
       });
       loadTenants();
     } catch (e: any) {
@@ -612,6 +625,12 @@ export const TenantsView: React.FC = () => {
                       <div className="text-[11px] text-indigo-400 font-medium flex items-center gap-1 mt-0.5">
                         <Briefcase className="w-3 h-3" />
                         CRM Mini App
+                      </div>
+                    )}
+                    {t.feature_portfolio && (
+                      <div className="text-[11px] text-purple-400 font-medium flex items-center gap-1 mt-0.5">
+                        <span>🗂️</span>
+                        Portfel ({t.portfolio_limit || 25} elan)
                       </div>
                     )}
                     {t.feature_watermark_free_images && (
@@ -1029,6 +1048,37 @@ export const TenantsView: React.FC = () => {
                 </label>
               </div>
 
+              {/* Agent Portfolio Addon */}
+              <div className="pt-2 border-t border-slate-800 space-y-2">
+                <label className="flex items-center gap-2 p-2.5 bg-dark-800/80 rounded-xl border border-slate-700/60 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editFormData.feature_portfolio || false}
+                    onChange={(e) => setEditFormData({ ...editFormData, feature_portfolio: e.target.checked })}
+                    className="rounded accent-purple-500"
+                  />
+                  <div className="flex-1 text-xs">
+                    <span className="font-semibold text-purple-300">🗂️ Agent Portfeli & Rəqəmsal Vitrin Add-on</span>
+                    <p className="text-[11px] text-slate-400">1 kliklə klonlama, təmiz su nişansız müştəri linki (/p/:id) və fərdi vitrin</p>
+                  </div>
+                </label>
+                {editFormData.feature_portfolio && (
+                  <div className="flex items-center justify-between px-3 py-2 bg-dark-950 rounded-xl border border-slate-800 text-xs">
+                    <span className="text-slate-400">Portfel Limiti (Aktiv Elan Sayı):</span>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min="1"
+                        value={editFormData.portfolio_limit || 25}
+                        onChange={(e) => setEditFormData({ ...editFormData, portfolio_limit: Number(e.target.value) })}
+                        className="w-20 bg-dark-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs font-bold text-center"
+                      />
+                      <span className="text-slate-400">elan</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Aged Listings Addon */}
               <div>
                 <label className="flex items-center gap-2 p-2.5 bg-dark-800/80 rounded-xl border border-slate-700/60 cursor-pointer">
@@ -1310,6 +1360,37 @@ export const TenantsView: React.FC = () => {
                     <p className="text-[11px] text-slate-400">Agentlər üçün /crm &lt;id&gt; əmri və TMA boru kəməri</p>
                   </div>
                 </label>
+              </div>
+
+              {/* Agent Portfolio Addon */}
+              <div className="pt-2 border-t border-slate-800 space-y-2">
+                <label className="flex items-center gap-2 p-2.5 bg-dark-800/80 rounded-xl border border-slate-700/60 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newTenant.feature_portfolio || false}
+                    onChange={(e) => setNewTenant({ ...newTenant, feature_portfolio: e.target.checked })}
+                    className="rounded accent-purple-500"
+                  />
+                  <div className="flex-1 text-xs">
+                    <span className="font-semibold text-purple-300">🗂️ Agent Portfeli & Rəqəmsal Vitrin Add-on</span>
+                    <p className="text-[11px] text-slate-400">1 kliklə klonlama, təmiz su nişansız müştəri linki (/p/:id) və fərdi vitrin</p>
+                  </div>
+                </label>
+                {newTenant.feature_portfolio && (
+                  <div className="flex items-center justify-between px-3 py-2 bg-dark-950 rounded-xl border border-slate-800 text-xs">
+                    <span className="text-slate-400">Portfel Limiti (Aktiv Elan Sayı):</span>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min="1"
+                        value={newTenant.portfolio_limit || 25}
+                        onChange={(e) => setNewTenant({ ...newTenant, portfolio_limit: Number(e.target.value) })}
+                        className="w-20 bg-dark-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs font-bold text-center"
+                      />
+                      <span className="text-slate-400">elan</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Aged Listings Addon */}

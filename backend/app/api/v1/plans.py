@@ -45,6 +45,10 @@ class PlanResponse(BaseModel):
     feature_crm: bool = False
     addon_crm_price: float = 15.0
     addon_crm_tiers: Optional[List[dict]] = []
+    feature_portfolio: bool = False
+    addon_portfolio_price: float = 15.0
+    addon_portfolio_limit: int = 25
+    addon_portfolio_tiers: Optional[List[dict]] = []
     sale_enabled: bool = False
     sale_price: Optional[float] = None
     sale_discount_percent: Optional[float] = None
@@ -86,6 +90,10 @@ class CreatePlanRequest(BaseModel):
     feature_crm: bool = False
     addon_crm_price: float = 15.0
     addon_crm_tiers: Optional[List[dict]] = []
+    feature_portfolio: bool = False
+    addon_portfolio_price: float = 15.0
+    addon_portfolio_limit: int = 25
+    addon_portfolio_tiers: Optional[List[dict]] = []
     sale_enabled: bool = False
     sale_price: Optional[float] = None
     sale_discount_percent: Optional[float] = None
@@ -125,6 +133,10 @@ class UpdatePlanRequest(BaseModel):
     feature_crm: Optional[bool] = None
     addon_crm_price: Optional[float] = None
     addon_crm_tiers: Optional[List[dict]] = None
+    feature_portfolio: Optional[bool] = None
+    addon_portfolio_price: Optional[float] = None
+    addon_portfolio_limit: Optional[int] = None
+    addon_portfolio_tiers: Optional[List[dict]] = None
     sale_enabled: Optional[bool] = None
     sale_price: Optional[float] = None
     sale_discount_percent: Optional[float] = None
@@ -179,6 +191,13 @@ async def list_plans(db: AsyncSession = Depends(get_db)):
             included_image_requests=getattr(plan, 'included_image_requests', 0),
             addon_image_requests_price=getattr(plan, 'addon_image_requests_price', 10.0),
             addon_image_tiers=getattr(plan, 'addon_image_tiers', []) or [],
+            feature_crm=getattr(plan, 'feature_crm', False),
+            addon_crm_price=getattr(plan, 'addon_crm_price', 15.0),
+            addon_crm_tiers=getattr(plan, 'addon_crm_tiers', []) or [],
+            feature_portfolio=getattr(plan, 'feature_portfolio', False),
+            addon_portfolio_price=getattr(plan, 'addon_portfolio_price', 15.0),
+            addon_portfolio_limit=getattr(plan, 'addon_portfolio_limit', 25),
+            addon_portfolio_tiers=getattr(plan, 'addon_portfolio_tiers', []) or [],
             sale_enabled=getattr(plan, 'sale_enabled', False),
             sale_price=getattr(plan, 'sale_price', None),
             sale_discount_percent=getattr(plan, 'sale_discount_percent', None),
@@ -244,6 +263,13 @@ async def create_plan(
         included_image_requests=body.included_image_requests,
         addon_image_requests_price=body.addon_image_requests_price,
         addon_image_tiers=body.addon_image_tiers or [],
+        feature_crm=body.feature_crm,
+        addon_crm_price=body.addon_crm_price,
+        addon_crm_tiers=body.addon_crm_tiers or [],
+        feature_portfolio=body.feature_portfolio,
+        addon_portfolio_price=body.addon_portfolio_price,
+        addon_portfolio_limit=body.addon_portfolio_limit,
+        addon_portfolio_tiers=body.addon_portfolio_tiers or [],
         sale_enabled=body.sale_enabled,
         sale_price=final_sale_price,
         sale_discount_percent=final_discount_pct,
@@ -285,6 +311,13 @@ async def create_plan(
         included_image_requests=getattr(plan, 'included_image_requests', 0),
         addon_image_requests_price=getattr(plan, 'addon_image_requests_price', 10.0),
         addon_image_tiers=getattr(plan, 'addon_image_tiers', []) or [],
+        feature_crm=getattr(plan, 'feature_crm', False),
+        addon_crm_price=getattr(plan, 'addon_crm_price', 15.0),
+        addon_crm_tiers=getattr(plan, 'addon_crm_tiers', []) or [],
+        feature_portfolio=getattr(plan, 'feature_portfolio', False),
+        addon_portfolio_price=getattr(plan, 'addon_portfolio_price', 15.0),
+        addon_portfolio_limit=getattr(plan, 'addon_portfolio_limit', 25),
+        addon_portfolio_tiers=getattr(plan, 'addon_portfolio_tiers', []) or [],
         sale_enabled=getattr(plan, 'sale_enabled', False),
         sale_price=getattr(plan, 'sale_price', None),
         sale_discount_percent=getattr(plan, 'sale_discount_percent', None),
@@ -342,6 +375,13 @@ async def get_plan(
         included_image_requests=getattr(plan, 'included_image_requests', 0),
         addon_image_requests_price=getattr(plan, 'addon_image_requests_price', 10.0),
         addon_image_tiers=getattr(plan, 'addon_image_tiers', []) or [],
+        feature_crm=getattr(plan, 'feature_crm', False),
+        addon_crm_price=getattr(plan, 'addon_crm_price', 15.0),
+        addon_crm_tiers=getattr(plan, 'addon_crm_tiers', []) or [],
+        feature_portfolio=getattr(plan, 'feature_portfolio', False),
+        addon_portfolio_price=getattr(plan, 'addon_portfolio_price', 15.0),
+        addon_portfolio_limit=getattr(plan, 'addon_portfolio_limit', 25),
+        addon_portfolio_tiers=getattr(plan, 'addon_portfolio_tiers', []) or [],
         sale_enabled=getattr(plan, 'sale_enabled', False),
         sale_price=getattr(plan, 'sale_price', None),
         sale_discount_percent=getattr(plan, 'sale_discount_percent', None),
@@ -419,6 +459,20 @@ async def update_plan(
         plan.addon_image_requests_price = body.addon_image_requests_price
     if body.addon_image_tiers is not None:
         plan.addon_image_tiers = body.addon_image_tiers
+    if body.feature_crm is not None:
+        plan.feature_crm = body.feature_crm
+    if body.addon_crm_price is not None:
+        plan.addon_crm_price = body.addon_crm_price
+    if body.addon_crm_tiers is not None:
+        plan.addon_crm_tiers = body.addon_crm_tiers
+    if body.feature_portfolio is not None:
+        plan.feature_portfolio = body.feature_portfolio
+    if body.addon_portfolio_price is not None:
+        plan.addon_portfolio_price = body.addon_portfolio_price
+    if body.addon_portfolio_limit is not None:
+        plan.addon_portfolio_limit = body.addon_portfolio_limit
+    if body.addon_portfolio_tiers is not None:
+        plan.addon_portfolio_tiers = body.addon_portfolio_tiers
     if body.sale_enabled is not None:
         plan.sale_enabled = body.sale_enabled
     if body.sale_price is not None:
@@ -464,6 +518,12 @@ async def update_plan(
         tenant_updates["feature_aged_listings"] = body.feature_aged_listings
     if body.feature_watermark_free_images is not None:
         tenant_updates["feature_watermark_free_images"] = body.feature_watermark_free_images
+    if body.feature_crm is not None:
+        tenant_updates["feature_crm"] = body.feature_crm
+    if body.feature_portfolio is not None:
+        tenant_updates["feature_portfolio"] = body.feature_portfolio
+    if body.addon_portfolio_limit is not None:
+        tenant_updates["portfolio_limit"] = body.addon_portfolio_limit
     if body.backup_enabled is not None:
         tenant_updates["backup_enabled"] = body.backup_enabled
 
@@ -510,6 +570,13 @@ async def update_plan(
         included_image_requests=getattr(plan, 'included_image_requests', 0),
         addon_image_requests_price=getattr(plan, 'addon_image_requests_price', 10.0),
         addon_image_tiers=getattr(plan, 'addon_image_tiers', []) or [],
+        feature_crm=getattr(plan, 'feature_crm', False),
+        addon_crm_price=getattr(plan, 'addon_crm_price', 15.0),
+        addon_crm_tiers=getattr(plan, 'addon_crm_tiers', []) or [],
+        feature_portfolio=getattr(plan, 'feature_portfolio', False),
+        addon_portfolio_price=getattr(plan, 'addon_portfolio_price', 15.0),
+        addon_portfolio_limit=getattr(plan, 'addon_portfolio_limit', 25),
+        addon_portfolio_tiers=getattr(plan, 'addon_portfolio_tiers', []) or [],
         sale_enabled=getattr(plan, 'sale_enabled', False),
         sale_price=getattr(plan, 'sale_price', None),
         sale_discount_percent=getattr(plan, 'sale_discount_percent', None),
@@ -662,6 +729,31 @@ async def get_addons_overview(
                 "Müştəriyə göndərilmək üçün hazır vizual broşür",
                 "HD keyfiyyətli şəkil yükləmə"
             ]
+        },
+        {
+            "key": "portfolio",
+            "name": "🗂️ Agent Portfeli & Rəqəmsal Vitrin (Agent Portfolio)",
+            "description": "Gələn elanları 1 toxunuşla fərdi portfelə köçürmə, sahələri redaktə etmə, müştərilərə xüsusi linklə təqdim etmə və limit daxilində idarə etmə.",
+            "category": "portfolio",
+            "is_active": True,
+            "default_price": getattr(starter_plan, 'addon_portfolio_price', 15.0) or 15.0,
+            "billing_period": "monthly",
+            "pack_size": 25,
+            "tiers": getattr(starter_plan, 'addon_portfolio_tiers', []) or [
+                {"listings": 25, "price": 15.0},
+                {"listings": 50, "price": 25.0},
+                {"listings": 100, "price": 40.0}
+            ],
+            "sale_enabled": False,
+            "sale_price": None,
+            "sale_discount_percent": 20.0,
+            "sale_badge_label": "🗂️ Portfel Add-on Xüsusi Endirim",
+            "features_included": [
+                "1 toxunuşla bildirişlərdən portfelə köçürmə (/portfolio <id>)",
+                "Bütün elan sahələrinin fərdi redaktəsi",
+                "25 aktiv elan yuvası (bitmiş elan silindikdə limit avtomatik boşalır)",
+                "Brendləşdirilmiş müştəri paylaşım linkləri və WhatsApp düyməsi"
+            ]
         }
     ]
 
@@ -686,6 +778,13 @@ async def update_addon_config(
                 plan.addon_crm_price = float(body.price)
             if body.tiers is not None:
                 plan.addon_crm_tiers = body.tiers
+        elif addon_key == "portfolio":
+            if body.price is not None:
+                plan.addon_portfolio_price = float(body.price)
+            if body.tiers is not None:
+                plan.addon_portfolio_tiers = body.tiers
+            if body.included_quota is not None:
+                plan.addon_portfolio_limit = int(body.included_quota)
         elif addon_key == "aged_listings":
             if body.price is not None:
                 plan.addon_aged_listings_price = float(body.price)

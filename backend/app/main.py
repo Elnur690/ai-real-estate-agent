@@ -125,6 +125,57 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS addon_crm_price FLOAT DEFAULT 15.0;"))
         await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS addon_crm_tiers JSON DEFAULT '[]'::json;"))
         await conn.execute(text("ALTER TABLE sellers ADD COLUMN IF NOT EXISTS free_trial_feature_crm BOOLEAN DEFAULT FALSE;"))
+
+        # 🗂️ Agent Portfolio & Showcase Add-on Columns & Tables
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS feature_portfolio BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS portfolio_limit INTEGER DEFAULT 25;"))
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS portfolio_expires_at TIMESTAMP WITH TIME ZONE;"))
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS addon_portfolio_price FLOAT DEFAULT 0.0;"))
+        await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS feature_portfolio BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS addon_portfolio_price FLOAT DEFAULT 15.0;"))
+        await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS addon_portfolio_limit INTEGER DEFAULT 25;"))
+        await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS addon_portfolio_tiers JSON DEFAULT '[]'::json;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS feature_portfolio BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS addon_portfolio_price FLOAT DEFAULT 15.0;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS addon_portfolio_limit INTEGER DEFAULT 25;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS addon_portfolio_tiers JSON DEFAULT '[]'::json;"))
+        await conn.execute(text("ALTER TABLE sellers ADD COLUMN IF NOT EXISTS free_trial_feature_portfolio BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE sellers ADD COLUMN IF NOT EXISTS free_trial_portfolio_limit INTEGER DEFAULT 25;"))
+
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS portfolio_listings (
+                id SERIAL PRIMARY KEY,
+                tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                listing_id INTEGER REFERENCES listings(id) ON DELETE SET NULL,
+                title VARCHAR(500) NOT NULL,
+                description TEXT,
+                price FLOAT NOT NULL,
+                currency VARCHAR(10) DEFAULT 'AZN',
+                price_usd FLOAT,
+                district VARCHAR(255),
+                metro_station VARCHAR(255),
+                address VARCHAR(500),
+                rooms INTEGER,
+                area_sqm FLOAT,
+                floor INTEGER,
+                total_floors INTEGER,
+                building_type VARCHAR(50),
+                property_type VARCHAR(50) DEFAULT 'apartment',
+                offer_type VARCHAR(50) DEFAULT 'sale',
+                photos JSON DEFAULT '[]'::json,
+                contact_name VARCHAR(255),
+                contact_phone VARCHAR(50),
+                notes TEXT,
+                share_code VARCHAR(50) UNIQUE NOT NULL,
+                is_active BOOLEAN DEFAULT TRUE,
+                status VARCHAR(50) DEFAULT 'active',
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            );
+        """))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_portfolio_tenant_active ON portfolio_listings (tenant_id, is_active);"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_portfolio_share_code ON portfolio_listings (share_code);"))
+
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS quiet_hours_enabled BOOLEAN DEFAULT FALSE;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS quiet_hours_start VARCHAR(10) DEFAULT '23:30';"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS quiet_hours_end VARCHAR(10) DEFAULT '08:30';"))
@@ -197,11 +248,11 @@ async def lifespan(app: FastAPI):
 
             # Auto-seed default subscription plans if missing per code
             default_plans_data = [
-                {"code": "free", "name": "Free Trial Tier", "description": "Basic listing scraper & trial alerts", "price": 0.0, "billing_period": "monthly", "max_agents": 1, "feature_makler_detector": True, "feature_avm_bargain_finder": False, "feature_social_brochure": False, "feature_client_intake_bot": False, "feature_multi_location": False, "max_locations_per_search": 1, "feature_crm": False, "addon_crm_price": 15.0, "backup_enabled": False},
-                {"code": "starter", "name": "Starter Agent Plan", "description": "Individual agent listing alerts & Telegram bot", "price": 29.0, "billing_period": "monthly", "max_agents": 1, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 3, "feature_crm": False, "addon_crm_price": 15.0, "backup_enabled": False},
-                {"code": "pro", "name": "Pro Agent Plan", "description": "Full AI Makler Detector, AVM Bargain Finder & WhatsApp alerts", "price": 59.0, "billing_period": "monthly", "max_agents": 3, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 5, "feature_crm": True, "addon_crm_price": 15.0, "backup_enabled": True},
-                {"code": "agency", "name": "Agency Team Plan", "description": "Multi-agent team territory routing & automated backups", "price": 129.0, "billing_period": "monthly", "max_agents": 10, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 10, "feature_crm": True, "addon_crm_price": 15.0, "backup_enabled": True},
-                {"code": "enterprise", "name": "Enterprise Custom Plan", "description": "Unlimited agent seats, custom intake branding & dedicated AI model", "price": 299.0, "billing_period": "monthly", "max_agents": 50, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 20, "feature_crm": True, "addon_crm_price": 15.0, "backup_enabled": True},
+                {"code": "free", "name": "Free Trial Tier", "description": "Basic listing scraper & trial alerts", "price": 0.0, "billing_period": "monthly", "max_agents": 1, "feature_makler_detector": True, "feature_avm_bargain_finder": False, "feature_social_brochure": False, "feature_client_intake_bot": False, "feature_multi_location": False, "max_locations_per_search": 1, "feature_crm": False, "addon_crm_price": 15.0, "feature_portfolio": False, "addon_portfolio_price": 15.0, "addon_portfolio_limit": 25, "backup_enabled": False},
+                {"code": "starter", "name": "Starter Agent Plan", "description": "Individual agent listing alerts & Telegram bot", "price": 29.0, "billing_period": "monthly", "max_agents": 1, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 3, "feature_crm": False, "addon_crm_price": 15.0, "feature_portfolio": False, "addon_portfolio_price": 15.0, "addon_portfolio_limit": 25, "backup_enabled": False},
+                {"code": "pro", "name": "Pro Agent Plan", "description": "Full AI Makler Detector, AVM Bargain Finder & WhatsApp alerts", "price": 59.0, "billing_period": "monthly", "max_agents": 3, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 5, "feature_crm": True, "addon_crm_price": 15.0, "feature_portfolio": True, "addon_portfolio_price": 15.0, "addon_portfolio_limit": 25, "backup_enabled": True},
+                {"code": "agency", "name": "Agency Team Plan", "description": "Multi-agent team territory routing & automated backups", "price": 129.0, "billing_period": "monthly", "max_agents": 10, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 10, "feature_crm": True, "addon_crm_price": 15.0, "feature_portfolio": True, "addon_portfolio_price": 15.0, "addon_portfolio_limit": 50, "backup_enabled": True},
+                {"code": "enterprise", "name": "Enterprise Custom Plan", "description": "Unlimited agent seats, custom intake branding & dedicated AI model", "price": 299.0, "billing_period": "monthly", "max_agents": 50, "feature_makler_detector": True, "feature_avm_bargain_finder": True, "feature_social_brochure": True, "feature_client_intake_bot": True, "feature_multi_location": True, "max_locations_per_search": 20, "feature_crm": True, "addon_crm_price": 15.0, "feature_portfolio": True, "addon_portfolio_price": 15.0, "addon_portfolio_limit": 100, "backup_enabled": True},
             ]
             
             for pdata in default_plans_data:
@@ -306,7 +357,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.api.v1 import auth, tenants, payments, ai_config, settings as settings_api, scrapers, webhooks, client_intake, promo_codes, plans, whatsapp, analytics, sellers, crm
+from app.api.v1 import auth, tenants, payments, ai_config, settings as settings_api, scrapers, webhooks, client_intake, promo_codes, plans, whatsapp, analytics, sellers, crm, portfolio
 
 # Include Router endpoints
 app.include_router(auth.router, prefix=settings.API_V1_STR)
@@ -323,6 +374,7 @@ app.include_router(whatsapp.router, prefix=settings.API_V1_STR)
 app.include_router(analytics.router, prefix=settings.API_V1_STR)
 app.include_router(sellers.router, prefix=settings.API_V1_STR)
 app.include_router(crm.router, prefix=settings.API_V1_STR)
+app.include_router(portfolio.router, prefix=settings.API_V1_STR)
 
 # Serve generated PDF brochures statically
 from fastapi.staticfiles import StaticFiles
