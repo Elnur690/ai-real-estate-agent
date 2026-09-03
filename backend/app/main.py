@@ -131,6 +131,13 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS portfolio_limit INTEGER DEFAULT 25;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS portfolio_expires_at TIMESTAMP WITH TIME ZONE;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS addon_portfolio_price FLOAT DEFAULT 0.0;"))
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS portfolio_slug VARCHAR(100);"))
+        await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_tenants_portfolio_slug ON tenants(portfolio_slug);"))
+        await conn.execute(text("""
+            UPDATE tenants 
+            SET portfolio_slug = 'agent-' || id 
+            WHERE portfolio_slug IS NULL OR TRIM(portfolio_slug) = '';
+        """))
         await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS feature_portfolio BOOLEAN DEFAULT FALSE;"))
         await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS addon_portfolio_price FLOAT DEFAULT 15.0;"))
         await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS addon_portfolio_limit INTEGER DEFAULT 25;"))
