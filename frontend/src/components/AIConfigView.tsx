@@ -11,7 +11,7 @@ interface TaskType {
 }
 
 const modelOptions: Record<string, string[]> = {
-  gemini: ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.7-pro', 'gemini-3.5-pro'],
+  gemini: ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.7-pro', 'gemini-3.5-pro'],
   claude: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
   gpt: ['gpt-4o', 'gpt-4o-mini']
 };
@@ -25,12 +25,12 @@ interface AITaskCardProps {
 
 const AITaskCard: React.FC<AITaskCardProps> = ({ task, cfg, onSave, onTest }) => {
   const [selectedProvider, setSelectedProvider] = useState<string>(cfg.provider || 'gemini');
-  const [selectedModel, setSelectedModel] = useState<string>(cfg.model_name || 'gemini-3.5-flash');
+  const [selectedModel, setSelectedModel] = useState<string>(cfg.model_name || 'gemini-3.8-flash');
   const [apiKeyInput, setApiKeyInput] = useState('');
 
   useEffect(() => {
     setSelectedProvider(cfg.provider || 'gemini');
-    setSelectedModel(cfg.model_name || 'gemini-3.5-flash');
+    setSelectedModel(cfg.model_name || 'gemini-3.8-flash');
   }, [cfg]);
 
   return (
@@ -50,7 +50,7 @@ const AITaskCard: React.FC<AITaskCardProps> = ({ task, cfg, onSave, onTest }) =>
             onChange={(e) => {
               const p = e.target.value;
               setSelectedProvider(p);
-              setSelectedModel(modelOptions[p] ? modelOptions[p][0] : 'gemini-3.5-flash');
+              setSelectedModel(modelOptions[p] ? modelOptions[p][0] : 'gemini-3.8-flash');
             }}
             className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white bg-dark-800"
           >
@@ -118,9 +118,9 @@ export const AIConfigView: React.FC = () => {
   const [testing, setTesting] = useState(false);
 
   const taskTypes: TaskType[] = [
-    { key: 'criteria_parsing', label: 'Criteria Parsing (Conversational Agent)', defaultProvider: 'gemini', defaultModel: 'gemini-3.5-flash' },
-    { key: 'listing_parsing', label: 'Telegram Unformatted Listing Parser', defaultProvider: 'gemini', defaultModel: 'gemini-3.5-flash' },
-    { key: 'match_scoring', label: 'Match Scoring Engine', defaultProvider: 'gemini', defaultModel: 'gemini-3.5-flash' },
+    { key: 'criteria_parsing', label: 'Criteria Parsing (Conversational Agent)', defaultProvider: 'gemini', defaultModel: 'gemini-3.8-flash' },
+    { key: 'listing_parsing', label: 'Telegram Unformatted Listing Parser', defaultProvider: 'gemini', defaultModel: 'gemini-3.8-flash' },
+    { key: 'match_scoring', label: 'Match Scoring Engine', defaultProvider: 'gemini', defaultModel: 'gemini-3.8-flash' },
   ];
 
   const loadConfigs = async () => {
@@ -148,7 +148,7 @@ export const AIConfigView: React.FC = () => {
       id: 0,
       task_type: taskType as any,
       provider: 'gemini',
-      model_name: 'gemini-3.5-flash',
+      model_name: 'gemini-3.8-flash',
       api_key_masked: '',
       is_active: true,
       updated_at: new Date().toISOString()

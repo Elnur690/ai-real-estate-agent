@@ -4,7 +4,7 @@ from app.ai.factory import ProviderFactory, encrypt_key, decrypt_key
 
 @pytest.mark.asyncio
 async def test_gemini_heuristic_criteria_parsing():
-    provider = GeminiProvider(model_name="gemini-3.5-flash")
+    provider = GeminiProvider(model_name="gemini-3.8-flash")
     raw_text = "Yasamalda 100-150 min AZN 3 otaqlı ev sahibindən yeni tikili"
     criteria = await provider.parse_search_criteria(raw_text)
 
@@ -18,7 +18,7 @@ async def test_gemini_heuristic_criteria_parsing():
 
 @pytest.mark.asyncio
 async def test_metro_station_and_usd_conversion_parsing():
-    provider = GeminiProvider(model_name="gemini-3.5-flash")
+    provider = GeminiProvider(model_name="gemini-3.8-flash")
     raw_text = "Elmlər metrosuna yaxın $100k 2 otaqlı yeni tikili"
     criteria = await provider.parse_search_criteria(raw_text)
 
@@ -30,7 +30,7 @@ async def test_metro_station_and_usd_conversion_parsing():
 
 @pytest.mark.asyncio
 async def test_multi_room_and_building_type_parsing():
-    provider = GeminiProvider(model_name="gemini-3.5-flash")
+    provider = GeminiProvider(model_name="gemini-3.8-flash")
     
     # 1. "3 və ya 4 otaqlı", no building specified -> min_rooms=3, max_rooms=4, building_type="any"
     text1 = "Nəsimidə 3 və ya 4 otaqlı mənzil"
@@ -55,7 +55,7 @@ async def test_multi_room_and_building_type_parsing():
 
 @pytest.mark.asyncio
 async def test_historical_lookback_in_search_criteria():
-    provider = GeminiProvider(model_name="gemini-3.5-flash")
+    provider = GeminiProvider(model_name="gemini-3.8-flash")
     raw_text = "Nəsimi rayonu mənzil, 3 və ya 4 otaqlı, 250000 - 300000 azn, yeni tikili, təmirli və əşyalı, sahibindən, 3 aydan bəri"
     criteria = await provider.parse_search_criteria(raw_text)
 
@@ -72,7 +72,7 @@ async def test_historical_lookback_in_search_criteria():
 
 @pytest.mark.asyncio
 async def test_floor_exclusion_and_lookback_criteria_parsing():
-    provider = GeminiProvider(model_name="gemini-3.5-flash")
+    provider = GeminiProvider(model_name="gemini-3.8-flash")
     raw_text = "Yasamalda, elmlər akademiyası metro, 3 və ya 4 otaqlı. Yeni tikili. 400k - 500k. Sahibindən, 5 aydan bəri, 1ci və sonuncu mərtəbə olmasın"
     criteria = await provider.parse_search_criteria(raw_text)
 
@@ -96,7 +96,7 @@ def test_fernet_key_encryption():
 
 @pytest.mark.asyncio
 async def test_area_and_floor_range_criteria_parsing():
-    provider = GeminiProvider(model_name="gemini-3.5-flash")
+    provider = GeminiProvider(model_name="gemini-3.8-flash")
     raw_text = "Nəsimidə 3 otaq 80-120 kv 3-10 mərtəbə 200k AZN kupçalı və ipotekaya yararlı"
     criteria = await provider.parse_search_criteria(raw_text)
 
@@ -111,7 +111,7 @@ async def test_area_and_floor_range_criteria_parsing():
 
 @pytest.mark.asyncio
 async def test_studio_and_open_ended_room_parsing():
-    provider = GeminiProvider(model_name="gemini-3.5-flash")
+    provider = GeminiProvider(model_name="gemini-3.8-flash")
     
     # 1. Studio
     c_studio = await provider.parse_search_criteria("Sahildə studiya mənzil kirayə 700 AZN")

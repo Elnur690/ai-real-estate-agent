@@ -152,7 +152,7 @@ export const DashboardView: React.FC<{ onNavigate: (view: string) => void }> = (
 
           <div className="p-4 rounded-xl bg-dark-700/50 border border-slate-700/50">
             <span className="text-xs uppercase font-bold tracking-wider text-slate-400">{t.aiProvider}</span>
-            <p className="text-sm font-medium text-slate-200 mt-2">Gemini 2.5 Flash • Heuristic Engine</p>
+            <p className="text-sm font-medium text-slate-200 mt-2">Gemini 3.8 Flash • Heuristic Engine</p>
             <span className="inline-block mt-3 text-xs px-2.5 py-1 rounded-full bg-purple-500/10 text-purple-400 font-medium">
               {t.active}
             </span>

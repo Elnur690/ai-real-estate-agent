@@ -14,7 +14,7 @@ router = APIRouter(prefix="/ai-config", tags=["AI Provider Config"])
 class SaveAIConfigRequest(BaseModel):
     task_type: str = "criteria_parsing" # criteria_parsing | listing_parsing | match_scoring
     provider: str = "gemini"            # gemini | claude | gpt
-    model_name: str = "gemini-3.5-flash"
+    model_name: str = "gemini-3.8-flash"
     api_key: Optional[str] = None
     tenant_id: Optional[int] = None
 
