@@ -398,4 +398,38 @@ async def test_portfolio_friendly_urls(test_db: AsyncSession, client: AsyncClien
     assert r_new_slug.status_code == 200
     assert r_new_slug.json()[0]["agent_slug"] == "elnur-emlak"
 
+    # 8. Test Portfolio Overview endpoint with slug and vitrin_url
+    agent_token = create_access_token(agent_user.id)
+    agent_headers = {"Authorization": f"Bearer {agent_token}"}
+    r_overview = await client.get("/api/v1/portfolio", headers=agent_headers)
+    assert r_overview.status_code == 200
+    data_ov = r_overview.json()
+    assert data_ov["portfolio_slug"] == "elnur-emlak"
+    assert data_ov["portfolio_vitrin_url"] == "/v/elnur-emlak"
+    assert data_ov["active_count"] >= 1
+
+    # 9. Test PUT /api/v1/portfolio/{id} to edit fields
+    r_edit = await client.put(
+        f"/api/v1/portfolio/{listing_id}",
+        json={
+            "title": "Redaktə edilmiş Lüks Mənzil",
+            "price": 275000.0,
+            "description": "Əla təmirli və dəniz mənzərəli",
+            "rooms": 4,
+            "area_sqm": 140.0,
+            "floor": 12,
+            "total_floors": 18,
+            "notes": "Gizli qeyd: 10 min endirim mümkündür",
+            "status": "active"
+        },
+        headers=agent_headers
+    )
+    assert r_edit.status_code == 200
+    updated = r_edit.json()
+    assert updated["title"] == "Redaktə edilmiş Lüks Mənzil"
+    assert updated["price"] == 275000.0
+    assert updated["rooms"] == 4
+    assert updated["area_sqm"] == 140.0
+    assert updated["notes"] == "Gizli qeyd: 10 min endirim mümkündür"
+
 

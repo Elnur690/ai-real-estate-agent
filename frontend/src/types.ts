@@ -181,3 +181,45 @@ export interface CrmStats {
   total_won_commission: number;
 }
 
+export interface PortfolioListingItem {
+  id: number;
+  tenant_id: number;
+  listing_id?: number;
+  title: string;
+  description?: string;
+  price: number;
+  currency: string;
+  price_usd?: number;
+  district?: string;
+  metro_station?: string;
+  address?: string;
+  rooms?: number;
+  area_sqm?: number;
+  floor?: number;
+  total_floors?: number;
+  building_type?: string;
+  property_type?: string;
+  offer_type?: string;
+  photos: string[];
+  contact_name?: string;
+  contact_phone?: string;
+  notes?: string;
+  share_code: string;
+  share_url?: string;
+  is_active: boolean;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PortfolioOverview {
+  items: PortfolioListingItem[];
+  active_count: number;
+  portfolio_limit: number;
+  is_limit_reached: boolean;
+  feature_enabled: boolean;
+  expires_at?: string;
+  portfolio_slug?: string;
+  portfolio_vitrin_url?: string;
+}
+

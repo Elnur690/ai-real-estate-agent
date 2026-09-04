@@ -2,10 +2,11 @@ import React, { useEffect, useState } from 'react';
 import {
   Briefcase, Users, CheckCircle, Clock, Search, Plus, Filter,
   Phone, MessageSquare, ExternalLink, Calendar, DollarSign,
-  ChevronRight, X, AlertCircle, Edit3, Trash2, ArrowRight, Share2, Sparkles
+  ChevronRight, X, AlertCircle, Edit3, Trash2, ArrowRight, Share2, Sparkles,
+  Globe, Copy, Check, Eye, FolderPlus, Layers, Image as ImageIcon, MapPin, Tag, Home
 } from 'lucide-react';
 import api from '../api';
-import { CrmDeal, CrmClient, CrmStats } from '../types';
+import { CrmDeal, CrmClient, CrmStats, PortfolioListingItem, PortfolioOverview } from '../types';
 
 declare global {
   interface Window {
@@ -55,11 +56,50 @@ export function TmaCrm() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [agentName, setAgentName] = useState<string>('Agent');
   const [agentPhone, setAgentPhone] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'deals' | 'clients' | 'stats'>('deals');
+  const [activeTab, setActiveTab] = useState<'deals' | 'clients' | 'portfolio' | 'stats'>('deals');
   
   const [deals, setDeals] = useState<CrmDeal[]>([]);
   const [clients, setClients] = useState<CrmClient[]>([]);
   const [stats, setStats] = useState<CrmStats | null>(null);
+
+  // Portfolio State
+  const [portfolioItems, setPortfolioItems] = useState<PortfolioListingItem[]>([]);
+  const [portfolioOverview, setPortfolioOverview] = useState<PortfolioOverview | null>(null);
+  const [portfolioSlug, setPortfolioSlug] = useState<string>('');
+  const [portfolioLimit, setPortfolioLimit] = useState<number>(25);
+  const [portfolioActiveCount, setPortfolioActiveCount] = useState<number>(0);
+  const [portfolioSearch, setPortfolioSearch] = useState<string>('');
+  const [portfolioFilter, setPortfolioFilter] = useState<'all' | 'active' | 'sold'>('all');
+
+  // Portfolio Edit/Create Modal State
+  const [selectedPortfolioItem, setSelectedPortfolioItem] = useState<PortfolioListingItem | null>(null);
+  const [isNewPortfolioModal, setIsNewPortfolioModal] = useState(false);
+  const [savingPortfolio, setSavingPortfolio] = useState(false);
+
+  // Form fields for editing/creating portfolio listings
+  const [editPortTitle, setEditPortTitle] = useState('');
+  const [editPortPrice, setEditPortPrice] = useState('');
+  const [editPortCurrency, setEditPortCurrency] = useState('AZN');
+  const [editPortPriceUsd, setEditPortPriceUsd] = useState('');
+  const [editPortDescription, setEditPortDescription] = useState('');
+  const [editPortRooms, setEditPortRooms] = useState('');
+  const [editPortArea, setEditPortArea] = useState('');
+  const [editPortFloor, setEditPortFloor] = useState('');
+  const [editPortTotalFloors, setEditPortTotalFloors] = useState('');
+  const [editPortDistrict, setEditPortDistrict] = useState('');
+  const [editPortMetro, setEditPortMetro] = useState('');
+  const [editPortAddress, setEditPortAddress] = useState('');
+  const [editPortOfferType, setEditPortOfferType] = useState('sale');
+  const [editPortBuildingType, setEditPortBuildingType] = useState('new_building');
+  const [editPortPropertyType, setEditPortPropertyType] = useState('apartment');
+  const [editPortContactName, setEditPortContactName] = useState('');
+  const [editPortContactPhone, setEditPortContactPhone] = useState('');
+  const [editPortNotes, setEditPortNotes] = useState('');
+  const [editPortStatus, setEditPortStatus] = useState('active');
+  const [editPortIsActive, setEditPortIsActive] = useState(true);
+  const [editPortPhotos, setEditPortPhotos] = useState<string[]>([]);
+  const [newPhotoInput, setNewPhotoInput] = useState('');
+  const [copiedToast, setCopiedToast] = useState<string | null>(null);
   
   const [selectedStage, setSelectedStage] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -144,11 +184,34 @@ export function TmaCrm() {
         localStorage.setItem('user_name', authData.user_name);
         setAgentName(authData.tenant_name || authData.user_name);
 
-        await fetchAllData();
+        const loadedItems = await fetchAllData();
 
-        // Check if opened with startapp param (e.g. deal_123)
+        // Check if opened with startapp param (e.g. deal_123 or port_456 or tab=portfolio)
+        const currentUrlParams = new URLSearchParams(window.location.search);
+        const currentHashParams = new URLSearchParams(window.location.hash.substring(1));
+        const requestedTab = currentUrlParams.get('tab') || currentHashParams.get('tab');
         const startParam = tg?.initDataUnsafe?.start_param;
-        if (startParam && startParam.startsWith('deal_')) {
+
+        if (requestedTab === 'portfolio' || startParam === 'portfolio') {
+          setActiveTab('portfolio');
+        }
+
+        const editParam = currentUrlParams.get('edit') || currentHashParams.get('edit');
+        if (editParam) {
+          setActiveTab('portfolio');
+          const portId = parseInt(editParam);
+          const found = loadedItems.find((p: any) => p.id === portId);
+          if (found) {
+            openEditPortfolioModal(found);
+          }
+        } else if (startParam && startParam.startsWith('port_')) {
+          setActiveTab('portfolio');
+          const portId = parseInt(startParam.replace('port_', ''));
+          const found = loadedItems.find((p: any) => p.id === portId);
+          if (found) {
+            openEditPortfolioModal(found);
+          }
+        } else if (startParam && startParam.startsWith('deal_')) {
           const dealId = parseInt(startParam.replace('deal_', ''));
           if (dealId) {
             try {
@@ -172,20 +235,219 @@ export function TmaCrm() {
     initTma();
   }, []);
 
-  const fetchAllData = async () => {
+  const fetchAllData = async (): Promise<PortfolioListingItem[]> => {
     try {
-      const [dealsRes, clientsRes, statsRes] = await Promise.all([
-        api.get('/crm/deals'),
-        api.get('/crm/clients'),
-        api.get('/crm/stats'),
+      const [dealsRes, clientsRes, statsRes, portRes] = await Promise.all([
+        api.get('/crm/deals').catch(() => ({ data: [] })),
+        api.get('/crm/clients').catch(() => ({ data: [] })),
+        api.get('/crm/stats').catch(() => ({ data: null })),
+        api.get('/portfolio').catch(() => ({ data: null })),
       ]);
       setDeals(dealsRes.data || []);
       setClients(clientsRes.data || []);
-      setStats(statsRes.data || null);
+      if (statsRes.data) setStats(statsRes.data);
+      if (portRes.data) {
+        setPortfolioOverview(portRes.data);
+        const items = portRes.data.items || [];
+        setPortfolioItems(items);
+        setPortfolioLimit(portRes.data.portfolio_limit || 25);
+        setPortfolioActiveCount(portRes.data.active_count || 0);
+        if (portRes.data.portfolio_slug) {
+          setPortfolioSlug(portRes.data.portfolio_slug);
+        }
+        return items;
+      }
+      return [];
     } catch (err) {
       console.error('Failed to fetch CRM data:', err);
+      return [];
     }
   };
+
+  const openEditPortfolioModal = (item: PortfolioListingItem) => {
+    haptic('light');
+    setSelectedPortfolioItem(item);
+    setIsNewPortfolioModal(false);
+    setEditPortTitle(item.title || '');
+    setEditPortPrice(item.price ? String(item.price) : '');
+    setEditPortCurrency(item.currency || 'AZN');
+    setEditPortPriceUsd(item.price_usd ? String(item.price_usd) : '');
+    setEditPortDescription(item.description || '');
+    setEditPortRooms(item.rooms !== undefined && item.rooms !== null ? String(item.rooms) : '');
+    setEditPortArea(item.area_sqm !== undefined && item.area_sqm !== null ? String(item.area_sqm) : '');
+    setEditPortFloor(item.floor !== undefined && item.floor !== null ? String(item.floor) : '');
+    setEditPortTotalFloors(item.total_floors !== undefined && item.total_floors !== null ? String(item.total_floors) : '');
+    setEditPortDistrict(item.district || '');
+    setEditPortMetro(item.metro_station || '');
+    setEditPortAddress(item.address || '');
+    setEditPortOfferType(item.offer_type || 'sale');
+    setEditPortBuildingType(item.building_type || 'new_building');
+    setEditPortPropertyType(item.property_type || 'apartment');
+    setEditPortContactName(item.contact_name || '');
+    setEditPortContactPhone(item.contact_phone || '');
+    setEditPortNotes(item.notes || '');
+    setEditPortStatus(item.status || 'active');
+    setEditPortIsActive(item.is_active ?? true);
+    setEditPortPhotos(Array.isArray(item.photos) ? [...item.photos] : []);
+    setNewPhotoInput('');
+  };
+
+  const openNewPortfolioModal = () => {
+    haptic('light');
+    setSelectedPortfolioItem(null);
+    setIsNewPortfolioModal(true);
+    setEditPortTitle('');
+    setEditPortPrice('');
+    setEditPortCurrency('AZN');
+    setEditPortPriceUsd('');
+    setEditPortDescription('');
+    setEditPortRooms('');
+    setEditPortArea('');
+    setEditPortFloor('');
+    setEditPortTotalFloors('');
+    setEditPortDistrict('');
+    setEditPortMetro('');
+    setEditPortAddress('');
+    setEditPortOfferType('sale');
+    setEditPortBuildingType('new_building');
+    setEditPortPropertyType('apartment');
+    setEditPortContactName(agentName || '');
+    setEditPortContactPhone(agentPhone || '');
+    setEditPortNotes('');
+    setEditPortStatus('active');
+    setEditPortIsActive(true);
+    setEditPortPhotos([]);
+    setNewPhotoInput('');
+  };
+
+  const closePortfolioModal = () => {
+    setSelectedPortfolioItem(null);
+    setIsNewPortfolioModal(false);
+  };
+
+  const handleAddPhoto = () => {
+    const url = newPhotoInput.trim();
+    if (url) {
+      setEditPortPhotos(prev => [...prev, url]);
+      setNewPhotoInput('');
+    }
+  };
+
+  const handleRemovePhoto = (idx: number) => {
+    setEditPortPhotos(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleSavePortfolio = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editPortTitle.trim()) {
+      alert('Zəhmət olmasa elanın başlığını daxil edin.');
+      return;
+    }
+    const priceNum = parseFloat(editPortPrice);
+    if (isNaN(priceNum) || priceNum <= 0) {
+      alert('Zəhmət olmasa düzgün qiymət daxil edin.');
+      return;
+    }
+
+    setSavingPortfolio(true);
+    haptic('medium');
+
+    const payload = {
+      title: editPortTitle.trim(),
+      price: priceNum,
+      currency: editPortCurrency,
+      price_usd: editPortPriceUsd ? parseFloat(editPortPriceUsd) : undefined,
+      description: editPortDescription.trim() || undefined,
+      rooms: editPortRooms ? parseInt(editPortRooms) : undefined,
+      area_sqm: editPortArea ? parseFloat(editPortArea) : undefined,
+      floor: editPortFloor ? parseInt(editPortFloor) : undefined,
+      total_floors: editPortTotalFloors ? parseInt(editPortTotalFloors) : undefined,
+      district: editPortDistrict.trim() || undefined,
+      metro_station: editPortMetro.trim() || undefined,
+      address: editPortAddress.trim() || undefined,
+      offer_type: editPortOfferType,
+      building_type: editPortBuildingType,
+      property_type: editPortPropertyType,
+      contact_name: editPortContactName.trim() || undefined,
+      contact_phone: editPortContactPhone.trim() || undefined,
+      notes: editPortNotes.trim() || undefined,
+      status: editPortStatus,
+      is_active: editPortIsActive,
+      photos: editPortPhotos,
+    };
+
+    try {
+      if (selectedPortfolioItem) {
+        const res = await api.put(`/portfolio/${selectedPortfolioItem.id}`, payload);
+        setPortfolioItems(prev => prev.map(p => p.id === selectedPortfolioItem.id ? res.data : p));
+      } else {
+        const res = await api.post('/portfolio', payload);
+        setPortfolioItems(prev => [res.data, ...prev]);
+        setPortfolioActiveCount(c => c + 1);
+      }
+      closePortfolioModal();
+      await fetchAllData();
+      triggerToast('Elan uğurla yadda saxlanıldı! ✅');
+    } catch (err: any) {
+      console.error('Failed to save portfolio item:', err);
+      alert(err.response?.data?.detail || 'Elan saxlanılarkən xəta baş verdi.');
+    } finally {
+      setSavingPortfolio(false);
+    }
+  };
+
+  const handleDeletePortfolioItem = async (id: number) => {
+    haptic('heavy');
+    if (!window.confirm('Bu elanı portfelinizdən silmək istədiyinizə əminsiniz? (Portfel limiti dərhal boşalacaq)')) {
+      return;
+    }
+    try {
+      await api.delete(`/portfolio/${id}`);
+      setPortfolioItems(prev => prev.filter(p => p.id !== id));
+      setPortfolioActiveCount(c => Math.max(0, c - 1));
+      if (selectedPortfolioItem?.id === id) {
+        closePortfolioModal();
+      }
+      triggerToast('Elan portfeldən silindi və yuva azad olundu 🗑️');
+    } catch (err) {
+      console.error('Failed to delete portfolio item:', err);
+      alert('Elan silinərkən xəta baş verdi.');
+    }
+  };
+
+  const triggerToast = (msg: string) => {
+    setCopiedToast(msg);
+    setTimeout(() => setCopiedToast(null), 2500);
+  };
+
+  const copyToClipboard = (text: string, label: string = 'Link kopyalandı!') => {
+    haptic('medium');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    triggerToast(label);
+  };
+
+  const BAKU_DISTRICT_OPTIONS = [
+    "Yasamal", "Nəsimi", "Binəqədi", "Nərimanov", "Səbail",
+    "Xətai", "Nizami", "Sabunçu", "Suraxanı", "Xəzər",
+    "Abşeron", "Sumqayıt", "Qaradağ", "Pirallahi"
+  ];
+
+  const BAKU_METRO_OPTIONS = [
+    "28 May", "Gənclik", "Nəriman Nərimanov", "Elmlər Akademiyası", "Nizami",
+    "İnşaatçılar", "20 Yanvar", "Memar Əcəmi", "Nəsimi", "Azadlıq prospekti",
+    "Dərnəgül", "İçərişəhər", "Sahil", "Xətai", "Cəfər Cabbarlı",
+    "Ulduz", "Koroğlu", "Qara Qarayev", "Neftçilər", "Xalqlar Dostluğu",
+    "Əhmədli", "Həzi Aslanov", "Avtovağzal", "8 Noyabr", "Xocəsən"
+  ];
 
   const openDealModal = (deal: CrmDeal) => {
     haptic('light');
@@ -368,37 +630,55 @@ export function TmaCrm() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => { haptic('light'); setShowNewClientModal(true); }}
-              className="flex items-center gap-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Müştəri
-            </button>
+            {activeTab === 'portfolio' ? (
+              <button
+                onClick={() => { haptic('light'); openNewPortfolioModal(); }}
+                className="flex items-center gap-1 bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm shadow-purple-600/20"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Yeni Elan
+              </button>
+            ) : (
+              <button
+                onClick={() => { haptic('light'); setShowNewClientModal(true); }}
+                className="flex items-center gap-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Müştəri
+              </button>
+            )}
           </div>
         </div>
 
         {/* Tab Navigation */}
-        <div className="grid grid-cols-3 gap-1 bg-slate-950/80 p-1 rounded-xl mt-3 border border-slate-800/80">
+        <div className="grid grid-cols-4 gap-1 bg-slate-950/80 p-1 rounded-xl mt-3 border border-slate-800/80">
           <button
             onClick={() => { haptic('light'); setActiveTab('deals'); }}
-            className={`py-1.5 text-xs font-semibold rounded-lg transition-all ${
+            className={`py-1.5 text-[11px] font-semibold rounded-lg transition-all ${
               activeTab === 'deals' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            📋 Elanlar & Sövdələr ({deals.length})
+            📋 Sövdələr ({deals.length})
           </button>
           <button
             onClick={() => { haptic('light'); setActiveTab('clients'); }}
-            className={`py-1.5 text-xs font-semibold rounded-lg transition-all ${
+            className={`py-1.5 text-[11px] font-semibold rounded-lg transition-all ${
               activeTab === 'clients' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             👥 Müştərilər ({clients.length})
           </button>
           <button
+            onClick={() => { haptic('light'); setActiveTab('portfolio'); }}
+            className={`py-1.5 text-[11px] font-semibold rounded-lg transition-all ${
+              activeTab === 'portfolio' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            🗂️ Portfel ({portfolioItems.length})
+          </button>
+          <button
             onClick={() => { haptic('light'); setActiveTab('stats'); }}
-            className={`py-1.5 text-xs font-semibold rounded-lg transition-all ${
+            className={`py-1.5 text-[11px] font-semibold rounded-lg transition-all ${
               activeTab === 'stats' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -561,6 +841,255 @@ export function TmaCrm() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* --- PORTFOLIO TAB --- */}
+        {activeTab === 'portfolio' && (
+          <div className="space-y-3">
+            {/* Header: Limit Quota & Vitrin URL Banner */}
+            <div className="bg-gradient-to-br from-purple-950/50 via-slate-900 to-slate-900 border border-purple-500/30 rounded-2xl p-4 shadow-lg">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
+                    <Globe className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-white">Rəqəmsal Vitrinim</h3>
+                    <p className="text-[10px] text-purple-300 font-mono">
+                      {window.location.origin}/v/{portfolioSlug || 'vitrin'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => copyToClipboard(`${window.location.origin}/v/${portfolioSlug || 'vitrin'}`, 'Vitrin linki kopyalandı! 📋')}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 text-xs font-semibold transition-all"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    Kopyala
+                  </button>
+                  <a
+                    href={`/v/${portfolioSlug || 'vitrin'}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => haptic('medium')}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-all"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Aç
+                  </a>
+                </div>
+              </div>
+
+              {/* Limit Quota Progress */}
+              <div className="mt-3 pt-3 border-t border-purple-500/20">
+                <div className="flex justify-between items-center text-[11px] mb-1.5">
+                  <span className="text-slate-400">Portfel Limiti:</span>
+                  <span className="font-bold text-white font-mono">
+                    {portfolioActiveCount} / {portfolioLimit} aktiv elan
+                    <span className="text-purple-400 font-normal ml-1.5">
+                      ({Math.max(0, portfolioLimit - portfolioActiveCount)} boş yuva)
+                    </span>
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                  <div
+                    className={`h-full transition-all rounded-full ${
+                      portfolioActiveCount >= portfolioLimit ? 'bg-rose-500' : 'bg-gradient-to-r from-purple-500 to-indigo-500'
+                    }`}
+                    style={{ width: `${Math.min(100, (portfolioActiveCount / Math.max(1, portfolioLimit)) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Search & Filter Bar */}
+            <div className="space-y-2">
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Portfeldə elan axtar (başlıq, rayon, metro)..."
+                  value={portfolioSearch}
+                  onChange={e => setPortfolioSearch(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                <button
+                  onClick={() => { haptic('light'); setPortfolioFilter('all'); }}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-all border ${
+                    portfolioFilter === 'all'
+                      ? 'bg-purple-600 text-white border-purple-500 font-semibold'
+                      : 'bg-slate-900 text-slate-400 border-slate-800'
+                  }`}
+                >
+                  Hamısı ({portfolioItems.length})
+                </button>
+                <button
+                  onClick={() => { haptic('light'); setPortfolioFilter('active'); }}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-all border ${
+                    portfolioFilter === 'active'
+                      ? 'bg-emerald-600 text-white border-emerald-500 font-semibold'
+                      : 'bg-slate-900 text-slate-400 border-slate-800'
+                  }`}
+                >
+                  Aktiv ({portfolioItems.filter(p => p.is_active && p.status !== 'sold').length})
+                </button>
+                <button
+                  onClick={() => { haptic('light'); setPortfolioFilter('sold'); }}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-all border ${
+                    portfolioFilter === 'sold'
+                      ? 'bg-amber-600 text-white border-amber-500 font-semibold'
+                      : 'bg-slate-900 text-slate-400 border-slate-800'
+                  }`}
+                >
+                  Satıldı / Deaktiv ({portfolioItems.filter(p => !p.is_active || p.status === 'sold').length})
+                </button>
+              </div>
+            </div>
+
+            {/* Portfolio Listings List */}
+            {(() => {
+              const filtered = portfolioItems.filter(p => {
+                if (portfolioFilter === 'active' && (!p.is_active || p.status === 'sold')) return false;
+                if (portfolioFilter === 'sold' && (p.is_active && p.status !== 'sold')) return false;
+                if (portfolioSearch.trim()) {
+                  const q = portfolioSearch.toLowerCase();
+                  return (
+                    p.title.toLowerCase().includes(q) ||
+                    (p.district && p.district.toLowerCase().includes(q)) ||
+                    (p.metro_station && p.metro_station.toLowerCase().includes(q)) ||
+                    String(p.id).includes(q)
+                  );
+                }
+                return true;
+              });
+
+              if (filtered.length === 0) {
+                return (
+                  <div className="text-center py-12 bg-slate-900/50 rounded-2xl border border-slate-800 p-6">
+                    <FolderPlus className="w-12 h-12 text-slate-600 mx-auto mb-3 opacity-50" />
+                    <h3 className="text-sm font-semibold text-slate-300 mb-1">Portfel elanı tapılmadı</h3>
+                    <p className="text-xs text-slate-500 mb-4 max-w-xs mx-auto">
+                      Telegram botdan <code className="text-purple-400 bg-purple-950/50 px-1 py-0.5 rounded">/portfel &lt;id&gt;</code> göndərərək və ya birbaşa düymə ilə yeni elan əlavə edə bilərsiniz.
+                    </p>
+                    <button
+                      onClick={() => openNewPortfolioModal()}
+                      className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-md shadow-purple-600/20"
+                    >
+                      + Yeni Elan Əlavə Et
+                    </button>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-3">
+                  {filtered.map(item => {
+                    const firstPhoto = Array.isArray(item.photos) && item.photos.length > 0 ? item.photos[0] : null;
+                    const cleanLink = `${window.location.origin}/v/${portfolioSlug || 'vitrin'}/${item.id}`;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-3 hover:border-slate-700 transition-all shadow-md"
+                      >
+                        <div className="flex gap-3">
+                          {/* Image or Placeholder */}
+                          <div className="w-20 h-20 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden flex-shrink-0 relative">
+                            {firstPhoto ? (
+                              <img
+                                src={firstPhoto}
+                                alt={item.title}
+                                className="w-full h-full object-cover"
+                                onError={(e) => { (e.target as any).style.display = 'none'; }}
+                              />
+                            ) : (
+                              <div className="w-full h-full flex flex-col items-center justify-center text-slate-600">
+                                <Home className="w-6 h-6" />
+                              </div>
+                            )}
+                            {Array.isArray(item.photos) && item.photos.length > 1 && (
+                              <span className="absolute bottom-1 right-1 bg-black/70 text-[9px] font-bold text-white px-1.5 py-0.5 rounded">
+                                📷 {item.photos.length}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1 mb-1">
+                              <span className="text-[10px] font-mono text-purple-400 font-bold">#{item.id}</span>
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  item.status === 'sold'
+                                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                    : item.is_active
+                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                    : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                                }`}
+                              >
+                                {item.status === 'sold' ? 'Satıldı' : item.is_active ? 'Aktiv' : 'Deaktiv'}
+                              </span>
+                            </div>
+
+                            <h4 className="text-xs font-bold text-white line-clamp-1 mb-1">{item.title}</h4>
+
+                            <div className="flex items-center gap-1 text-sm font-black text-emerald-400">
+                              {intFormat(item.price)} {item.currency || 'AZN'}
+                              {item.price_usd && (
+                                <span className="text-[10px] font-normal text-slate-400">(${intFormat(item.price_usd)})</span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-1">
+                              {item.rooms && <span>{item.rooms} otaq</span>}
+                              {item.area_sqm && <span>• {item.area_sqm} m²</span>}
+                              {item.district && <span>• {item.district}</span>}
+                              {item.metro_station && <span>• 🚇 {item.metro_station}</span>}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Card Action Buttons */}
+                        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(cleanLink, 'Təmiz elan linki kopyalandı! 🔗')}
+                            className="flex items-center gap-1 bg-slate-950 hover:bg-slate-800 text-slate-300 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border border-slate-800 transition-all flex-1 justify-center"
+                          >
+                            <Share2 className="w-3.5 h-3.5 text-purple-400" />
+                            Linki Kopyala
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => openEditPortfolioModal(item)}
+                            className="flex items-center gap-1 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 text-[11px] font-bold px-3 py-1.5 rounded-lg border border-purple-500/40 transition-all flex-1 justify-center"
+                          >
+                            <Edit3 className="w-3.5 h-3.5 text-purple-400" />
+                            Redaktə Et
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeletePortfolioItem(item.id)}
+                            className="w-8 h-8 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 flex items-center justify-center transition-all flex-shrink-0"
+                            title="Portfeldən sil"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -882,6 +1411,376 @@ export function TmaCrm() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* --- PORTFOLIO EDIT / CREATE MODAL --- */}
+      {(selectedPortfolioItem || isNewPortfolioModal) && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl w-full max-w-lg max-h-[92vh] flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b border-slate-800 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
+                  <Edit3 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    {selectedPortfolioItem ? `Elanı Redaktə Et (#${selectedPortfolioItem.id})` : 'Yeni Elan Əlavə Et'}
+                  </h3>
+                  <p className="text-[10px] text-slate-400">Bütün sahələri fərdiləşdirə bilərsiniz</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closePortfolioModal}
+                className="w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Scrollable Form Body */}
+            <form onSubmit={handleSavePortfolio} id="portfolio-edit-form" className="p-4 space-y-4 overflow-y-auto flex-1 text-xs">
+              {/* Title */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Elanın Başlığı *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Məs: Nərimanov metrosu yaxınlığında 3 otaqlı təmirli mənzil"
+                  value={editPortTitle}
+                  onChange={e => setEditPortTitle(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              {/* Price & Currency */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                    Qiymət *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="Məs: 185000"
+                    value={editPortPrice}
+                    onChange={e => setEditPortPrice(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                    Valyuta
+                  </label>
+                  <select
+                    value={editPortCurrency}
+                    onChange={e => setEditPortCurrency(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                  >
+                    <option value="AZN">AZN (₼)</option>
+                    <option value="USD">USD ($)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Ətraflı Təsvir
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Mənzil haqqında ətraflı məlumat, təmir vəziyyəti, infrastruktur..."
+                  value={editPortDescription}
+                  onChange={e => setEditPortDescription(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-purple-500 resize-none"
+                />
+              </div>
+
+              {/* Parameters Grid: Rooms, Area, Floor, Total Floors */}
+              <div className="grid grid-cols-4 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Otaq</label>
+                  <input
+                    type="number"
+                    placeholder="3"
+                    value={editPortRooms}
+                    onChange={e => setEditPortRooms(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white text-center focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Sahə (m²)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    placeholder="110"
+                    value={editPortArea}
+                    onChange={e => setEditPortArea(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white text-center focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Mərtəbə</label>
+                  <input
+                    type="number"
+                    placeholder="7"
+                    value={editPortFloor}
+                    onChange={e => setEditPortFloor(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white text-center focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Ümumi Mərt.</label>
+                  <input
+                    type="number"
+                    placeholder="16"
+                    value={editPortTotalFloors}
+                    onChange={e => setEditPortTotalFloors(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-white text-center focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+              </div>
+
+              {/* District & Metro */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-400 block mb-1">Rayon</label>
+                  <select
+                    value={editPortDistrict}
+                    onChange={e => setEditPortDistrict(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                  >
+                    <option value="">Seçin...</option>
+                    {BAKU_DISTRICT_OPTIONS.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-400 block mb-1">Metro Stansiyası</label>
+                  <select
+                    value={editPortMetro}
+                    onChange={e => setEditPortMetro(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                  >
+                    <option value="">Seçin...</option>
+                    {BAKU_METRO_OPTIONS.map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Exact Address */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 block mb-1">Dəqiq Ünvan</label>
+                <input
+                  type="text"
+                  placeholder="Məs: Təbriz küçəsi 45, Heydər Əliyev mərkəzinin yanı"
+                  value={editPortAddress}
+                  onChange={e => setEditPortAddress(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                />
+              </div>
+
+              {/* Offer Type, Building Type, Property Type */}
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Təklif Növü</label>
+                  <select
+                    value={editPortOfferType}
+                    onChange={e => setEditPortOfferType(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500"
+                  >
+                    <option value="sale">Satış</option>
+                    <option value="rent">Kirayə</option>
+                    <option value="daily">Günlük</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Bina Növü</label>
+                  <select
+                    value={editPortBuildingType}
+                    onChange={e => setEditPortBuildingType(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500"
+                  >
+                    <option value="new_building">Yeni tikili</option>
+                    <option value="old_building">Köhnə tikili</option>
+                    <option value="other">Digər</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-1">Əmlak Növü</label>
+                  <select
+                    value={editPortPropertyType}
+                    onChange={e => setEditPortPropertyType(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500"
+                  >
+                    <option value="apartment">Mənzil</option>
+                    <option value="house">Həyət evi</option>
+                    <option value="office">Ofis</option>
+                    <option value="commercial">Obyekt</option>
+                    <option value="land">Torpaq</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Photos Gallery Management */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                  Şəkillər ({editPortPhotos.length})
+                </label>
+
+                {editPortPhotos.length > 0 && (
+                  <div className="grid grid-cols-4 gap-2 mb-2">
+                    {editPortPhotos.map((url, idx) => (
+                      <div key={idx} className="relative aspect-square rounded-xl bg-slate-950 border border-slate-800 overflow-hidden group">
+                        <img src={url} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => handleRemovePhoto(idx)}
+                          className="absolute top-1 right-1 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center shadow"
+                          title="Şəkli sil"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    placeholder="Şəkil URL linki əlavə et..."
+                    value={newPhotoInput}
+                    onChange={e => setNewPhotoInput(e.target.value)}
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddPhoto}
+                    className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-xl text-xs"
+                  >
+                    + Şəkil
+                  </button>
+                </div>
+              </div>
+
+              {/* Contact Information */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-400 block mb-1">Əlaqə Şəxsi</label>
+                  <input
+                    type="text"
+                    placeholder="Adınız və ya agentliyin adı"
+                    value={editPortContactName}
+                    onChange={e => setEditPortContactName(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-400 block mb-1">Əlaqə Telefonu</label>
+                  <input
+                    type="text"
+                    placeholder="+994 50 123 45 67"
+                    value={editPortContactPhone}
+                    onChange={e => setEditPortContactPhone(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Private Internal Notes (Agent-only) */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Şəxsi Gizli Qeydlərim (Yalnız siz görürsünüz)
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Məs: Sahibin son qiyməti 175k, komissiya 1.5%, qapı kodu 4521..."
+                  value={editPortNotes}
+                  onChange={e => setEditPortNotes(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-purple-500 resize-none"
+                />
+              </div>
+
+              {/* Status & Public Visibility Toggle */}
+              <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-3 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-white">İctimai Vitrində Aktivdir</p>
+                  <p className="text-[10px] text-slate-400">Deaktiv etsəniz elan silinmir, lakin müştəri linkində görünmür</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editPortIsActive}
+                    onChange={e => setEditPortIsActive(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                </label>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 block mb-1">Status</label>
+                <select
+                  value={editPortStatus}
+                  onChange={e => setEditPortStatus(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                >
+                  <option value="active">Aktiv (Satışda)</option>
+                  <option value="sold">Satıldı (Arxiv)</option>
+                  <option value="archived">Dayandırıldı</option>
+                </select>
+              </div>
+            </form>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-slate-800 flex flex-col gap-2 flex-shrink-0">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={closePortfolioModal}
+                  className="w-1/3 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold"
+                >
+                  Bağla
+                </button>
+                <button
+                  type="submit"
+                  form="portfolio-edit-form"
+                  disabled={savingPortfolio}
+                  className="w-2/3 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md shadow-purple-600/20 flex items-center justify-center gap-1"
+                >
+                  {savingPortfolio ? 'Saxlanılır...' : 'Yadda Saxla'}
+                </button>
+              </div>
+
+              {selectedPortfolioItem && (
+                <button
+                  type="button"
+                  onClick={() => handleDeletePortfolioItem(selectedPortfolioItem.id)}
+                  className="w-full py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Elanı Portfeldən Sil (Yuva boşalsın)
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Toast Notification */}
+      {copiedToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 border border-purple-500/40 text-white text-xs font-semibold px-4 py-2.5 rounded-full shadow-2xl backdrop-blur-md flex items-center gap-2 animate-in fade-in duration-200">
+          <Check className="w-4 h-4 text-emerald-400" />
+          <span>{copiedToast}</span>
         </div>
       )}
     </div>

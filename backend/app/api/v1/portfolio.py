@@ -101,6 +101,8 @@ class PortfolioOverviewResponse(BaseModel):
     is_limit_reached: bool
     feature_enabled: bool
     expires_at: Optional[datetime] = None
+    portfolio_slug: Optional[str] = None
+    portfolio_vitrin_url: Optional[str] = None
 
 
 class PublicPortfolioListingResponse(BaseModel):
@@ -228,13 +230,18 @@ async def list_portfolio_listings(
     limit = getattr(tenant, 'portfolio_limit', 25) or 25
     feature_enabled = bool(getattr(tenant, 'feature_portfolio', False))
 
+    slug = getattr(tenant, 'portfolio_slug', None) or f"agent-{tenant.id}"
+    vitrin_url = getattr(tenant, 'portfolio_vitrin_url', f"/v/{slug}")
+
     return PortfolioOverviewResponse(
         items=[format_listing_response(item) for item in listings],
         active_count=active_count,
         portfolio_limit=limit,
         is_limit_reached=(active_count >= limit),
         feature_enabled=feature_enabled,
-        expires_at=getattr(tenant, 'portfolio_expires_at', None)
+        expires_at=getattr(tenant, 'portfolio_expires_at', None),
+        portfolio_slug=slug,
+        portfolio_vitrin_url=vitrin_url
     )
 
 

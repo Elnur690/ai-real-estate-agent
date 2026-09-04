@@ -578,10 +578,13 @@ class BotCommandHandler:
 
             recent_str = "\n".join(lines) if lines else "Hələ portfelinizdə heç bir elan yoxdur."
 
+            tma_portfolio_url = f"{base_fe}/crm?tab=portfolio"
+
             return (
                 f"🗂️ *Agent Portfeliniz & Rəqəmsal Vitrin ({app_name}):*\n\n"
                 f"📊 *İstifadə:* {curr_active}/{limit} aktiv elan (Boş yuva: {max(0, limit - curr_active)})\n"
-                f"🌐 *Ümumi Vitrin Linkiniz:* {vitrin_url}\n\n"
+                f"🌐 *Ümumi Vitrin Linkiniz:* {vitrin_url}\n"
+                f"📱 *TMA-da İdarə Et və Redaktə:* {tma_portfolio_url}\n\n"
                 f"📋 *Son Elanlar:*\n{recent_str}\n\n"
                 f"💡 *Əmrlər:*\n"
                 f"• `/portfel <elan_id>` - Yeni elanı dərhal portfelə əlavə et\n"
@@ -688,6 +691,7 @@ class BotCommandHandler:
             agent_slug = tenant.portfolio_slug or str(tenant.id)
             share_url = f"{base_fe}/v/{agent_slug}/{new_port.id}"
             short_url = f"{base_fe}/p/{new_port.share_code}"
+            edit_tma_url = f"{base_fe}/crm?tab=portfolio&edit={new_port.id}"
 
             return (
                 f"✅ *Elan Portfelinizə əlavə edildi!* 🗂️ (ID: #{new_port.id})\n\n"
@@ -698,6 +702,8 @@ class BotCommandHandler:
                 f"🔗 *Müştəriyə göndərmək üçün təmiz link:*\n"
                 f"{share_url}\n"
                 f"*(Qısa link: {short_url})*\n\n"
+                f"✏️ *Sahələri Redaktə Et (TMA):*\n"
+                f"{edit_tma_url}\n\n"
                 f"💡 *Qeyd:* Elanın müddəti bitdikdə və ya satıldıqda `/portfel_sil {new_port.id}` ilə silə bilərsiniz (yuva dərhal boşalacaq)."
             )
 
