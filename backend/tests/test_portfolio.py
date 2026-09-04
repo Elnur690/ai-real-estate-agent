@@ -568,4 +568,38 @@ async def test_agent_reseller_custom_domain_inheritance_and_override(test_db: As
     assert ov_override_data["custom_domain_info"]["active_domain"] == "samiremlak.az"
     assert ov_override_data["items"][0]["share_url"] == f"https://samiremlak.az/v/samir-qasimov/{item_id}"
 
+    # 12. Test public showcase resolution by domain (GET /public/by-domain)
+    r_by_domain = await client.get("/api/v1/portfolio/public/by-domain?domain=samiremlak.az")
+    assert r_by_domain.status_code == 200
+    by_dom_items = r_by_domain.json()
+    assert len(by_dom_items) == 1
+    assert by_dom_items[0]["id"] == item_id
+    assert by_dom_items[0]["agent_name"] == "Samir Qasımov"
+
+    # 13. Test domain verification response returns verified key
+    r_verify = await client.post("/api/v1/portfolio/domain/verify", headers=agent_headers)
+    assert r_verify.status_code == 200
+    verify_json = r_verify.json()
+    assert "verified" in verify_json
+    assert "success" in verify_json
+
+    # 14. Test toggle using enabled alias
+    r_toggle = await client.put(
+        "/api/v1/portfolio/domain",
+        json={"enabled": False},
+        headers=agent_headers
+    )
+    assert r_toggle.status_code == 200
+    assert r_toggle.json()["agent_custom_domain_enabled"] is False
+
+    # 15. Test multi-month domain order (/al domen 3)
+    buy_3m = await BotCommandHandler.handle_incoming_message(
+        db=test_db,
+        sender_id=agent_tenant.phone,
+        sender_name=agent_tenant.name,
+        channel="whatsapp",
+        raw_text="/al domen 3"
+    )
+    assert "15 AZN (3 aylıq)" in buy_3m
+
 

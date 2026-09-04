@@ -54,15 +54,29 @@ Extract structured JSON strictly with these exact keys:
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True) if hasattr(types, 'AutomaticFunctionCallingConfig') else None
                 )
 
-                target_model = self.model_name or "gemini-3.8-flash"
-                response = client.models.generate_content(
-                    model=target_model,
-                    contents=prompt,
-                    config=gen_config
-                )
+                candidate_models = [self.model_name or "gemini-3.8-flash"]
+                for m in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+                    if m not in candidate_models:
+                        candidate_models.append(m)
+
+                response = None
+                last_err = None
+                for target_model in candidate_models:
+                    try:
+                        resp = client.models.generate_content(
+                            model=target_model,
+                            contents=prompt,
+                            config=gen_config
+                        )
+                        if resp and resp.text:
+                            response = resp
+                            break
+                    except Exception as model_err:
+                        last_err = model_err
+                        continue
 
                 if not response or not response.text:
-                    raise ValueError(f"Empty response from model {target_model}")
+                    raise ValueError(f"All candidate models failed. Last error: {last_err}")
 
                 text = response.text.strip()
                 if text.startswith("```json"):
@@ -131,8 +145,6 @@ Extract structured JSON strictly with these exact keys:
                     lb_match = re.search(r'(\d+)\s*(?:aydan\s*bəri|aydan\s*beri|aydır\s*satışda|aydir\s*satisda|aydır\s*qalan|aydir\s*qalan|ay\s*əvvəldən|ay\s*evvelden|aylıq\s*arxiv|ayliq\s*arxiv|ay\s*bazar)', raw_lower)
                     if lb_match:
                         data["min_months_on_market"] = int(lb_match.group(1))
-
-                return StructuredCriteria(**data)
 
                 return StructuredCriteria(**data)
             except Exception as e:
@@ -477,10 +489,29 @@ Return JSON ONLY:
   "seller_type": "owner" | "agency" | null
 }}
 """
-                response = client.models.generate_content(
-                    model=self.model_name,
-                    contents=prompt
-                )
+                candidate_models = [self.model_name or "gemini-3.8-flash"]
+                for m in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+                    if m not in candidate_models:
+                        candidate_models.append(m)
+
+                response = None
+                last_err = None
+                for target_model in candidate_models:
+                    try:
+                        resp = client.models.generate_content(
+                            model=target_model,
+                            contents=prompt
+                        )
+                        if resp and resp.text:
+                            response = resp
+                            break
+                    except Exception as model_err:
+                        last_err = model_err
+                        continue
+
+                if not response or not response.text:
+                    raise ValueError(f"All candidate models failed in parse_listing. Last error: {last_err}")
+
                 text = response.text.strip()
                 if text.startswith("```json"):
                     text = text.split("```json", 1)[1].rsplit("```", 1)[0].strip()

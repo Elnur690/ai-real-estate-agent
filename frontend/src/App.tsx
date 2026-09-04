@@ -16,8 +16,31 @@ import { TmaCrm } from './components/TmaCrm';
 import { PortfolioPublicView } from './components/PortfolioPublicView';
 import { useTranslation } from './i18n';
 
+const isCustomDomainHost = () => {
+  const host = window.location.hostname.toLowerCase();
+  return !(
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host.endsWith('.local') ||
+    host === 'realtor.erma.shop' ||
+    host.endsWith('.vercel.app') ||
+    host.endsWith('.onrender.com') ||
+    host.endsWith('.ngrok-free.app') ||
+    host.endsWith('.ngrok.io')
+  );
+};
+
 export function App() {
+  const isCustomDomain = isCustomDomainHost();
+  const isAdminOrLoginPath = Boolean(
+    window.location.pathname.startsWith('/admin') ||
+    window.location.pathname.startsWith('/login') ||
+    window.location.hash.startsWith('#/admin') ||
+    window.location.hash.startsWith('#/login')
+  );
+
   const isPortfolioPublic = Boolean(
+    (isCustomDomain && !isAdminOrLoginPath) ||
     window.location.pathname.startsWith('/p/') ||
     window.location.pathname.startsWith('/v/') ||
     window.location.pathname.startsWith('/@') ||

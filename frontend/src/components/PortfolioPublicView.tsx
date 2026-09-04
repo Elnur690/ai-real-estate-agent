@@ -54,6 +54,20 @@ interface AgentShowcase {
   }>;
 }
 
+const isCustomDomainHost = () => {
+  const host = window.location.hostname.toLowerCase();
+  return !(
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host.endsWith('.local') ||
+    host === 'realtor.erma.shop' ||
+    host.endsWith('.vercel.app') ||
+    host.endsWith('.onrender.com') ||
+    host.endsWith('.ngrok-free.app') ||
+    host.endsWith('.ngrok.io')
+  );
+};
+
 export function PortfolioPublicView() {
   const [listing, setListing] = useState<PublicListing | null>(null);
   const [showcase, setShowcase] = useState<AgentShowcase | null>(null);
@@ -82,12 +96,17 @@ export function PortfolioPublicView() {
     }
   }
 
-  // 3. Standalone share code or numeric listing ID: /p/:code or /portfolio/:code
+  // 3. Standalone share code or numeric listing ID: /p/:code or /portfolio/:code or /:code (on custom domain)
   let directShareCode: string | null = null;
   if (!agentIdentifier && !listingIdFromSlug) {
     const pMatch = currentUrl.match(/(?:\/p\/|\/portfolio\/)([a-zA-Z0-9_\-]+)/);
     if (pMatch && pMatch[1] !== 'agent') {
       directShareCode = pMatch[1];
+    } else {
+      const rootItemMatch = currentUrl.match(/^\/([a-zA-Z0-9_\-]+)\/?$/);
+      if (rootItemMatch && !['admin', 'login', 'crm', 'settings', 'vitrin', 'portfolio'].includes(rootItemMatch[1].toLowerCase())) {
+        directShareCode = rootItemMatch[1];
+      }
     }
   }
 
@@ -187,6 +206,40 @@ export function PortfolioPublicView() {
           }
           const data = await res.json();
           setListing(data);
+        } else if (isCustomDomainHost() || window.location.search.includes('domain=')) {
+          // 4. Custom domain root showcase lookup
+          const searchParams = new URLSearchParams(window.location.search);
+          const domainQuery = searchParams.get('domain') || window.location.hostname;
+          const res = await fetch(`/api/v1/portfolio/public/by-domain?domain=${encodeURIComponent(domainQuery)}`);
+          if (!res.ok) {
+            throw new Error('Bu fərdi domenə bağlı aktiv agent və ya portfel vitrini tapılmadı.');
+          }
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            const first = data[0];
+            setShowcase({
+              tenant_id: first?.id || 0,
+              agent_name: first?.agent_name || domainQuery,
+              agent_phone: first?.agent_phone || '',
+              agent_whatsapp: first?.agent_whatsapp || '',
+              agent_slug: first?.agent_slug || '',
+              active_listings_count: data.length,
+              listings: data.map((d: any) => ({
+                id: d.id,
+                title: d.title,
+                price: d.price,
+                currency: d.currency,
+                district: d.district,
+                rooms: d.rooms,
+                area_sqm: d.area_sqm,
+                photos: d.photos || [],
+                share_code: d.share_code,
+                share_url: d.share_url || `/v/${first?.agent_slug || ''}/${d.id}`
+              }))
+            });
+          } else {
+            setShowcase(data);
+          }
         } else {
           throw new Error('Məlumat tapılmadı.');
         }

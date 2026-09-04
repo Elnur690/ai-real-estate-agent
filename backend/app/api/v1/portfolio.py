@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 import urllib.parse
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import select, func, desc, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from app.services.domain_service import (
     resolve_tenant_domain_info,
     resolve_tenant_base_url,
     verify_domain_dns,
+    verify_domain_dns_async,
     clean_domain_string
 )
 
@@ -27,6 +28,13 @@ router = APIRouter(prefix="/portfolio", tags=["Portfolio"])
 class AgentDomainUpdateRequest(BaseModel):
     custom_domain: Optional[str] = None
     custom_domain_enabled: Optional[bool] = None
+    enabled: Optional[bool] = None
+
+    @property
+    def is_enabled(self) -> Optional[bool]:
+        if self.custom_domain_enabled is not None:
+            return self.custom_domain_enabled
+        return self.enabled
 
 
 class PortfolioListingCreate(BaseModel):
@@ -312,15 +320,20 @@ async def update_portfolio_domain(
             tenant.custom_domain_enabled = False
             tenant.custom_domain_status = "disabled"
         else:
-            dns_res = verify_domain_dns(clean_domain)
-            if dns_res["success"]:
+            dns_res = await verify_domain_dns_async(clean_domain)
+            if dns_res.get("verified") or dns_res.get("success"):
                 tenant.custom_domain_status = "active"
                 tenant.custom_domain_enabled = True
             else:
                 tenant.custom_domain_status = "pending_dns"
 
-    if payload.custom_domain_enabled is not None and tenant.custom_domain:
-        tenant.custom_domain_enabled = payload.custom_domain_enabled
+    effective_enabled = payload.is_enabled
+    if effective_enabled is not None and tenant.custom_domain:
+        tenant.custom_domain_enabled = effective_enabled
+        if not effective_enabled:
+            tenant.custom_domain_status = "disabled"
+        elif tenant.custom_domain_status == "disabled":
+            tenant.custom_domain_status = "active"
 
     await db.commit()
     await db.refresh(tenant)
@@ -338,23 +351,26 @@ async def verify_portfolio_domain_dns(
     if not tenant.custom_domain:
         raise HTTPException(status_code=400, detail="Fərdi domen təyin edilməyib.")
 
-    dns_res = verify_domain_dns(tenant.custom_domain)
-    if dns_res["success"]:
+    dns_res = await verify_domain_dns_async(tenant.custom_domain)
+    is_valid = bool(dns_res.get("verified") or dns_res.get("success"))
+    if is_valid:
         tenant.custom_domain_status = "active"
         tenant.custom_domain_enabled = True
         await db.commit()
         return {
             "success": True,
+            "verified": True,
             "domain": tenant.custom_domain,
-            "resolved_ip": dns_res["resolved_ip"],
+            "resolved_ip": dns_res.get("resolved_ip"),
             "domain_status": "active",
-            "message": dns_res["message"]
+            "message": dns_res.get("message", "DNS uğurla təsdiqləndi.")
         }
     else:
         tenant.custom_domain_status = "pending_dns"
         await db.commit()
         return {
             "success": False,
+            "verified": False,
             "domain": tenant.custom_domain,
             "domain_status": "pending_dns",
             "message": dns_res.get("error", "DNS yoxlanışı uğursuz oldu.")
@@ -592,6 +608,109 @@ async def delete_portfolio_listing(
 
 # --- Public Client Sharing Endpoints (No Auth Required) ---
 
+@router.get("/public/by-domain", response_model=List[PublicPortfolioListingResponse])
+async def get_portfolio_by_domain(
+    request: Request,
+    domain: Optional[str] = Query(None, description="Custom domain hostname to lookup"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Lookup agent or reseller portfolio showcase directly by domain name.
+    Used when a customer navigates to https://customdomain.az/ root URL.
+    Must be defined before /public/{share_code} to prevent route capture.
+    """
+    target_domain = clean_domain_string(domain)
+    if not target_domain:
+        host_header = request.headers.get("host", "").split(":")[0]
+        target_domain = clean_domain_string(host_header)
+
+    if not target_domain:
+        raise HTTPException(status_code=400, detail="Domen adı təqdim edilməyib.")
+
+    # 1. Look for matching Agent (Tenant)
+    stmt_t = select(Tenant).where(
+        Tenant.custom_domain == target_domain,
+        Tenant.custom_domain_enabled == True,
+        Tenant.feature_custom_domain == True,
+        Tenant.status != "suspended"
+    )
+    res_t = await db.execute(stmt_t)
+    tenant = res_t.scalars().first()
+    if tenant:
+        return await get_agent_public_catalog(identifier=str(tenant.id), db=db)
+
+    # 2. Look for matching Reseller (Seller)
+    stmt_s = select(Seller).where(
+        Seller.custom_domain == target_domain,
+        Seller.custom_domain_enabled == True,
+        Seller.status != "suspended"
+    )
+    res_s = await db.execute(stmt_s)
+    seller = res_s.scalars().first()
+    if seller:
+        # Find all non-suspended tenants under this reseller
+        stmt_tenants = select(Tenant.id).where(Tenant.seller_id == seller.id, Tenant.status != "suspended")
+        res_tenants = await db.execute(stmt_tenants)
+        tenant_ids = res_tenants.scalars().all()
+        if not tenant_ids:
+            return []
+
+        stmt_listings = select(PortfolioListing).where(
+            PortfolioListing.tenant_id.in_(tenant_ids),
+            PortfolioListing.is_active == True,
+            PortfolioListing.status == "active"
+        ).order_by(desc(PortfolioListing.created_at))
+        res_listings = await db.execute(stmt_listings)
+        listings = res_listings.scalars().all()
+
+        output = []
+        base_url = f"https://{target_domain}"
+        for it in listings:
+            res_item_tenant = await db.execute(select(Tenant).where(Tenant.id == it.tenant_id))
+            item_tenant = res_item_tenant.scalars().first()
+
+            agent_name = it.contact_name or (item_tenant.name if item_tenant else seller.name)
+            agent_phone = it.contact_phone or (item_tenant.phone if item_tenant else (seller.contact_phone or ""))
+            agent_whatsapp = (item_tenant.whatsapp_number or agent_phone) if item_tenant else agent_phone
+            clean_wa = "".join(filter(str.isdigit, agent_whatsapp or ""))
+            wa_msg = f"Salam, {agent_name}. Sizin platformadakı bu elanla bağlı maraqlanıram: {it.title} (Kod: {it.share_code})"
+            wa_url = f"https://wa.me/{clean_wa}?text={urllib.parse.quote(wa_msg)}" if clean_wa else ""
+            agent_slug = (item_tenant.portfolio_slug or str(item_tenant.id)) if item_tenant else ""
+            share_url = f"{base_url}/v/{agent_slug}/{it.id}" if agent_slug else f"{base_url}/p/{it.share_code}"
+
+            output.append(PublicPortfolioListingResponse(
+                id=it.id,
+                title=it.title,
+                description=it.description,
+                price=it.price,
+                currency=it.currency or "AZN",
+                price_usd=it.price_usd,
+                district=it.district,
+                metro_station=it.metro_station,
+                address=it.address,
+                rooms=it.rooms,
+                area_sqm=it.area_sqm,
+                floor=it.floor,
+                total_floors=it.total_floors,
+                building_type=it.building_type,
+                property_type=it.property_type or "apartment",
+                offer_type=it.offer_type or "sale",
+                photos=it.photos or [],
+                share_code=it.share_code,
+                share_url=share_url,
+                agent_name=agent_name,
+                agent_phone=agent_phone,
+                agent_whatsapp=agent_whatsapp,
+                agent_slug=agent_slug,
+                agent_vitrin_url=f"{base_url}/v/{agent_slug}" if agent_slug else None,
+                whatsapp_message_url=wa_url,
+                created_at=it.created_at
+            ))
+        return output
+
+    raise HTTPException(status_code=404, detail="Bu domenə bağlı aktiv agent və ya reseller vitrini tapılmadı.")
+
+
 @router.get("/public/{share_code}", response_model=PublicPortfolioListingResponse)
 async def get_public_portfolio_listing(
     share_code: str,
@@ -660,6 +779,7 @@ async def get_public_portfolio_listing(
         whatsapp_message_url=wa_url,
         created_at=item.created_at
     )
+
 
 
 @router.get("/public/agent/{identifier}", response_model=List[PublicPortfolioListingResponse])

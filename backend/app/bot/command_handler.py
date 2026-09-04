@@ -925,6 +925,9 @@ class BotCommandHandler:
             from app.models.payment import Payment
             from datetime import datetime, timedelta, timezone
             
+            duration_days = 30
+            months_count = 1
+
             if item_type == "limit":
                 pricing = {5: 10.0, 10: 18.0, 25: 40.0}
                 amount = pricing.get(val_str, float(val_str * 2.0))
@@ -939,12 +942,15 @@ class BotCommandHandler:
                 desc = f"+{val_str} Elanlıq Agent Portfeli & Vitrin Add-on"
             elif item_type in ["domen", "domain"]:
                 domain_unit_price = getattr(tenant, "addon_custom_domain_price", 5.0) or 5.0
-                months = max(1, val_str)
-                amount = float(domain_unit_price * months)
-                desc = f"Fərdi Domen Adı (Custom Domain) Add-on ({months} aylıq)"
+                months_count = max(1, val_str)
+                amount = float(domain_unit_price * months_count)
+                duration_days = 30 * months_count
+                desc = f"Fərdi Domen Adı (Custom Domain) Add-on ({months_count} aylıq)"
             else:
                 pricing = {3: 15.0, 6: 25.0, 12: 40.0, 24: 60.0}
+                months_count = max(1, val_str)
                 amount = pricing.get(val_str, float(val_str * 4.0))
+                duration_days = 30 * months_count
                 desc = f"{val_str} Aylıq Bazar Arxivi (Aged Inventory) Add-on"
 
             now_time = datetime.now(timezone.utc)
@@ -953,17 +959,18 @@ class BotCommandHandler:
                 amount=amount,
                 currency="AZN",
                 period_covered_start=now_time,
-                period_covered_end=now_time + timedelta(days=30),
+                period_covered_end=now_time + timedelta(days=duration_days),
                 notes=f"Pending Add-on: {desc}"
             )
             db.add(new_payment)
             await db.commit()
             await db.refresh(new_payment)
 
+            period_text = f"{months_count} aylıq" if months_count > 1 else "aylıq"
             return (
                 f"💳 *SİFARİŞİNİZ QƏBUL EDİLDİ!* (Faktura #{new_payment.id})\n\n"
                 f"📦 *Xidmət:* {desc}\n"
-                f"💰 *Məbləğ:* {int(amount)} AZN / aylıq\n\n"
+                f"💰 *Məbləğ:* {int(amount)} AZN ({period_text})\n\n"
                 f"Ödəniş qəbzini təsdiq etdikdən sonra paket profilinizə dərhal aktiv ediləcək! 🚀"
             )
 

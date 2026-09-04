@@ -284,6 +284,7 @@ export function TmaCrm() {
     try {
       await api.put('/portfolio/domain', {
         custom_domain: domainInput.trim(),
+        custom_domain_enabled: domainEnabled,
         enabled: domainEnabled,
       });
       haptic('success');
@@ -304,9 +305,13 @@ export function TmaCrm() {
     setDomainVerifyResult(null);
     try {
       const res = await api.post('/portfolio/domain/verify');
-      haptic(res.data?.verified ? 'success' : 'warning');
-      setDomainVerifyResult(res.data);
-      if (res.data?.verified) {
+      const isVerified = Boolean(res.data?.verified ?? res.data?.success);
+      haptic(isVerified ? 'success' : 'warning');
+      setDomainVerifyResult({
+        ...res.data,
+        verified: isVerified,
+      });
+      if (isVerified) {
         await fetchAllData();
       }
     } catch (err: any) {

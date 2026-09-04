@@ -1,4 +1,5 @@
 import socket
+import asyncio
 import logging
 from typing import Optional, Dict, Any
 from sqlalchemy import select
@@ -96,6 +97,7 @@ def verify_domain_dns(domain: str) -> Dict[str, Any]:
     if not clean:
         return {
             "success": False,
+            "verified": False,
             "domain": domain,
             "error": "Domen adı boş və ya düzgün formatda deyil."
         }
@@ -103,6 +105,7 @@ def verify_domain_dns(domain: str) -> Dict[str, Any]:
         ip = socket.gethostbyname(clean)
         return {
             "success": True,
+            "verified": True,
             "domain": clean,
             "resolved_ip": ip,
             "message": f"DNS uğurla təsdiqləndi ({ip}). Domen aktivləşdirildi!"
@@ -110,6 +113,13 @@ def verify_domain_dns(domain: str) -> Dict[str, Any]:
     except Exception as e:
         return {
             "success": False,
+            "verified": False,
             "domain": clean,
             "error": f"DNS ünvanlanması tapılmadı: {str(e)}"
         }
+
+
+async def verify_domain_dns_async(domain: str) -> Dict[str, Any]:
+    """Non-blocking DNS check running in worker thread."""
+    return await asyncio.to_thread(verify_domain_dns, domain)
+
