@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 import urllib.parse
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
@@ -12,6 +12,7 @@ from app.models.tenant import Tenant
 from app.models.seller import Seller
 from app.models.listing import Listing
 from app.models.portfolio import PortfolioListing, generate_share_code
+from app.models.payment import Payment
 from app.services.domain_service import (
     resolve_tenant_domain_info,
     resolve_tenant_base_url,
@@ -29,6 +30,7 @@ class AgentDomainUpdateRequest(BaseModel):
     custom_domain: Optional[str] = None
     custom_domain_enabled: Optional[bool] = None
     enabled: Optional[bool] = None
+    activate_addon: Optional[bool] = None
 
     @property
     def is_enabled(self) -> Optional[bool]:
@@ -295,12 +297,26 @@ async def update_portfolio_domain(
 ):
     """Configure or toggle the agent's custom domain add-on."""
     tenant = await get_tenant_for_portfolio(db, current_user, tenant_id)
+    now_utc = datetime.now(timezone.utc)
+
+    # Check add-on entitlement or explicit activation
     if not getattr(tenant, "feature_custom_domain", False):
-        price = getattr(tenant, "addon_custom_domain_price", 5.0) or 5.0
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Fərdi Domen Adı add-on aktiv deyil. Aktivləşdirmək üçün: {price} AZN / ay (Telegram botda: /al domen)."
-        )
+        if payload.activate_addon or getattr(current_user, "role", "") == "admin":
+            tenant.feature_custom_domain = True
+            c_exp = tenant.custom_domain_expires_at
+            if c_exp and c_exp.tzinfo is None:
+                c_exp = c_exp.replace(tzinfo=timezone.utc)
+            if not c_exp or c_exp < now_utc:
+                p_exp = tenant.plan_expires_at
+                if p_exp and p_exp.tzinfo is None:
+                    p_exp = p_exp.replace(tzinfo=timezone.utc)
+                tenant.custom_domain_expires_at = p_exp or (now_utc + timedelta(days=30))
+        else:
+            price = getattr(tenant, "addon_custom_domain_price", 5.0) or 5.0
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Fərdi Domen Adı add-on aktiv deyil. Aktivləşdirmək üçün: {price} AZN / ay (Telegram botda: /al domen və ya 'Domeni Qoş' düyməsi)."
+            )
 
     if payload.custom_domain is not None:
         clean_domain = clean_domain_string(payload.custom_domain)
@@ -315,6 +331,7 @@ async def update_portfolio_domain(
             if res_s.scalars().first():
                 raise HTTPException(status_code=400, detail="Bu domen adı reseller platformasında artıq qeydiyyatdan keçib.")
 
+        was_domain = tenant.custom_domain
         tenant.custom_domain = clean_domain
         if not clean_domain:
             tenant.custom_domain_enabled = False
@@ -326,6 +343,30 @@ async def update_portfolio_domain(
                 tenant.custom_domain_enabled = True
             else:
                 tenant.custom_domain_status = "pending_dns"
+
+            c_exp = tenant.custom_domain_expires_at
+            if c_exp and c_exp.tzinfo is None:
+                c_exp = c_exp.replace(tzinfo=timezone.utc)
+            if not c_exp or c_exp < now_utc:
+                p_exp = tenant.plan_expires_at
+                if p_exp and p_exp.tzinfo is None:
+                    p_exp = p_exp.replace(tzinfo=timezone.utc)
+                tenant.custom_domain_expires_at = p_exp or (now_utc + timedelta(days=30))
+
+            # Automatically create Payment record when custom domain is added or changed
+            if was_domain != clean_domain:
+                price = getattr(tenant, "addon_custom_domain_price", 5.0) or 5.0
+                pay_record = Payment(
+                    tenant_id=tenant.id,
+                    amount=round(price, 2),
+                    currency="AZN",
+                    period_covered_start=now_utc,
+                    period_covered_end=tenant.custom_domain_expires_at,
+                    received_by=current_user.id if getattr(current_user, "role", "") == "admin" else None,
+                    received_at=now_utc,
+                    notes=f"Add-on Activation: Custom Domain ({clean_domain}) for {tenant.name}"
+                )
+                db.add(pay_record)
 
     effective_enabled = payload.is_enabled
     if effective_enabled is not None and tenant.custom_domain:

@@ -3,6 +3,7 @@ import re
 import json
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, Tuple
 from sqlalchemy import select, update, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 from app.core.config import settings
 from app.models.tenant import Tenant
+from app.models.payment import Payment
 from app.models.saved_search import SavedSearch
 from app.models.match import Match
 from app.models.setting import AppSettings
@@ -101,16 +103,17 @@ class BotCommandHandler:
             if not tenant:
                 # Also resolve via User table if admin assigned telegram_chat_id to User
                 from app.models.user import User
-                stmt_u = select(User).where(User.telegram_chat_id == sender_id)
-                res_u = await db.execute(stmt_u)
-                matched_user = res_u.scalars().first()
-                if matched_user and matched_user.tenant_id:
-                    stmt_tu = select(Tenant).where(Tenant.id == matched_user.tenant_id)
-                    res_tu = await db.execute(stmt_tu)
-                    tenant = res_tu.scalars().first()
-                    if tenant and not tenant.telegram_chat_id:
-                        tenant.telegram_chat_id = sender_id
-                        await db.commit()
+                if hasattr(User, "telegram_chat_id"):
+                    stmt_u = select(User).where(getattr(User, "telegram_chat_id") == sender_id)
+                    res_u = await db.execute(stmt_u)
+                    matched_user = res_u.scalars().first()
+                    if matched_user and matched_user.tenant_id:
+                        stmt_tu = select(Tenant).where(Tenant.id == matched_user.tenant_id)
+                        res_tu = await db.execute(stmt_tu)
+                        tenant = res_tu.scalars().first()
+                        if tenant and not tenant.telegram_chat_id:
+                            tenant.telegram_chat_id = sender_id
+                            await db.commit()
 
             if not tenant and sender_name:
                 clean_handle = sender_name.lstrip("@").lower()
@@ -122,6 +125,15 @@ class BotCommandHandler:
                     await db.commit()
                     await db.refresh(matched_t)
                     tenant = matched_t
+
+            if not tenant and sender_id:
+                clean_digits = re.sub(r'\D', '', str(sender_id))
+                if clean_digits and len(clean_digits) >= 7:
+                    stmt_p = select(Tenant).where(Tenant.phone.contains(clean_digits[-9:]))
+                    res_p = await db.execute(stmt_p)
+                    matched_p = res_p.scalars().first()
+                    if matched_p:
+                        tenant = matched_p
 
         elif channel == "whatsapp":
             # 1. First try matching by instance_name (e.g. tenant_1 -> ID 1)
@@ -922,8 +934,6 @@ class BotCommandHandler:
             item_type = buy_match.group(1)
             raw_val = buy_match.group(2)
             val_str = int(raw_val) if raw_val else 1
-            from app.models.payment import Payment
-            from datetime import datetime, timedelta, timezone
             
             duration_days = 30
             months_count = 1
@@ -972,6 +982,74 @@ class BotCommandHandler:
                 f"📦 *Xidmət:* {desc}\n"
                 f"💰 *Məbləğ:* {int(amount)} AZN ({period_text})\n\n"
                 f"Ödəniş qəbzini təsdiq etdikdən sonra paket profilinizə dərhal aktiv ediləcək! 🚀"
+            )
+
+        # Custom Domain Setup Command (/domen <domain_name>, /domain <domain_name>)
+        domain_cmd_match = re.search(r'^(?:/domen|domen|/domain|domain)\s+([a-zA-Z0-9.\-_]+)', text_lower)
+        if domain_cmd_match:
+            raw_dom = domain_cmd_match.group(1).strip()
+            from app.services.domain_service import clean_domain_string, verify_domain_dns_async
+            clean_dom = clean_domain_string(raw_dom)
+            if not clean_dom:
+                return "❌ Zəhmət olmasa düzgün domen adı qeyd edin. Nümunə: `/domen samiremlak.az`"
+
+            from app.models.seller import Seller
+            stmt_t = select(Tenant).where(Tenant.custom_domain == clean_dom, Tenant.id != tenant.id)
+            res_t = await db.execute(stmt_t)
+            if res_t.scalars().first():
+                return f"❌ Bu domen artıq başqa bir istifadəçi tərəfindən qeydiyyatdan keçib: `{clean_dom}`"
+
+            stmt_s = select(Seller).where(Seller.custom_domain == clean_dom)
+            res_s = await db.execute(stmt_s)
+            if res_s.scalars().first():
+                return f"❌ Bu domen reseller platformasında artıq qeydiyyatdan keçib: `{clean_dom}`"
+
+            was_dom = tenant.custom_domain
+            tenant.custom_domain = clean_dom
+            tenant.feature_custom_domain = True
+            tenant.custom_domain_enabled = True
+
+            now_time = datetime.now(timezone.utc)
+            dom_exp = tenant.custom_domain_expires_at
+            if dom_exp and dom_exp.tzinfo is None:
+                dom_exp = dom_exp.replace(tzinfo=timezone.utc)
+            if not dom_exp or dom_exp < now_time:
+                plan_exp = tenant.plan_expires_at
+                if plan_exp and plan_exp.tzinfo is None:
+                    plan_exp = plan_exp.replace(tzinfo=timezone.utc)
+                tenant.custom_domain_expires_at = plan_exp or (now_time + timedelta(days=30))
+
+            dns_res = await verify_domain_dns_async(clean_dom)
+            if dns_res.get("verified") or dns_res.get("success"):
+                tenant.custom_domain_status = "active"
+            else:
+                tenant.custom_domain_status = "pending_dns"
+
+            price = getattr(tenant, "addon_custom_domain_price", 5.0) or 5.0
+            new_payment = Payment(
+                tenant_id=tenant.id,
+                amount=price,
+                currency="AZN",
+                period_covered_start=now_time,
+                period_covered_end=tenant.custom_domain_expires_at,
+                notes=f"Add-on Activation: Custom Domain ({clean_dom}) for {tenant.name}"
+            )
+            db.add(new_payment)
+            await db.commit()
+            await db.refresh(new_payment)
+
+            dns_msg = "✅ *DNS Qeydi Aktivdir!* Portfeliniz artıq bu domendə açılır." if tenant.custom_domain_status == "active" else (
+                "⚠️ *DNS CNAME Qeydi Gözlənilir:*\n"
+                "Domen provayderinizdə aşağıdakı qeydi əlavə edin:\n"
+                "`Type: CNAME` | `Name: @` | `Target: realtor.erma.shop`"
+            )
+
+            return (
+                f"🌐 *FƏRDİ DOMEN TƏYİN EDİLDİ!* (Faktura #{new_payment.id})\n\n"
+                f"Domen: *{clean_dom}*\n"
+                f"Məbləğ: *{int(price)} AZN / ay*\n\n"
+                f"{dns_msg}\n\n"
+                f"Vitrin Linkiniz: https://{clean_dom}/v/{tenant.portfolio_slug or 'vitrin'}"
             )
 
         # Referral Code & Program Info Command (/referral, /dəvət)

@@ -307,15 +307,17 @@ export function TmaCrm() {
   };
 
   const handleSaveDomain = async () => {
+    if (!domainInput.trim()) return;
     setDomainSaving(true);
     try {
       await api.put('/portfolio/domain', {
         custom_domain: domainInput.trim(),
         custom_domain_enabled: domainEnabled,
         enabled: domainEnabled,
+        activate_addon: true,
       });
       haptic('success');
-      setCopiedToast('Domen tənzimləmələri yadda saxlanıldı! 🌐');
+      setCopiedToast('Domen qeydə alındı və ödəniş yaradıldı! 🌐');
       setTimeout(() => setCopiedToast(null), 3000);
       await fetchAllData();
       setShowDomainModal(false);
@@ -2696,7 +2698,7 @@ export function TmaCrm() {
                   </div>
                 </div>
               ) : (
-                /* Feature Not Available - Upsell / Addon Info */
+                /* Feature Not Available - Quick Activation */
                 <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-950/40 via-purple-950/20 to-slate-900 border border-indigo-500/30 space-y-3">
                   <div className="flex items-center gap-2 text-indigo-300 font-bold text-xs">
                     <Sparkles className="w-4 h-4 text-indigo-400" />
@@ -2705,11 +2707,20 @@ export function TmaCrm() {
                   <p className="text-[11px] text-slate-300 leading-relaxed">
                     Portfel vitrininizi və müştəri linklərinizi öz fərdi domeninizlə (məs. <code className="text-indigo-300">samiremlak.az</code>) təqdim edərək müştərilərinizdə daha yüksək etibar yarada bilərsiniz.
                   </p>
-                  <div className="p-3 bg-dark-950/80 rounded-xl border border-indigo-500/20 space-y-1.5">
-                    <span className="text-[10px] text-slate-400 block">Necə qoşulmaq olar?</span>
-                    <p className="text-[11px] text-slate-200">
-                      Telegram və ya WhatsApp botumuza <code className="text-amber-400 font-bold">/al domen</code> əmrini göndərərək dərhal aktivləşdirə bilərsiniz.
-                    </p>
+                  <div className="space-y-1.5 pt-1">
+                    <label className="text-[11px] font-semibold text-slate-300 block">
+                      Domen Adınızı Daxil Edin:
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="məs: samiremlak.az"
+                      value={domainInput}
+                      onChange={(e) => setDomainInput(e.target.value)}
+                      className="w-full bg-dark-950 border border-slate-700 rounded-xl px-3 py-2 text-indigo-200 font-mono text-xs focus:outline-none focus:border-indigo-500"
+                    />
+                    <span className="text-[10px] text-slate-500 block">
+                      Domeni əlavə etdikdə abunəliyinizə aylıq 5 AZN əlavə olunacaq və faktura yaradılacaq.
+                    </span>
                   </div>
                 </div>
               )}
@@ -2724,16 +2735,19 @@ export function TmaCrm() {
               >
                 Bağla
               </button>
-              {portfolioOverview?.custom_domain_info?.agent_feature_custom_domain && (
-                <button
-                  type="button"
-                  onClick={handleSaveDomain}
-                  disabled={domainSaving}
-                  className="px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-lg shadow-indigo-600/20 disabled:opacity-50 transition-all"
-                >
-                  {domainSaving ? 'Yadda saxlanılır...' : 'Yadda Saxla'}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={handleSaveDomain}
+                disabled={domainSaving || !domainInput.trim()}
+                className="px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-lg shadow-indigo-600/20 disabled:opacity-50 transition-all flex items-center gap-1.5"
+              >
+                <Globe className="w-3.5 h-3.5" />
+                {domainSaving
+                  ? 'Yadda saxlanılır...'
+                  : portfolioOverview?.custom_domain_info?.agent_feature_custom_domain
+                  ? 'Yadda Saxla'
+                  : 'Fərdi Domeni Qoş (+5 AZN)'}
+              </button>
             </div>
           </div>
         </div>

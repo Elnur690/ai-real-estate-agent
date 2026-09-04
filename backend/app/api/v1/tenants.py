@@ -289,11 +289,14 @@ async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(ge
     await db.refresh(tenant)
 
     # Automatically create confirmed initial Payment record
+    has_custom_domain = getattr(db_plan, 'feature_custom_domain', False) or body.feature_custom_domain or bool(body.custom_domain)
+    domain_fee = (body.addon_custom_domain_price or getattr(db_plan, 'addon_custom_domain_price', 5.0) or 5.0) if has_custom_domain else 0.0
+
     plan_price = db_plan.price if (db_plan and not is_free) else 0.0
     crm_price = (body.addon_crm_price or getattr(db_plan, 'addon_crm_price', 15.0) or 15.0) if has_crm else 0.0
     aged_price = (getattr(db_plan, 'addon_aged_listings_price', 15.0) or 15.0) if tenant.feature_aged_listings else 0.0
     port_fee = portfolio_price if has_portfolio else 0.0
-    total_amount = round(plan_price + crm_price + aged_price + port_fee, 2)
+    total_amount = round(plan_price + crm_price + aged_price + port_fee + domain_fee, 2)
 
     pay_record = Payment(
         tenant_id=tenant.id,
@@ -303,7 +306,7 @@ async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(ge
         period_covered_end=expires_at,
         received_by=current_admin.id,
         received_at=now_utc,
-        notes=f"Initial Provisioning: {tenant.name} ({plan_code.upper()} Plan) [CRM: {'Active' if has_crm else 'Off'}, Portfel: {'Active (' + str(portfolio_limit) + ')' if has_portfolio else 'Off'}]"
+        notes=f"Initial Provisioning: {tenant.name} ({plan_code.upper()} Plan) [CRM: {'Active' if has_crm else 'Off'}, Portfel: {'Active (' + str(portfolio_limit) + ')' if has_portfolio else 'Off'}, Domen: {'Active' if has_custom_domain else 'Off'}]"
     )
     db.add(pay_record)
     await db.commit()
@@ -413,6 +416,54 @@ async def update_tenant(tenant_id: int, body: UpdateTenantRequest, db: AsyncSess
         else:
             tenant.addon_portfolio_price = 0.0
 
+    # Custom Domain feature update & payment creation if newly activated or domain newly added
+    if "feature_custom_domain" in update_data or "custom_domain" in update_data:
+        new_domain_feat = bool(update_data.get("feature_custom_domain", tenant.feature_custom_domain))
+        was_domain_feat = tenant.feature_custom_domain
+        new_domain_val = update_data.get("custom_domain")
+        was_domain_val = tenant.custom_domain
+
+        if "feature_custom_domain" in update_data:
+            tenant.feature_custom_domain = new_domain_feat
+        if "addon_custom_domain_price" in update_data and update_data["addon_custom_domain_price"] is not None:
+            tenant.addon_custom_domain_price = float(update_data["addon_custom_domain_price"])
+
+        from app.services.domain_service import clean_domain_string
+        cleaned_new_domain = clean_domain_string(new_domain_val) if new_domain_val else None
+
+        if new_domain_feat or cleaned_new_domain:
+            tenant.feature_custom_domain = True
+            c_exp = tenant.custom_domain_expires_at
+            if c_exp and c_exp.tzinfo is None:
+                c_exp = c_exp.replace(tzinfo=timezone.utc)
+            if not c_exp or c_exp < now_utc:
+                p_exp = tenant.plan_expires_at
+                if p_exp and p_exp.tzinfo is None:
+                    p_exp = p_exp.replace(tzinfo=timezone.utc)
+                tenant.custom_domain_expires_at = p_exp or (now_utc + timedelta(days=30))
+            if cleaned_new_domain is not None:
+                tenant.custom_domain = cleaned_new_domain
+                tenant.custom_domain_enabled = True
+
+            # If newly activated feature OR domain newly added/changed
+            if (not was_domain_feat) or (cleaned_new_domain and cleaned_new_domain != was_domain_val):
+                domain_price = tenant.addon_custom_domain_price if (tenant.addon_custom_domain_price and tenant.addon_custom_domain_price > 0) else 5.0
+                dom_label = cleaned_new_domain or tenant.custom_domain or "Custom Domain"
+                pay_record = Payment(
+                    tenant_id=tenant.id,
+                    amount=round(domain_price, 2),
+                    currency="AZN",
+                    period_covered_start=now_utc,
+                    period_covered_end=tenant.custom_domain_expires_at,
+                    received_by=current_admin.id,
+                    received_at=now_utc,
+                    notes=f"Add-on Activation: Custom Domain ({dom_label}) for {tenant.name}"
+                )
+                db.add(pay_record)
+        else:
+            if "feature_custom_domain" in update_data and not new_domain_feat:
+                tenant.addon_custom_domain_price = 0.0
+
     # Portfolio slug customization
     if "portfolio_slug" in update_data and update_data["portfolio_slug"]:
         from app.models.tenant import slugify_portfolio_name
@@ -458,7 +509,7 @@ async def update_tenant(tenant_id: int, body: UpdateTenantRequest, db: AsyncSess
         update_data["custom_domain"] = clean_domain_string(update_data["custom_domain"])
 
     for field, val in update_data.items():
-        if field not in ["telegram_handle", "telegram_chat_id", "feature_crm", "feature_portfolio"]:
+        if field not in ["telegram_handle", "telegram_chat_id", "feature_crm", "feature_portfolio", "feature_custom_domain", "custom_domain"]:
             setattr(tenant, field, val)
 
     await db.commit()

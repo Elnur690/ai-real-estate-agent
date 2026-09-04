@@ -1,6 +1,7 @@
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from app.main import app
 from app.models import Base
@@ -8,6 +9,7 @@ from app.models.user import User
 from app.models.tenant import Tenant
 from app.models.listing import Listing, ListingSource
 from app.models.portfolio import PortfolioListing, generate_share_code
+from app.models.payment import Payment
 from app.api.deps import get_db
 from app.api.v1.auth import get_password_hash, create_access_token
 from app.bot.command_handler import BotCommandHandler
@@ -559,6 +561,14 @@ async def test_agent_reseller_custom_domain_inheritance_and_override(test_db: As
     domain_data = r_set_ok.json()
     assert domain_data["agent_custom_domain"] == "samiremlak.az"
 
+    # Verify Payment was created when custom domain was added
+    stmt_p = select(Payment).where(Payment.tenant_id == agent_tenant.id, Payment.notes.contains("samiremlak.az"))
+    res_p = await test_db.execute(stmt_p)
+    pay_dom = res_p.scalars().first()
+    assert pay_dom is not None
+    assert pay_dom.amount == 5.0
+    assert "samiremlak.az" in pay_dom.notes
+
     # 11. Now agent's own custom domain overrides reseller's domain!
     r_ov_override = await client.get("/api/v1/portfolio", headers=agent_headers)
     assert r_ov_override.status_code == 200
@@ -601,5 +611,65 @@ async def test_agent_reseller_custom_domain_inheritance_and_override(test_db: As
         raw_text="/al domen 3"
     )
     assert "15 AZN (3 aylıq)" in buy_3m
+
+    # 16. Test setting domain via /domen bot command creates payment
+    bot_domain_resp = await BotCommandHandler.handle_incoming_message(
+        db=test_db,
+        sender_id=agent_tenant.phone,
+        sender_name=agent_tenant.name,
+        channel="telegram",
+        raw_text="/domen bakumenzil.az"
+    )
+    assert "FƏRDİ DOMEN TƏYİN EDİLDİ" in bot_domain_resp
+    assert "bakumenzil.az" in bot_domain_resp
+
+    stmt_p2 = select(Payment).where(Payment.tenant_id == agent_tenant.id, Payment.notes.contains("bakumenzil.az"))
+    res_p2 = await test_db.execute(stmt_p2)
+    pay_dom2 = res_p2.scalars().first()
+    assert pay_dom2 is not None
+    assert pay_dom2.amount == 5.0
+
+    # 17. Test direct activation via PUT /portfolio/domain with activate_addon: True
+    new_agent = Tenant(name="Direct Domain Agent", phone="+994503332211", plan="pro", status="active", feature_custom_domain=False)
+    test_db.add(new_agent)
+    await test_db.commit()
+    await test_db.refresh(new_agent)
+
+    new_user = User(name="Direct Agent", email="direct@test.az", password_hash=get_password_hash("pass123"), role="agent", tenant_id=new_agent.id)
+    test_db.add(new_user)
+    await test_db.commit()
+    direct_headers = {"Authorization": f"Bearer {create_access_token(new_user.id)}"}
+
+    r_direct = await client.put(
+        "/api/v1/portfolio/domain",
+        json={"custom_domain": "directagent.az", "activate_addon": True},
+        headers=direct_headers
+    )
+    assert r_direct.status_code == 200
+    assert r_direct.json()["agent_custom_domain"] == "directagent.az"
+
+    stmt_p3 = select(Payment).where(Payment.tenant_id == new_agent.id, Payment.notes.contains("directagent.az"))
+    res_p3 = await test_db.execute(stmt_p3)
+    pay_dom3 = res_p3.scalars().first()
+    assert pay_dom3 is not None
+    assert pay_dom3.amount == 5.0
+
+    # 18. Test Admin updating tenant with custom_domain via PATCH /api/v1/tenants/{id} creates payment
+    admin_user = User(name="Super Admin", email="admin_portfolio@system.az", password_hash=get_password_hash("admin123"), role="admin", tenant_id=agent_tenant.id)
+    test_db.add(admin_user)
+    await test_db.commit()
+    admin_headers = {"Authorization": f"Bearer {create_access_token(admin_user.id)}"}
+
+    r_patch_dom = await client.patch(
+        f"/api/v1/tenants/{new_agent.id}",
+        json={"custom_domain": "adminassigned.az"},
+        headers=admin_headers
+    )
+    assert r_patch_dom.status_code == 200
+    stmt_p4 = select(Payment).where(Payment.tenant_id == new_agent.id, Payment.notes.contains("adminassigned.az"))
+    res_p4 = await test_db.execute(stmt_p4)
+    pay_dom4 = res_p4.scalars().first()
+    assert pay_dom4 is not None
+    assert pay_dom4.amount == 5.0
 
 
