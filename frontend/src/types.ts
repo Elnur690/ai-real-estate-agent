@@ -155,6 +155,27 @@ export interface CrmActivity {
   created_at: string;
 }
 
+export interface CrmReminderItem {
+  id: number;
+  tenant_id: number;
+  client_id?: number | null;
+  deal_id?: number | null;
+  title: string;
+  reminder_type: 'viewing' | 'call' | 'follow_up' | 'notary' | 'other';
+  notes?: string | null;
+  due_at: string;
+  due_at_formatted?: string | null;
+  remind_before_minutes: number;
+  status: 'pending' | 'notified' | 'completed' | 'cancelled';
+  notified_at?: string | null;
+  client_name?: string | null;
+  client_phone?: string | null;
+  deal_title?: string | null;
+  deal_price?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CrmDeal {
   id: number;
   tenant_id: number;

@@ -4,10 +4,10 @@ import {
   Phone, MessageSquare, ExternalLink, Calendar, DollarSign,
   ChevronRight, X, AlertCircle, Edit3, Trash2, ArrowRight, Share2, Sparkles,
   Globe, Copy, Check, Eye, FolderPlus, Layers, Image as ImageIcon, MapPin, Tag, Home,
-  Settings, ShieldCheck, CheckCircle2
+  Settings, ShieldCheck, CheckCircle2, Bell, CheckSquare, Square
 } from 'lucide-react';
 import api from '../api';
-import { CrmDeal, CrmClient, CrmStats, PortfolioListingItem, PortfolioOverview } from '../types';
+import { CrmDeal, CrmClient, CrmStats, PortfolioListingItem, PortfolioOverview, CrmReminderItem } from '../types';
 
 declare global {
   interface Window {
@@ -52,15 +52,24 @@ const STAGES = [
   { key: 'lost', label: 'İmtina Edildi', color: 'bg-rose-500/20 text-rose-400 border-rose-500/30' },
 ];
 
+const REMINDER_TYPE_META: Record<string, { label: string; icon: string; bg: string; text: string; border: string }> = {
+  viewing: { label: 'Baxış', icon: '🏠', bg: 'bg-purple-500/15', text: 'text-purple-400', border: 'border-purple-500/30' },
+  call: { label: 'Zəng', icon: '📞', bg: 'bg-blue-500/15', text: 'text-blue-400', border: 'border-blue-500/30' },
+  follow_up: { label: 'İzləmə', icon: '🔄', bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30' },
+  notary: { label: 'Notariat', icon: '🖋️', bg: 'bg-emerald-500/15', text: 'text-emerald-400', border: 'border-emerald-500/30' },
+  other: { label: 'Tapşırıq', icon: '📌', bg: 'bg-slate-500/15', text: 'text-slate-300', border: 'border-slate-500/30' },
+};
+
 export function TmaCrm() {
   const [loading, setLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [agentName, setAgentName] = useState<string>('Agent');
   const [agentPhone, setAgentPhone] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'deals' | 'clients' | 'portfolio' | 'stats'>('deals');
+  const [activeTab, setActiveTab] = useState<'deals' | 'clients' | 'reminders' | 'portfolio' | 'stats'>('deals');
   
   const [deals, setDeals] = useState<CrmDeal[]>([]);
   const [clients, setClients] = useState<CrmClient[]>([]);
+  const [reminders, setReminders] = useState<CrmReminderItem[]>([]);
   const [stats, setStats] = useState<CrmStats | null>(null);
 
   // Portfolio State
@@ -131,6 +140,20 @@ export function TmaCrm() {
   const [newClientBudget, setNewClientBudget] = useState('');
   const [newClientNotes, setNewClientNotes] = useState('');
   const [savingClient, setSavingClient] = useState(false);
+
+  // Reminder Modal & Filter State
+  const [reminderFilter, setReminderFilter] = useState<'pending' | 'all' | 'completed'>('pending');
+  const [showReminderModal, setShowReminderModal] = useState(false);
+  const [selectedReminder, setSelectedReminder] = useState<CrmReminderItem | null>(null);
+  const [reminderTitle, setReminderTitle] = useState('');
+  const [reminderType, setReminderType] = useState<'viewing' | 'call' | 'follow_up' | 'notary' | 'other'>('viewing');
+  const [reminderDueAt, setReminderDueAt] = useState('');
+  const [reminderLeadMinutes, setReminderLeadMinutes] = useState<number>(60);
+  const [reminderClientId, setReminderClientId] = useState<number | ''>('');
+  const [reminderDealId, setReminderDealId] = useState<number | ''>('');
+  const [reminderNotes, setReminderNotes] = useState('');
+  const [reminderStatus, setReminderStatus] = useState<'pending' | 'notified' | 'completed' | 'cancelled'>('pending');
+  const [savingReminder, setSavingReminder] = useState(false);
 
   const vitrinUrl = portfolioOverview?.portfolio_vitrin_url || `${typeof window !== 'undefined' ? window.location.origin : ''}/v/${portfolioSlug || 'vitrin'}`;
 
@@ -209,6 +232,8 @@ export function TmaCrm() {
 
         if (requestedTab === 'portfolio' || startParam === 'portfolio') {
           setActiveTab('portfolio');
+        } else if (requestedTab === 'reminders' || startParam === 'reminders') {
+          setActiveTab('reminders');
         }
 
         const editParam = currentUrlParams.get('edit') || currentHashParams.get('edit');
@@ -252,14 +277,16 @@ export function TmaCrm() {
 
   const fetchAllData = async (): Promise<PortfolioListingItem[]> => {
     try {
-      const [dealsRes, clientsRes, statsRes, portRes] = await Promise.all([
+      const [dealsRes, clientsRes, statsRes, portRes, remindersRes] = await Promise.all([
         api.get('/crm/deals').catch(() => ({ data: [] })),
         api.get('/crm/clients').catch(() => ({ data: [] })),
         api.get('/crm/stats').catch(() => ({ data: null })),
         api.get('/portfolio').catch(() => ({ data: null })),
+        api.get('/crm/reminders').catch(() => ({ data: [] })),
       ]);
       setDeals(dealsRes.data || []);
       setClients(clientsRes.data || []);
+      setReminders(remindersRes.data || []);
       if (statsRes.data) setStats(statsRes.data);
       if (portRes.data) {
         setPortfolioOverview(portRes.data);
@@ -636,6 +663,153 @@ export function TmaCrm() {
     window.open(waUrl, '_blank');
   };
 
+  // --- REMINDER HELPERS & HANDLERS ---
+  const toLocalDatetimeInput = (isoOrDate?: string | Date | null): string => {
+    const d = isoOrDate ? (typeof isoOrDate === 'string' ? new Date(isoOrDate) : isoOrDate) : new Date();
+    if (isNaN(d.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const getPresetLocalDatetime = (dayOffset: number, hour: number, minute: number): string => {
+    const d = new Date();
+    d.setDate(d.getDate() + dayOffset);
+    d.setHours(hour, minute, 0, 0);
+    return toLocalDatetimeInput(d);
+  };
+
+  const formatAZTDate = (isoStr?: string | null): string => {
+    if (!isoStr) return '';
+    try {
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return isoStr;
+      const months = ['Yan', 'Fev', 'Mar', 'Apr', 'May', 'İyn', 'İyl', 'Avq', 'Sen', 'Okt', 'Noy', 'Dek'];
+      const day = d.getDate();
+      const month = months[d.getMonth()];
+      const hour = String(d.getHours()).padStart(2, '0');
+      const minute = String(d.getMinutes()).padStart(2, '0');
+      return `${day} ${month}, ${hour}:${minute}`;
+    } catch {
+      return isoStr;
+    }
+  };
+
+  const openNewReminderModal = (prefill?: {
+    clientId?: number;
+    dealId?: number;
+    title?: string;
+    type?: 'viewing' | 'call' | 'follow_up' | 'notary' | 'other';
+  }) => {
+    haptic('light');
+    setSelectedReminder(null);
+    setReminderTitle(prefill?.title || (prefill?.type === 'call' ? 'Müştəri ilə zəng' : 'Mənzilə baxış'));
+    setReminderType(prefill?.type || 'viewing');
+    const defaultTime = new Date();
+    defaultTime.setHours(defaultTime.getHours() + 2, 0, 0, 0);
+    setReminderDueAt(toLocalDatetimeInput(defaultTime));
+    setReminderLeadMinutes(60);
+    setReminderClientId(prefill?.clientId || '');
+    setReminderDealId(prefill?.dealId || '');
+    setReminderNotes('');
+    setReminderStatus('pending');
+    setShowReminderModal(true);
+  };
+
+  const openEditReminderModal = (reminder: CrmReminderItem) => {
+    haptic('light');
+    setSelectedReminder(reminder);
+    setReminderTitle(reminder.title);
+    setReminderType(reminder.reminder_type);
+    setReminderDueAt(toLocalDatetimeInput(reminder.due_at));
+    setReminderLeadMinutes(reminder.remind_before_minutes ?? 60);
+    setReminderClientId(reminder.client_id || '');
+    setReminderDealId(reminder.deal_id || '');
+    setReminderNotes(reminder.notes || '');
+    setReminderStatus(reminder.status || 'pending');
+    setShowReminderModal(true);
+  };
+
+  const handleSaveReminder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reminderTitle.trim() || !reminderDueAt) {
+      alert('Zəhmət olmasa xatırlatma başlığını və vaxtını qeyd edin.');
+      return;
+    }
+    setSavingReminder(true);
+    haptic('medium');
+    try {
+      const payload = {
+        title: reminderTitle.trim(),
+        reminder_type: reminderType,
+        due_at: new Date(reminderDueAt).toISOString(),
+        remind_before_minutes: Number(reminderLeadMinutes),
+        client_id: reminderClientId ? Number(reminderClientId) : null,
+        deal_id: reminderDealId ? Number(reminderDealId) : null,
+        notes: reminderNotes.trim() || null,
+        status: reminderStatus,
+      };
+
+      if (selectedReminder) {
+        const res = await api.put(`/crm/reminders/${selectedReminder.id}`, payload);
+        setReminders(prev => prev.map(r => r.id === selectedReminder.id ? res.data : r));
+        setCopiedToast('Xatırlatma yeniləndi! ⏰');
+      } else {
+        const res = await api.post('/crm/reminders', payload);
+        setReminders(prev => [res.data, ...prev]);
+        setCopiedToast('Yeni xatırlatma təyin edildi! ⏰');
+      }
+      setTimeout(() => setCopiedToast(null), 3000);
+      setShowReminderModal(false);
+      await fetchAllData();
+    } catch (err: any) {
+      console.error('Failed to save reminder:', err);
+      alert(err.response?.data?.detail || 'Xatırlatmanı yadda saxlamaq mümkün olmadı.');
+    } finally {
+      setSavingReminder(false);
+    }
+  };
+
+  const handleToggleReminderStatus = async (reminder: CrmReminderItem) => {
+    const newStatus = reminder.status === 'completed' ? 'pending' : 'completed';
+    haptic(newStatus === 'completed' ? 'success' : 'light');
+    try {
+      const res = await api.put(`/crm/reminders/${reminder.id}`, {
+        status: newStatus,
+      });
+      setReminders(prev => prev.map(r => r.id === reminder.id ? res.data : r));
+      if (newStatus === 'completed') {
+        setCopiedToast('Xatırlatma tamamlandı! ✅');
+        setTimeout(() => setCopiedToast(null), 2500);
+      }
+    } catch (err) {
+      console.error('Failed to toggle reminder status:', err);
+    }
+  };
+
+  const handleDeleteReminder = async (reminderId: number) => {
+    haptic('heavy');
+    if (!window.confirm('Bu xatırlatmanı silmək istədiyinizə əminsiniz?')) {
+      return;
+    }
+    try {
+      await api.delete(`/crm/reminders/${reminderId}`);
+      setReminders(prev => prev.filter(r => r.id !== reminderId));
+      setCopiedToast('Xatırlatma silindi');
+      setTimeout(() => setCopiedToast(null), 2000);
+    } catch (err: any) {
+      console.error('Failed to delete reminder:', err);
+      alert(err.response?.data?.detail || 'Xatırlatmanı silmək mümkün olmadı.');
+    }
+  };
+
+  const activeRemindersCount = reminders.filter(r => r.status === 'pending' || r.status === 'notified').length;
+
+  const filteredReminders = reminders.filter(r => {
+    if (reminderFilter === 'pending') return r.status === 'pending' || r.status === 'notified';
+    if (reminderFilter === 'completed') return r.status === 'completed';
+    return true;
+  });
+
   const filteredDeals = deals.filter(d => {
     if (selectedStage !== 'all' && d.stage !== selectedStage) return false;
     if (searchQuery.trim()) {
@@ -700,6 +874,14 @@ export function TmaCrm() {
                 <Plus className="w-3.5 h-3.5" />
                 Yeni Elan
               </button>
+            ) : activeTab === 'reminders' ? (
+              <button
+                onClick={() => { haptic('light'); openNewReminderModal(); }}
+                className="flex items-center gap-1 bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-sm shadow-purple-600/20"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Xatırlatma
+              </button>
             ) : (
               <button
                 onClick={() => { haptic('light'); setShowNewClientModal(true); }}
@@ -713,26 +895,34 @@ export function TmaCrm() {
         </div>
 
         {/* Tab Navigation */}
-        <div className="grid grid-cols-4 gap-1 bg-slate-950/80 p-1 rounded-xl mt-3 border border-slate-800/80">
+        <div className="grid grid-cols-5 gap-1 bg-slate-950/80 p-1 rounded-xl mt-3 border border-slate-800/80">
           <button
             onClick={() => { haptic('light'); setActiveTab('deals'); }}
-            className={`py-1.5 text-[11px] font-semibold rounded-lg transition-all ${
+            className={`py-1.5 text-[10px] sm:text-[11px] font-semibold rounded-lg transition-all truncate px-1 ${
               activeTab === 'deals' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            📋 Sövdələr ({deals.length})
+            📋 Sövdə ({deals.length})
           </button>
           <button
             onClick={() => { haptic('light'); setActiveTab('clients'); }}
-            className={`py-1.5 text-[11px] font-semibold rounded-lg transition-all ${
+            className={`py-1.5 text-[10px] sm:text-[11px] font-semibold rounded-lg transition-all truncate px-1 ${
               activeTab === 'clients' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            👥 Müştərilər ({clients.length})
+            👥 Müştəri ({clients.length})
+          </button>
+          <button
+            onClick={() => { haptic('light'); setActiveTab('reminders'); }}
+            className={`py-1.5 text-[10px] sm:text-[11px] font-semibold rounded-lg transition-all truncate px-1 ${
+              activeTab === 'reminders' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            ⏰ Xatırlatma ({activeRemindersCount})
           </button>
           <button
             onClick={() => { haptic('light'); setActiveTab('portfolio'); }}
-            className={`py-1.5 text-[11px] font-semibold rounded-lg transition-all ${
+            className={`py-1.5 text-[10px] sm:text-[11px] font-semibold rounded-lg transition-all truncate px-1 ${
               activeTab === 'portfolio' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -740,7 +930,7 @@ export function TmaCrm() {
           </button>
           <button
             onClick={() => { haptic('light'); setActiveTab('stats'); }}
-            className={`py-1.5 text-[11px] font-semibold rounded-lg transition-all ${
+            className={`py-1.5 text-[10px] sm:text-[11px] font-semibold rounded-lg transition-all truncate px-1 ${
               activeTab === 'stats' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -823,6 +1013,12 @@ export function TmaCrm() {
                       onOpen={openDealModal}
                       onDelete={handleDeleteDeal}
                       onShareWhatsApp={shareToClientWhatsApp}
+                      onAddReminder={(d) => openNewReminderModal({
+                        dealId: d.id,
+                        clientId: d.client_id || undefined,
+                        title: `Baxış: ${d.listing_title}`,
+                        type: 'viewing'
+                      })}
                       haptic={haptic}
                     />
                   );
@@ -880,6 +1076,14 @@ export function TmaCrm() {
                     </div>
 
                     <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openNewReminderModal({ clientId: client.id, title: `${client.name} ilə əlaqə`, type: 'call' })}
+                        className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center hover:bg-purple-500/20"
+                        title="Xatırlatma və ya zəng planla"
+                      >
+                        <Clock className="w-4 h-4" />
+                      </button>
                       {client.phone && (
                         <a
                           href={`https://wa.me/${client.phone.replace(/\D/g, '')}`}
@@ -901,6 +1105,237 @@ export function TmaCrm() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* --- REMINDERS & VIEWINGS TAB --- */}
+        {activeTab === 'reminders' && (
+          <div className="space-y-3">
+            {/* Header / Info card */}
+            <div className="bg-gradient-to-br from-indigo-950/40 via-slate-900 to-slate-900 border border-indigo-500/20 rounded-2xl p-3.5 shadow-sm">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0">
+                    <Clock className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                      Baxış və Zəng Xatırlatmaları
+                    </h3>
+                    <p className="text-[10px] text-slate-400">
+                      Təyin etdiyiniz vaxtdan qabaq bot sizə xəbərdarlıq göndərəcək.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => openNewReminderModal()}
+                  className="bg-purple-600 hover:bg-purple-500 active:scale-95 text-white text-[11px] font-bold px-3 py-1.5 rounded-xl shadow-md shadow-purple-600/20 flex items-center gap-1 shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Yeni
+                </button>
+              </div>
+
+              {/* Status Filters */}
+              <div className="flex gap-1.5 pt-1">
+                <button
+                  onClick={() => { haptic('light'); setReminderFilter('pending'); }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all border ${
+                    reminderFilter === 'pending'
+                      ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
+                      : 'bg-slate-950/80 text-slate-400 border-slate-800'
+                  }`}
+                >
+                  Gözləyən ({reminders.filter(r => r.status === 'pending' || r.status === 'notified').length})
+                </button>
+                <button
+                  onClick={() => { haptic('light'); setReminderFilter('all'); }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all border ${
+                    reminderFilter === 'all'
+                      ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
+                      : 'bg-slate-950/80 text-slate-400 border-slate-800'
+                  }`}
+                >
+                  Hamısı ({reminders.length})
+                </button>
+                <button
+                  onClick={() => { haptic('light'); setReminderFilter('completed'); }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all border ${
+                    reminderFilter === 'completed'
+                      ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
+                      : 'bg-slate-950/80 text-slate-400 border-slate-800'
+                  }`}
+                >
+                  Tamamlanan ({reminders.filter(r => r.status === 'completed').length})
+                </button>
+              </div>
+            </div>
+
+            {/* List */}
+            {filteredReminders.length === 0 ? (
+              <div className="text-center py-12 bg-slate-900/50 rounded-2xl border border-slate-800/80 p-6">
+                <Clock className="w-12 h-12 text-slate-600 mx-auto mb-3 opacity-50" />
+                <h3 className="text-sm font-semibold text-slate-300 mb-1">
+                  {reminderFilter === 'completed' ? 'Tamamlanmış xatırlatma yoxdur' : 'Aktiv xatırlatma yoxdur'}
+                </h3>
+                <p className="text-xs text-slate-500 max-w-xs mx-auto mb-4">
+                  Ev baxışı, müştəri zəngi və ya görüş planlaşdırın, vaxtından qabaq Telegram bot xatırlatsın.
+                </p>
+                <button
+                  onClick={() => openNewReminderModal()}
+                  className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-md shadow-purple-600/20"
+                >
+                  + İlk Xatırlatmanı Yarat
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {filteredReminders.map(rem => {
+                  const meta = REMINDER_TYPE_META[rem.reminder_type] || REMINDER_TYPE_META.other;
+                  const isCompleted = rem.status === 'completed';
+                  const isNotified = rem.status === 'notified';
+
+                  return (
+                    <div
+                      key={rem.id}
+                      className={`bg-slate-900 border rounded-2xl p-3.5 transition-all ${
+                        isCompleted
+                          ? 'border-slate-800/60 opacity-60 bg-slate-900/40'
+                          : isNotified
+                          ? 'border-amber-500/40 shadow-sm'
+                          : 'border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        {/* Checkbox button */}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleReminderStatus(rem)}
+                          className={`mt-0.5 w-6 h-6 rounded-lg flex items-center justify-center transition-colors shrink-0 ${
+                            isCompleted
+                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                              : 'bg-slate-950 border border-slate-700 text-transparent hover:border-purple-500'
+                          }`}
+                          title={isCompleted ? 'Yenidən aktiv et' : 'Tamamla'}
+                        >
+                          <Check className={`w-3.5 h-3.5 ${isCompleted ? 'opacity-100 text-emerald-400' : 'opacity-0'}`} />
+                        </button>
+
+                        {/* Card body */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-1.5 mb-1 flex-wrap">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${meta.bg} ${meta.text} ${meta.border}`}>
+                                {meta.icon} {meta.label}
+                              </span>
+                              {isNotified && (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                                  <Bell className="w-2.5 h-2.5" /> Bildirildi
+                                </span>
+                              )}
+                              {isCompleted && (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                  ✓ Tamamlandı
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => openEditReminderModal(rem)}
+                                className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800"
+                                title="Redaktə et"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteReminder(rem.id)}
+                                className="p-1 text-slate-500 hover:text-rose-400 rounded hover:bg-rose-500/10"
+                                title="Sil"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <h4 className={`text-xs font-bold text-slate-100 mb-1.5 ${isCompleted ? 'line-through text-slate-400' : ''}`}>
+                            {rem.title}
+                          </h4>
+
+                          {/* Time & Alert info */}
+                          <div className="flex items-center gap-3 text-[11px] text-purple-300 mb-2 flex-wrap">
+                            <span className="flex items-center gap-1 font-semibold">
+                              <Calendar className="w-3 h-3 text-purple-400" />
+                              {formatAZTDate(rem.due_at)}
+                            </span>
+                            <span className="flex items-center gap-1 text-[10px] text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                              <Bell className="w-2.5 h-2.5 text-slate-400" />
+                              {rem.remind_before_minutes === 0 ? 'Vaxtında' : `${rem.remind_before_minutes} dəq əvvəl`}
+                            </span>
+                          </div>
+
+                          {/* Linked Client */}
+                          {rem.client_name && (
+                            <div className="flex items-center justify-between gap-2 bg-slate-950/60 border border-slate-800/80 rounded-xl px-2.5 py-1.5 mb-1.5 text-[11px]">
+                              <span className="text-slate-300 font-medium flex items-center gap-1 truncate">
+                                <Users className="w-3 h-3 text-blue-400" />
+                                {rem.client_name}
+                              </span>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {rem.client_phone && (
+                                  <>
+                                    <a
+                                      href={`tel:${rem.client_phone}`}
+                                      className="p-1 rounded bg-blue-500/10 text-blue-400 hover:bg-blue-500/20"
+                                      title="Zəng et"
+                                    >
+                                      <Phone className="w-3 h-3" />
+                                    </a>
+                                    <a
+                                      href={`https://wa.me/${rem.client_phone.replace(/\D/g, '')}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="p-1 rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                                      title="WhatsApp"
+                                    >
+                                      <MessageSquare className="w-3 h-3" />
+                                    </a>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Linked Deal */}
+                          {rem.deal_title && (
+                            <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl px-2.5 py-1.5 mb-1.5 text-[11px] flex items-center justify-between">
+                              <span className="text-slate-300 font-medium flex items-center gap-1 truncate">
+                                <Briefcase className="w-3 h-3 text-purple-400" />
+                                {rem.deal_title}
+                              </span>
+                              {rem.deal_price && (
+                                <span className="text-emerald-400 font-bold shrink-0 ml-2">
+                                  {intFormat(rem.deal_price)} AZN
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Notes */}
+                          {rem.notes && (
+                            <p className="text-[10px] text-slate-400 italic bg-slate-950/40 p-2 rounded-lg border border-slate-800/50 mt-1">
+                              💬 {rem.notes}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1323,9 +1758,27 @@ export function TmaCrm() {
 
               {/* Viewing Date */}
               <div>
-                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                  Baxış Tarixi və Saatı
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    Baxış Tarixi və Saatı
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const dealCopy = selectedDeal;
+                      setSelectedDeal(null);
+                      openNewReminderModal({
+                        dealId: dealCopy.id,
+                        clientId: dealCopy.client_id || undefined,
+                        title: `Baxış: ${dealCopy.listing_title}`,
+                        type: 'viewing'
+                      });
+                    }}
+                    className="text-[10px] font-bold text-purple-400 hover:text-purple-300 flex items-center gap-1"
+                  >
+                    <Clock className="w-3 h-3" /> Bot Xatırlatması Qur
+                  </button>
+                </div>
                 <input
                   type="datetime-local"
                   value={editViewingAt}
@@ -1496,6 +1949,245 @@ export function TmaCrm() {
                 className="w-2/3 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-600/20"
               >
                 {savingClient ? 'Yaradılır...' : 'Müştərini Saxla'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* --- REMINDER / VIEWING MODAL --- */}
+      {showReminderModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <form
+            onSubmit={handleSaveReminder}
+            className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl w-full max-w-md p-5 space-y-3.5 shadow-2xl animate-in slide-in-from-bottom duration-200 max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center">
+                  <Clock className="w-4 h-4" />
+                </div>
+                <h3 className="text-sm font-bold text-white">
+                  {selectedReminder ? 'Xatırlatmanı Redaktə Et' : 'Yeni Xatırlatma / Baxış'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowReminderModal(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Type selector buttons */}
+            <div>
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                Xatırlatma Növü
+              </label>
+              <div className="grid grid-cols-5 gap-1.5">
+                {[
+                  { key: 'viewing', label: 'Baxış', icon: '🏠' },
+                  { key: 'call', label: 'Zəng', icon: '📞' },
+                  { key: 'follow_up', label: 'İzləmə', icon: '🔄' },
+                  { key: 'notary', label: 'Notariat', icon: '🖋️' },
+                  { key: 'other', label: 'Digər', icon: '📌' },
+                ].map(t => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => {
+                      haptic('light');
+                      setReminderType(t.key as any);
+                    }}
+                    className={`py-2 px-1 rounded-xl text-[10px] font-bold flex flex-col items-center gap-1 border transition-all ${
+                      reminderType === t.key
+                        ? 'bg-purple-600 text-white border-purple-500 shadow-md shadow-purple-600/20'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                    }`}
+                  >
+                    <span>{t.icon}</span>
+                    <span className="truncate">{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Title */}
+            <div>
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                Başlıq *
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="Məs: 28 May 3 otaqlı mənzilə baxış"
+                value={reminderTitle}
+                onChange={e => setReminderTitle(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+              />
+            </div>
+
+            {/* Quick Presets for Date */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  Baxış / Görüş Vaxtı *
+                </label>
+                <span className="text-[10px] text-slate-500">Sürətli seçimlər</span>
+              </div>
+              <div className="flex gap-1.5 overflow-x-auto pb-1.5 scrollbar-none">
+                {[
+                  { label: 'Bugün 15:00', val: getPresetLocalDatetime(0, 15, 0) },
+                  { label: 'Bugün 18:00', val: getPresetLocalDatetime(0, 18, 0) },
+                  { label: 'Sabah 11:00', val: getPresetLocalDatetime(1, 11, 0) },
+                  { label: 'Sabah 15:00', val: getPresetLocalDatetime(1, 15, 0) },
+                  { label: 'Birigün 12:00', val: getPresetLocalDatetime(2, 12, 0) },
+                ].map(p => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => {
+                      haptic('light');
+                      setReminderDueAt(p.val);
+                    }}
+                    className={`px-2 py-1 text-[10px] font-semibold rounded-lg border whitespace-nowrap transition-all ${
+                      reminderDueAt === p.val
+                        ? 'bg-purple-600/30 text-purple-300 border-purple-500'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="datetime-local"
+                required
+                value={reminderDueAt}
+                onChange={e => setReminderDueAt(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+              />
+            </div>
+
+            {/* Notification Lead Time */}
+            <div>
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                Bot nə qədər əvvəl xəbər versin?
+              </label>
+              <div className="grid grid-cols-5 gap-1.5">
+                {[
+                  { min: 15, label: '15 dəq' },
+                  { min: 30, label: '30 dəq' },
+                  { min: 60, label: '1 saat' },
+                  { min: 120, label: '2 saat' },
+                  { min: 0, label: 'Vaxtında' },
+                ].map(opt => (
+                  <button
+                    key={opt.min}
+                    type="button"
+                    onClick={() => {
+                      haptic('light');
+                      setReminderLeadMinutes(opt.min);
+                    }}
+                    className={`py-1.5 px-1 rounded-xl text-[10px] font-bold border transition-all ${
+                      reminderLeadMinutes === opt.min
+                        ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
+                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Client and Deal pickers */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Müştəri (İstəyə bağlı)
+                </label>
+                <select
+                  value={reminderClientId}
+                  onChange={e => setReminderClientId(e.target.value ? Number(e.target.value) : '')}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-purple-500 truncate"
+                >
+                  <option value="">Seçilməyib</option>
+                  {clients.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} {c.phone ? `(${c.phone})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Elan / Sövdə (İstəyə bağlı)
+                </label>
+                <select
+                  value={reminderDealId}
+                  onChange={e => setReminderDealId(e.target.value ? Number(e.target.value) : '')}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-purple-500 truncate"
+                >
+                  <option value="">Seçilməyib</option>
+                  {deals.map(d => (
+                    <option key={d.id} value={d.id}>
+                      {d.listing_title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div>
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                Qeydlər (Qapı kodu, sahibinin nömrəsi və s.)
+              </label>
+              <textarea
+                rows={2}
+                placeholder="Əlavə məlumat..."
+                value={reminderNotes}
+                onChange={e => setReminderNotes(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-white focus:outline-none focus:border-purple-500 resize-none"
+              />
+            </div>
+
+            {/* Status (when editing) */}
+            {selectedReminder && (
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Status
+                </label>
+                <select
+                  value={reminderStatus}
+                  onChange={e => setReminderStatus(e.target.value as any)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-purple-500"
+                >
+                  <option value="pending">Gözləyir</option>
+                  <option value="notified">Xəbərdarlıq göndərilib</option>
+                  <option value="completed">Tamamlandı</option>
+                  <option value="cancelled">Ləğv edildi</option>
+                </select>
+              </div>
+            )}
+
+            <div className="pt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowReminderModal(false)}
+                className="w-1/3 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold"
+              >
+                İmtina
+              </button>
+              <button
+                type="submit"
+                disabled={savingReminder}
+                className="w-2/3 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md shadow-purple-600/20"
+              >
+                {savingReminder ? 'Yadda saxlanılır...' : (selectedReminder ? 'Yenilə' : 'Xatırlatma Təyin Et')}
               </button>
             </div>
           </form>
@@ -2064,6 +2756,7 @@ function SwipeableDealCard({
   onOpen,
   onDelete,
   onShareWhatsApp,
+  onAddReminder,
   haptic
 }: {
   deal: CrmDeal;
@@ -2071,6 +2764,7 @@ function SwipeableDealCard({
   onOpen: (deal: CrmDeal) => void;
   onDelete: (dealId: number) => void;
   onShareWhatsApp: (deal: CrmDeal) => void;
+  onAddReminder?: (deal: CrmDeal) => void;
   haptic: (type: 'light' | 'medium' | 'heavy') => void;
 }) {
   const [offsetX, setOffsetX] = useState(0);
@@ -2230,6 +2924,14 @@ function SwipeableDealCard({
             <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-800/60">
               <span>{deal.listing_location || 'Bakı'}</span>
               <div className="flex items-center gap-1.5">
+                <button
+                  onClick={(e) => { e.stopPropagation(); onAddReminder?.(deal); }}
+                  className="flex items-center gap-1 text-purple-400 font-bold bg-purple-500/10 px-2 py-0.5 rounded-md hover:bg-purple-500/20"
+                  title="Baxış və ya xatırlatma təyin et"
+                >
+                  <Clock className="w-3 h-3" />
+                  Baxış
+                </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); onShareWhatsApp(deal); }}
                   className="flex items-center gap-1 text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-md hover:bg-emerald-500/20"

@@ -13,7 +13,7 @@ from app.models.plan import Plan
 from app.models.seller import Seller, SellerPackage, SellerTransaction
 from app.models.seller_payout import SellerPayoutRequest
 from app.models.agent_phone import AgentPhone
-from app.models.crm import CrmClient, CrmDeal, CrmActivity
+from app.models.crm import CrmClient, CrmDeal, CrmActivity, CrmReminder
 from app.models.portfolio import PortfolioListing
 
 __all__ = [
@@ -39,5 +39,6 @@ __all__ = [
     "CrmClient",
     "CrmDeal",
     "CrmActivity",
+    "CrmReminder",
     "PortfolioListing"
 ]

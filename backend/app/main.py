@@ -197,6 +197,27 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_portfolio_tenant_active ON portfolio_listings (tenant_id, is_active);"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_portfolio_share_code ON portfolio_listings (share_code);"))
 
+        # ⏰ CRM Task & Viewing Reminders (Baxış Xatırladıcısı)
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS crm_reminders (
+                id SERIAL PRIMARY KEY,
+                tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                client_id INTEGER REFERENCES crm_clients(id) ON DELETE SET NULL,
+                deal_id INTEGER REFERENCES crm_deals(id) ON DELETE SET NULL,
+                title VARCHAR(255) NOT NULL,
+                reminder_type VARCHAR(50) DEFAULT 'viewing',
+                notes TEXT,
+                due_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                remind_before_minutes INTEGER DEFAULT 60,
+                status VARCHAR(50) DEFAULT 'pending',
+                notified_at TIMESTAMP WITH TIME ZONE,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            );
+        """))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_crm_reminders_tenant ON crm_reminders (tenant_id, status);"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS idx_crm_reminders_due ON crm_reminders (due_at, status);"))
+
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS quiet_hours_enabled BOOLEAN DEFAULT FALSE;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS quiet_hours_start VARCHAR(10) DEFAULT '23:30';"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS quiet_hours_end VARCHAR(10) DEFAULT '08:30';"))
@@ -341,6 +362,10 @@ async def lifespan(app: FastAPI):
     # Start background listing liveness reconciler loop
     from app.services.listing_reconciler import ListingReconcilerService
     asyncio.create_task(ListingReconcilerService.start_background_reconciler(interval_minutes=15))
+
+    # Start background CRM viewing & task reminder loop
+    from app.services.reminder_service import CrmReminderService
+    asyncio.create_task(CrmReminderService.start_background_reminder_loop(interval_seconds=60))
 
     # Background ingestion is strictly offloaded to Celery worker cluster
     logger.info("[Startup] Celery cluster active. Scraping & matching isolated to Celery workers.")

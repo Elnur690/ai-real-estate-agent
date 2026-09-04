@@ -29,6 +29,7 @@ class CrmClient(Base):
     # Relationships
     tenant = relationship("Tenant", back_populates="crm_clients", lazy="noload")
     deals = relationship("CrmDeal", back_populates="client", cascade="all, delete-orphan", lazy="noload")
+    reminders = relationship("CrmReminder", back_populates="client", cascade="all, delete-orphan", lazy="noload")
 
 
 class CrmDeal(Base):
@@ -67,6 +68,7 @@ class CrmDeal(Base):
     client = relationship("CrmClient", back_populates="deals", lazy="noload")
     listing = relationship("Listing", lazy="noload")
     activities = relationship("CrmActivity", back_populates="deal", cascade="all, delete-orphan", lazy="noload")
+    reminders = relationship("CrmReminder", back_populates="deal", cascade="all, delete-orphan", lazy="noload")
 
 
 class CrmActivity(Base):
@@ -81,3 +83,31 @@ class CrmActivity(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     deal = relationship("CrmDeal", back_populates="activities", lazy="noload")
+
+
+class CrmReminder(Base):
+    __tablename__ = "crm_reminders"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True, nullable=False)
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("crm_clients.id", ondelete="SET NULL"), nullable=True, index=True)
+    deal_id: Mapped[int | None] = mapped_column(ForeignKey("crm_deals.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    title: Mapped[str] = mapped_column(String(255), nullable=False) # e.g. "Baxış: Yasamal 3 otaq"
+    reminder_type: Mapped[str] = mapped_column(String(50), default="viewing") # viewing | call | follow_up | notary | other
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    remind_before_minutes: Mapped[int] = mapped_column(Integer, default=60) # 15, 30, 60, 120
+
+    status: Mapped[str] = mapped_column(String(50), default="pending", index=True) # pending | notified | completed | cancelled
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    tenant = relationship("Tenant", back_populates="crm_reminders", lazy="noload")
+    client = relationship("CrmClient", back_populates="reminders", lazy="noload")
+    deal = relationship("CrmDeal", back_populates="reminders", lazy="noload")
+

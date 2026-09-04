@@ -9,7 +9,8 @@ from app.api.deps import get_db, get_current_user
 from app.models.user import User
 from app.models.tenant import Tenant
 from app.models.listing import Listing
-from app.models.crm import CrmClient, CrmDeal, CrmActivity
+from app.models.crm import CrmClient, CrmDeal, CrmActivity, CrmReminder
+from app.services.reminder_service import CrmReminderService
 
 router = APIRouter(prefix="/crm", tags=["CRM"])
 
@@ -129,6 +130,48 @@ class CrmStatsResponse(BaseModel):
     stage_counts: Dict[str, int]
     total_clients: int
     total_won_commission: float
+
+
+class CrmReminderCreate(BaseModel):
+    title: str
+    reminder_type: Optional[str] = "viewing" # viewing | call | follow_up | notary | other
+    notes: Optional[str] = None
+    due_at: datetime
+    remind_before_minutes: Optional[int] = 60
+    client_id: Optional[int] = None
+    deal_id: Optional[int] = None
+
+
+class CrmReminderUpdate(BaseModel):
+    title: Optional[str] = None
+    reminder_type: Optional[str] = None
+    notes: Optional[str] = None
+    due_at: Optional[datetime] = None
+    remind_before_minutes: Optional[int] = None
+    status: Optional[str] = None # pending | notified | completed | cancelled
+    client_id: Optional[int] = None
+    deal_id: Optional[int] = None
+
+
+class CrmReminderResponse(BaseModel):
+    id: int
+    tenant_id: int
+    client_id: Optional[int] = None
+    deal_id: Optional[int] = None
+    title: str
+    reminder_type: str
+    notes: Optional[str] = None
+    due_at: datetime
+    due_at_formatted: Optional[str] = None
+    remind_before_minutes: int
+    status: str
+    notified_at: Optional[datetime] = None
+    client_name: Optional[str] = None
+    client_phone: Optional[str] = None
+    deal_title: Optional[str] = None
+    deal_price: Optional[float] = None
+    created_at: datetime
+    updated_at: datetime
 
 
 # --- Helper to resolve tenant for request ---
@@ -663,3 +706,214 @@ async def get_crm_stats(
         total_clients=total_clients,
         total_won_commission=float(total_won_comm)
     )
+
+
+# --- CRM Task & Viewing Reminders Endpoints (Baxış Xatırladıcısı) ---
+
+async def format_reminder_response(db: AsyncSession, reminder: CrmReminder) -> CrmReminderResponse:
+    client_name = None
+    client_phone = None
+    if reminder.client_id:
+        c_res = await db.execute(select(CrmClient).where(CrmClient.id == reminder.client_id))
+        client = c_res.scalars().first()
+        if client:
+            client_name = client.name
+            client_phone = client.phone or client.whatsapp_number
+
+    deal_title = None
+    deal_price = None
+    if reminder.deal_id:
+        d_res = await db.execute(select(CrmDeal).where(CrmDeal.id == reminder.deal_id))
+        deal = d_res.scalars().first()
+        if deal:
+            deal_title = deal.listing_title
+            deal_price = deal.listing_price
+
+    due_at = reminder.due_at
+    if due_at.tzinfo is None:
+        due_at = due_at.replace(tzinfo=timezone.utc)
+
+    return CrmReminderResponse(
+        id=reminder.id,
+        tenant_id=reminder.tenant_id,
+        client_id=reminder.client_id,
+        deal_id=reminder.deal_id,
+        title=reminder.title,
+        reminder_type=reminder.reminder_type,
+        notes=reminder.notes,
+        due_at=due_at,
+        due_at_formatted=CrmReminderService.format_azt_datetime(due_at),
+        remind_before_minutes=reminder.remind_before_minutes,
+        status=reminder.status,
+        notified_at=reminder.notified_at,
+        client_name=client_name,
+        client_phone=client_phone,
+        deal_title=deal_title,
+        deal_price=deal_price,
+        created_at=reminder.created_at,
+        updated_at=reminder.updated_at
+    )
+
+
+@router.get("/reminders", response_model=List[CrmReminderResponse])
+async def list_crm_reminders(
+    status_filter: Optional[str] = Query(None, alias="status"),
+    client_id: Optional[int] = None,
+    deal_id: Optional[int] = None,
+    upcoming_only: bool = False,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """List all scheduled tasks and property viewing reminders for the authenticated agent."""
+    tenant = await get_tenant_for_user(db, current_user)
+
+    stmt = select(CrmReminder).where(CrmReminder.tenant_id == tenant.id)
+
+    if status_filter:
+        stmt = stmt.where(CrmReminder.status == status_filter)
+
+    if client_id:
+        stmt = stmt.where(CrmReminder.client_id == client_id)
+
+    if deal_id:
+        stmt = stmt.where(CrmReminder.deal_id == deal_id)
+
+    if upcoming_only:
+        now_utc = datetime.now(timezone.utc)
+        stmt = stmt.where(
+            CrmReminder.status.in_(["pending", "notified"]),
+            CrmReminder.due_at >= (now_utc - timedelta(hours=1))
+        )
+
+    stmt = stmt.order_by(CrmReminder.due_at.asc())
+    res = await db.execute(stmt)
+    reminders = res.scalars().all()
+
+    output = []
+    for r in reminders:
+        output.append(await format_reminder_response(db, r))
+    return output
+
+
+@router.post("/reminders", response_model=CrmReminderResponse, status_code=status.HTTP_201_CREATED)
+async def create_crm_reminder(
+    payload: CrmReminderCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Schedule a new viewing or follow-up reminder for a client or deal."""
+    tenant = await get_tenant_for_user(db, current_user)
+
+    due_dt = payload.due_at
+    if due_dt.tzinfo is None:
+        due_dt = due_dt.replace(tzinfo=timezone.utc)
+
+    # Validate client belonging to tenant
+    if payload.client_id:
+        stmt_c = select(CrmClient).where(CrmClient.id == payload.client_id, CrmClient.tenant_id == tenant.id)
+        res_c = await db.execute(stmt_c)
+        if not res_c.scalars().first():
+            raise HTTPException(status_code=404, detail="Müştəri tapılmadı.")
+
+    # Validate deal belonging to tenant
+    deal = None
+    if payload.deal_id:
+        stmt_d = select(CrmDeal).where(CrmDeal.id == payload.deal_id, CrmDeal.tenant_id == tenant.id)
+        res_d = await db.execute(stmt_d)
+        deal = res_d.scalars().first()
+        if not deal:
+            raise HTTPException(status_code=404, detail="Sövdə tapılmadı.")
+        # If deal has no scheduled viewing, update deal.scheduled_viewing_at as well
+        deal.scheduled_viewing_at = due_dt
+
+    reminder = CrmReminder(
+        tenant_id=tenant.id,
+        client_id=payload.client_id,
+        deal_id=payload.deal_id,
+        title=payload.title.strip(),
+        reminder_type=payload.reminder_type or "viewing",
+        notes=payload.notes,
+        due_at=due_dt,
+        remind_before_minutes=payload.remind_before_minutes or 60,
+        status="pending"
+    )
+    db.add(reminder)
+
+    # Log activity on deal if present
+    if deal:
+        activity = CrmActivity(
+            tenant_id=tenant.id,
+            deal_id=deal.id,
+            action_type="viewing_scheduled",
+            description=f"📅 Xatırlatma təyin edildi: {reminder.title} ({CrmReminderService.format_azt_datetime(due_dt)})"
+        )
+        db.add(activity)
+
+    await db.commit()
+    await db.refresh(reminder)
+    return await format_reminder_response(db, reminder)
+
+
+@router.put("/reminders/{reminder_id}", response_model=CrmReminderResponse)
+async def update_crm_reminder(
+    reminder_id: int,
+    payload: CrmReminderUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update reminder details, reschedule appointment time, or mark completed/cancelled."""
+    tenant = await get_tenant_for_user(db, current_user)
+
+    stmt = select(CrmReminder).where(CrmReminder.id == reminder_id, CrmReminder.tenant_id == tenant.id)
+    res = await db.execute(stmt)
+    reminder = res.scalars().first()
+    if not reminder:
+        raise HTTPException(status_code=404, detail="Xatırlatma tapılmadı.")
+
+    if payload.title is not None:
+        reminder.title = payload.title.strip()
+    if payload.reminder_type is not None:
+        reminder.reminder_type = payload.reminder_type
+    if payload.notes is not None:
+        reminder.notes = payload.notes
+    if payload.remind_before_minutes is not None:
+        reminder.remind_before_minutes = payload.remind_before_minutes
+    if payload.status is not None:
+        reminder.status = payload.status
+    if payload.client_id is not None:
+        reminder.client_id = payload.client_id
+    if payload.deal_id is not None:
+        reminder.deal_id = payload.deal_id
+    if payload.due_at is not None:
+        due_dt = payload.due_at
+        if due_dt.tzinfo is None:
+            due_dt = due_dt.replace(tzinfo=timezone.utc)
+        reminder.due_at = due_dt
+        if reminder.status == "notified":
+            reminder.status = "pending" # Reset to pending if rescheduled
+
+    reminder.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(reminder)
+    return await format_reminder_response(db, reminder)
+
+
+@router.delete("/reminders/{reminder_id}")
+async def delete_crm_reminder(
+    reminder_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a reminder."""
+    tenant = await get_tenant_for_user(db, current_user)
+
+    stmt = select(CrmReminder).where(CrmReminder.id == reminder_id, CrmReminder.tenant_id == tenant.id)
+    res = await db.execute(stmt)
+    reminder = res.scalars().first()
+    if not reminder:
+        raise HTTPException(status_code=404, detail="Xatırlatma tapılmadı.")
+
+    await db.delete(reminder)
+    await db.commit()
+    return {"message": "Xatırlatma uğurla silindi.", "reminder_id": reminder_id}
+

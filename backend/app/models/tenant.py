@@ -102,6 +102,7 @@ class Tenant(Base):
     seller_package = relationship("SellerPackage", back_populates="subscribed_agents", lazy="noload")
     crm_clients = relationship("CrmClient", back_populates="tenant", cascade="all, delete-orphan", lazy="noload")
     crm_deals = relationship("CrmDeal", back_populates="tenant", cascade="all, delete-orphan", lazy="noload")
+    crm_reminders = relationship("CrmReminder", back_populates="tenant", cascade="all, delete-orphan", lazy="noload")
     portfolio_listings = relationship("PortfolioListing", back_populates="tenant", cascade="all, delete-orphan", lazy="noload")
 
     @property
