@@ -55,7 +55,7 @@ Extract structured JSON strictly with these exact keys:
                 )
 
                 candidate_models = [self.model_name or "gemini-3.8-flash"]
-                for m in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+                for m in ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"]:
                     if m not in candidate_models:
                         candidate_models.append(m)
 
@@ -490,7 +490,7 @@ Return JSON ONLY:
 }}
 """
                 candidate_models = [self.model_name or "gemini-3.8-flash"]
-                for m in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+                for m in ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"]:
                     if m not in candidate_models:
                         candidate_models.append(m)
 
