@@ -6,6 +6,8 @@ from app.ai.base import AIProvider, StructuredCriteria, StructuredListing
 from app.core.baku_locations import extract_metro_station, extract_all_metro_stations, extract_all_baku_districts
 
 class GeminiProvider(AIProvider):
+    # CRITICAL: DO NOT MODIFY OR DOWNGRADE DEFAULT MODEL!
+    # Active Gemini generation is strictly 3.8-flash (primary), 3.7-flash, 3.6-flash, 3.5-flash.
     def __init__(self, api_key: str | None = None, model_name: str = "gemini-3.8-flash"):
         self.api_key = api_key
         self.model_name = model_name or "gemini-3.8-flash"
@@ -54,6 +56,10 @@ Extract structured JSON strictly with these exact keys:
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True) if hasattr(types, 'AutomaticFunctionCallingConfig') else None
                 )
 
+                # CRITICAL: DO NOT MODIFY OR DOWNGRADE THESE MODELS!
+                # In this project, the active current Gemini series is strictly:
+                # 3.8-flash (primary), 3.7-flash, 3.6-flash, 3.5-flash.
+                # Do NOT replace with obsolete models (e.g. 1.5, 2.0, 2.5).
                 candidate_models = [self.model_name or "gemini-3.8-flash"]
                 for m in ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"]:
                     if m not in candidate_models:
@@ -489,6 +495,10 @@ Return JSON ONLY:
   "seller_type": "owner" | "agency" | null
 }}
 """
+                # CRITICAL: DO NOT MODIFY OR DOWNGRADE THESE MODELS!
+                # In this project, the active current Gemini series is strictly:
+                # 3.8-flash (primary), 3.7-flash, 3.6-flash, 3.5-flash.
+                # Do NOT replace with obsolete models (e.g. 1.5, 2.0, 2.5).
                 candidate_models = [self.model_name or "gemini-3.8-flash"]
                 for m in ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"]:
                     if m not in candidate_models:

@@ -56,6 +56,10 @@ class AudioTranscriberService:
         from google.genai import types
 
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        # CRITICAL: DO NOT MODIFY OR DOWNGRADE THESE MODELS!
+        # In this project, the active current Gemini series is strictly:
+        # 3.8-flash (primary), 3.7-flash, 3.6-flash, 3.5-flash.
+        # Do NOT replace with obsolete models (e.g. 1.5, 2.0, 2.5).
         candidate_models = [
             "gemini-3.8-flash",
             "gemini-3.7-flash",
