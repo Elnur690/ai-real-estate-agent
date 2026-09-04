@@ -405,7 +405,7 @@ async def test_portfolio_friendly_urls(test_db: AsyncSession, client: AsyncClien
     assert r_overview.status_code == 200
     data_ov = r_overview.json()
     assert data_ov["portfolio_slug"] == "elnur-emlak"
-    assert data_ov["portfolio_vitrin_url"] == "/v/elnur-emlak"
+    assert "/v/elnur-emlak" in data_ov["portfolio_vitrin_url"]
     assert data_ov["active_count"] >= 1
 
     # 9. Test PUT /api/v1/portfolio/{id} to edit fields
@@ -431,5 +431,141 @@ async def test_portfolio_friendly_urls(test_db: AsyncSession, client: AsyncClien
     assert updated["rooms"] == 4
     assert updated["area_sqm"] == 140.0
     assert updated["notes"] == "Gizli qeyd: 10 min endirim mümkündür"
+
+
+@pytest.mark.asyncio
+async def test_agent_reseller_custom_domain_inheritance_and_override(test_db: AsyncSession, client: AsyncClient):
+    from app.models.seller import Seller
+    from app.bot.command_handler import BotCommandHandler
+
+    # 1. Create Reseller with custom domain
+    reseller_user = User(name="Baku Realty Owner", email="owner@bakurealty.az", password_hash=get_password_hash("seller123"), role="seller")
+    test_db.add(reseller_user)
+    await test_db.commit()
+    await test_db.refresh(reseller_user)
+
+    seller = Seller(
+        user_id=reseller_user.id,
+        name="Baku Realty LLC",
+        phone="+994509990011",
+        email="info@bakurealty.az",
+        custom_domain="emlak.bakurealty.az",
+        custom_domain_enabled=True,
+        domain_status="active"
+    )
+    test_db.add(seller)
+    await test_db.commit()
+    await test_db.refresh(seller)
+
+    # 2. Create Agent linked to Reseller
+    agent_tenant = Tenant(
+        name="Samir Qasımov",
+        phone="+994553334455",
+        type="individual_agent",
+        plan="standard",
+        seller_id=seller.id,
+        feature_portfolio=True,
+        portfolio_limit=25,
+        portfolio_slug="samir-qasimov"
+    )
+    test_db.add(agent_tenant)
+    await test_db.commit()
+    await test_db.refresh(agent_tenant)
+
+    agent_user = User(
+        name="Samir Q",
+        email="samir@bakurealty.az",
+        password_hash=get_password_hash("pass123"),
+        role="agent",
+        tenant_id=agent_tenant.id
+    )
+    test_db.add(agent_user)
+    await test_db.commit()
+    await test_db.refresh(agent_user)
+
+    agent_token = create_access_token(agent_user.id)
+    agent_headers = {"Authorization": f"Bearer {agent_token}"}
+
+    # 3. Add listing to agent portfolio
+    r_add = await client.post(
+        "/api/v1/portfolio",
+        json={
+            "title": "Sahildə panoramalı mənzil",
+            "price": 310000.0,
+            "district": "Səbail",
+            "rooms": 3,
+            "area_sqm": 110.0
+        },
+        headers=agent_headers
+    )
+    assert r_add.status_code in [200, 201]
+    item_id = r_add.json()["id"]
+
+    # 4. Check that portfolio URLs inherit reseller domain
+    r_ov = await client.get("/api/v1/portfolio", headers=agent_headers)
+    assert r_ov.status_code == 200
+    ov_data = r_ov.json()
+    assert ov_data["portfolio_vitrin_url"] == "https://emlak.bakurealty.az/v/samir-qasimov"
+    assert ov_data["custom_domain_info"]["source"] == "reseller"
+    assert ov_data["custom_domain_info"]["active_domain"] == "emlak.bakurealty.az"
+    assert ov_data["items"][0]["share_url"] == f"https://emlak.bakurealty.az/v/samir-qasimov/{item_id}"
+
+    # 5. Public showcase and single listing also use inherited reseller domain
+    r_pub = await client.get("/api/v1/portfolio/public/agent/samir-qasimov")
+    assert r_pub.status_code == 200
+    assert r_pub.json()[0]["share_url"] == f"https://emlak.bakurealty.az/v/samir-qasimov/{item_id}"
+    assert r_pub.json()[0]["agent_vitrin_url"] == "https://emlak.bakurealty.az/v/samir-qasimov"
+
+    # 6. Bot /portfel command output uses inherited reseller domain
+    bot_resp = await BotCommandHandler.handle_incoming_message(
+        db=test_db,
+        sender_id=agent_tenant.phone,
+        sender_name=agent_tenant.name,
+        channel="whatsapp",
+        raw_text="/portfel"
+    )
+    assert "https://emlak.bakurealty.az/v/samir-qasimov" in bot_resp
+
+    # 7. Agent ordering custom domain add-on via bot: /al domen
+    buy_resp = await BotCommandHandler.handle_incoming_message(
+        db=test_db,
+        sender_id=agent_tenant.phone,
+        sender_name=agent_tenant.name,
+        channel="whatsapp",
+        raw_text="/al domen"
+    )
+    assert "Fərdi Domen Adı" in buy_resp
+    assert "5 AZN" in buy_resp
+
+    # 8. Agent attempting to set domain without feature active gets 403
+    r_set_fail = await client.put(
+        "/api/v1/portfolio/domain",
+        json={"custom_domain": "samiremlak.az"},
+        headers=agent_headers
+    )
+    assert r_set_fail.status_code == 403
+
+    # 9. Admin activates feature_custom_domain
+    agent_tenant.feature_custom_domain = True
+    await test_db.commit()
+
+    # 10. Agent sets custom domain via API
+    r_set_ok = await client.put(
+        "/api/v1/portfolio/domain",
+        json={"custom_domain": "samiremlak.az", "custom_domain_enabled": True},
+        headers=agent_headers
+    )
+    assert r_set_ok.status_code == 200
+    domain_data = r_set_ok.json()
+    assert domain_data["agent_custom_domain"] == "samiremlak.az"
+
+    # 11. Now agent's own custom domain overrides reseller's domain!
+    r_ov_override = await client.get("/api/v1/portfolio", headers=agent_headers)
+    assert r_ov_override.status_code == 200
+    ov_override_data = r_ov_override.json()
+    assert ov_override_data["portfolio_vitrin_url"] == "https://samiremlak.az/v/samir-qasimov"
+    assert ov_override_data["custom_domain_info"]["source"] == "agent"
+    assert ov_override_data["custom_domain_info"]["active_domain"] == "samiremlak.az"
+    assert ov_override_data["items"][0]["share_url"] == f"https://samiremlak.az/v/samir-qasimov/{item_id}"
 
 

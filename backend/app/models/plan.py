@@ -55,6 +55,10 @@ class Plan(Base):
     addon_portfolio_limit: Mapped[int] = mapped_column(Integer, default=25)
     addon_portfolio_tiers: Mapped[list[dict] | None] = mapped_column(JSON, default=list) # e.g. [{"listings": 25, "price": 15.0}, {"listings": 50, "price": 25.0}]
 
+    # 🌐 Custom Domain Add-on
+    feature_custom_domain: Mapped[bool] = mapped_column(Boolean, default=False)
+    addon_custom_domain_price: Mapped[float] = mapped_column(Float, default=5.0)
+
     # 🏷️ Promotional Sale & Discount Campaign Features for SaaS Plans
     sale_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     sale_price: Mapped[float | None] = mapped_column(Float, nullable=True) # e.g. 29.0 AZN

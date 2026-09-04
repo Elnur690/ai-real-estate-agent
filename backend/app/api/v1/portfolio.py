@@ -9,13 +9,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db, get_current_user
 from app.models.user import User
 from app.models.tenant import Tenant
+from app.models.seller import Seller
 from app.models.listing import Listing
 from app.models.portfolio import PortfolioListing, generate_share_code
+from app.services.domain_service import (
+    resolve_tenant_domain_info,
+    resolve_tenant_base_url,
+    verify_domain_dns,
+    clean_domain_string
+)
 
 router = APIRouter(prefix="/portfolio", tags=["Portfolio"])
 
 
 # --- Pydantic Schemas ---
+
+class AgentDomainUpdateRequest(BaseModel):
+    custom_domain: Optional[str] = None
+    custom_domain_enabled: Optional[bool] = None
+
 
 class PortfolioListingCreate(BaseModel):
     title: str
@@ -103,6 +115,7 @@ class PortfolioOverviewResponse(BaseModel):
     expires_at: Optional[datetime] = None
     portfolio_slug: Optional[str] = None
     portfolio_vitrin_url: Optional[str] = None
+    custom_domain_info: Optional[Dict[str, Any]] = None
 
 
 class PublicPortfolioListingResponse(BaseModel):
@@ -172,7 +185,13 @@ async def count_active_portfolio_listings(db: AsyncSession, tenant_id: int) -> i
     return res.scalar_one() or 0
 
 
-def format_listing_response(item: PortfolioListing) -> PortfolioListingResponse:
+def format_listing_response(item: PortfolioListing, base_url: str = "", slug: Optional[str] = None) -> PortfolioListingResponse:
+    prefix = base_url.rstrip("/") if base_url else ""
+    if slug:
+        share_url = f"{prefix}/v/{slug}/{item.id}"
+    else:
+        share_url = f"{prefix}/p/{item.share_code}"
+
     data = {
         "id": item.id,
         "tenant_id": item.tenant_id,
@@ -197,7 +216,7 @@ def format_listing_response(item: PortfolioListing) -> PortfolioListingResponse:
         "contact_phone": item.contact_phone,
         "notes": item.notes,
         "share_code": item.share_code,
-        "share_url": f"/p/{item.share_code}",
+        "share_url": share_url,
         "is_active": item.is_active,
         "status": item.status,
         "created_at": item.created_at,
@@ -230,19 +249,116 @@ async def list_portfolio_listings(
     limit = getattr(tenant, 'portfolio_limit', 25) or 25
     feature_enabled = bool(getattr(tenant, 'feature_portfolio', False))
 
+    domain_info = await resolve_tenant_domain_info(db, tenant)
+    base_url = domain_info["base_url"]
     slug = getattr(tenant, 'portfolio_slug', None) or f"agent-{tenant.id}"
-    vitrin_url = getattr(tenant, 'portfolio_vitrin_url', f"/v/{slug}")
+    vitrin_url = f"{base_url}/v/{slug}"
 
     return PortfolioOverviewResponse(
-        items=[format_listing_response(item) for item in listings],
+        items=[format_listing_response(item, base_url=base_url, slug=slug) for item in listings],
         active_count=active_count,
         portfolio_limit=limit,
         is_limit_reached=(active_count >= limit),
         feature_enabled=feature_enabled,
         expires_at=getattr(tenant, 'portfolio_expires_at', None),
         portfolio_slug=slug,
-        portfolio_vitrin_url=vitrin_url
+        portfolio_vitrin_url=vitrin_url,
+        custom_domain_info=domain_info
     )
+
+
+@router.get("/domain")
+async def get_portfolio_domain_info(
+    tenant_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get active domain resolution details, agent custom domain configuration, and reseller inheritance."""
+    tenant = await get_tenant_for_portfolio(db, current_user, tenant_id)
+    return await resolve_tenant_domain_info(db, tenant)
+
+
+@router.put("/domain")
+async def update_portfolio_domain(
+    payload: AgentDomainUpdateRequest,
+    tenant_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Configure or toggle the agent's custom domain add-on."""
+    tenant = await get_tenant_for_portfolio(db, current_user, tenant_id)
+    if not getattr(tenant, "feature_custom_domain", False):
+        price = getattr(tenant, "addon_custom_domain_price", 5.0) or 5.0
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Fərdi Domen Adı add-on aktiv deyil. Aktivləşdirmək üçün: {price} AZN / ay (Telegram botda: /al domen)."
+        )
+
+    if payload.custom_domain is not None:
+        clean_domain = clean_domain_string(payload.custom_domain)
+        if clean_domain:
+            stmt_t = select(Tenant).where(Tenant.custom_domain == clean_domain, Tenant.id != tenant.id)
+            res_t = await db.execute(stmt_t)
+            if res_t.scalars().first():
+                raise HTTPException(status_code=400, detail="Bu domen adı başqa bir istifadəçi tərəfindən istifadə edilir.")
+
+            stmt_s = select(Seller).where(Seller.custom_domain == clean_domain)
+            res_s = await db.execute(stmt_s)
+            if res_s.scalars().first():
+                raise HTTPException(status_code=400, detail="Bu domen adı reseller platformasında artıq qeydiyyatdan keçib.")
+
+        tenant.custom_domain = clean_domain
+        if not clean_domain:
+            tenant.custom_domain_enabled = False
+            tenant.custom_domain_status = "disabled"
+        else:
+            dns_res = verify_domain_dns(clean_domain)
+            if dns_res["success"]:
+                tenant.custom_domain_status = "active"
+                tenant.custom_domain_enabled = True
+            else:
+                tenant.custom_domain_status = "pending_dns"
+
+    if payload.custom_domain_enabled is not None and tenant.custom_domain:
+        tenant.custom_domain_enabled = payload.custom_domain_enabled
+
+    await db.commit()
+    await db.refresh(tenant)
+    return await resolve_tenant_domain_info(db, tenant)
+
+
+@router.post("/domain/verify")
+async def verify_portfolio_domain_dns(
+    tenant_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Test DNS resolution for the agent's custom domain."""
+    tenant = await get_tenant_for_portfolio(db, current_user, tenant_id)
+    if not tenant.custom_domain:
+        raise HTTPException(status_code=400, detail="Fərdi domen təyin edilməyib.")
+
+    dns_res = verify_domain_dns(tenant.custom_domain)
+    if dns_res["success"]:
+        tenant.custom_domain_status = "active"
+        tenant.custom_domain_enabled = True
+        await db.commit()
+        return {
+            "success": True,
+            "domain": tenant.custom_domain,
+            "resolved_ip": dns_res["resolved_ip"],
+            "domain_status": "active",
+            "message": dns_res["message"]
+        }
+    else:
+        tenant.custom_domain_status = "pending_dns"
+        await db.commit()
+        return {
+            "success": False,
+            "domain": tenant.custom_domain,
+            "domain_status": "pending_dns",
+            "message": dns_res.get("error", "DNS yoxlanışı uğursuz oldu.")
+        }
 
 
 @router.post("/from-listing/{listing_id}", response_model=PortfolioListingResponse)
@@ -503,12 +619,13 @@ async def get_public_portfolio_listing(
     res_t = await db.execute(stmt_t)
     tenant = res_t.scalars().first()
 
+    base_url = (await resolve_tenant_base_url(db, tenant)) if tenant else ""
     agent_name = item.contact_name or (tenant.name if tenant else "Əmlak Agentliyi")
     agent_phone = item.contact_phone or (tenant.phone if tenant else "")
     agent_whatsapp = (tenant.whatsapp_number or agent_phone) if tenant else agent_phone
     agent_slug = tenant.portfolio_slug or str(tenant.id) if tenant else None
-    agent_vitrin_url = f"/v/{agent_slug}" if agent_slug else None
-    share_url = f"/v/{agent_slug}/{item.id}" if agent_slug else f"/p/{item.share_code}"
+    agent_vitrin_url = f"{base_url}/v/{agent_slug}" if agent_slug else None
+    share_url = f"{base_url}/v/{agent_slug}/{item.id}" if agent_slug else f"{base_url}/p/{item.share_code}"
 
     clean_wa = "".join(filter(str.isdigit, agent_whatsapp or ""))
     wa_msg = f"Salam, {agent_name}. Sizin portfelinizdəki bu elanla bağlı əlaqə saxlayıram: {item.title} (Kod: {item.share_code})"
@@ -576,14 +693,15 @@ async def get_agent_public_catalog(
     items = res.scalars().all()
 
     output = []
+    base_url = await resolve_tenant_base_url(db, tenant)
     clean_wa = "".join(filter(str.isdigit, tenant.whatsapp_number or tenant.phone or ""))
     agent_slug = tenant.portfolio_slug or str(tenant.id)
-    vitrin_url = f"/v/{agent_slug}"
+    vitrin_url = f"{base_url}/v/{agent_slug}"
 
     for it in items:
         wa_msg = f"Salam, {tenant.name}. Sizin portfelinizdəki bu elanla bağlı maraqlanıram: {it.title} (Kod: {it.share_code})"
         wa_url = f"https://wa.me/{clean_wa}?text={urllib.parse.quote(wa_msg)}" if clean_wa else ""
-        share_url = f"/v/{agent_slug}/{it.id}"
+        share_url = f"{base_url}/v/{agent_slug}/{it.id}"
 
         output.append(PublicPortfolioListingResponse(
             id=it.id,
@@ -664,6 +782,7 @@ async def get_public_listing_by_agent_and_id(
     encoded_msg = urllib.parse.quote(wa_msg)
     wa_url = f"https://wa.me/{clean_wa}?text={encoded_msg}" if clean_wa else ""
 
+    base_url = await resolve_tenant_base_url(db, tenant)
     agent_slug = tenant.portfolio_slug or str(tenant.id)
 
     return PublicPortfolioListingResponse(
@@ -685,12 +804,12 @@ async def get_public_listing_by_agent_and_id(
         offer_type=item.offer_type or "sale",
         photos=item.photos or [],
         share_code=item.share_code,
-        share_url=f"/v/{agent_slug}/{item.id}",
+        share_url=f"{base_url}/v/{agent_slug}/{item.id}",
         agent_name=agent_name,
         agent_phone=agent_phone,
         agent_whatsapp=agent_whatsapp,
         agent_slug=agent_slug,
-        agent_vitrin_url=f"/v/{agent_slug}",
+        agent_vitrin_url=f"{base_url}/v/{agent_slug}",
         whatsapp_message_url=wa_url,
         created_at=item.created_at
     )

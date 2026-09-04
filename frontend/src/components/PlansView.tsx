@@ -38,6 +38,8 @@ export interface PlanItem {
   addon_portfolio_price?: number;
   addon_portfolio_limit?: number;
   addon_portfolio_tiers?: Array<{ listings: number; price: number }>;
+  feature_custom_domain?: boolean;
+  addon_custom_domain_price?: number;
   sale_enabled?: boolean;
   sale_price?: number;
   sale_discount_percent?: number;
@@ -130,6 +132,9 @@ export function PlansView() {
     { listings: 50, price: 25 },
     { listings: 100, price: 40 }
   ]);
+
+  const [formCustomDomain, setFormCustomDomain] = useState(false);
+  const [formAddonCustomDomainPrice, setFormAddonCustomDomainPrice] = useState<number>(5.0);
 
   // Promotional Sale State
   const [formSaleEnabled, setFormSaleEnabled] = useState(false);
@@ -254,6 +259,8 @@ export function PlansView() {
       { listings: 50, price: 25 },
       { listings: 100, price: 40 }
     ]);
+    setFormCustomDomain(false);
+    setFormAddonCustomDomainPrice(5.0);
     setFormSaleEnabled(false);
     setFormSalePrice(undefined);
     setFormSaleDiscountPercent(undefined);
@@ -321,6 +328,8 @@ export function PlansView() {
       { listings: 50, price: 25 },
       { listings: 100, price: 40 }
     ]);
+    setFormCustomDomain(!!plan.feature_custom_domain);
+    setFormAddonCustomDomainPrice(plan.addon_custom_domain_price || 5.0);
     setFormSaleEnabled(plan.sale_enabled ?? false);
     setFormSalePrice(plan.sale_price);
     setFormSaleDiscountPercent(plan.sale_discount_percent);
@@ -370,6 +379,8 @@ export function PlansView() {
           addon_portfolio_price: formAddonPortfolioPrice,
           addon_portfolio_limit: formAddonPortfolioLimit,
           addon_portfolio_tiers: formPortfolioTiers,
+          feature_custom_domain: formCustomDomain,
+          addon_custom_domain_price: formAddonCustomDomainPrice,
           sale_enabled: formSaleEnabled,
           sale_price: formSaleEnabled ? formSalePrice : undefined,
           sale_discount_percent: formSaleEnabled ? formSaleDiscountPercent : undefined,
@@ -414,6 +425,8 @@ export function PlansView() {
           addon_portfolio_price: formAddonPortfolioPrice,
           addon_portfolio_limit: formAddonPortfolioLimit,
           addon_portfolio_tiers: formPortfolioTiers,
+          feature_custom_domain: formCustomDomain,
+          addon_custom_domain_price: formAddonCustomDomainPrice,
           sale_enabled: formSaleEnabled,
           sale_price: formSaleEnabled ? formSalePrice : undefined,
           sale_discount_percent: formSaleEnabled ? formSaleDiscountPercent : undefined,
@@ -834,6 +847,26 @@ export function PlansView() {
                         ))}
                       </div>
                     )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        {plan.feature_custom_domain ? (
+                          <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                        ) : (
+                          <X className="w-4 h-4 text-slate-600 shrink-0" />
+                        )}
+                        <span className={plan.feature_custom_domain ? 'text-slate-200 font-semibold' : 'text-slate-500 line-through'}>
+                          🌐 Fərdi Domen Add-on
+                        </span>
+                      </div>
+                      {plan.feature_custom_domain && plan.addon_custom_domain_price && plan.addon_custom_domain_price > 0 ? (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 font-semibold">
+                          +{plan.addon_custom_domain_price} AZN Addon
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1760,6 +1793,45 @@ export function PlansView() {
 
                       <p className="text-[11px] text-slate-400">
                         Agentlər gələn bildirişlərdən və ya bot-dan 1 kliklə elanı öz portfellərinə kopyalaya, hər parametri redaktə edə və müştəriyə rəqib portalların loqosu olmadan təmiz link göndərə bilərlər. Elan satıldıqda və ya vaxtı bitdikdə silindikdə boşalan limit yuvası dərhal azad olunur.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Agent Custom Domain Addon Section */}
+                <div className="p-3.5 bg-dark-900/60 border border-slate-800 rounded-2xl space-y-3 mt-2">
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formCustomDomain}
+                        onChange={(e) => setFormCustomDomain(e.target.checked)}
+                        className="rounded accent-indigo-500"
+                      />
+                      <span className="font-bold text-indigo-300 text-xs">🌐 Fərdi Domen Adı Add-on (Custom Domain)</span>
+                    </label>
+                  </div>
+
+                  {formCustomDomain && (
+                    <div className="space-y-3 pt-1">
+                      <div className="space-y-1">
+                        <label className="text-[11px] text-slate-400 font-semibold block">Aylıq Əlavə Qiymət (AZN):</label>
+                        <div className="flex items-center gap-1.5 max-w-xs">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            value={formAddonCustomDomainPrice}
+                            onChange={(e) => setFormAddonCustomDomainPrice(Number(e.target.value))}
+                            className="w-full bg-dark-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-white text-xs text-center font-bold"
+                            placeholder="5"
+                          />
+                          <span className="text-xs text-slate-400">AZN/ay</span>
+                        </div>
+                      </div>
+
+                      <p className="text-[11px] text-slate-400">
+                        Agent öz fərdi domenini (məs. <code>samiremlak.az</code>) qoşaraq portfel vitrinini tam öz brendi altında təqdim edə bilər. Reseller-ə aid agentlər default olaraq reseller domenini miras alır; fərdi domen add-onu aktiv edildikdə isə agentin öz domeni üstünlük təşkil edir.
                       </p>
                     </div>
                   )}

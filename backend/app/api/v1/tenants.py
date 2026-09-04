@@ -44,6 +44,11 @@ class CreateTenantRequest(BaseModel):
     portfolio_limit: int = 25
     addon_portfolio_price: float = 15.0
     portfolio_slug: Optional[str] = None
+    feature_custom_domain: bool = False
+    custom_domain: Optional[str] = None
+    custom_domain_enabled: bool = False
+    custom_domain_status: str = "disabled"
+    addon_custom_domain_price: float = 5.0
 
 class UpdateTenantRequest(BaseModel):
     name: Optional[str] = None
@@ -78,6 +83,11 @@ class UpdateTenantRequest(BaseModel):
     portfolio_limit: Optional[int] = None
     addon_portfolio_price: Optional[float] = None
     portfolio_slug: Optional[str] = None
+    feature_custom_domain: Optional[bool] = None
+    custom_domain: Optional[str] = None
+    custom_domain_enabled: Optional[bool] = None
+    custom_domain_status: Optional[str] = None
+    addon_custom_domain_price: Optional[float] = None
 
 class TenantResponse(BaseModel):
     id: int
@@ -121,6 +131,12 @@ class TenantResponse(BaseModel):
     portfolio_expires_at: Optional[datetime] = None
     portfolio_slug: Optional[str] = None
     portfolio_vitrin_url: Optional[str] = None
+    feature_custom_domain: bool = False
+    custom_domain: Optional[str] = None
+    custom_domain_enabled: bool = False
+    custom_domain_status: str = "disabled"
+    addon_custom_domain_price: float = 5.0
+    custom_domain_expires_at: Optional[datetime] = None
     active_searches_count: int = 0
     max_saved_searches: int = 10
     referral_code: Optional[str] = None
@@ -170,7 +186,12 @@ async def list_tenants(db: AsyncSession = Depends(get_db), current_admin = Depen
         t_resp.seller_id = t.seller_id
         t_resp.seller_name = seller_obj.name if seller_obj else None
         t_resp.seller_company = seller_obj.company_name if seller_obj else None
-        t_resp.portfolio_vitrin_url = f"/v/{t.portfolio_slug or t.id}"
+        if t.feature_custom_domain and t.custom_domain_enabled and t.custom_domain:
+            t_resp.portfolio_vitrin_url = f"https://{t.custom_domain}/v/{t.portfolio_slug or t.id}"
+        elif seller_obj and seller_obj.custom_domain_enabled and seller_obj.custom_domain:
+            t_resp.portfolio_vitrin_url = f"https://{seller_obj.custom_domain}/v/{t.portfolio_slug or t.id}"
+        else:
+            t_resp.portfolio_vitrin_url = f"/v/{t.portfolio_slug or t.id}"
         
         resp.append(t_resp)
 
@@ -427,6 +448,14 @@ async def update_tenant(tenant_id: int, body: UpdateTenantRequest, db: AsyncSess
                 tenant.portfolio_limit = getattr(db_plan, 'addon_portfolio_limit', 25) or 25
                 if not tenant.portfolio_expires_at:
                     tenant.portfolio_expires_at = tenant.plan_expires_at or (datetime.now(timezone.utc) + timedelta(days=30))
+            if getattr(db_plan, 'feature_custom_domain', False):
+                tenant.feature_custom_domain = True
+                if not tenant.custom_domain_expires_at:
+                    tenant.custom_domain_expires_at = tenant.plan_expires_at or (datetime.now(timezone.utc) + timedelta(days=30))
+
+    if "custom_domain" in update_data and update_data["custom_domain"]:
+        from app.services.domain_service import clean_domain_string
+        update_data["custom_domain"] = clean_domain_string(update_data["custom_domain"])
 
     for field, val in update_data.items():
         if field not in ["telegram_handle", "telegram_chat_id", "feature_crm", "feature_portfolio"]:
@@ -452,6 +481,8 @@ class TenantCashPaymentRequest(BaseModel):
     include_portfolio_addon: Optional[bool] = None
     addon_portfolio_limit: Optional[int] = None
     addon_portfolio_price: Optional[float] = None
+    include_custom_domain_addon: Optional[bool] = None
+    addon_custom_domain_price: Optional[float] = None
     use_referral_balance: bool = True
     notes: Optional[str] = None
 
@@ -482,6 +513,8 @@ async def record_tenant_cash_payment(
         include_portfolio_addon=body.include_portfolio_addon,
         addon_portfolio_limit=body.addon_portfolio_limit,
         addon_portfolio_price=body.addon_portfolio_price,
+        include_custom_domain_addon=body.include_custom_domain_addon,
+        addon_custom_domain_price=body.addon_custom_domain_price,
         use_referral_balance=body.use_referral_balance,
         notes=body.notes
     )

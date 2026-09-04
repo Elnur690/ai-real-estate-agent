@@ -49,6 +49,8 @@ class PlanResponse(BaseModel):
     addon_portfolio_price: float = 15.0
     addon_portfolio_limit: int = 25
     addon_portfolio_tiers: Optional[List[dict]] = []
+    feature_custom_domain: bool = False
+    addon_custom_domain_price: float = 5.0
     sale_enabled: bool = False
     sale_price: Optional[float] = None
     sale_discount_percent: Optional[float] = None
@@ -94,6 +96,8 @@ class CreatePlanRequest(BaseModel):
     addon_portfolio_price: float = 15.0
     addon_portfolio_limit: int = 25
     addon_portfolio_tiers: Optional[List[dict]] = []
+    feature_custom_domain: bool = False
+    addon_custom_domain_price: float = 5.0
     sale_enabled: bool = False
     sale_price: Optional[float] = None
     sale_discount_percent: Optional[float] = None
@@ -137,6 +141,8 @@ class UpdatePlanRequest(BaseModel):
     addon_portfolio_price: Optional[float] = None
     addon_portfolio_limit: Optional[int] = None
     addon_portfolio_tiers: Optional[List[dict]] = None
+    feature_custom_domain: Optional[bool] = None
+    addon_custom_domain_price: Optional[float] = None
     sale_enabled: Optional[bool] = None
     sale_price: Optional[float] = None
     sale_discount_percent: Optional[float] = None
@@ -198,6 +204,8 @@ async def list_plans(db: AsyncSession = Depends(get_db)):
             addon_portfolio_price=getattr(plan, 'addon_portfolio_price', 15.0),
             addon_portfolio_limit=getattr(plan, 'addon_portfolio_limit', 25),
             addon_portfolio_tiers=getattr(plan, 'addon_portfolio_tiers', []) or [],
+            feature_custom_domain=getattr(plan, 'feature_custom_domain', False),
+            addon_custom_domain_price=getattr(plan, 'addon_custom_domain_price', 5.0) or 5.0,
             sale_enabled=getattr(plan, 'sale_enabled', False),
             sale_price=getattr(plan, 'sale_price', None),
             sale_discount_percent=getattr(plan, 'sale_discount_percent', None),
@@ -270,6 +278,8 @@ async def create_plan(
         addon_portfolio_price=body.addon_portfolio_price,
         addon_portfolio_limit=body.addon_portfolio_limit,
         addon_portfolio_tiers=body.addon_portfolio_tiers or [],
+        feature_custom_domain=body.feature_custom_domain,
+        addon_custom_domain_price=body.addon_custom_domain_price,
         sale_enabled=body.sale_enabled,
         sale_price=final_sale_price,
         sale_discount_percent=final_discount_pct,
@@ -318,6 +328,8 @@ async def create_plan(
         addon_portfolio_price=getattr(plan, 'addon_portfolio_price', 15.0),
         addon_portfolio_limit=getattr(plan, 'addon_portfolio_limit', 25),
         addon_portfolio_tiers=getattr(plan, 'addon_portfolio_tiers', []) or [],
+        feature_custom_domain=getattr(plan, 'feature_custom_domain', False),
+        addon_custom_domain_price=getattr(plan, 'addon_custom_domain_price', 5.0) or 5.0,
         sale_enabled=getattr(plan, 'sale_enabled', False),
         sale_price=getattr(plan, 'sale_price', None),
         sale_discount_percent=getattr(plan, 'sale_discount_percent', None),
@@ -382,6 +394,8 @@ async def get_plan(
         addon_portfolio_price=getattr(plan, 'addon_portfolio_price', 15.0),
         addon_portfolio_limit=getattr(plan, 'addon_portfolio_limit', 25),
         addon_portfolio_tiers=getattr(plan, 'addon_portfolio_tiers', []) or [],
+        feature_custom_domain=getattr(plan, 'feature_custom_domain', False),
+        addon_custom_domain_price=getattr(plan, 'addon_custom_domain_price', 5.0) or 5.0,
         sale_enabled=getattr(plan, 'sale_enabled', False),
         sale_price=getattr(plan, 'sale_price', None),
         sale_discount_percent=getattr(plan, 'sale_discount_percent', None),
@@ -473,6 +487,10 @@ async def update_plan(
         plan.addon_portfolio_limit = body.addon_portfolio_limit
     if body.addon_portfolio_tiers is not None:
         plan.addon_portfolio_tiers = body.addon_portfolio_tiers
+    if body.feature_custom_domain is not None:
+        plan.feature_custom_domain = body.feature_custom_domain
+    if body.addon_custom_domain_price is not None:
+        plan.addon_custom_domain_price = body.addon_custom_domain_price
     if body.sale_enabled is not None:
         plan.sale_enabled = body.sale_enabled
     if body.sale_price is not None:
@@ -524,6 +542,8 @@ async def update_plan(
         tenant_updates["feature_portfolio"] = body.feature_portfolio
     if body.addon_portfolio_limit is not None:
         tenant_updates["portfolio_limit"] = body.addon_portfolio_limit
+    if body.feature_custom_domain is not None:
+        tenant_updates["feature_custom_domain"] = body.feature_custom_domain
     if body.backup_enabled is not None:
         tenant_updates["backup_enabled"] = body.backup_enabled
 
@@ -577,6 +597,8 @@ async def update_plan(
         addon_portfolio_price=getattr(plan, 'addon_portfolio_price', 15.0),
         addon_portfolio_limit=getattr(plan, 'addon_portfolio_limit', 25),
         addon_portfolio_tiers=getattr(plan, 'addon_portfolio_tiers', []) or [],
+        feature_custom_domain=getattr(plan, 'feature_custom_domain', False),
+        addon_custom_domain_price=getattr(plan, 'addon_custom_domain_price', 5.0) or 5.0,
         sale_enabled=getattr(plan, 'sale_enabled', False),
         sale_price=getattr(plan, 'sale_price', None),
         sale_discount_percent=getattr(plan, 'sale_discount_percent', None),

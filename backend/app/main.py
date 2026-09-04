@@ -148,6 +148,20 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS addon_portfolio_tiers JSON DEFAULT '[]'::json;"))
         await conn.execute(text("ALTER TABLE sellers ADD COLUMN IF NOT EXISTS free_trial_feature_portfolio BOOLEAN DEFAULT FALSE;"))
         await conn.execute(text("ALTER TABLE sellers ADD COLUMN IF NOT EXISTS free_trial_portfolio_limit INTEGER DEFAULT 25;"))
+        await conn.execute(text("ALTER TABLE sellers ADD COLUMN IF NOT EXISTS free_trial_feature_custom_domain BOOLEAN DEFAULT FALSE;"))
+
+        # Agent Custom Domain & Reseller Domain Support
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS feature_custom_domain BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS custom_domain VARCHAR(255);"))
+        await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_tenants_custom_domain ON tenants(custom_domain);"))
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS custom_domain_enabled BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS custom_domain_status VARCHAR(50) DEFAULT 'disabled';"))
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS addon_custom_domain_price FLOAT DEFAULT 5.0;"))
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS custom_domain_expires_at TIMESTAMP WITH TIME ZONE;"))
+        await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS feature_custom_domain BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE plans ADD COLUMN IF NOT EXISTS addon_custom_domain_price FLOAT DEFAULT 5.0;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS feature_custom_domain BOOLEAN DEFAULT FALSE;"))
+        await conn.execute(text("ALTER TABLE seller_packages ADD COLUMN IF NOT EXISTS addon_custom_domain_price FLOAT DEFAULT 5.0;"))
 
         await conn.execute(text("""
             CREATE TABLE IF NOT EXISTS portfolio_listings (

@@ -82,6 +82,8 @@ class CreatePackageRequest(BaseModel):
     addon_portfolio_price: float = 15.0
     addon_portfolio_limit: int = 25
     addon_portfolio_tiers: Optional[List[Dict[str, Any]]] = None
+    feature_custom_domain: bool = False
+    addon_custom_domain_price: float = 5.0
     sale_enabled: bool = False
     sale_price: Optional[float] = None
     sale_discount_percent: Optional[float] = None
@@ -121,6 +123,8 @@ class UpdatePackageRequest(BaseModel):
     addon_portfolio_price: Optional[float] = None
     addon_portfolio_limit: Optional[int] = None
     addon_portfolio_tiers: Optional[List[Dict[str, Any]]] = None
+    feature_custom_domain: Optional[bool] = None
+    addon_custom_domain_price: Optional[float] = None
     sale_enabled: Optional[bool] = None
     sale_price: Optional[float] = None
     sale_discount_percent: Optional[float] = None
@@ -212,6 +216,7 @@ class UpdateFreeTrialSettingsRequest(BaseModel):
     free_trial_feature_crm: Optional[bool] = None
     free_trial_feature_portfolio: Optional[bool] = None
     free_trial_portfolio_limit: Optional[int] = None
+    free_trial_feature_custom_domain: Optional[bool] = None
 
 class PayoutRequest(BaseModel):
     amount: float
@@ -1628,6 +1633,7 @@ async def get_my_trial_settings(
         "free_trial_feature_crm": getattr(seller, 'free_trial_feature_crm', False),
         "free_trial_feature_portfolio": getattr(seller, 'free_trial_feature_portfolio', False),
         "free_trial_portfolio_limit": getattr(seller, 'free_trial_portfolio_limit', 25),
+        "free_trial_feature_custom_domain": getattr(seller, 'free_trial_feature_custom_domain', False),
         "admin_max_trial_days": max_trial_days
     }
 
@@ -1677,6 +1683,8 @@ async def update_my_trial_settings(
         seller.free_trial_feature_portfolio = body.free_trial_feature_portfolio
     if body.free_trial_portfolio_limit is not None:
         seller.free_trial_portfolio_limit = max(1, min(100, body.free_trial_portfolio_limit))
+    if body.free_trial_feature_custom_domain is not None:
+        seller.free_trial_feature_custom_domain = body.free_trial_feature_custom_domain
 
     await db.commit()
     await db.refresh(seller)
@@ -1731,6 +1739,8 @@ async def get_my_packages(
         "addon_portfolio_price": getattr(p, 'addon_portfolio_price', 15.0),
         "addon_portfolio_limit": getattr(p, 'addon_portfolio_limit', 25),
         "addon_portfolio_tiers": getattr(p, 'addon_portfolio_tiers', []) or [],
+        "feature_custom_domain": getattr(p, 'feature_custom_domain', False),
+        "addon_custom_domain_price": getattr(p, 'addon_custom_domain_price', 5.0) or 5.0,
         "sale_enabled": getattr(p, 'sale_enabled', False),
         "sale_price": getattr(p, 'sale_price', None),
         "sale_discount_percent": getattr(p, 'sale_discount_percent', None),
@@ -1837,6 +1847,8 @@ async def create_my_package(
         addon_portfolio_price=body.addon_portfolio_price,
         addon_portfolio_limit=body.addon_portfolio_limit,
         addon_portfolio_tiers=body.addon_portfolio_tiers or [],
+        feature_custom_domain=body.feature_custom_domain,
+        addon_custom_domain_price=body.addon_custom_domain_price,
         sale_enabled=body.sale_enabled,
         sale_price=final_sale_price,
         sale_discount_percent=final_discount_pct,
@@ -1942,6 +1954,10 @@ async def update_my_package(
         pkg.addon_portfolio_limit = body.addon_portfolio_limit
     if body.addon_portfolio_tiers is not None:
         pkg.addon_portfolio_tiers = body.addon_portfolio_tiers
+    if body.feature_custom_domain is not None:
+        pkg.feature_custom_domain = body.feature_custom_domain
+    if body.addon_custom_domain_price is not None:
+        pkg.addon_custom_domain_price = body.addon_custom_domain_price
     if body.sale_enabled is not None:
         pkg.sale_enabled = body.sale_enabled
     if body.sale_price is not None:

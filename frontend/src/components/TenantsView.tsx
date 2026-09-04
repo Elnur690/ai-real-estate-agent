@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { UserPlus, Search, ShieldCheck, Clock, AlertCircle, Phone, MessageSquare, Plus, CheckCircle, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff, DollarSign, Edit3, Trash2, X, AlertTriangle, Users, MapPin, Store, Sparkles, Briefcase, ExternalLink } from 'lucide-react';
+import { UserPlus, Search, ShieldCheck, Clock, AlertCircle, Phone, MessageSquare, Plus, CheckCircle, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff, DollarSign, Edit3, Trash2, X, AlertTriangle, Users, MapPin, Store, Sparkles, Briefcase, ExternalLink, Globe } from 'lucide-react';
 import api from '../api';
 import { Tenant, SavedSearch } from '../types';
 
@@ -54,6 +54,10 @@ export const TenantsView: React.FC = () => {
     portfolio_limit: 25,
     addon_portfolio_price: 15.0,
     portfolio_slug: '',
+    feature_custom_domain: false,
+    custom_domain: '',
+    custom_domain_enabled: false,
+    addon_custom_domain_price: 5.0,
   });
 
   const [availablePlans, setAvailablePlans] = useState<any[]>([]);
@@ -96,6 +100,10 @@ export const TenantsView: React.FC = () => {
     portfolio_limit: 25,
     addon_portfolio_price: 15.0,
     portfolio_slug: '',
+    feature_custom_domain: false,
+    custom_domain: '',
+    custom_domain_enabled: false,
+    addon_custom_domain_price: 5.0,
   });
 
   // Delete Confirmation Modal State
@@ -123,6 +131,8 @@ export const TenantsView: React.FC = () => {
   const [cashIncludePortfolio, setCashIncludePortfolio] = useState<boolean>(false);
   const [cashPortfolioLimit, setCashPortfolioLimit] = useState<number>(25);
   const [cashPortfolioPrice, setCashPortfolioPrice] = useState<number>(15);
+  const [cashIncludeCustomDomain, setCashIncludeCustomDomain] = useState<boolean>(false);
+  const [cashCustomDomainPrice, setCashCustomDomainPrice] = useState<number>(5.0);
   const [cashNotes, setCashNotes] = useState<string>('');
 
   const loadTenants = async () => {
@@ -211,7 +221,11 @@ export const TenantsView: React.FC = () => {
       feature_portfolio: t.feature_portfolio ?? false,
       portfolio_limit: t.portfolio_limit ?? 25,
       addon_portfolio_price: t.addon_portfolio_price ?? 15.0,
-      portfolio_slug: t.portfolio_slug || ''
+      portfolio_slug: t.portfolio_slug || '',
+      feature_custom_domain: t.feature_custom_domain ?? false,
+      custom_domain: t.custom_domain || '',
+      custom_domain_enabled: t.custom_domain_enabled ?? false,
+      addon_custom_domain_price: t.addon_custom_domain_price ?? 5.0,
     });
   };
 
@@ -274,6 +288,10 @@ export const TenantsView: React.FC = () => {
         portfolio_limit: 25,
         addon_portfolio_price: 15.0,
         portfolio_slug: '',
+        feature_custom_domain: false,
+        custom_domain: '',
+        custom_domain_enabled: false,
+        addon_custom_domain_price: 5.0,
       });
       loadTenants();
     } catch (e: any) {
@@ -388,7 +406,9 @@ export const TenantsView: React.FC = () => {
     extraImages: number = cashExtraImages,
     includeCrm: boolean = cashIncludeCrm,
     includePortfolio: boolean = cashIncludePortfolio,
-    portPriceVal: number = cashPortfolioPrice
+    portPriceVal: number = cashPortfolioPrice,
+    includeDomain: boolean = cashIncludeCustomDomain,
+    domainPriceVal: number = cashCustomDomainPrice
   ) => {
     const planObj = availablePlans.find(p => p.code === planCode);
     const basePrice = planObj ? planObj.price : 29.0;
@@ -397,6 +417,7 @@ export const TenantsView: React.FC = () => {
     const imagePackPrice = planObj?.addon_image_requests_price !== undefined ? planObj.addon_image_requests_price : 10.0;
     const crmPrice = planObj?.addon_crm_price !== undefined ? planObj.addon_crm_price : 15.0;
     const portfolioPrice = portPriceVal || (planObj?.addon_portfolio_price !== undefined ? planObj.addon_portfolio_price : 15.0);
+    const customDomainPrice = domainPriceVal || (planObj?.addon_custom_domain_price !== undefined ? planObj.addon_custom_domain_price : 5.0);
     const multiplier = days === 365 ? 10 : (days === 180 ? 5 : (days === 90 ? 2.7 : (days === 60 ? 2.0 : 1)));
 
     const agedFee = includeAged ? (addonPrice * multiplier) : 0;
@@ -404,13 +425,14 @@ export const TenantsView: React.FC = () => {
     const imageFee = extraImages > 0 ? ((extraImages / 25.0) * imagePackPrice * multiplier) : 0;
     const crmFee = includeCrm ? (crmPrice * multiplier) : 0;
     const portfolioFee = includePortfolio ? (portfolioPrice * multiplier) : 0;
+    const customDomainFee = includeDomain ? (customDomainPrice * multiplier) : 0;
 
     if (category === 'addon_only') {
-      return Math.round(agedFee + searchFee + imageFee + crmFee + portfolioFee);
+      return Math.round(agedFee + searchFee + imageFee + crmFee + portfolioFee + customDomainFee);
     } else if (category === 'plan_only') {
       return Math.round(basePrice * multiplier);
     } else {
-      return Math.round((basePrice * multiplier) + agedFee + searchFee + imageFee + crmFee + portfolioFee);
+      return Math.round((basePrice * multiplier) + agedFee + searchFee + imageFee + crmFee + portfolioFee + customDomainFee);
     }
   };
 
@@ -427,6 +449,8 @@ export const TenantsView: React.FC = () => {
     const isPortfolioActive = defaultCategory === 'addon_only' ? true : !!t.feature_portfolio;
     const portLimit = t.portfolio_limit || 25;
     const portPrice = t.addon_portfolio_price || 15;
+    const isDomainActive = defaultCategory === 'addon_only' ? true : !!t.feature_custom_domain;
+    const domainPrice = t.addon_custom_domain_price || 5.0;
     
     setPaymentCategory(defaultCategory);
     setPaymentPlan(initialPlan);
@@ -440,8 +464,10 @@ export const TenantsView: React.FC = () => {
     setCashIncludePortfolio(isPortfolioActive);
     setCashPortfolioLimit(portLimit);
     setCashPortfolioPrice(portPrice);
+    setCashIncludeCustomDomain(isDomainActive);
+    setCashCustomDomainPrice(domainPrice);
 
-    const initialAmount = calculateCashTotal(initialPlan, 30, isAgedActive, extraSearches, defaultCategory, extraImages, isCrmActive, isPortfolioActive, portPrice);
+    const initialAmount = calculateCashTotal(initialPlan, 30, isAgedActive, extraSearches, defaultCategory, extraImages, isCrmActive, isPortfolioActive, portPrice, isDomainActive, domainPrice);
     setCashAmount(initialAmount);
     const notePrefix = defaultCategory === 'addon_only' 
       ? `Cash payment for Addons ONLY - ${t.name}`
@@ -460,7 +486,9 @@ export const TenantsView: React.FC = () => {
     includeCrm: boolean = cashIncludeCrm,
     includePortfolio: boolean = cashIncludePortfolio,
     portLimit: number = cashPortfolioLimit,
-    portPrice: number = cashPortfolioPrice
+    portPrice: number = cashPortfolioPrice,
+    includeDomain: boolean = cashIncludeCustomDomain,
+    domainPrice: number = cashCustomDomainPrice
   ) => {
     setPaymentPlan(planCode);
     setCashDays(days);
@@ -473,14 +501,17 @@ export const TenantsView: React.FC = () => {
     setCashIncludePortfolio(includePortfolio);
     setCashPortfolioLimit(portLimit);
     setCashPortfolioPrice(portPrice);
-    const calculatedAmount = calculateCashTotal(planCode, days, includeAged, extraSearches, category, extraImages, includeCrm, includePortfolio, portPrice);
+    setCashIncludeCustomDomain(includeDomain);
+    setCashCustomDomainPrice(domainPrice);
+    const calculatedAmount = calculateCashTotal(planCode, days, includeAged, extraSearches, category, extraImages, includeCrm, includePortfolio, portPrice, includeDomain, domainPrice);
     setCashAmount(calculatedAmount);
     const label = category === 'addon_only' ? 'Addons Only' : `${planCode.toUpperCase()} Plan`;
     const searchTag = extraSearches > 0 ? ` + ${extraSearches} Searches` : '';
     const imgTag = extraImages > 0 ? ` + ${extraImages} Photos` : '';
     const crmTag = includeCrm ? ` + Telegram CRM` : '';
     const portTag = includePortfolio ? ` + Portfel (${portLimit} elan)` : '';
-    setCashNotes(`Cash payment for ${label}${searchTag}${imgTag}${crmTag}${portTag} (${days} days)`);
+    const domainTag = includeDomain ? ` + Fərdi Domen` : '';
+    setCashNotes(`Cash payment for ${label}${searchTag}${imgTag}${crmTag}${portTag}${domainTag} (${days} days)`);
   };
 
   const handleRecordCashPayment = async (e: React.FormEvent) => {
@@ -501,6 +532,8 @@ export const TenantsView: React.FC = () => {
         include_portfolio_addon: paymentCategory === 'addon_only' ? cashIncludePortfolio : (paymentCategory === 'plan_only' ? false : cashIncludePortfolio),
         addon_portfolio_limit: cashPortfolioLimit,
         addon_portfolio_price: cashPortfolioPrice,
+        include_custom_domain_addon: paymentCategory === 'addon_only' ? cashIncludeCustomDomain : (paymentCategory === 'plan_only' ? false : cashIncludeCustomDomain),
+        addon_custom_domain_price: cashCustomDomainPrice,
         notes: cashNotes
       });
       setPaymentModalTenant(null);
@@ -668,6 +701,12 @@ export const TenantsView: React.FC = () => {
                           <span>/v/{t.portfolio_slug || t.id}</span>
                           <ExternalLink className="w-2.5 h-2.5" />
                         </a>
+                      </div>
+                    )}
+                    {t.feature_custom_domain && (
+                      <div className="text-[11px] text-cyan-400 font-medium flex items-center gap-1 mt-0.5">
+                        <Globe className="w-3 h-3" />
+                        <span>{t.custom_domain ? t.custom_domain : 'Fərdi Domen Aktiv'}</span>
                       </div>
                     )}
                     {t.feature_watermark_free_images && (
@@ -1131,6 +1170,45 @@ export const TenantsView: React.FC = () => {
                 )}
               </div>
 
+              {/* Custom Domain Addon */}
+              <div className="pt-2 border-t border-slate-800 space-y-2">
+                <label className="flex items-center gap-2 p-2.5 bg-dark-800/80 rounded-xl border border-slate-700/60 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editFormData.feature_custom_domain || false}
+                    onChange={(e) => setEditFormData({ ...editFormData, feature_custom_domain: e.target.checked })}
+                    className="rounded accent-indigo-500"
+                  />
+                  <div className="flex-1 text-xs">
+                    <span className="font-semibold text-indigo-300">🌐 Fərdi Domen Adı (Custom Domain)</span>
+                    <p className="text-[11px] text-slate-400">Agentin öz domeni (məs. samiremlak.az) vitrin və portfel linkləri üçün</p>
+                  </div>
+                </label>
+                {editFormData.feature_custom_domain && (
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between px-3 py-2 bg-dark-950 rounded-xl border border-slate-800 text-xs">
+                      <span className="text-slate-400">Domen Adı:</span>
+                      <input
+                        type="text"
+                        placeholder="samiremlak.az"
+                        value={editFormData.custom_domain || ''}
+                        onChange={(e) => setEditFormData({ ...editFormData, custom_domain: e.target.value })}
+                        className="w-48 bg-dark-900 border border-slate-700 rounded-lg px-2 py-1 text-indigo-300 font-mono text-xs focus:border-indigo-500"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-2 bg-dark-950 rounded-xl border border-slate-800 text-xs">
+                      <span className="text-slate-400">Domen Aktivdir:</span>
+                      <input
+                        type="checkbox"
+                        checked={editFormData.custom_domain_enabled ?? true}
+                        onChange={(e) => setEditFormData({ ...editFormData, custom_domain_enabled: e.target.checked })}
+                        className="rounded accent-indigo-500"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Aged Listings Addon */}
               <div>
                 <label className="flex items-center gap-2 p-2.5 bg-dark-800/80 rounded-xl border border-slate-700/60 cursor-pointer">
@@ -1455,6 +1533,45 @@ export const TenantsView: React.FC = () => {
                           className="w-48 bg-dark-900 border border-slate-700 rounded-lg px-2 py-1 text-purple-300 font-mono text-xs focus:border-purple-500"
                         />
                       </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Custom Domain Addon */}
+              <div className="pt-2 border-t border-slate-800 space-y-2">
+                <label className="flex items-center gap-2 p-2.5 bg-dark-800/80 rounded-xl border border-slate-700/60 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={newTenant.feature_custom_domain || false}
+                    onChange={(e) => setNewTenant({ ...newTenant, feature_custom_domain: e.target.checked })}
+                    className="rounded accent-indigo-500"
+                  />
+                  <div className="flex-1 text-xs">
+                    <span className="font-semibold text-indigo-300">🌐 Fərdi Domen Adı (Custom Domain)</span>
+                    <p className="text-[11px] text-slate-400">Agentin öz domeni (məs. samiremlak.az) vitrin və portfel linkləri üçün</p>
+                  </div>
+                </label>
+                {newTenant.feature_custom_domain && (
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between px-3 py-2 bg-dark-950 rounded-xl border border-slate-800 text-xs">
+                      <span className="text-slate-400">Domen Adı:</span>
+                      <input
+                        type="text"
+                        placeholder="samiremlak.az"
+                        value={newTenant.custom_domain || ''}
+                        onChange={(e) => setNewTenant({ ...newTenant, custom_domain: e.target.value })}
+                        className="w-48 bg-dark-900 border border-slate-700 rounded-lg px-2 py-1 text-indigo-300 font-mono text-xs focus:border-indigo-500"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between px-3 py-2 bg-dark-950 rounded-xl border border-slate-800 text-xs">
+                      <span className="text-slate-400">Domen Aktivdir:</span>
+                      <input
+                        type="checkbox"
+                        checked={newTenant.custom_domain_enabled ?? true}
+                        onChange={(e) => setNewTenant({ ...newTenant, custom_domain_enabled: e.target.checked })}
+                        className="rounded accent-indigo-500"
+                      />
                     </div>
                   </div>
                 )}
@@ -1810,7 +1927,7 @@ export const TenantsView: React.FC = () => {
                         onChange={(e) => {
                           const val = e.target.checked;
                           setCashIncludePortfolio(val);
-                          handlePlanOrPeriodChange(paymentPlan, cashDays, cashIncludeAgedListings, paymentCategory, cashExtraSearches, cashExtraImages, cashFeatureImages, cashIncludeCrm, val, cashPortfolioLimit, cashPortfolioPrice);
+                          handlePlanOrPeriodChange(paymentPlan, cashDays, cashIncludeAgedListings, paymentCategory, cashExtraSearches, cashExtraImages, cashFeatureImages, cashIncludeCrm, val, cashPortfolioLimit, cashPortfolioPrice, cashIncludeCustomDomain, cashCustomDomainPrice);
                         }}
                         className="w-4 h-4 rounded accent-blue-500"
                       />
@@ -1836,7 +1953,7 @@ export const TenantsView: React.FC = () => {
                         onChange={(e) => {
                           const lim = Number(e.target.value);
                           setCashPortfolioLimit(lim);
-                          handlePlanOrPeriodChange(paymentPlan, cashDays, cashIncludeAgedListings, paymentCategory, cashExtraSearches, cashExtraImages, cashFeatureImages, cashIncludeCrm, true, lim, cashPortfolioPrice);
+                          handlePlanOrPeriodChange(paymentPlan, cashDays, cashIncludeAgedListings, paymentCategory, cashExtraSearches, cashExtraImages, cashFeatureImages, cashIncludeCrm, true, lim, cashPortfolioPrice, cashIncludeCustomDomain, cashCustomDomainPrice);
                         }}
                         className="bg-dark-800 border border-slate-700 text-white rounded-lg px-2 py-1 text-xs font-medium"
                       >
@@ -1847,6 +1964,37 @@ export const TenantsView: React.FC = () => {
                       </select>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Agent Custom Domain Add-on Option */}
+              {(paymentCategory === 'full' || paymentCategory === 'addon_only') && (
+                <div className="p-3 bg-dark-900/80 rounded-xl border border-indigo-500/30 space-y-2">
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <div className="flex items-center gap-2.5">
+                      <input
+                        type="checkbox"
+                        checked={cashIncludeCustomDomain}
+                        onChange={(e) => {
+                          const val = e.target.checked;
+                          setCashIncludeCustomDomain(val);
+                          handlePlanOrPeriodChange(paymentPlan, cashDays, cashIncludeAgedListings, paymentCategory, cashExtraSearches, cashExtraImages, cashFeatureImages, cashIncludeCrm, cashIncludePortfolio, cashPortfolioLimit, cashPortfolioPrice, val, cashCustomDomainPrice);
+                        }}
+                        className="w-4 h-4 rounded accent-indigo-500"
+                      />
+                      <div>
+                        <span className="text-xs font-semibold text-indigo-200 block">
+                          🌐 Fərdi Domen Adı Add-on (Custom Domain)
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          Agentin öz fərdi domeni ilə portfel vitrini (məs: samiremlak.az)
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-[11px] text-indigo-400 font-mono font-semibold">
+                      +{cashCustomDomainPrice || ((availablePlans.find(p => p.code === paymentPlan)?.addon_custom_domain_price) ?? 5.0)} AZN/ay
+                    </span>
+                  </label>
                 </div>
               )}
 

@@ -3,7 +3,8 @@ import {
   Briefcase, Users, CheckCircle, Clock, Search, Plus, Filter,
   Phone, MessageSquare, ExternalLink, Calendar, DollarSign,
   ChevronRight, X, AlertCircle, Edit3, Trash2, ArrowRight, Share2, Sparkles,
-  Globe, Copy, Check, Eye, FolderPlus, Layers, Image as ImageIcon, MapPin, Tag, Home
+  Globe, Copy, Check, Eye, FolderPlus, Layers, Image as ImageIcon, MapPin, Tag, Home,
+  Settings, ShieldCheck, CheckCircle2
 } from 'lucide-react';
 import api from '../api';
 import { CrmDeal, CrmClient, CrmStats, PortfolioListingItem, PortfolioOverview } from '../types';
@@ -100,6 +101,14 @@ export function TmaCrm() {
   const [editPortPhotos, setEditPortPhotos] = useState<string[]>([]);
   const [newPhotoInput, setNewPhotoInput] = useState('');
   const [copiedToast, setCopiedToast] = useState<string | null>(null);
+
+  // Domain Management Modal State
+  const [showDomainModal, setShowDomainModal] = useState(false);
+  const [domainInput, setDomainInput] = useState('');
+  const [domainEnabled, setDomainEnabled] = useState(true);
+  const [domainSaving, setDomainSaving] = useState(false);
+  const [domainVerifying, setDomainVerifying] = useState(false);
+  const [domainVerifyResult, setDomainVerifyResult] = useState<{ verified: boolean; message: string; dns_detected?: boolean } | null>(null);
   
   const [selectedStage, setSelectedStage] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -123,9 +132,15 @@ export function TmaCrm() {
   const [newClientNotes, setNewClientNotes] = useState('');
   const [savingClient, setSavingClient] = useState(false);
 
-  const haptic = (type: 'light' | 'medium' | 'heavy' = 'light') => {
+  const vitrinUrl = portfolioOverview?.portfolio_vitrin_url || `${typeof window !== 'undefined' ? window.location.origin : ''}/v/${portfolioSlug || 'vitrin'}`;
+
+  const haptic = (type: 'light' | 'medium' | 'heavy' | 'success' | 'warning' | 'error' = 'light') => {
     try {
-      window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(type);
+      if (type === 'success' || type === 'warning' || type === 'error') {
+        window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred(type);
+      } else {
+        window.Telegram?.WebApp?.HapticFeedback?.impactOccurred(type);
+      }
     } catch {
       // Ignored if not in TMA
     }
@@ -261,6 +276,48 @@ export function TmaCrm() {
     } catch (err) {
       console.error('Failed to fetch CRM data:', err);
       return [];
+    }
+  };
+
+  const handleSaveDomain = async () => {
+    setDomainSaving(true);
+    try {
+      await api.put('/portfolio/domain', {
+        custom_domain: domainInput.trim(),
+        enabled: domainEnabled,
+      });
+      haptic('success');
+      setCopiedToast('Domen tənzimləmələri yadda saxlanıldı! 🌐');
+      setTimeout(() => setCopiedToast(null), 3000);
+      await fetchAllData();
+      setShowDomainModal(false);
+    } catch (err: any) {
+      haptic('error');
+      alert(err.response?.data?.detail || 'Domeni yadda saxlamaq mümkün olmadı');
+    } finally {
+      setDomainSaving(false);
+    }
+  };
+
+  const handleVerifyDomain = async () => {
+    setDomainVerifying(true);
+    setDomainVerifyResult(null);
+    try {
+      const res = await api.post('/portfolio/domain/verify');
+      haptic(res.data?.verified ? 'success' : 'warning');
+      setDomainVerifyResult(res.data);
+      if (res.data?.verified) {
+        await fetchAllData();
+      }
+    } catch (err: any) {
+      haptic('error');
+      setDomainVerifyResult({
+        verified: false,
+        message: err.response?.data?.detail || 'Yoxlama zamanı xəta baş verdi',
+        dns_detected: false,
+      });
+    } finally {
+      setDomainVerifying(false);
     }
   };
 
@@ -849,29 +906,55 @@ export function TmaCrm() {
           <div className="space-y-3">
             {/* Header: Limit Quota & Vitrin URL Banner */}
             <div className="bg-gradient-to-br from-purple-950/50 via-slate-900 to-slate-900 border border-purple-500/30 rounded-2xl p-4 shadow-lg">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0">
                     <Globe className="w-4 h-4" />
                   </div>
-                  <div>
-                    <h3 className="text-xs font-bold text-white">Rəqəmsal Vitrinim</h3>
-                    <p className="text-[10px] text-purple-300 font-mono">
-                      {window.location.origin}/v/{portfolioSlug || 'vitrin'}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <h3 className="text-xs font-bold text-white">Rəqəmsal Vitrinim</h3>
+                      {portfolioOverview?.custom_domain_info?.source === 'agent' && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-semibold border border-indigo-500/30">
+                          🌐 Fərdi Domen
+                        </span>
+                      )}
+                      {portfolioOverview?.custom_domain_info?.source === 'reseller' && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">
+                          🏢 Reseller Domeni
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-purple-300 font-mono truncate max-w-xs">
+                      {vitrinUrl}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 self-end sm:self-center">
                   <button
-                    onClick={() => copyToClipboard(`${window.location.origin}/v/${portfolioSlug || 'vitrin'}`, 'Vitrin linki kopyalandı! 📋')}
+                    onClick={() => {
+                      setDomainInput(portfolioOverview?.custom_domain_info?.agent_custom_domain || '');
+                      setDomainEnabled(portfolioOverview?.custom_domain_info?.agent_custom_domain_enabled ?? true);
+                      setDomainVerifyResult(null);
+                      setShowDomainModal(true);
+                      haptic('light');
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-indigo-200 text-xs font-semibold transition-all"
+                    title="Domen Tənzimləmələri"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    <span>Domen</span>
+                  </button>
+                  <button
+                    onClick={() => copyToClipboard(vitrinUrl, 'Vitrin linki kopyalandı! 📋')}
                     className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 text-xs font-semibold transition-all"
                   >
                     <Copy className="w-3.5 h-3.5" />
                     Kopyala
                   </button>
                   <a
-                    href={`/v/${portfolioSlug || 'vitrin'}`}
+                    href={vitrinUrl}
                     target="_blank"
                     rel="noreferrer"
                     onClick={() => haptic('medium')}
@@ -991,7 +1074,7 @@ export function TmaCrm() {
                 <div className="space-y-3">
                   {filtered.map(item => {
                     const firstPhoto = Array.isArray(item.photos) && item.photos.length > 0 ? item.photos[0] : null;
-                    const cleanLink = `${window.location.origin}/v/${portfolioSlug || 'vitrin'}/${item.id}`;
+                    const cleanLink = item.share_url || `${vitrinUrl}/${item.id}`;
 
                     return (
                       <div
@@ -1769,6 +1852,189 @@ export function TmaCrm() {
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   Elanı Portfeldən Sil (Yuva boşalsın)
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- DOMAIN MANAGEMENT MODAL --- */}
+      {showDomainModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b border-slate-800 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
+                  <Globe className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Domen Tənzimləmələri</h3>
+                  <p className="text-[10px] text-slate-400">Portfel və vitrin üçün veb ünvanı</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDomainModal(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 space-y-4 overflow-y-auto flex-1 text-xs">
+              {/* Active Domain Info Card */}
+              <div className="p-3.5 rounded-2xl bg-dark-950 border border-slate-800 space-y-2">
+                <span className="text-slate-400 text-[11px] block">Cari Aktiv Domen:</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-mono font-bold text-indigo-300">
+                    {portfolioOverview?.custom_domain_info?.active_domain || 'realtor.erma.shop'}
+                  </span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-semibold border ${
+                    portfolioOverview?.custom_domain_info?.source === 'agent'
+                      ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                      : portfolioOverview?.custom_domain_info?.source === 'reseller'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      : 'bg-slate-800 text-slate-400 border-slate-700'
+                  }`}>
+                    {portfolioOverview?.custom_domain_info?.source === 'agent'
+                      ? 'Fərdi Domen'
+                      : portfolioOverview?.custom_domain_info?.source === 'reseller'
+                      ? 'Reseller Domeni'
+                      : 'Sistem Domeni'}
+                  </span>
+                </div>
+
+                {portfolioOverview?.custom_domain_info?.reseller_custom_domain && (
+                  <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+                    🏢 Reseller şəbəkəniz: <span className="font-mono text-emerald-400">{portfolioOverview.custom_domain_info.reseller_custom_domain}</span>. Fərdi domeniniz olmadığı halda portfeliniz avtomatik bu reseller domenində açılır.
+                  </p>
+                )}
+              </div>
+
+              {/* Has Feature vs Upgrade Offer */}
+              {portfolioOverview?.custom_domain_info?.agent_feature_custom_domain ? (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold text-slate-300 block">
+                      Fərdi Domen Adınız:
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="məs: samiremlak.az və ya emlak.sayt.az"
+                      value={domainInput}
+                      onChange={(e) => setDomainInput(e.target.value)}
+                      className="w-full bg-dark-950 border border-slate-700 rounded-xl px-3 py-2 text-indigo-200 font-mono text-xs focus:outline-none focus:border-indigo-500"
+                    />
+                    <span className="text-[10px] text-slate-500 block">
+                      https:// və ya /v/ yazmayın, sadəcə domen adını daxil edin.
+                    </span>
+                  </div>
+
+                  <label className="flex items-center gap-2.5 p-3 rounded-xl bg-dark-950 border border-slate-800 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={domainEnabled}
+                      onChange={(e) => setDomainEnabled(e.target.checked)}
+                      className="w-4 h-4 rounded accent-indigo-500"
+                    />
+                    <div>
+                      <span className="font-semibold text-slate-200 block">Fərdi domeni aktiv et</span>
+                      <span className="text-[10px] text-slate-400">Deaktiv edildikdə sistem reseller və ya default domenə keçəcək</span>
+                    </div>
+                  </label>
+
+                  {/* DNS Instructions Card */}
+                  <div className="p-3.5 rounded-2xl bg-indigo-950/30 border border-indigo-500/20 space-y-2">
+                    <div className="flex items-center gap-1.5 text-indigo-300 font-semibold">
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>DNS Quraşdırma Təlimatı (CNAME)</span>
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      Domen provayderinizin (və ya Cloudflare panelinizin) DNS bölməsində aşağıdakı qeydi əlavə edin:
+                    </p>
+                    <div className="bg-dark-950 p-2.5 rounded-xl border border-slate-800 font-mono text-[11px] space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Növ (Type):</span>
+                        <span className="text-amber-300 font-bold">CNAME</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Ad (Name/Host):</span>
+                        <span className="text-indigo-300 font-bold">@ (və ya subdomen)</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Hədəf (Target):</span>
+                        <span className="text-emerald-400 font-bold">
+                          {portfolioOverview?.custom_domain_info?.cname_target || 'realtor.erma.shop'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={handleVerifyDomain}
+                        disabled={domainVerifying}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/40 text-indigo-200 border border-indigo-500/30 font-semibold transition-all disabled:opacity-50"
+                      >
+                        {domainVerifying ? 'DNS Yoxlanılır...' : '🔍 DNS Qeydini Yoxla'}
+                      </button>
+                    </div>
+
+                    {domainVerifyResult && (
+                      <div className={`p-2.5 rounded-xl text-[11px] border mt-2 ${
+                        domainVerifyResult.verified
+                          ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                          : 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+                      }`}>
+                        <div className="flex items-center gap-1 font-semibold mb-0.5">
+                          {domainVerifyResult.verified ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <AlertCircle className="w-3.5 h-3.5 text-amber-400" />}
+                          <span>{domainVerifyResult.verified ? 'Təsdiqləndi' : 'Diqqət'}</span>
+                        </div>
+                        <p>{domainVerifyResult.message}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                /* Feature Not Available - Upsell / Addon Info */
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-950/40 via-purple-950/20 to-slate-900 border border-indigo-500/30 space-y-3">
+                  <div className="flex items-center gap-2 text-indigo-300 font-bold text-xs">
+                    <Sparkles className="w-4 h-4 text-indigo-400" />
+                    <span>Fərdi Domen Add-onu (+5 AZN/ay)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 leading-relaxed">
+                    Portfel vitrininizi və müştəri linklərinizi öz fərdi domeninizlə (məs. <code className="text-indigo-300">samiremlak.az</code>) təqdim edərək müştərilərinizdə daha yüksək etibar yarada bilərsiniz.
+                  </p>
+                  <div className="p-3 bg-dark-950/80 rounded-xl border border-indigo-500/20 space-y-1.5">
+                    <span className="text-[10px] text-slate-400 block">Necə qoşulmaq olar?</span>
+                    <p className="text-[11px] text-slate-200">
+                      Telegram və ya WhatsApp botumuza <code className="text-amber-400 font-bold">/al domen</code> əmrini göndərərək dərhal aktivləşdirə bilərsiniz.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-2 p-4 border-t border-slate-800 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowDomainModal(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
+              >
+                Bağla
+              </button>
+              {portfolioOverview?.custom_domain_info?.agent_feature_custom_domain && (
+                <button
+                  type="button"
+                  onClick={handleSaveDomain}
+                  disabled={domainSaving}
+                  className="px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-lg shadow-indigo-600/20 disabled:opacity-50 transition-all"
+                >
+                  {domainSaving ? 'Yadda saxlanılır...' : 'Yadda Saxla'}
                 </button>
               )}
             </div>

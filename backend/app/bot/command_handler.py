@@ -559,9 +559,11 @@ class BotCommandHandler:
             curr_active = res_cnt.scalar() or 0
             limit = getattr(tenant, 'portfolio_limit', 25) or 25
 
+            from app.services.domain_service import resolve_tenant_base_url
             base_fe = (settings.FRONTEND_BASE_URL or "https://realtor.erma.shop").rstrip('/')
+            base_domain = await resolve_tenant_base_url(db, tenant)
             agent_slug = tenant.portfolio_slug or str(tenant.id)
-            vitrin_url = f"{base_fe}/v/{agent_slug}"
+            vitrin_url = f"{base_domain}/v/{agent_slug}"
 
             stmt_recent = select(PortfolioListing).where(
                 PortfolioListing.tenant_id == tenant.id,
@@ -572,7 +574,7 @@ class BotCommandHandler:
 
             lines = []
             for item in recent_items:
-                share_url = f"{base_fe}/v/{agent_slug}/{item.id}"
+                share_url = f"{base_domain}/v/{agent_slug}/{item.id}"
                 p_price = f"{int(item.price):,} {item.currency}" if item.price else "Razılaşma ilə"
                 lines.append(f"• *#{item.id}* {item.title or 'Mənzil'} ({p_price})\n  🔗 {share_url}")
 
@@ -688,9 +690,11 @@ class BotCommandHandler:
             await db.refresh(new_port)
 
             new_count = curr_active + 1
+            from app.services.domain_service import resolve_tenant_base_url
+            base_domain = await resolve_tenant_base_url(db, tenant)
             agent_slug = tenant.portfolio_slug or str(tenant.id)
-            share_url = f"{base_fe}/v/{agent_slug}/{new_port.id}"
-            short_url = f"{base_fe}/p/{new_port.share_code}"
+            share_url = f"{base_domain}/v/{agent_slug}/{new_port.id}"
+            short_url = f"{base_domain}/p/{new_port.share_code}"
             edit_tma_url = f"{base_fe}/crm?tab=portfolio&edit={new_port.id}"
 
             return (
@@ -908,12 +912,16 @@ class BotCommandHandler:
                 f"• *25 Elan Limiti:* 15 AZN / ay (Sifariş üçün: `/al portfel 25`)\n"
                 f"• *50 Elan Limiti:* 25 AZN / ay (Sifariş üçün: `/al portfel 50`)\n"
                 f"• *100 Elan Limiti:* 40 AZN / ay (Sifariş üçün: `/al portfel 100`)\n\n"
+                f"🔹 *Fərdi Domen Adı (Custom Domain Add-on):*\n"
+                f"• *Öz Domeninizi Qoşun:* 5 AZN / ay (Sifariş üçün: `/al domen`)\n\n"
                 f"💳 *Qeyd:* Sifariş verdikdən sonra ödəniş təsdiqlənən kimi xidmət dərhal aktivləşir."
             )
 
-        buy_match = re.search(r'^(?:/al|al)\s+(limit|arxiv|foto|portfel)\s+(\d+)', text_lower)
+        buy_match = re.search(r'^(?:/al|al)\s+(limit|arxiv|foto|portfel|domen|domain)(?:\s+(\d+))?', text_lower)
         if buy_match:
-            item_type, val_str = buy_match.group(1), int(buy_match.group(2))
+            item_type = buy_match.group(1)
+            raw_val = buy_match.group(2)
+            val_str = int(raw_val) if raw_val else 1
             from app.models.payment import Payment
             from datetime import datetime, timedelta, timezone
             
@@ -929,6 +937,11 @@ class BotCommandHandler:
                 pricing = {25: 15.0, 50: 25.0, 100: 40.0}
                 amount = pricing.get(val_str, float(val_str * 0.6))
                 desc = f"+{val_str} Elanlıq Agent Portfeli & Vitrin Add-on"
+            elif item_type in ["domen", "domain"]:
+                domain_unit_price = getattr(tenant, "addon_custom_domain_price", 5.0) or 5.0
+                months = max(1, val_str)
+                amount = float(domain_unit_price * months)
+                desc = f"Fərdi Domen Adı (Custom Domain) Add-on ({months} aylıq)"
             else:
                 pricing = {3: 15.0, 6: 25.0, 12: 40.0, 24: 60.0}
                 amount = pricing.get(val_str, float(val_str * 4.0))

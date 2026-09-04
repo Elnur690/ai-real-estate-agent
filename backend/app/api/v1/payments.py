@@ -29,6 +29,8 @@ class CreatePaymentRequest(BaseModel):
     include_portfolio_addon: Optional[bool] = None
     addon_portfolio_limit: Optional[int] = None
     addon_portfolio_price: Optional[float] = None
+    include_custom_domain_addon: Optional[bool] = None
+    addon_custom_domain_price: Optional[float] = None
     use_referral_balance: bool = True
     notes: Optional[str] = None
 
@@ -79,6 +81,8 @@ async def process_tenant_cash_payment(
     include_portfolio_addon: Optional[bool] = None,
     addon_portfolio_limit: Optional[int] = None,
     addon_portfolio_price: Optional[float] = None,
+    include_custom_domain_addon: Optional[bool] = None,
+    addon_custom_domain_price: Optional[float] = None,
     use_referral_balance: bool = True,
     notes: Optional[str] = None
 ) -> Payment:
@@ -184,6 +188,19 @@ async def process_tenant_cash_payment(
         port_price_per_month = tenant.addon_portfolio_price or 15.0
         portfolio_addon_fee = round(port_price_per_month * multiplier, 2)
 
+    custom_domain_fee = 0.0
+    if include_custom_domain_addon is not None:
+        tenant.feature_custom_domain = bool(include_custom_domain_addon)
+        if include_custom_domain_addon:
+            domain_price_per_month = addon_custom_domain_price if (addon_custom_domain_price is not None and addon_custom_domain_price > 0) else (getattr(db_plan, 'addon_custom_domain_price', 5.0) or 5.0)
+            custom_domain_fee = round(domain_price_per_month * multiplier, 2)
+            tenant.addon_custom_domain_price = domain_price_per_month
+        else:
+            tenant.addon_custom_domain_price = 0.0
+    elif tenant.feature_custom_domain:
+        domain_price_per_month = tenant.addon_custom_domain_price or 5.0
+        custom_domain_fee = round(domain_price_per_month * multiplier, 2)
+
     if category == "addon_only":
         # Addon only payment
         base_price = 0.0
@@ -214,9 +231,10 @@ async def process_tenant_cash_payment(
         image_label = f" + Extra {tenant.addon_image_requests_limit} Clean Images" if (tenant.addon_image_requests_limit and tenant.addon_image_requests_limit > 0) else ""
         crm_label = " + Telegram CRM Mini App Addon" if tenant.feature_crm else ""
         portfolio_label = f" + Agent Portfolio ({tenant.portfolio_limit or 25} listings)" if tenant.feature_portfolio else ""
-        default_notes = f"Cash payment received for {plan_code.upper()} plan{addon_label}{search_label}{image_label}{crm_label}{portfolio_label} ({days_covered} days coverage)"
+        domain_label = f" + Custom Domain ({tenant.custom_domain})" if (tenant.feature_custom_domain and tenant.custom_domain) else (" + Custom Domain Addon" if tenant.feature_custom_domain else "")
+        default_notes = f"Cash payment received for {plan_code.upper()} plan{addon_label}{search_label}{image_label}{crm_label}{portfolio_label}{domain_label} ({days_covered} days coverage)"
 
-    final_amount = amount if (amount is not None and amount > 0) else round(base_price + addon_fee + search_addon_fee + image_addon_fee + crm_addon_fee + portfolio_addon_fee, 2)
+    final_amount = amount if (amount is not None and amount > 0) else round(base_price + addon_fee + search_addon_fee + image_addon_fee + crm_addon_fee + portfolio_addon_fee + custom_domain_fee, 2)
     pay_currency = currency or (db_plan.currency if db_plan else "AZN")
 
     # Referral bonus discount
@@ -266,6 +284,8 @@ async def process_tenant_cash_payment(
         tenant.crm_expires_at = end_date
     if tenant.feature_portfolio:
         tenant.portfolio_expires_at = end_date
+    if tenant.feature_custom_domain:
+        tenant.custom_domain_expires_at = end_date
 
     await db.commit()
     await db.refresh(payment)
@@ -294,6 +314,8 @@ async def record_cash_payment(body: CreatePaymentRequest, db: AsyncSession = Dep
             include_portfolio_addon=body.include_portfolio_addon,
             addon_portfolio_limit=body.addon_portfolio_limit,
             addon_portfolio_price=body.addon_portfolio_price,
+            include_custom_domain_addon=body.include_custom_domain_addon,
+            addon_custom_domain_price=body.addon_custom_domain_price,
             use_referral_balance=body.use_referral_balance,
             notes=body.notes
         )

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Any
-from sqlalchemy import String, Float, DateTime, ForeignKey, Text, JSON
+from sqlalchemy import String, Float, Integer, Boolean, DateTime, ForeignKey, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
@@ -67,6 +67,14 @@ class Tenant(Base):
     portfolio_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     addon_portfolio_price: Mapped[float] = mapped_column(default=0.0)
     portfolio_slug: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True, index=True)
+
+    # 🌐 Custom Domain Add-on for Agents (e.g., elnuremlak.az or agent.domain.az)
+    feature_custom_domain: Mapped[bool] = mapped_column(Boolean, default=False)
+    custom_domain: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True, index=True)
+    custom_domain_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    custom_domain_status: Mapped[str] = mapped_column(String(50), default="disabled") # disabled, pending_dns, active, failed
+    addon_custom_domain_price: Mapped[float] = mapped_column(Float, default=5.0)
+    custom_domain_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # 🎁 Referral System & Promo Code Reward Options
     referral_code: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True)

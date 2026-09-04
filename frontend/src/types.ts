@@ -38,6 +38,12 @@ export interface Tenant {
   portfolio_expires_at?: string;
   portfolio_slug?: string;
   portfolio_vitrin_url?: string;
+  feature_custom_domain?: boolean;
+  custom_domain?: string | null;
+  custom_domain_enabled?: boolean;
+  custom_domain_status?: string;
+  addon_custom_domain_price?: number;
+  custom_domain_expires_at?: string | null;
   active_searches_count?: number;
   max_saved_searches?: number;
   referral_code?: string;
@@ -221,5 +227,21 @@ export interface PortfolioOverview {
   expires_at?: string;
   portfolio_slug?: string;
   portfolio_vitrin_url?: string;
+  custom_domain_info?: {
+    base_url: string;
+    active_domain: string;
+    source: 'agent' | 'reseller' | 'platform';
+    cname_target: string;
+    agent_custom_domain?: string | null;
+    agent_custom_domain_enabled?: boolean;
+    agent_feature_custom_domain?: boolean;
+    agent_custom_domain_status?: string;
+    addon_custom_domain_price?: number;
+    custom_domain_expires_at?: string | null;
+    seller_id?: number | null;
+    reseller_name?: string | null;
+    reseller_custom_domain?: string | null;
+    reseller_custom_domain_enabled?: boolean;
+  };
 }
 
