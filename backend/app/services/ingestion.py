@@ -196,29 +196,30 @@ class IngestionService:
 
         cat_id = categories_to_query[0] if categories_to_query else "1"
 
-        # Direct Location-Specific Bina.az parameter queries (100% precision for requested locations)
+        # Direct Location-Specific Bina.az parameter query (combining all location_ids in 1 query)
         if found_loc_ids:
+            loc_params = [f"city_id=1", f"leased={leased_str}", f"category_id={cat_id}", "sort_by=created_at_desc"]
             for lid in found_loc_ids:
-                loc_params = [f"city_id=1", f"leased={leased_str}", f"category_id={cat_id}", f"location_ids[]={lid}", "sort_by=created_at_desc"]
-                if is_owner:
-                    loc_params.append("owner_type=owner")
-                if prop in ["apartment", "house"] and rooms_params:
-                    loc_params.extend(rooms_params)
-                loc_params.extend(price_params)
-                
-                bina_loc_url = f"https://bina.az/items?{'&'.join(loc_params)}"
-                targets.append((f"Bina.az (loc #{lid})", BinaAzScraper(), bina_loc_url))
+                loc_params.append(f"location_ids[]={lid}")
+            if is_owner:
+                loc_params.append("owner_type=owner")
+            if prop in ["apartment", "house"] and rooms_params:
+                loc_params.extend(rooms_params)
+            loc_params.extend(price_params)
+            
+            bina_loc_url = f"https://bina.az/items?{'&'.join(loc_params)}"
+            targets.append(("Bina.az Targeted", BinaAzScraper(), bina_loc_url))
+        else:
+            # Primary Parameterized Targeted Query Feed on Bina.az
+            bina_params = [f"city_id=1", f"leased={leased_str}", f"category_id={cat_id}", "sort_by=created_at_desc"]
+            if is_owner:
+                bina_params.append("owner_type=owner")
+            if prop in ["apartment", "house"] and rooms_params:
+                bina_params.extend(rooms_params)
+            bina_params.extend(price_params)
 
-        # Primary Parameterized Targeted Query Feed on Bina.az
-        bina_params = [f"city_id=1", f"leased={leased_str}", f"category_id={cat_id}", "sort_by=created_at_desc"]
-        if is_owner:
-            bina_params.append("owner_type=owner")
-        if prop in ["apartment", "house"] and rooms_params:
-            bina_params.extend(rooms_params)
-        bina_params.extend(price_params)
-
-        bina_url = f"https://bina.az/items?{'&'.join(bina_params)}"
-        targets.append(("Bina.az Targeted", BinaAzScraper(), bina_url))
+            bina_url = f"https://bina.az/items?{'&'.join(bina_params)}"
+            targets.append(("Bina.az Targeted", BinaAzScraper(), bina_url))
 
         # 2. Tap.az Keyword Target (Newest First) - 1 focused target per search
         tap_cat = "menziller" if prop == "apartment" else ("heyet-evleri-baglar-villalar" if prop == "house" else "ofisler" if prop == "office" else "obyektler" if prop == "commercial" else "torpaq" if prop == "land" else "")

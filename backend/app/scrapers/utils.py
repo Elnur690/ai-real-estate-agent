@@ -2,7 +2,7 @@ import asyncio
 import random
 import logging
 import re
-from typing import Dict, Optional, Any, List
+from typing import Dict, Optional, Any, List, Tuple
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -73,6 +73,46 @@ async def polite_delay(min_seconds: float = 1.0, max_seconds: float = 2.5) -> No
     delay = random.uniform(min_seconds, max_seconds)
     logger.debug(f"[ScraperUtils] Applying polite delay of {delay:.2f}s...")
     await asyncio.sleep(delay)
+
+
+async def fetch_stealth_page(
+    url: str,
+    headers: Optional[Dict[str, str]] = None,
+    timeout: float = 10.0,
+    proxy: Optional[str] = None,
+    referer: Optional[str] = None,
+    impersonate: str = "chrome124"
+) -> Tuple[Optional[str], int]:
+    """
+    Fetches web page HTML using TLS-fingerprint impersonation (curl_cffi AsyncSession)
+    with automatic fallback to standard httpx.
+    Returns (html_content, status_code).
+    """
+    from app.core.config import settings
+    active_proxy = proxy or settings.BINA_AZ_PROXY_URL or settings.SCRAPER_PROXY_URL
+
+    req_headers = dict(headers) if headers else get_random_headers(referer=referer or url)
+
+    # 1. Primary: curl_cffi AsyncSession (Browser TLS & HTTP/2 impersonation)
+    try:
+        from curl_cffi.requests import AsyncSession
+        async with AsyncSession(impersonate=impersonate, proxy=active_proxy, timeout=timeout) as session:
+            res = await session.get(url, headers=req_headers)
+            return res.text, res.status_code
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.debug(f"[ScraperUtils] curl_cffi fetch notice for {url}: {e}")
+
+    # 2. Fallback: httpx.AsyncClient
+    try:
+        limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
+        async with httpx.AsyncClient(proxy=active_proxy, timeout=timeout, limits=limits, follow_redirects=True) as client:
+            res = await client.get(url, headers=req_headers)
+            return res.text, res.status_code
+    except Exception as e:
+        logger.debug(f"[ScraperUtils] httpx fallback notice for {url}: {e}")
+        return None, 0
 
 
 def safe_float(val: Any, default: float = 0.0) -> float:

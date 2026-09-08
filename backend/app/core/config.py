@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     # Redis / Celery
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
+    # Proxies for Scrapers
+    SCRAPER_PROXY_URL: Optional[str] = os.getenv("SCRAPER_PROXY_URL", None)
+    BINA_AZ_PROXY_URL: Optional[str] = os.getenv("BINA_AZ_PROXY_URL", None)
+
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: Optional[str] = os.getenv("TELEGRAM_BOT_TOKEN", None)
     TELEGRAM_BOT_USERNAME: Optional[str] = os.getenv("TELEGRAM_BOT_USERNAME", "RealEstateBot")

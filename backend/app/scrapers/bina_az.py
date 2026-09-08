@@ -1,3 +1,4 @@
+import json
 import re
 import logging
 import asyncio
@@ -5,7 +6,7 @@ import httpx
 from bs4 import BeautifulSoup
 from typing import List
 from app.scrapers.base import BaseScraper, RawListingItem
-from app.scrapers.utils import get_random_headers, safe_float, safe_optional_float
+from app.scrapers.utils import get_random_headers, safe_float, safe_optional_float, fetch_stealth_page
 from app.core.baku_locations import (
     extract_baku_district, extract_metro_station, extract_baku_settlement,
     SETTLEMENT_TO_DISTRICT, METRO_TO_DISTRICT
@@ -69,225 +70,233 @@ class BinaAzScraper(BaseScraper):
         headers = get_random_headers(referer="https://bina.az/items")
 
         phone = None
-        # 1. Fetch real author phone number from Bina.az JSON endpoint
+        # 1. Fetch real author phone number from Bina.az JSON endpoint via resilient stealth fetch
         try:
             phone_headers = dict(headers)
             phone_headers["X-Requested-With"] = "XMLHttpRequest"
             phone_headers["Accept"] = "application/json, text/javascript, */*; q=0.01"
-            async with httpx.AsyncClient(timeout=3.0, follow_redirects=True) as client:
-                r_phone = await client.get(f"https://bina.az/items/{ext_id}/phones", headers=phone_headers)
-                if r_phone.status_code == 200:
-                    p_data = r_phone.json()
-                    if p_data.get("phones") and len(p_data["phones"]) > 0:
-                        from app.core.baku_locations import extract_az_phone
-                        p_res = extract_az_phone(p_data["phones"][0])
-                        if p_res:
-                            phone = p_res[0]
+            p_text, p_status = await fetch_stealth_page(
+                f"https://bina.az/items/{ext_id}/phones",
+                headers=phone_headers,
+                timeout=5.0,
+                referer=url
+            )
+            if p_status == 200 and p_text:
+                p_data = json.loads(p_text)
+                if p_data.get("phones") and len(p_data["phones"]) > 0:
+                    from app.core.baku_locations import extract_az_phone
+                    p_res = extract_az_phone(p_data["phones"][0])
+                    if p_res:
+                        phone = p_res[0]
         except Exception as e:
             logger.debug(f"[BinaAzScraper] Error fetching phone JSON for #{ext_id}: {e}")
 
         try:
-            async with httpx.AsyncClient(timeout=4.0, follow_redirects=True) as client:
-                res = await client.get(url, headers=headers)
-                if res.status_code != 200:
-                    return {"phone_number": phone} if phone else {}
+            res_text, res_status = await fetch_stealth_page(
+                url,
+                headers=headers,
+                timeout=6.0,
+                referer="https://bina.az/items"
+            )
+            if res_status != 200 or not res_text:
+                return {"phone_number": phone} if phone else {}
 
-                soup = BeautifulSoup(res.text, "html.parser")
-                page_text_lower = soup.get_text().lower()
+            soup = BeautifulSoup(res_text, "html.parser")
+            page_text_lower = soup.get_text().lower()
 
-                # 2. Extract full description
-                desc_el = soup.find("article") or soup.find(class_=re.compile(r'description|article_body|item_description', re.I))
-                full_desc = desc_el.get_text(separator=" ", strip=True) if desc_el else ""
+            # 2. Extract full description
+            desc_el = soup.find("article") or soup.find(class_=re.compile(r'description|article_body|item_description', re.I))
+            full_desc = desc_el.get_text(separator=" ", strip=True) if desc_el else ""
 
-                # 3. Extract Category / Property Type (Breadcrumbs, H1, Parameters)
-                breadcrumbs_el = soup.find(class_=re.compile(r'breadcrumb', re.I))
-                breadcrumbs_text = breadcrumbs_el.get_text(separator=" ", strip=True).lower() if breadcrumbs_el else ""
-                h1_el = soup.find("h1")
-                h1_text = h1_el.get_text(strip=True).lower() if h1_el else ""
-                
-                combined_cat_text = f"{breadcrumbs_text} {h1_text} {full_desc[:300].lower()}"
+            # 3. Extract Category / Property Type (Breadcrumbs, H1, Parameters)
+            breadcrumbs_el = soup.find(class_=re.compile(r'breadcrumb', re.I))
+            breadcrumbs_text = breadcrumbs_el.get_text(separator=" ", strip=True).lower() if breadcrumbs_el else ""
+            h1_el = soup.find("h1")
+            h1_text = h1_el.get_text(strip=True).lower() if h1_el else ""
+            
+            combined_cat_text = f"{breadcrumbs_text} {h1_text} {full_desc[:300].lower()}"
 
+            detected_prop = "apartment"
+            if any(k in combined_cat_text for k in ["obyekt", "qeyri-yaşayış", "qeyri yasayis", "anbar", "istehsalat", "magaza", "mağaza", "restoran", "kafe", "salon", "klinika"]):
+                detected_prop = "commercial"
+            elif any(k in combined_cat_text for k in ["ofis", "ofislər", "biznes mərkəzi"]):
+                detected_prop = "office"
+            elif any(k in combined_cat_text for k in ["torpaq", "sot"]) and "otaqlı" not in combined_cat_text:
+                detected_prop = "land"
+            elif any(k in combined_cat_text for k in ["həyət evi", "heyet evi", "bağ evi", "bag evi", "villa", "villalar"]):
+                detected_prop = "house"
+            else:
                 detected_prop = "apartment"
-                if any(k in combined_cat_text for k in ["obyekt", "qeyri-yaşayış", "qeyri yasayis", "anbar", "istehsalat", "magaza", "mağaza", "restoran", "kafe", "salon", "klinika"]):
-                    detected_prop = "commercial"
-                elif any(k in combined_cat_text for k in ["ofis", "ofislər", "biznes mərkəzi"]):
-                    detected_prop = "office"
-                elif any(k in combined_cat_text for k in ["torpaq", "sot"]) and "otaqlı" not in combined_cat_text:
-                    detected_prop = "land"
-                elif any(k in combined_cat_text for k in ["həyət evi", "heyet evi", "bağ evi", "bag evi", "villa", "villalar"]):
-                    detected_prop = "house"
-                else:
-                    detected_prop = "apartment"
 
-                # 4. Extract Seller Type & Agency Status from Page and __NEXT_DATA__ JSON
-                next_data_script = soup.find("script", id="__NEXT_DATA__")
-                next_item_data = {}
-                if next_data_script and next_data_script.string:
-                    try:
-                        next_json = json.loads(next_data_script.string)
-                        props_data = next_json.get("props", {}).get("pageProps", {})
-                        next_item_data = props_data.get("currentItemData") or props_data.get("item") or {}
-                    except Exception:
-                        pass
+            # 4. Extract Seller Type & Agency Status from Page and __NEXT_DATA__ JSON
+            next_data_script = soup.find("script", id="__NEXT_DATA__")
+            next_item_data = {}
+            if next_data_script and next_data_script.string:
+                try:
+                    next_json = json.loads(next_data_script.string)
+                    props_data = next_json.get("props", {}).get("pageProps", {})
+                    next_item_data = props_data.get("currentItemData") or props_data.get("item") or {}
+                except Exception:
+                    pass
 
-                contact_type_raw = str(next_item_data.get("contactTypeName") or "").lower()
-                comp_obj = next_item_data.get("company")
-                has_next_company = bool(comp_obj) or (isinstance(comp_obj, dict) and comp_obj.get("targetType") == "AGENCY")
-                next_desc = next_item_data.get("description")
-                if next_desc and len(next_desc) > len(full_desc):
-                    full_desc = next_desc
+            contact_type_raw = str(next_item_data.get("contactTypeName") or "").lower()
+            comp_obj = next_item_data.get("company")
+            has_next_company = bool(comp_obj) or (isinstance(comp_obj, dict) and comp_obj.get("targetType") == "AGENCY")
+            next_desc = next_item_data.get("description")
+            if next_desc and len(next_desc) > len(full_desc):
+                full_desc = next_desc
 
-                owner_info_els = soup.find_all(attrs={"data-cy": re.compile(r'owner-info', re.I)})
-                owner_info_texts = [el.get_text(separator=" ", strip=True).lower() for el in owner_info_els]
-                combined_owner_info = " ".join(owner_info_texts)
+            owner_info_els = soup.find_all(attrs={"data-cy": re.compile(r'owner-info', re.I)})
+            owner_info_texts = [el.get_text(separator=" ", strip=True).lower() for el in owner_info_els]
+            combined_owner_info = " ".join(owner_info_texts)
 
-                owner_region_el = (
-                    soup.find(class_='product-owner__info-region') or
-                    soup.find(class_=re.compile(r'product-owner__info-region|seller_region|author-region', re.I)) or
-                    soup.find(class_=re.compile(r'product-owner__info-type|author-type|product-author__type', re.I)) or
-                    soup.find(class_=re.compile(r'product-owner__type|seller-type', re.I))
-                )
-                owner_region_text = owner_region_el.get_text(strip=True).lower() if owner_region_el else ""
+            owner_region_el = (
+                soup.find(class_='product-owner__info-region') or
+                soup.find(class_=re.compile(r'product-owner__info-region|seller_region|author-region', re.I)) or
+                soup.find(class_=re.compile(r'product-owner__info-type|author-type|product-author__type', re.I)) or
+                soup.find(class_=re.compile(r'product-owner__type|seller-type', re.I))
+            )
+            owner_region_text = owner_region_el.get_text(strip=True).lower() if owner_region_el else ""
 
-                owner_name_el = soup.find(class_='product-owner__info-name') or soup.find(class_=re.compile(r'owner__info-name|author-name', re.I))
-                owner_name = owner_name_el.get_text(strip=True) if owner_name_el else ""
+            owner_name_el = soup.find(class_='product-owner__info-name') or soup.find(class_=re.compile(r'owner__info-name|author-name', re.I))
+            owner_name = owner_name_el.get_text(strip=True) if owner_name_el else ""
 
-                # Check all author / seller containers on the page
-                author_elements = soup.find_all(class_=re.compile(r'product-owner__info|product-owner|product-author|product-sidebar|product-contacts', re.I))
-                author_texts = [el.get_text(separator=" ", strip=True).lower() for el in author_elements]
-                combined_author_text = " ".join(author_texts)
+            # Check all author / seller containers on the page
+            author_elements = soup.find_all(class_=re.compile(r'product-owner__info|product-owner|product-author|product-sidebar|product-contacts', re.I))
+            author_texts = [el.get_text(separator=" ", strip=True).lower() for el in author_elements]
+            combined_author_text = " ".join(author_texts)
 
-                # Check parameters list for seller row (e.g. "Elanın tipi: Vasitəçi" or "Satıcı: Vasitəçi")
-                param_elements = soup.find_all(class_=re.compile(r'param|property|item_parameters', re.I))
-                param_text = " ".join(p.get_text(separator=" ", strip=True).lower() for p in param_elements)
+            # Check parameters list for seller row (e.g. "Elanın tipi: Vasitəçi" or "Satıcı: Vasitəçi")
+            param_elements = soup.find_all(class_=re.compile(r'param|property|item_parameters', re.I))
+            param_text = " ".join(p.get_text(separator=" ", strip=True).lower() for p in param_elements)
 
-                # Distinguish specific profile links (e.g. /vasiteciler/123, /agentlikler/123, /agents/123)
-                has_specific_agency_link = bool(
-                    soup.find("a", href=re.compile(r'/agentlikler/\d+|/vasiteciler/\d+|/agents/\d+|/shops/\w+|/companies/\d+|/complexes/\d+|/users/\d+'))
-                    or soup.find(class_=re.compile(r'author-agency|items-i-agency|product-owner__info-agency', re.I))
-                )
+            # Distinguish specific profile links (e.g. /vasiteciler/123, /agentlikler/123, /agents/123)
+            has_specific_agency_link = bool(
+                soup.find("a", href=re.compile(r'/agentlikler/\d+|/vasiteciler/\d+|/agents/\d+|/shops/\w+|/companies/\d+|/complexes/\d+|/users/\d+'))
+                or soup.find(class_=re.compile(r'author-agency|items-i-agency|product-owner__info-agency', re.I))
+            )
 
-                # Check scripts or JSON payloads on the page for agency indicators
-                script_agency_flag = False
-                for script in soup.find_all("script"):
-                    if script.string and any(k in script.string.lower() for k in ['"is_agency":true', '"is_agent":true', '"seller_type":"agency"', '"user_type":"agent"', '"is_vasiteci":true', 'vasitəçi (agent)', 'vasiteci (agent)']):
-                        script_agency_flag = True
-                        break
+            # Check scripts or JSON payloads on the page for agency indicators
+            script_agency_flag = False
+            for script in soup.find_all("script"):
+                if script.string and any(k in script.string.lower() for k in ['"is_agency":true', '"is_agent":true', '"seller_type":"agency"', '"user_type":"agent"', '"is_vasiteci":true', 'vasitəçi (agent)', 'vasiteci (agent)']):
+                    script_agency_flag = True
+                    break
 
-                from app.core.property_classifier import (
-                    AGENCY_KEYWORDS, OWNER_KEYWORDS, COMMISSION_REGEX,
-                    INVENTORY_CODE_REGEX, MULTI_INVENTORY_REGEX, normalize_az_text
-                )
+            from app.core.property_classifier import (
+                AGENCY_KEYWORDS, OWNER_KEYWORDS, COMMISSION_REGEX,
+                INVENTORY_CODE_REGEX, MULTI_INVENTORY_REGEX, normalize_az_text
+            )
 
-                norm_desc = normalize_az_text(full_desc)
-                desc_for_agency = re.sub(
-                    r'\b(?:vasitəçisiz|vasitecisiz|maklersiz|vasitəçi yoxdur|vasiteci yoxdur|vasitəçi deyiləm|vasiteci deyilem|vasitəçi deyil|vasiteci deyil|makler deyiləm|makler deyilem|makler deyil|maklerlər narahat etməsin|maklerler narahat etmesin|vasitəçilər narahat etməsin|vasiteciler narahat etmesin)\b',
-                    ' [GENUINE_OWNER_FLAG] ',
-                    norm_desc
-                )
+            norm_desc = normalize_az_text(full_desc)
+            desc_for_agency = re.sub(
+                r'\b(?:vasitəçisiz|vasitecisiz|maklersiz|vasitəçi yoxdur|vasiteci yoxdur|vasitəçi deyiləm|vasiteci deyilem|vasitəçi deyil|vasiteci deyil|makler deyiləm|makler deyilem|makler deyil|maklerlər narahat etməsin|maklerler narahat etmesin|vasitəçilər narahat etməsin|vasiteciler narahat etmesin)\b',
+                ' [GENUINE_OWNER_FLAG] ',
+                norm_desc
+            )
 
-                has_agency_kw = (
-                    any(kw in desc_for_agency for kw in AGENCY_KEYWORDS) or
-                    bool(COMMISSION_REGEX.search(desc_for_agency)) or
-                    bool(INVENTORY_CODE_REGEX.search(desc_for_agency)) or
-                    bool(MULTI_INVENTORY_REGEX.search(desc_for_agency))
-                )
+            has_agency_kw = (
+                any(kw in desc_for_agency for kw in AGENCY_KEYWORDS) or
+                bool(COMMISSION_REGEX.search(desc_for_agency)) or
+                bool(INVENTORY_CODE_REGEX.search(desc_for_agency)) or
+                bool(MULTI_INVENTORY_REGEX.search(desc_for_agency))
+            )
 
-                is_author_agent = (
-                    has_specific_agency_link or
-                    script_agency_flag or
-                    has_next_company or
-                    any(k in contact_type_raw for k in ["vasitəçi", "vasiteci", "agent", "agentlik", "şirkət", "sirket", "rieltor", "makler"]) or
-                    any(k in combined_owner_info for k in ["vasitəçi", "vasiteci", "agent", "agentlik", "şirkət", "sirket", "rieltor", "makler"]) or
-                    any(k in owner_region_text for k in ["vasitəçi", "vasiteci", "agent", "agentlik", "şirkət", "sirket", "rieltor", "makler"]) or
-                    any(k in combined_author_text for k in ["vasitəçi (agent)", "vasiteci (agent)", "vasitəçi", "vasiteci", "agentlik", "şirkət"]) or
-                    any(k in param_text for k in ["vasitəçi", "vasiteci", "agent", "agentlik"])
-                )
+            is_author_agent = (
+                has_specific_agency_link or
+                script_agency_flag or
+                has_next_company or
+                any(k in contact_type_raw for k in ["vasitəçi", "vasiteci", "agent", "agentlik", "şirkət", "sirket", "rieltor", "makler"]) or
+                any(k in combined_owner_info for k in ["vasitəçi", "vasiteci", "agent", "agentlik", "şirkət", "sirket", "rieltor", "makler"]) or
+                any(k in owner_region_text for k in ["vasitəçi", "vasiteci", "agent", "agentlik", "şirkət", "sirket", "rieltor", "makler"]) or
+                any(k in combined_author_text for k in ["vasitəçi (agent)", "vasiteci (agent)", "vasitəçi", "vasiteci", "agentlik", "şirkət"]) or
+                any(k in param_text for k in ["vasitəçi", "vasiteci", "agent", "agentlik"])
+            )
 
-                is_author_owner = (
-                    (
-                        "mülkiyyətçi" in contact_type_raw or "sahibindən" in contact_type_raw or
-                        "mülkiyyətçi" in combined_owner_info or "sahibindən" in combined_owner_info or
-                        "mülkiyyətçi" in owner_region_text or "sahibindən" in owner_region_text
-                    ) and
-                    not is_author_agent
-                )
+            is_author_owner = (
+                (
+                    "mülkiyyətçi" in contact_type_raw or "sahibindən" in contact_type_raw or
+                    "mülkiyyətçi" in combined_owner_info or "sahibindən" in combined_owner_info or
+                    "mülkiyyətçi" in owner_region_text or "sahibindən" in owner_region_text
+                ) and
+                not is_author_agent
+            )
 
-                if is_author_agent or has_agency_kw:
-                    seller_type = "agency"
-                    is_makler = True
-                    makler_score = 1.0
-                elif is_author_owner:
-                    seller_type = "owner"
-                    is_makler = False
-                    makler_score = 0.0
-                elif any(k in norm_desc for k in OWNER_KEYWORDS):
-                    seller_type = "owner"
-                    is_makler = False
-                    makler_score = 0.0
-                else:
-                    seller_type = "agency"
-                    is_makler = True
-                    makler_score = 0.8
+            if is_author_agent or has_agency_kw:
+                seller_type = "agency"
+                is_makler = True
+                makler_score = 1.0
+            elif is_author_owner:
+                seller_type = "owner"
+                is_makler = False
+                makler_score = 0.0
+            elif any(k in norm_desc for k in OWNER_KEYWORDS):
+                seller_type = "owner"
+                is_makler = False
+                makler_score = 0.0
+            else:
+                seller_type = "agency"
+                is_makler = True
+                makler_score = 0.8
 
-                # 5. Extract Price & Price Per SQM from Detail Page
-                price = None
-                currency = "AZN"
-                price_per_sqm = None
+            # 5. Extract Price & Price Per SQM from Detail Page
+            price = None
+            currency = "AZN"
+            price_per_sqm = None
 
-                for sp in soup.find_all(["span", "div"]):
-                    txt = sp.get_text(separator=" ", strip=True).replace('\xa0', ' ')
-                    if re.search(r'^\s*[\d\s]+\s*(?:AZN|₼|USD|\$)\s*$', txt):
-                        m_val = re.search(r'([\d\s]+)', txt)
-                        if m_val:
-                            val_clean = m_val.group(1).replace(" ", "").strip()
-                            if val_clean.isdigit():
-                                val_num = float(val_clean)
-                                if val_num > 0 and val_num != 2008 and (price is None or val_num > price):
-                                    price = val_num
-                                    if "$" in txt or "USD" in txt:
-                                        currency = "USD"
-                    elif 'AZN/m²' in txt or '₼/m²' in txt or 'USD/m²' in txt:
-                        m_sqm = re.search(r'([\d\s]+)\s*(?:AZN|₼|USD|\$)\/m²', txt)
-                        if m_sqm:
-                            val_clean = m_sqm.group(1).replace(" ", "").strip()
-                            if val_clean.isdigit():
-                                price_per_sqm = float(val_clean)
+            for sp in soup.find_all(["span", "div"]):
+                txt = sp.get_text(separator=" ", strip=True).replace('\xa0', ' ')
+                if re.search(r'^\s*[\d\s]+\s*(?:AZN|₼|USD|\$)\s*$', txt):
+                    m_val = re.search(r'([\d\s]+)', txt)
+                    if m_val:
+                        val_clean = m_val.group(1).replace(" ", "").strip()
+                        if val_clean.isdigit():
+                            val_num = float(val_clean)
+                            if val_num > 0 and val_num != 2008 and (price is None or val_num > price):
+                                price = val_num
+                                if "$" in txt or "USD" in txt:
+                                    currency = "USD"
+                elif 'AZN/m²' in txt or '₼/m²' in txt or 'USD/m²' in txt:
+                    m_sqm = re.search(r'([\d\s]+)\s*(?:AZN|₼|USD|\$)\/m²', txt)
+                    if m_sqm:
+                        val_clean = m_sqm.group(1).replace(" ", "").strip()
+                        if val_clean.isdigit():
+                            price_per_sqm = float(val_clean)
 
-                # 6. Extract Offer Type (sale vs rent vs daily_rent) strictly from H1 & breadcrumbs
+            # 6. Extract Offer Type (sale vs rent vs daily_rent) strictly from H1 & breadcrumbs
+            detected_offer = "sale"
+            if "günlük" in h1_text or "gunluk" in h1_text or "sutkalıq" in h1_text:
+                detected_offer = "daily_rent"
+            elif any(k in h1_text for k in ["icarə", "icare", "kirayə", "kiraye"]):
+                detected_offer = "rent"
+            elif "satılır" in h1_text:
                 detected_offer = "sale"
-                if "günlük" in h1_text or "gunluk" in h1_text or "sutkalıq" in h1_text:
-                    detected_offer = "daily_rent"
-                elif any(k in h1_text for k in ["icarə", "icare", "kirayə", "kiraye"]):
-                    detected_offer = "rent"
-                elif "satılır" in h1_text:
-                    detected_offer = "sale"
 
-                # 7. Extract exact rooms if present
-                rooms = None
-                rooms_m = re.search(r'(\d+)\s*otaq', f"{h1_text} {full_desc[:200].lower()}")
-                if rooms_m:
-                    rooms = int(rooms_m.group(1))
+            # 7. Extract exact rooms if present
+            rooms = None
+            rooms_m = re.search(r'(\d+)\s*otaq', f"{h1_text} {full_desc[:200].lower()}")
+            if rooms_m:
+                rooms = int(rooms_m.group(1))
 
-                # 8. Extract all Photos from Detail Page Gallery via ScraplingHelper
-                from app.scrapers.utils import ScraplingHelper
-                clean_photos = ScraplingHelper.extract_all_photos(res.text, base_url="https://bina.az")
+            # 8. Extract all Photos from Detail Page Gallery via ScraplingHelper
+            from app.scrapers.utils import ScraplingHelper
+            clean_photos = ScraplingHelper.extract_all_photos(res_text, base_url="https://bina.az")
 
-                return {
-                    "phone_number": phone,
-                    "price": price,
-                    "currency": currency,
-                    "price_per_sqm": price_per_sqm,
-                    "full_description": full_desc,
-                    "property_type": detected_prop,
-                    "offer_type": detected_offer,
-                    "seller_type": seller_type,
-                    "is_makler": is_makler,
-                    "makler_score": makler_score,
-                    "rooms": rooms,
-                    "owner_name": owner_name,
-                    "photos": clean_photos
-                }
+            return {
+                "phone_number": phone,
+                "price": price,
+                "currency": currency,
+                "price_per_sqm": price_per_sqm,
+                "full_description": full_desc,
+                "property_type": detected_prop,
+                "offer_type": detected_offer,
+                "seller_type": seller_type,
+                "is_makler": is_makler,
+                "makler_score": makler_score,
+                "rooms": rooms,
+                "owner_name": owner_name,
+                "photos": clean_photos
+            }
         except Exception as e:
             logger.debug(f"[BinaAzScraper] Error fetching detail for item {ext_id}: {e}")
             return {"phone_number": phone} if phone else {}
@@ -309,59 +318,98 @@ class BinaAzScraper(BaseScraper):
 
         if is_targeted_search:
             urls_to_fetch = [normalized_url]
+            if "page=" not in normalized_url:
+                delim = "&" if "?" in normalized_url else "?"
+                urls_to_fetch.append(f"{normalized_url}{delim}page=2")
         else:
-            # High-speed master streams covering all newly published real estate categories
-            urls_to_fetch = [
-                "https://bina.az/items?city_id=1&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&leased=true&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=1&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=2&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=3&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=5&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=7&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=10&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=9&leased=false&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&category_id=1&leased=false&owner_type=owner&sort_by=created_at_desc",
-                "https://bina.az/items?city_id=1&leased=true&owner_type=owner&sort_by=created_at_desc"
+            # High-yield master streams: Sales, Rentals, and Nationwide across Baku, Absheron & beyond
+            # With multi-page pagination (pages 1, 2, 3) to capture 100% of newly published listings
+            base_streams = [
+                "https://bina.az/items?leased=false&sort_by=created_at_desc",
+                "https://bina.az/items?leased=true&sort_by=created_at_desc",
+                "https://bina.az/items?sort_by=created_at_desc",
             ]
+            urls_to_fetch = []
+            for stream_url in base_streams:
+                urls_to_fetch.append(stream_url)
+                delim = "&" if "?" in stream_url else "?"
+                urls_to_fetch.append(f"{stream_url}{delim}page=2")
+                urls_to_fetch.append(f"{stream_url}{delim}page=3")
 
-        sem = asyncio.Semaphore(4)
+        sem = asyncio.Semaphore(2)
 
         async def fetch_target(target_url: str):
             for attempt in range(1, 3):
                 async with sem:
                     try:
-                        await asyncio.sleep(0.1)
+                        await asyncio.sleep(0.2)
                         req_headers = get_random_headers(referer="https://bina.az/")
-                        req_headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-                        req_headers["Accept-Language"] = "az,ru;q=0.9,en-US;q=0.8,en;q=0.7"
-                        req_headers["Connection"] = "close"
-
-                        async with httpx.AsyncClient(timeout=httpx.Timeout(6.0, connect=3.0), follow_redirects=True) as client:
-                            res = await client.get(target_url, headers=req_headers)
-                            if res.status_code != 200:
-                                logger.debug(f"[BinaAzScraper] GET {target_url} returned status {res.status_code}")
-                                return
-
-                            soup = BeautifulSoup(res.text, "html.parser")
-                            links = soup.find_all("a", href=re.compile(r'/items/(\d+)'))
-
-                            for a in links:
-                                m_id = re.search(r'/items/(\d+)', a.get('href', ''))
-                                if not m_id:
-                                    continue
-                                ext_id = m_id.group(1)
-                                parent = (
-                                    a.find_parent("div", attrs={"data-cy": "item-card"}) or
-                                    a.find_parent("div", class_=re.compile(r'item-card|items-i|items_i|card_item|products-i')) or
-                                    a.find_parent("div")
-                                )
-                                card_text = parent.get_text(separator=" | ", strip=True).replace('\xa0', ' ') if parent else a.get_text(strip=True).replace('\xa0', ' ')
-
-                                if ext_id not in seen or len(card_text) > len(seen[ext_id].get('text', '')):
-                                    seen[ext_id] = {'href': a['href'], 'text': card_text, 'card': parent, 'target_url': target_url, 'link_elem': a}
+                        html_text, status_code = await fetch_stealth_page(
+                            target_url,
+                            headers=req_headers,
+                            timeout=9.0,
+                            referer="https://bina.az/"
+                        )
+                        if status_code != 200 or not html_text:
+                            if status_code in (403, 429, 503):
+                                logger.warning(f"[BinaAzScraper] Anti-bot restriction fetching {target_url}: HTTP {status_code}")
+                            else:
+                                logger.debug(f"[BinaAzScraper] GET {target_url} returned status {status_code}")
+                            if attempt < 2:
+                                await asyncio.sleep(0.5)
+                                continue
                             return
-                    except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout, Exception) as e:
+
+                        soup = BeautifulSoup(html_text, "html.parser")
+
+                        # Layer 1: Check Next.js __NEXT_DATA__ JSON
+                        next_data_script = soup.find("script", id="__NEXT_DATA__")
+                        if next_data_script and next_data_script.string:
+                            try:
+                                next_json = json.loads(next_data_script.string)
+                                page_props = next_json.get("props", {}).get("pageProps", {})
+                                raw_items = (
+                                    page_props.get("items") or
+                                    page_props.get("data", {}).get("items") or
+                                    page_props.get("initialState", {}).get("items") or
+                                    []
+                                )
+                                for it in raw_items:
+                                    if isinstance(it, dict) and it.get("id"):
+                                        ext_id = str(it["id"])
+                                        if ext_id not in seen:
+                                            seen[ext_id] = {
+                                                'href': f"/items/{ext_id}",
+                                                'next_data': it,
+                                                'target_url': target_url
+                                            }
+                            except Exception as e_next:
+                                logger.debug(f"[BinaAzScraper] Notice parsing __NEXT_DATA__: {e_next}")
+
+                        # Layer 2: BeautifulSoup DOM extraction
+                        links = soup.find_all("a", href=re.compile(r'/items/(\d+)'))
+                        for a in links:
+                            m_id = re.search(r'/items/(\d+)', a.get('href', ''))
+                            if not m_id:
+                                continue
+                            ext_id = m_id.group(1)
+                            parent = (
+                                a.find_parent("div", attrs={"data-cy": "item-card"}) or
+                                a.find_parent("div", class_=re.compile(r'item-card|items-i|items_i|card_item|products-i')) or
+                                a.find_parent("div")
+                            )
+                            card_text = parent.get_text(separator=" | ", strip=True).replace('\xa0', ' ') if parent else a.get_text(strip=True).replace('\xa0', ' ')
+
+                            if ext_id not in seen:
+                                seen[ext_id] = {'href': a['href'], 'text': card_text, 'card': parent, 'target_url': target_url, 'link_elem': a}
+                            elif not seen[ext_id].get('text') or len(card_text) > len(seen[ext_id].get('text', '')):
+                                seen[ext_id]['href'] = a['href']
+                                seen[ext_id]['text'] = card_text
+                                seen[ext_id]['card'] = parent
+                                seen[ext_id]['link_elem'] = a
+
+                        return
+                    except Exception as e:
                         if attempt < 2:
                             await asyncio.sleep(0.5)
                         else:
@@ -370,12 +418,26 @@ class BinaAzScraper(BaseScraper):
         await asyncio.gather(*[fetch_target(u) for u in urls_to_fetch])
 
         for ext_id, data in seen.items():
-            href = data['href']
-            raw_text = data['text']
-            raw_lower = raw_text.lower()
-            c = data['card']
-            target_url = data['target_url']
+            href = data.get('href', f"/items/{ext_id}")
+            it = data.get('next_data') or {}
+            c = data.get('card')
+            target_url = data.get('target_url', '')
             a_link = data.get('link_elem')
+            raw_text = data.get('text', '')
+
+            if not raw_text and it:
+                price_str = f"{it.get('price', '')} {it.get('currency', 'AZN')}"
+                rooms_str = f"{it.get('rooms', '')} otaqlı" if it.get('rooms') else ""
+                area_str = f"{it.get('area', '')} m²" if it.get('area') else ""
+                loc_parts = []
+                if isinstance(it.get('location'), str):
+                    loc_parts.append(it['location'])
+                elif isinstance(it.get('locations'), list):
+                    loc_parts.extend([str(l.get('name', '')) for l in it['locations'] if isinstance(l, dict)])
+                loc_str = " ".join(loc_parts)
+                raw_text = f"{price_str} | {rooms_str} | {area_str} | {loc_str}".strip(" |")
+
+            raw_lower = raw_text.lower()
             aria_label = a_link.get('aria-label', '') if a_link else ''
             combined_text = f"{aria_label} | {raw_text}".replace('\xa0', ' ')
             combined_lower = combined_text.lower()
@@ -383,6 +445,11 @@ class BinaAzScraper(BaseScraper):
             # 1. Price Extraction & Currency
             price = 0.0
             currency = "AZN"
+            if it.get("price"):
+                price = safe_float(it["price"], default=0.0)
+            if it.get("currency"):
+                currency = str(it["currency"]).upper()
+
             price_val_el = (
                 c.find(attrs={"data-cy": "item-card-price-full"}) or
                 c.find(attrs={"data-cy": "item-card-price"}) or
@@ -391,7 +458,8 @@ class BinaAzScraper(BaseScraper):
 
             if price_val_el:
                 val_clean = re.sub(r'[^\d.]', '', price_val_el.get_text().replace('\xa0', ' '))
-                price = safe_float(val_clean, default=0.0)
+                if safe_float(val_clean, default=0.0) > 0:
+                    price = safe_float(val_clean, default=0.0)
             
             if not price or price == 0:
                 price_m = re.search(r'([\d\s]+)\s*(?:AZN|₼|USD|\$|\/\s*ay|\/\s*gün)', raw_text) or re.search(r'([\d\s]+)\s*\|\s*AZN', raw_text) or re.search(r'(\d+[\d\s]{3,})', raw_text)
@@ -478,9 +546,27 @@ class BinaAzScraper(BaseScraper):
             else:
                 bld_type = None
 
+            if not rooms and it.get("rooms"):
+                try:
+                    rooms = int(it["rooms"])
+                except (ValueError, TypeError):
+                    pass
+            if not area and it.get("area"):
+                area = safe_optional_float(it["area"])
+            if not floor and it.get("floor"):
+                try:
+                    floor = int(it["floor"])
+                except (ValueError, TypeError):
+                    pass
+            if not total_floors and it.get("floors"):
+                try:
+                    total_floors = int(it["floors"])
+                except (ValueError, TypeError):
+                    pass
+
             # 7. Seller Type (Bina.az Agency Tag Detection)
             has_agency_badge = bool(
-                c and (
+                (c and (
                     c.find(attrs={"data-cy": "product-label-agency"}) 
                     or c.find("a", href=re.compile(r'/agentlikler|/vasiteciler|/complexes|/companies|/shops')) 
                     or c.find(class_=re.compile(r'agency|shop|complex|developer|broker|company|rieltor|items-i-agency', re.I))
@@ -488,11 +574,17 @@ class BinaAzScraper(BaseScraper):
                     or "agentlik" in combined_lower
                     or "vasitəçi (agent)" in combined_lower
                     or "vasiteci (agent)" in combined_lower
-                )
-            ) or ("vasitəçi" in combined_lower and not any(k in combined_lower for k in ["vasitəçisiz", "vasitecisiz", "vasitəçi yoxdur", "vasitəçi deyiləm"]))
+                ))
+                or ("vasitəçi" in combined_lower and not any(k in combined_lower for k in ["vasitəçisiz", "vasitecisiz", "vasitəçi yoxdur", "vasitəçi deyiləm"]))
+                or (str(it.get("contactTypeName", "")).lower() in ["vasitəçi (agent)", "vasitəçi", "agent"])
+                or bool(it.get("company"))
+            )
 
+            contact_type_clean = str(it.get("contactTypeName", "")).lower()
             if has_agency_badge:
                 seller_type = "agency"
+            elif any(k in contact_type_clean for k in ["mülkiyyətçi", "mulkiyyetci", "sahibindən", "sahibinden"]):
+                seller_type = "owner"
             else:
                 from app.core.property_classifier import classify_property_and_offer
                 _, _, detected_seller = classify_property_and_offer(
@@ -558,6 +650,14 @@ class BinaAzScraper(BaseScraper):
                         s_clean = s_src.replace('/thumbnail/', '/full/').replace('/f460x345/', '/full/').replace('/f660x496/', '/full/')
                         if s_clean not in card_photos:
                             card_photos.append(s_clean)
+
+            if not card_photos and it.get("photos"):
+                for p_entry in it["photos"]:
+                    p_url = p_entry if isinstance(p_entry, str) else (p_entry.get("full") or p_entry.get("url") or p_entry.get("thumbnail") if isinstance(p_entry, dict) else None)
+                    if p_url and ("uploads/" in p_url or "azstatic" in p_url or "bina.az" in p_url):
+                        p_clean = p_url.replace('/thumbnail/', '/full/').replace('/f460x345/', '/full/').replace('/f660x496/', '/full/')
+                        if p_clean not in card_photos:
+                            card_photos.append(p_clean)
 
             clean_url = href if href.startswith("http") else f"https://bina.az{href}"
             items.append(RawListingItem(
