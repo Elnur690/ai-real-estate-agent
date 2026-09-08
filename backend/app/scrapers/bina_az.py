@@ -125,12 +125,14 @@ class BinaAzScraper(BaseScraper):
                 if next_data_script and next_data_script.string:
                     try:
                         next_json = json.loads(next_data_script.string)
-                        next_item_data = next_json.get("props", {}).get("pageProps", {}).get("currentItemData", {}) or {}
+                        props_data = next_json.get("props", {}).get("pageProps", {})
+                        next_item_data = props_data.get("currentItemData") or props_data.get("item") or {}
                     except Exception:
                         pass
 
                 contact_type_raw = str(next_item_data.get("contactTypeName") or "").lower()
-                has_next_company = bool(next_item_data.get("company"))
+                comp_obj = next_item_data.get("company")
+                has_next_company = bool(comp_obj) or (isinstance(comp_obj, dict) and comp_obj.get("targetType") == "AGENCY")
                 next_desc = next_item_data.get("description")
                 if next_desc and len(next_desc) > len(full_desc):
                     full_desc = next_desc
@@ -491,8 +493,6 @@ class BinaAzScraper(BaseScraper):
 
             if has_agency_badge:
                 seller_type = "agency"
-            elif "owner_type=owner" in target_url:
-                seller_type = "owner"
             else:
                 from app.core.property_classifier import classify_property_and_offer
                 _, _, detected_seller = classify_property_and_offer(

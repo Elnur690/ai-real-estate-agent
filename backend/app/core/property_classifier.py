@@ -185,9 +185,10 @@ def classify_property_and_offer(
         any(kw in text_for_agency_check for kw in AGENCY_KEYWORDS) or
         bool(COMMISSION_REGEX.search(text_for_agency_check)) or
         bool(INVENTORY_CODE_REGEX.search(text_for_agency_check)) or
-        bool(MULTI_INVENTORY_REGEX.search(text_for_agency_check))
+        bool(MULTI_INVENTORY_REGEX.search(text_for_agency_check)) or
+        (existing_seller_type in ["agency", "agent", "makler"])
     )
-    has_owner_kw = any(kw in full_text for kw in OWNER_KEYWORDS) or "owner_type=owner" in url_lower or "sahibinden" in url_lower
+    has_owner_kw = any(kw in full_text for kw in OWNER_KEYWORDS) or (existing_seller_type == "owner")
 
     # Agency keywords strictly override owner claims
     if has_agency_kw:

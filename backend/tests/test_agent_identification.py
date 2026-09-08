@@ -253,3 +253,81 @@ def test_multi_broker_duplicate_cluster_strict_match_rejection():
 
     # Must be strictly rejected for owner searches
     assert IngestionService.is_strict_match(search, cluster_listing) is False
+
+
+def test_bina_az_individual_agent_next_data_and_card_classification():
+    import json
+    from app.scrapers.bina_az import BinaAzScraper
+
+    # Test detail page with Next.js JSON containing contactTypeName="vasitəçi (agent)" (like listing 6271682)
+    next_data = {
+        "props": {
+            "pageProps": {
+                "currentItemData": {
+                    "id": "6271682",
+                    "contactTypeName": "vasitəçi (agent)",
+                    "company": {"__typename": "Company", "id": "175826", "name": "Faiq", "targetType": "AGENCY"},
+                    "description": "Baku City Residence Olimpik, Koroğlu m. Premium layihə mənzillər təklif edirik."
+                }
+            }
+        }
+    }
+    html = f"""
+    <html>
+        <body>
+            <div data-cy="owner-info">
+                <div data-cy="owner-info__content">
+                    <span>Faiq</span>
+                    <span>Vasitəçi (agent)</span>
+                </div>
+            </div>
+            <script id="__NEXT_DATA__" type="application/json">{json.dumps(next_data)}</script>
+        </body>
+    </html>
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    next_script = soup.find("script", id="__NEXT_DATA__")
+    assert next_script is not None
+    parsed_json = json.loads(next_script.string)
+    props = parsed_json.get("props", {}).get("pageProps", {})
+    item_data = props.get("currentItemData") or props.get("item") or {}
+    assert item_data.get("contactTypeName") == "vasitəçi (agent)"
+    assert item_data.get("company", {}).get("targetType") == "AGENCY"
+
+    # Card text from feed without owner keywords must not be marked as owner
+    card_text = "Daha 12 şəklə bax | Çıxarış var | 440 000 | AZN | Koroğlu m. | 4 otaqlı | 172.8 m² | 7/16 mərtəbə | Bakı, bugün 14:46"
+    _, _, detected_seller = classify_property_and_offer(
+        title="",
+        description=card_text,
+        url="/items/6271682",
+        raw_text=card_text
+    )
+    assert detected_seller == "agency"
+
+    # Owner search strictly rejects this listing
+    search = SavedSearch(
+        tenant_id=1,
+        name="Nizami Owner Search",
+        district="Nizami",
+        seller_type="owner",
+        min_price=400000,
+        max_price=500000
+    )
+    listing = Listing(
+        source_id=1,
+        external_id="bina_6271682",
+        title="4 otaqlı Mənzil (Koroğlu)",
+        description=item_data["description"],
+        listing_url="https://bina.az/items/6271682",
+        district="Nizami",
+        rooms=4,
+        price=440000.0,
+        seller_type="agency",
+        is_makler=True,
+        makler_score=1.0
+    )
+    assert IngestionService.is_strict_match(search, listing) is False
+    is_genuine_owner = (listing.seller_type == "owner") and not getattr(listing, 'is_makler', False) and ((listing.makler_score or 0.0) < 0.30)
+    assert is_genuine_owner is False
+    seller_str = "Ev Sahibindən" if is_genuine_owner else "Vasitəçidən/Agentlikdən"
+    assert seller_str == "Vasitəçidən/Agentlikdən"

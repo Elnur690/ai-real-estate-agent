@@ -91,12 +91,12 @@ class MaklerDetectorService:
             bool(INVENTORY_CODE_REGEX.search(text_for_agency_check)) or
             bool(MULTI_INVENTORY_REGEX.search(text_for_agency_check)) or
             has_photo_watermark or
-            (detected_seller == "agency")
+            (detected_seller == "agency") or
+            (listing.seller_type in ["agency", "agent", "makler"])
         )
         has_owner_kw = (
             any(kw in text_lower for kw in OWNER_KEYWORDS) or
-            "owner_type=owner" in (listing.listing_url or "").lower() or
-            "sahibinden" in (listing.listing_url or "").lower()
+            (listing.seller_type == "owner" and not has_agency_kw)
         )
 
         # Agency / Broker signals strictly take precedence over "sahibindən"

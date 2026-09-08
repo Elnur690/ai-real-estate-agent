@@ -734,7 +734,7 @@ class IngestionService:
                         db_listing = await IngestionService._ingest_single_raw_item(session, item, source_id=s_id)
                         if db_listing:
                             total_scraped += 1
-                            matches_created = await IngestionService._evaluate_and_deliver_matches(session, db_listing, enrich_live=False)
+                            matches_created = await IngestionService._evaluate_and_deliver_matches(session, db_listing, enrich_live=False, enrich_candidate=True)
                             total_matched += matches_created
                     except Exception as e:
                         logger.error(f"[IngestionService] Error processing item in {s_name}: {e}")
@@ -1060,7 +1060,8 @@ class IngestionService:
         db: AsyncSession,
         listing: Listing,
         target_search_id: Optional[int] = None,
-        enrich_live: bool = True
+        enrich_live: bool = True,
+        enrich_candidate: bool = False
     ) -> int:
         if not getattr(listing, 'is_active', True):
             return 0
@@ -1102,6 +1103,7 @@ class IngestionService:
                     from app.services.makler_detector import MaklerDetectorService
                     listing = await MaklerDetectorService.analyze_listing(db, listing)
                     await db.commit()
+                    listing._enriched = True
             except Exception as e:
                 logger.debug(f"[IngestionService] Detail enrichment exception for listing #{listing.id}: {e}")
 
@@ -1136,6 +1138,47 @@ class IngestionService:
             # Deterministic Strict Filter Check
             if not IngestionService.is_strict_match(search, listing):
                 continue
+
+            # Candidate match found! If this listing was ingested from a feed card without live detail page data,
+            # fetch the portal's verified detail page now to obtain exact author/seller type, phone, and description.
+            if (enrich_live or enrich_candidate) and not getattr(listing, '_enriched', False) and listing.external_id:
+                try:
+                    details = await IngestionService._fetch_details_for_item(listing.external_id, listing.listing_url)
+                    if isinstance(details, dict) and details:
+                        if details.get("phone_number") and not listing.phone_number:
+                            listing.phone_number = details["phone_number"]
+                        if details.get("price") and (not listing.price or listing.price == 0):
+                            listing.price = details["price"]
+                            listing.currency = details.get("currency", listing.currency or "AZN")
+                        elif (not listing.price or listing.price == 0) and details.get("price_per_sqm") and listing.area_sqm:
+                            listing.price = round(details["price_per_sqm"] * listing.area_sqm)
+                        if details.get("price_per_sqm") and not listing.price_per_sqm:
+                            listing.price_per_sqm = details["price_per_sqm"]
+                        if details.get("property_type"):
+                            listing.property_type = details["property_type"]
+                        if details.get("offer_type"):
+                            listing.offer_type = details["offer_type"]
+                        if details.get("seller_type"):
+                            listing.seller_type = details["seller_type"]
+                            listing.is_makler = details.get("is_makler", False)
+                            listing.makler_score = details.get("makler_score", 0.0)
+                        if details.get("rooms") and not listing.rooms:
+                            listing.rooms = details["rooms"]
+                        if details.get("full_description") and len(details["full_description"]) > len(listing.description or ""):
+                            listing.description = details["full_description"]
+                        if details.get("photos") and len(details["photos"]) > len(listing.photos or []):
+                            listing.photos = details["photos"]
+
+                        from app.services.makler_detector import MaklerDetectorService
+                        listing = await MaklerDetectorService.analyze_listing(db, listing)
+                        await db.commit()
+                        listing._enriched = True
+
+                        # Re-verify strict match now that we have the 100% verified portal seller type!
+                        if not IngestionService.is_strict_match(search, listing):
+                            continue
+                except Exception as e_enr:
+                    logger.debug(f"[IngestionService] Candidate enrichment exception for listing #{listing.id}: {e_enr}")
 
             criteria = StructuredCriteria(
                 district=search.district,
