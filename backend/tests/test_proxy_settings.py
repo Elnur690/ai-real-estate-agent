@@ -264,3 +264,56 @@ def test_domain_circuit_breaker_and_semaphores():
     remaining = check_domain_cooldown("testdomain.az")
     assert remaining > 0.0
 
+def test_circuit_breaker_telegram_alert_and_throttle():
+    from unittest.mock import patch
+    from app.scrapers.utils import record_domain_block, _DOMAIN_ALERT_TIMESTAMPS, _DOMAIN_BLOCK_COUNTS
+
+    test_domain = "alert-test-portal.az"
+    _DOMAIN_ALERT_TIMESTAMPS.pop(test_domain, None)
+    _DOMAIN_BLOCK_COUNTS.pop(test_domain, None)
+
+    with patch("app.scrapers.utils._dispatch_async_scraper_alert") as mock_dispatch:
+        # 1st block - threshold not reached
+        record_domain_block(test_domain, cooldown_duration=10.0, threshold=2, status_code=403)
+        mock_dispatch.assert_not_called()
+
+        # 2nd block - threshold reached -> Circuit breaker trips and sends alert
+        record_domain_block(test_domain, cooldown_duration=10.0, threshold=2, status_code=403)
+        mock_dispatch.assert_called_once()
+        args, kwargs = mock_dispatch.call_args
+        assert kwargs["source_name"] == test_domain
+        assert kwargs["status_code"] == 403
+        assert "Circuit Breaker aktivləşdi" in kwargs["error_text"]
+
+        # 3rd & 4th blocks (tripping again immediately within 30m window) -> Throttled!
+        mock_dispatch.reset_mock()
+        record_domain_block(test_domain, cooldown_duration=10.0, threshold=2, status_code=429)
+        record_domain_block(test_domain, cooldown_duration=10.0, threshold=2, status_code=429)
+        mock_dispatch.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_health_monitor_report_scraper_issue_standalone():
+    from unittest.mock import patch, AsyncMock
+    from app.services.health_monitor import HealthMonitorService
+
+    with patch.object(HealthMonitorService, "get_admin_telegram_chat_id", new_callable=AsyncMock) as mock_get_chat_id, \
+         patch("app.services.health_monitor.send_telegram_notification", new_callable=AsyncMock) as mock_send_telegram:
+        
+        # Test case: admin telegram chat id configured
+        mock_get_chat_id.return_value = "12345678"
+        mock_send_telegram.return_value = True
+
+        result = await HealthMonitorService.report_scraper_issue_standalone(
+            source_name="tap.az",
+            status_code=403,
+            error_text="Cloudflare IP block"
+        )
+        assert result is True
+        mock_send_telegram.assert_called_once()
+        chat_id, alert_msg = mock_send_telegram.call_args[0]
+        assert chat_id == "12345678"
+        assert "tap.az" in alert_msg
+        assert "403" in alert_msg
+        assert "Cloudflare IP block" in alert_msg
+
+

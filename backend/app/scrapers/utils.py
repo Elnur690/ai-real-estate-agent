@@ -2,6 +2,7 @@ import asyncio
 import random
 import logging
 import re
+import time
 from typing import Dict, Optional, Any, List, Tuple
 import httpx
 
@@ -202,6 +203,19 @@ def update_runtime_proxy_pool(
 _DOMAIN_SEMAPHORES: Dict[str, asyncio.Semaphore] = {}
 _DOMAIN_COOLDOWNS: Dict[str, float] = {}  # domain -> cooldown_until_timestamp
 _DOMAIN_BLOCK_COUNTS: Dict[str, List[float]] = {}  # domain -> timestamps of recent blocks
+_DOMAIN_ALERT_TIMESTAMPS: Dict[str, float] = {}  # domain -> timestamp of last admin alert (anti-spam throttle)
+
+def _dispatch_async_scraper_alert(source_name: str, status_code: Optional[int], error_text: str) -> None:
+    """Dispatches background task to notify admin via HealthMonitorService."""
+    try:
+        from app.services.health_monitor import HealthMonitorService
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(HealthMonitorService.report_scraper_issue_standalone(source_name, status_code, error_text))
+        except RuntimeError:
+            asyncio.run(HealthMonitorService.report_scraper_issue_standalone(source_name, status_code, error_text))
+    except Exception as e:
+        logger.debug(f"[ScraperUtils] Scraper alert dispatch notice: {e}")
 
 def get_domain_semaphore(domain: str, max_concurrent: int = 2) -> asyncio.Semaphore:
     """Returns an asyncio.Semaphore for throttling concurrent requests to a specific domain."""
@@ -216,8 +230,8 @@ def check_domain_cooldown(domain: str) -> float:
     now = time.time()
     return max(0.0, until - now)
 
-def record_domain_block(domain: str, cooldown_duration: float = 25.0, threshold: int = 3) -> None:
-    """Records a 403/429 block on a domain. If threshold is exceeded in 60s, triggers circuit-breaker cooldown."""
+def record_domain_block(domain: str, cooldown_duration: float = 25.0, threshold: int = 3, status_code: Optional[int] = 403) -> None:
+    """Records a 403/429 block on a domain. If threshold is exceeded in 60s, triggers circuit-breaker cooldown and alerts admin."""
     import time
     now = time.time()
     history = _DOMAIN_BLOCK_COUNTS.setdefault(domain, [])
@@ -228,6 +242,16 @@ def record_domain_block(domain: str, cooldown_duration: float = 25.0, threshold:
         _DOMAIN_COOLDOWNS[domain] = now + cooldown_duration
         logger.warning(f"[ScraperUtils] Circuit Breaker: {domain} hit {len(history)} blocks in 60s. Pausing requests for {cooldown_duration}s.")
         history.clear()
+
+        # Send alert to Admin Telegram if not alerted in last 30 minutes (1800s)
+        last_alert = _DOMAIN_ALERT_TIMESTAMPS.get(domain, 0.0)
+        if now - last_alert >= 1800.0:
+            _DOMAIN_ALERT_TIMESTAMPS[domain] = now
+            _dispatch_async_scraper_alert(
+                source_name=domain,
+                status_code=status_code,
+                error_text=f"Circuit Breaker aktivləşdi: {domain} üzrə ardıcıl {threshold} dəfə blok (HTTP {status_code}) qeydə alındı. Sorğular {int(cooldown_duration)}s müvəqqəti donduruldu."
+            )
 
 async def test_proxy_connection(proxy_url: Optional[str] = None) -> Dict[str, Any]:
     """
@@ -501,7 +525,7 @@ async def fetch_stealth_page(
                     elif res.status_code in (403, 429, 503):
                         logger.warning(f"[ScraperUtils] Proxy {active_proxy} got HTTP {res.status_code} for {url} ({domain}). Quarantining for 15m and retrying...")
                         mark_proxy_unhealthy(active_proxy, duration_seconds=900.0)
-                        record_domain_block(domain)
+                        record_domain_block(domain, status_code=res.status_code)
                         continue
             except Exception as e:
                 logger.debug(f"[ScraperUtils] curl_cffi attempt {attempt+1} failed for {url} (proxy: {active_proxy}): {e}")
@@ -521,7 +545,7 @@ async def fetch_stealth_page(
                         return res.text, res.status_code
                     elif res.status_code in (403, 429, 503):
                         mark_proxy_unhealthy(fallback_proxy, duration_seconds=900.0)
-                        record_domain_block(domain)
+                        record_domain_block(domain, status_code=res.status_code)
             except Exception as e:
                 logger.debug(f"[ScraperUtils] httpx proxy fallback failed for {url}: {e}")
 
@@ -534,6 +558,14 @@ async def fetch_stealth_page(
                 f"[ScraperUtils] All {max_proxy_retries} proxy attempts failed for {url} ({domain}). "
                 f"Zero-Leak Protection ACTIVE: Aborting request with HTTP 503 rather than leaking host static IP."
             )
+            now = time.time()
+            if now - _DOMAIN_ALERT_TIMESTAMPS.get(domain, 0.0) >= 1800.0:
+                _DOMAIN_ALERT_TIMESTAMPS[domain] = now
+                _dispatch_async_scraper_alert(
+                    source_name=domain,
+                    status_code=503,
+                    error_text="Bütün proksi cəhdləri uğursuz oldu (HTTP 503). Sıfır Sızma Qalxanı aktivdir, server IP qorundu."
+                )
             return None, 503
 
         # Direct fetch ONLY if proxies are explicitly disabled by admin and domain is not protected

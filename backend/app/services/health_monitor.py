@@ -46,3 +46,16 @@ class HealthMonitorService:
             f"💡 *Tövsiyə:* Proksi serverləri və ya sayt strukturunu yoxlayın."
         )
         return await cls.send_admin_alert(db, title, msg)
+
+    @classmethod
+    async def report_scraper_issue_standalone(
+        cls, source_name: str, status_code: Optional[int], error_text: str
+    ) -> bool:
+        """Standalone helper that opens an AsyncSessionLocal session and dispatches scraper alert."""
+        from app.db.session import AsyncSessionLocal
+        try:
+            async with AsyncSessionLocal() as db:
+                return await cls.report_scraper_issue(db, source_name, status_code, error_text)
+        except Exception as e:
+            logger.debug(f"[HealthMonitor] Failed to dispatch standalone scraper alert: {e}")
+            return False
