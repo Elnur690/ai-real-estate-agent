@@ -5,7 +5,7 @@ import httpx
 from bs4 import BeautifulSoup
 from typing import List
 from app.scrapers.base import BaseScraper, RawListingItem
-from app.scrapers.utils import get_random_headers, safe_float, safe_optional_float, fetch_stealth_page
+from app.scrapers.utils import get_random_headers, safe_float, safe_optional_float, fetch_stealth_page, polite_delay
 from app.core.baku_locations import (
     extract_baku_district, extract_metro_station, extract_baku_settlement,
     SETTLEMENT_TO_DISTRICT, METRO_TO_DISTRICT
@@ -112,7 +112,7 @@ class TapAzScraper(BaseScraper):
         for target_url in urls_to_fetch:
             for attempt in range(1, 3):
                 try:
-                    await asyncio.sleep(0.15)
+                    await polite_delay(1.5, 3.2)
                     headers = get_random_headers(referer="https://tap.az/")
                     res_text, res_status = await fetch_stealth_page(target_url, headers=headers, timeout=8.0, referer="https://tap.az/")
                     if res_status != 200 or not res_text:

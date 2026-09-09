@@ -187,6 +187,8 @@ async def test_test_proxy_endpoint(client: AsyncClient, test_db: AsyncSession):
             "ip_status": 200,
             "bina_status": 200,
             "bina_title": "Bina.az",
+            "tap_status": 200,
+            "tap_title": "Tap.az",
             "latency_ms": 320,
             "error": None,
             "message": "Uğurlu!"
@@ -200,6 +202,8 @@ async def test_test_proxy_endpoint(client: AsyncClient, test_db: AsyncSession):
         data = res.json()
         assert data["success"] is True
         assert data["detected_ip"] == "1.2.3.4"
+        assert data["bina_status"] == 200
+        assert data["tap_status"] == 200
         assert data["latency_ms"] == 320
 
 def test_proxy_quarantine():
@@ -221,3 +225,42 @@ def test_proxy_quarantine():
     # Mark it healthy again
     mark_proxy_healthy(test_proxy)
     assert len(get_healthy_proxies(pool)) == 2
+
+@pytest.mark.asyncio
+async def test_zero_leak_protection_refuses_direct_fallback():
+    from unittest.mock import patch
+    from app.scrapers.utils import fetch_stealth_page, update_runtime_proxy_pool
+
+    # Set runtime proxy enabled
+    update_runtime_proxy_pool(proxies=["http://user:pass@1.1.1.1:80"], enabled=True)
+
+    # Mock curl_cffi and httpx to simulate all proxies failing (e.g. 403 or timeout)
+    with patch("curl_cffi.requests.AsyncSession.get", side_effect=Exception("Proxy connection refused")), \
+         patch("httpx.AsyncClient.get", side_effect=Exception("Proxy connect error")):
+        
+        # Testing Tap.az
+        content, status = await fetch_stealth_page("https://tap.az/elanlar/dasinmaz-emlak", max_proxy_retries=1)
+        # MUST NOT attempt direct connection; must return 503 Zero-Leak refusal
+        assert content is None
+        assert status == 503
+
+        # Testing Bina.az
+        content_b, status_b = await fetch_stealth_page("https://bina.az/items", max_proxy_retries=1)
+        assert content_b is None
+        assert status_b == 503
+
+def test_domain_circuit_breaker_and_semaphores():
+    from app.scrapers.utils import get_domain_semaphore, record_domain_block, check_domain_cooldown
+    
+    sem = get_domain_semaphore("tap.az", max_concurrent=2)
+    assert sem._value == 2
+
+    # Record 3 blocks on a test domain within 60s
+    record_domain_block("testdomain.az", cooldown_duration=20.0, threshold=3)
+    record_domain_block("testdomain.az", cooldown_duration=20.0, threshold=3)
+    record_domain_block("testdomain.az", cooldown_duration=20.0, threshold=3)
+
+    # Cooldown should be active (> 0s)
+    remaining = check_domain_cooldown("testdomain.az")
+    assert remaining > 0.0
+

@@ -126,6 +126,8 @@ export const AppSettingsView: React.FC = () => {
     ip_status?: number;
     bina_status?: number;
     bina_title?: string;
+    tap_status?: number;
+    tap_title?: string;
     latency_ms?: number;
     message?: string;
     error?: string;
@@ -168,6 +170,8 @@ export const AppSettingsView: React.FC = () => {
       proxy: string;
       detected_ip?: string;
       status?: number;
+      bina_status?: number;
+      tap_status?: number;
       latency_ms?: number;
       success: boolean;
       error?: string;
@@ -1038,9 +1042,12 @@ export const AppSettingsView: React.FC = () => {
                           <span>{r.success ? '🟢' : '🔴'}</span>
                           <span className="text-slate-300 truncate">{r.proxy}</span>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className={r.success ? 'text-emerald-400' : 'text-rose-400 font-bold'}>
-                            {r.status ? `HTTP ${r.status}` : 'Xəta'}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] ${r.bina_status === 200 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300 font-semibold'}`}>
+                            Bina: {r.bina_status ? `${r.bina_status}` : 'Xəta'}
+                          </span>
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] ${r.tap_status === 200 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300 font-semibold'}`}>
+                            Tap: {r.tap_status ? `${r.tap_status}` : 'Xəta'}
                           </span>
                           <span className="text-slate-500">{r.latency_ms}ms</span>
                         </div>
@@ -1082,10 +1089,10 @@ export const AppSettingsView: React.FC = () => {
               <div>
                 <h4 className="text-sm font-bold text-white flex items-center gap-2">
                   <Play className="w-4 h-4 text-purple-400" />
-                  Canlı Proksi & Bina.az Sınağı
+                  Canlı Proksi, Bina.az & Tap.az Sınağı
                 </h4>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Proksinin Cloudflare WAF blokunu keçib-keçmədiyini və real çıxış IP-sini real vaxtda yoxlayın.
+                  Proksinin Cloudflare WAF blokunu keçib-keçmədiyini, həm Bina.az, həm də Tap.az saytlarına daxil ola bildiyini real vaxtda yoxlayın.
                 </p>
               </div>
 
@@ -1129,7 +1136,7 @@ export const AppSettingsView: React.FC = () => {
                 <div className="text-[11px] text-amber-300 flex items-start gap-1.5 mt-1.5 bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/30">
                   <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                   <span>
-                    <strong>Diqqət:</strong> Bu xanaya bina.az saytının ünvanı yazılmamalıdır! Bura yalnız <strong>Webshare və ya proksi provayderinizin verdiyi IP və port</strong> yazılmalıdır (məs: <code className="text-purple-300">31.59.20.176:6754:reipvtkd:kwop2c4stm5r</code>). Bina.az saytına qoşulma arxa planda avtomatik sınaqdan keçirilir.
+                    <strong>Diqqət:</strong> Bu xanaya bina.az və ya tap.az saytının ünvanı yazılmamalıdır! Bura yalnız <strong>Webshare və ya proksi provayderinizin verdiyi IP və port</strong> yazılmalıdır (məs: <code className="text-purple-300">31.59.20.176:6754:reipvtkd:kwop2c4stm5r</code>). Hər iki sayta qoşulma arxa planda avtomatik sınaqdan keçirilir.
                   </span>
                 </div>
               )}
@@ -1151,7 +1158,11 @@ export const AppSettingsView: React.FC = () => {
                     )}
                     <div>
                       <span className={`text-sm font-bold block ${proxyTestResult.success ? 'text-emerald-300' : 'text-rose-300'}`}>
-                        {proxyTestResult.success ? 'Proksi Tam İşləkdir (Bina.az 200 OK)' : 'Proksi Əlaqəsi Uğursuz Oldu'}
+                        {proxyTestResult.bina_status === 200 && proxyTestResult.tap_status === 200
+                          ? 'Proksi Tam İşləkdir (Bina.az & Tap.az 200 OK)'
+                          : proxyTestResult.success
+                            ? 'Proksi Qismən İşləkdir'
+                            : 'Proksi Əlaqəsi Uğursuz Oldu'}
                       </span>
                       {proxyTestResult.proxy_used && (
                         <span className="text-[11px] font-mono text-slate-400 block mt-0.5">
@@ -1165,22 +1176,33 @@ export const AppSettingsView: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
                   <div className="bg-dark-900/60 p-2.5 rounded-lg border border-slate-800">
                     <span className="text-slate-400 block text-[11px] mb-0.5">🌐 Çıxış IP-si (Exit IP)</span>
                     <span className="font-mono text-white font-semibold truncate block">{proxyTestResult.detected_ip || 'Məlum deyil'}</span>
                   </div>
                   <div className="bg-dark-900/60 p-2.5 rounded-lg border border-slate-800">
-                    <span className="text-slate-400 block text-[11px] mb-0.5">🏠 Bina.az Cavabı</span>
+                    <span className="text-slate-400 block text-[11px] mb-0.5">🏠 Bina.az</span>
                     <span className={`font-mono font-semibold ${proxyTestResult.bina_status === 200 ? 'text-emerald-400' : 'text-rose-400'}`}>
                       HTTP {proxyTestResult.bina_status || 'Xəta'}
                     </span>
+                    <span className="text-[10px] text-slate-400 truncate block mt-0.5" title={proxyTestResult.bina_title}>
+                      {proxyTestResult.bina_title || '-'}
+                    </span>
                   </div>
                   <div className="bg-dark-900/60 p-2.5 rounded-lg border border-slate-800">
-                    <span className="text-slate-400 block text-[11px] mb-0.5">📄 Səhifə Başlığı</span>
-                    <span className="text-slate-200 truncate block" title={proxyTestResult.bina_title}>
-                      {proxyTestResult.bina_title || 'Alınmadı'}
+                    <span className="text-slate-400 block text-[11px] mb-0.5">📱 Tap.az</span>
+                    <span className={`font-mono font-semibold ${proxyTestResult.tap_status === 200 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      HTTP {proxyTestResult.tap_status || 'Xəta'}
                     </span>
+                    <span className="text-[10px] text-slate-400 truncate block mt-0.5" title={proxyTestResult.tap_title}>
+                      {proxyTestResult.tap_title || '-'}
+                    </span>
+                  </div>
+                  <div className="bg-dark-900/60 p-2.5 rounded-lg border border-slate-800">
+                    <span className="text-slate-400 block text-[11px] mb-0.5">🛡️ IP Qorunması</span>
+                    <span className="text-emerald-400 font-semibold block">Zero-Leak Aktiv</span>
+                    <span className="text-[10px] text-slate-400 block mt-0.5">Statik IP gizlidir</span>
                   </div>
                 </div>
 

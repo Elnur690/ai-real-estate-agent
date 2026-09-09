@@ -198,10 +198,41 @@ def update_runtime_proxy_pool(
     })
     logger.info(f"[ScraperUtils] Updated runtime proxy pool: {len(clean_proxies)} proxies, primary: {_RUNTIME_PROXY_CONFIG['primary']}, enabled: {enabled}, rotation: {rotation}")
 
+# Domain-level concurrency limits, cooldowns, and block tracking
+_DOMAIN_SEMAPHORES: Dict[str, asyncio.Semaphore] = {}
+_DOMAIN_COOLDOWNS: Dict[str, float] = {}  # domain -> cooldown_until_timestamp
+_DOMAIN_BLOCK_COUNTS: Dict[str, List[float]] = {}  # domain -> timestamps of recent blocks
+
+def get_domain_semaphore(domain: str, max_concurrent: int = 2) -> asyncio.Semaphore:
+    """Returns an asyncio.Semaphore for throttling concurrent requests to a specific domain."""
+    if domain not in _DOMAIN_SEMAPHORES:
+        _DOMAIN_SEMAPHORES[domain] = asyncio.Semaphore(max_concurrent)
+    return _DOMAIN_SEMAPHORES[domain]
+
+def check_domain_cooldown(domain: str) -> float:
+    """Returns seconds remaining in domain cooldown, or 0.0 if not cooling down."""
+    import time
+    until = _DOMAIN_COOLDOWNS.get(domain, 0.0)
+    now = time.time()
+    return max(0.0, until - now)
+
+def record_domain_block(domain: str, cooldown_duration: float = 25.0, threshold: int = 3) -> None:
+    """Records a 403/429 block on a domain. If threshold is exceeded in 60s, triggers circuit-breaker cooldown."""
+    import time
+    now = time.time()
+    history = _DOMAIN_BLOCK_COUNTS.setdefault(domain, [])
+    # Keep only blocks within last 60 seconds
+    history[:] = [t for t in history if now - t <= 60.0]
+    history.append(now)
+    if len(history) >= threshold:
+        _DOMAIN_COOLDOWNS[domain] = now + cooldown_duration
+        logger.warning(f"[ScraperUtils] Circuit Breaker: {domain} hit {len(history)} blocks in 60s. Pausing requests for {cooldown_duration}s.")
+        history.clear()
+
 async def test_proxy_connection(proxy_url: Optional[str] = None) -> Dict[str, Any]:
     """
-    Tests a proxy (or current active proxy) against ipify.org and bina.az.
-    Measures latency and returns status, IP, bina status and title.
+    Tests a proxy (or current active proxy) against ipify.org, bina.az, and tap.az.
+    Measures latency and returns status, IP, bina status, tap status, and titles.
     """
     import time
     from bs4 import BeautifulSoup
@@ -216,6 +247,8 @@ async def test_proxy_connection(proxy_url: Optional[str] = None) -> Dict[str, An
             "ip_status": 0,
             "bina_status": 0,
             "bina_title": "Keçərsiz Proksi Formatı",
+            "tap_status": 0,
+            "tap_title": "",
             "latency_ms": 0,
             "error": str(val_err),
             "message": str(val_err)
@@ -226,6 +259,8 @@ async def test_proxy_connection(proxy_url: Optional[str] = None) -> Dict[str, An
     ip_status = 0
     bina_status = 0
     bina_title = ""
+    tap_status = 0
+    tap_title = ""
     error_msg = None
 
     try:
@@ -252,27 +287,41 @@ async def test_proxy_connection(proxy_url: Optional[str] = None) -> Dict[str, An
             except Exception as e:
                 if not error_msg:
                     error_msg = str(e)
+
+            try:
+                tap_resp = await session.get("https://tap.az/elanlar/dasinmaz-emlak")
+                tap_status = tap_resp.status_code
+                soup_tap = BeautifulSoup(tap_resp.text[:5000], "html.parser")
+                if soup_tap.title and soup_tap.title.string:
+                    tap_title = soup_tap.title.string.strip()
+            except Exception as e:
+                if not error_msg:
+                    error_msg = str(e)
     except Exception as e:
         error_msg = str(e)
 
     latency_ms = int((time.time() - start_time) * 1000)
-    is_success = (bina_status == 200)
+    is_success = (bina_status == 200 and tap_status == 200) or (bina_status == 200 or tap_status == 200)
 
     # Detailed Azerbaijani diagnosis for common proxy errors
     human_msg = ""
-    if is_success:
-        human_msg = "Əla! Proksi aktivdir və bina.az-a maneəsiz daxil olur (Status 200 OK)."
+    if bina_status == 200 and tap_status == 200:
+        human_msg = "Əla! Proksi tam aktivdir: həm Bina.az (200 OK), həm də Tap.az (200 OK) saytlarına maneəsiz daxil olur."
+    elif bina_status == 200 and tap_status != 200:
+        human_msg = f"Proksi Bina.az üçün aktivdir (200 OK), lakin Tap.az cavab statusu: HTTP {tap_status}."
+    elif tap_status == 200 and bina_status != 200:
+        human_msg = f"Proksi Tap.az üçün aktivdir (200 OK), lakin Bina.az cavab statusu: HTTP {bina_status}."
     elif error_msg:
         if "response 400" in error_msg:
-            human_msg = f"Proksi server sorğunu rədd etdi (HTTP 400 Bad Request). Yoxlanılan ünvan: '{target_proxy}'. Zəhmət olmasa proksi yerinə veb-sayt ünvanı (məs. bina.az) daxil etmədiyinizdən və portun düzgünlüyündən əmin olun."
+            human_msg = f"Proksi server sorğunu rədd etdi (HTTP 400 Bad Request). Yoxlanılan ünvan: '{target_proxy}'. Zəhmət olmasa proksi formatını və portu yoxlayın."
         elif "response 407" in error_msg:
             human_msg = f"Proksi autentifikasiyası uğursuz oldu (HTTP 407 Proxy Authentication Required). İstifadəçi adı və ya şifrə səhvdir: '{target_proxy}'."
-        elif "response 403" in error_msg or bina_status == 403:
-            human_msg = f"Giriş qadağandır (HTTP 403 Forbidden). Bu proksi IP-si ({detected_ip}) bina.az tərəfindən Cloudflare-də bloklanıb. Zəhmət olmasa hovuzdakı başqa bir proksini sınaqdan keçirin."
+        elif "response 403" in error_msg or bina_status == 403 or tap_status == 403:
+            human_msg = f"Giriş qadağandır (HTTP 403 Forbidden). Bu proksi IP-si ({detected_ip}) portallar tərəfindən Cloudflare-də bloklanıb. Hovuzdakı başqa bir proksini sınaqdan keçirin."
         else:
             human_msg = f"Xəta baş verdi: {error_msg}"
     else:
-        human_msg = f"Bina.az cavab statusu: HTTP {bina_status} (Uğursuz)"
+        human_msg = f"Portallar cavab vermədi (Bina.az: HTTP {bina_status}, Tap.az: HTTP {tap_status})"
 
     return {
         "success": is_success,
@@ -281,6 +330,8 @@ async def test_proxy_connection(proxy_url: Optional[str] = None) -> Dict[str, An
         "ip_status": ip_status,
         "bina_status": bina_status,
         "bina_title": bina_title,
+        "tap_status": tap_status,
+        "tap_title": tap_title,
         "latency_ms": latency_ms,
         "error": error_msg,
         "message": human_msg
@@ -308,7 +359,7 @@ def get_rotating_proxy(explicit_proxy: Optional[str] = None) -> Optional[str]:
 
 async def scan_entire_proxy_pool(custom_pool: Optional[List[str]] = None) -> Dict[str, Any]:
     """
-    Concurrently tests all proxies in the pool against bina.az and ipify.
+    Concurrently tests all proxies in the pool against bina.az, tap.az, and ipify.
     Returns per-proxy health status, working count, and list of blocked/failed proxies.
     """
     pool_to_scan = custom_pool if custom_pool else (_RUNTIME_PROXY_CONFIG.get("proxies") or WEBSHARE_PROXIES)
@@ -335,17 +386,23 @@ async def scan_entire_proxy_pool(custom_pool: Optional[List[str]] = None) -> Dic
                 "proxy": p,
                 "detected_ip": "Xəta",
                 "status": 0,
+                "bina_status": 0,
+                "tap_status": 0,
                 "latency_ms": 0,
                 "success": False,
                 "error": str(r)
             }
             blocked_proxies.append(p)
-            mark_proxy_unhealthy(p, duration_seconds=600.0)
+            mark_proxy_unhealthy(p, duration_seconds=900.0)
         else:
+            b_status = r.get("bina_status", 0)
+            t_status = r.get("tap_status", 0)
             entry = {
                 "proxy": p,
                 "detected_ip": r.get("detected_ip"),
-                "status": r.get("bina_status"),
+                "status": b_status,
+                "bina_status": b_status,
+                "tap_status": t_status,
                 "latency_ms": r.get("latency_ms"),
                 "success": r.get("success", False),
                 "error": r.get("error"),
@@ -356,7 +413,7 @@ async def scan_entire_proxy_pool(custom_pool: Optional[List[str]] = None) -> Dic
                 mark_proxy_healthy(p)
             else:
                 blocked_proxies.append(p)
-                mark_proxy_unhealthy(p, duration_seconds=600.0)
+                mark_proxy_unhealthy(p, duration_seconds=900.0)
         formatted_results.append(entry)
 
     total = len(clean_pool)
@@ -386,69 +443,109 @@ async def fetch_stealth_page(
     timeout: float = 10.0,
     proxy: Optional[str] = None,
     referer: Optional[str] = None,
-    impersonate: str = "chrome124",
-    max_proxy_retries: int = 3
+    impersonate: Optional[str] = None,
+    max_proxy_retries: int = 4
 ) -> Tuple[Optional[str], int]:
     """
     Fetches web page HTML using TLS-fingerprint impersonation (curl_cffi AsyncSession)
-    with automatic proxy rotation, multi-proxy retry, and quarantine on failure.
+    with automatic proxy rotation, multi-proxy retry, domain concurrency throttling,
+    human jitter, and strict Zero-IP-Leak protection (no fallback to host static IP).
     Returns (html_content, status_code).
     """
-    req_headers = dict(headers) if headers else get_random_headers(referer=referer or url)
-    tried_proxies = set()
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    domain = (parsed.netloc or "").lower().replace("www.", "")
 
-    # 1. Primary with Multi-Proxy Retries across healthy pool
-    for attempt in range(max_proxy_retries):
-        active_proxy = get_rotating_proxy(proxy)
-        # Avoid picking the exact same failed proxy in this retry chain
-        if active_proxy and active_proxy in tried_proxies:
-            available = [p for p in get_healthy_proxies() if p not in tried_proxies]
-            if available:
-                active_proxy = random.choice(available)
+    # Check circuit-breaker domain cooldown
+    cooldown_left = check_domain_cooldown(domain)
+    if cooldown_left > 0:
+        logger.warning(f"[ScraperUtils] Domain {domain} is in circuit-breaker cooldown ({cooldown_left:.1f}s remaining). Backing off.")
+        await asyncio.sleep(min(cooldown_left, 5.0))
 
-        if active_proxy:
-            tried_proxies.add(active_proxy)
+    # Determine domain concurrency limit
+    max_concurrent = 2 if any(d in domain for d in ("tap.az", "bina.az", "turbo.az")) else 3
+    semaphore = get_domain_semaphore(domain, max_concurrent=max_concurrent)
 
+    async with semaphore:
+        # Polite randomized jitter before requests to sensitive sites
+        if any(d in domain for d in ("tap.az", "bina.az", "turbo.az")):
+            await asyncio.sleep(random.uniform(1.2, 2.8))
+
+        req_headers = dict(headers) if headers else get_random_headers(referer=referer or f"https://{domain}/")
+
+        # TLS Impersonation rotation: randomize across modern desktop browsers
+        chosen_impersonate = impersonate or random.choice(["chrome124", "chrome120", "safari17"])
+
+        tried_proxies = set()
+        proxies_enabled = _RUNTIME_PROXY_CONFIG.get("enabled", True)
+
+        # 1. Primary with Multi-Proxy Retries across healthy pool
+        for attempt in range(max_proxy_retries):
+            active_proxy = get_rotating_proxy(proxy)
+            # Avoid picking the exact same failed proxy in this retry chain
+            if active_proxy and active_proxy in tried_proxies:
+                available = [p for p in get_healthy_proxies() if p not in tried_proxies]
+                if available:
+                    active_proxy = random.choice(available)
+
+            if active_proxy:
+                tried_proxies.add(active_proxy)
+
+            try:
+                from curl_cffi.requests import AsyncSession
+                async with AsyncSession(impersonate=chosen_impersonate, proxy=active_proxy, timeout=timeout) as session:
+                    res = await session.get(url, headers=req_headers)
+                    if res.status_code == 200:
+                        mark_proxy_healthy(active_proxy)
+                        return res.text, res.status_code
+                    elif res.status_code in (403, 429, 503):
+                        logger.warning(f"[ScraperUtils] Proxy {active_proxy} got HTTP {res.status_code} for {url} ({domain}). Quarantining for 15m and retrying...")
+                        mark_proxy_unhealthy(active_proxy, duration_seconds=900.0)
+                        record_domain_block(domain)
+                        continue
+            except Exception as e:
+                logger.debug(f"[ScraperUtils] curl_cffi attempt {attempt+1} failed for {url} (proxy: {active_proxy}): {e}")
+                mark_proxy_unhealthy(active_proxy, duration_seconds=300.0)
+                continue
+
+        # 2. Fallback: httpx.AsyncClient with another healthy proxy
+        healthy_pool = get_healthy_proxies()
+        fallback_proxy = random.choice(healthy_pool) if healthy_pool else None
+        if fallback_proxy and fallback_proxy not in tried_proxies:
+            try:
+                limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
+                async with httpx.AsyncClient(proxy=fallback_proxy, timeout=timeout, limits=limits, follow_redirects=True) as client:
+                    res = await client.get(url, headers=req_headers)
+                    if res.status_code == 200:
+                        mark_proxy_healthy(fallback_proxy)
+                        return res.text, res.status_code
+                    elif res.status_code in (403, 429, 503):
+                        mark_proxy_unhealthy(fallback_proxy, duration_seconds=900.0)
+                        record_domain_block(domain)
+            except Exception as e:
+                logger.debug(f"[ScraperUtils] httpx proxy fallback failed for {url}: {e}")
+
+        # 3. Strict Zero-Leak IP Protection:
+        # If proxy is enabled or if domain is a protected real-estate portal,
+        # NEVER fall back to proxy=None! Direct requests leak the workplace static IP (213.154.20.24) and cause bans.
+        protected_domains = ("tap.az", "bina.az", "turbo.az", "yeniemlak.az", "rahatemlak.az", "lalafo.az")
+        if proxies_enabled or any(d in domain for d in protected_domains):
+            logger.warning(
+                f"[ScraperUtils] All {max_proxy_retries} proxy attempts failed for {url} ({domain}). "
+                f"Zero-Leak Protection ACTIVE: Aborting request with HTTP 503 rather than leaking host static IP."
+            )
+            return None, 503
+
+        # Direct fetch ONLY if proxies are explicitly disabled by admin and domain is not protected
         try:
             from curl_cffi.requests import AsyncSession
-            async with AsyncSession(impersonate=impersonate, proxy=active_proxy, timeout=timeout) as session:
+            async with AsyncSession(impersonate=chosen_impersonate, proxy=None, timeout=timeout) as session:
                 res = await session.get(url, headers=req_headers)
-                if res.status_code == 200:
-                    mark_proxy_healthy(active_proxy)
-                    return res.text, res.status_code
-                elif res.status_code in (403, 429, 503):
-                    logger.warning(f"[ScraperUtils] Proxy {active_proxy} got HTTP {res.status_code} for {url}. Quarantining and retrying with another proxy...")
-                    mark_proxy_unhealthy(active_proxy, duration_seconds=600.0)
-                    continue
+                return res.text, res.status_code
         except Exception as e:
-            logger.debug(f"[ScraperUtils] curl_cffi attempt {attempt+1} failed for {url} (proxy: {active_proxy}): {e}")
-            mark_proxy_unhealthy(active_proxy, duration_seconds=300.0)
-            continue
+            logger.debug(f"[ScraperUtils] Direct stealth fallback notice for {url}: {e}")
 
-    # 2. Fallback: httpx.AsyncClient with another healthy proxy
-    healthy_pool = get_healthy_proxies()
-    fallback_proxy = random.choice(healthy_pool) if healthy_pool else None
-    if fallback_proxy:
-        try:
-            limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
-            async with httpx.AsyncClient(proxy=fallback_proxy, timeout=timeout, limits=limits, follow_redirects=True) as client:
-                res = await client.get(url, headers=req_headers)
-                if res.status_code == 200:
-                    mark_proxy_healthy(fallback_proxy)
-                    return res.text, res.status_code
-        except Exception as e:
-            logger.debug(f"[ScraperUtils] httpx proxy fallback failed for {url}: {e}")
-
-    # 3. Direct fetch fallback only if proxy disabled or pool exhausted
-    try:
-        from curl_cffi.requests import AsyncSession
-        async with AsyncSession(impersonate=impersonate, proxy=None, timeout=timeout) as session:
-            res = await session.get(url, headers=req_headers)
-            return res.text, res.status_code
-    except Exception as e:
-        logger.debug(f"[ScraperUtils] Direct stealth fallback notice for {url}: {e}")
-
-    return None, 0
+        return None, 0
 
 
 def safe_float(val: Any, default: float = 0.0) -> float:
