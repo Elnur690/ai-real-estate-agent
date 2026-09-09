@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from pydantic import BaseModel
@@ -166,6 +166,7 @@ class UpdateSellerAgentRequest(BaseModel):
     preferred_channel: Optional[str] = None
     preferred_billing_day: Optional[int] = None
     status: Optional[str] = None
+    package_id: Optional[int] = None
     feature_makler_detector: Optional[bool] = None
     feature_avm_bargain_finder: Optional[bool] = None
     feature_social_brochure: Optional[bool] = None
@@ -875,6 +876,83 @@ async def get_my_agent_detail(
     }
 
 
+class SellerAgentWhatsAppQrRequest(BaseModel):
+    renew: Optional[bool] = False
+
+
+@router.get("/me/agents/{agent_id}/whatsapp-status")
+async def get_my_agent_whatsapp_status(
+    agent_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_auth: tuple[User, Optional[Seller]] = Depends(get_current_seller_user)
+):
+    """Seller-only: Check connection status of agent's WhatsApp instance."""
+    user, seller = current_auth
+    if not seller:
+        raise HTTPException(status_code=403, detail="Satıcı profili tələb olunur.")
+
+    stmt = select(Tenant).where(Tenant.id == agent_id, Tenant.seller_id == seller.id)
+    res = await db.execute(stmt)
+    agent = res.scalars().first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent tapılmadı")
+
+    inst = f"tenant_{agent.id}"
+    from app.api.v1.whatsapp import get_whatsapp_status
+    st = await get_whatsapp_status(instance_name=inst, current_user=user, db=db)
+    return st.model_dump() if hasattr(st, "model_dump") else st
+
+
+@router.post("/me/agents/{agent_id}/whatsapp-qr")
+async def get_my_agent_whatsapp_qr(
+    agent_id: int,
+    body: Optional[SellerAgentWhatsAppQrRequest] = None,
+    db: AsyncSession = Depends(get_db),
+    current_auth: tuple[User, Optional[Seller]] = Depends(get_current_seller_user)
+):
+    """Seller-only: Get or renew WhatsApp pairing QR code for the agent."""
+    user, seller = current_auth
+    if not seller:
+        raise HTTPException(status_code=403, detail="Satıcı profili tələb olunur.")
+
+    stmt = select(Tenant).where(Tenant.id == agent_id, Tenant.seller_id == seller.id)
+    res = await db.execute(stmt)
+    agent = res.scalars().first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent tapılmadı")
+
+    inst = f"tenant_{agent.id}"
+    from app.api.v1.whatsapp import get_whatsapp_qrcode, ConnectWhatsAppRequest
+    qr_req = ConnectWhatsAppRequest(
+        instance_name=inst,
+        renew=body.renew if body else False
+    )
+    return await get_whatsapp_qrcode(body=qr_req, current_user=user, db=db)
+
+
+@router.post("/me/agents/{agent_id}/whatsapp-disconnect")
+async def disconnect_my_agent_whatsapp(
+    agent_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_auth: tuple[User, Optional[Seller]] = Depends(get_current_seller_user)
+):
+    """Seller-only: Disconnect / logout WhatsApp instance for the agent."""
+    user, seller = current_auth
+    if not seller:
+        raise HTTPException(status_code=403, detail="Satıcı profili tələb olunur.")
+
+    stmt = select(Tenant).where(Tenant.id == agent_id, Tenant.seller_id == seller.id)
+    res = await db.execute(stmt)
+    agent = res.scalars().first()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent tapılmadı")
+
+    inst = f"tenant_{agent.id}"
+    from app.api.v1.whatsapp import disconnect_whatsapp, ConnectWhatsAppRequest
+    req = ConnectWhatsAppRequest(instance_name=inst)
+    return await disconnect_whatsapp(body=req, current_user=user, db=db)
+
+
 @router.put("/me/agents/{agent_id}")
 async def update_my_agent(
     agent_id: int,
@@ -939,6 +1017,81 @@ async def update_my_agent(
         agent.preferred_billing_day = max(1, min(28, int(body.preferred_billing_day)))
     if body.status is not None:
         agent.status = body.status
+    if body.package_id is not None:
+        if body.package_id > 0 and body.package_id != agent.seller_package_id:
+            p_stmt = select(SellerPackage).where(
+                SellerPackage.id == body.package_id,
+                SellerPackage.seller_id == seller.id,
+                SellerPackage.is_active == True
+            )
+            p_res = await db.execute(p_stmt)
+            pkg = p_res.scalars().first()
+            if not pkg:
+                raise HTTPException(status_code=404, detail="Seçilmiş paket tapılmadı və ya aktiv deyil.")
+            
+            was_trial = (agent.seller_package_id is None) or ("sınaq" in (agent.plan or "").lower()) or ("trial" in (agent.plan or "").lower())
+            agent.seller_package_id = pkg.id
+            agent.plan = pkg.name
+            agent.feature_makler_detector = pkg.feature_makler_detector
+            agent.feature_avm_bargain_finder = pkg.feature_avm_bargain_finder
+            agent.feature_social_brochure = pkg.feature_social_brochure
+            agent.feature_multi_location = pkg.feature_multi_location
+            agent.max_locations_per_search = pkg.max_locations
+            agent.feature_client_intake_bot = pkg.feature_client_intake_bot
+            agent.backup_enabled = pkg.feature_backup_service
+            agent.status = "active"
+
+            now_utc = datetime.now(timezone.utc)
+            curr_exp = agent.plan_expires_at
+            if curr_exp and curr_exp.tzinfo is None:
+                curr_exp = curr_exp.replace(tzinfo=timezone.utc)
+            if not curr_exp or curr_exp < now_utc or was_trial:
+                agent.plan_expires_at = now_utc + timedelta(days=pkg.duration_days)
+
+            # If agent was on trial and is now assigned a paid package, record transaction and commission
+            if was_trial and pkg.price > 0:
+                rank_map = await get_seller_rank_config_map(db)
+                rank_info = rank_map.get(seller.rank, rank_map.get("Bronze", {}))
+                bonus_pct = rank_info.get("bonus_commission", 0.0)
+                effective_comm = min(100.0, seller.commission_rate + bonus_pct)
+
+                pkg_price = pkg.price
+                if getattr(pkg, 'sale_enabled', False) and getattr(pkg, 'sale_price', None) is not None and pkg.sale_price > 0:
+                    pkg_price = pkg.sale_price
+
+                seller_profit = round(pkg_price * (effective_comm / 100.0), 2)
+                platform_fee = round(pkg_price - seller_profit, 2)
+
+                seller.balance += seller_profit
+                seller.total_earnings += seller_profit
+                seller.total_sales_volume += pkg_price
+
+                tx = SellerTransaction(
+                    seller_id=seller.id,
+                    tenant_id=agent.id,
+                    package_id=pkg.id,
+                    amount=pkg_price,
+                    commission_rate=effective_comm,
+                    seller_profit=seller_profit,
+                    platform_fee=platform_fee,
+                    type="subscription_sale",
+                    description=f"Agent paketi yeniləndi (Sınaqdan Ödənişliyə): {agent.name} ({pkg.name})"
+                )
+                db.add(tx)
+
+                pay_record = Payment(
+                    tenant_id=agent.id,
+                    amount=pkg_price,
+                    currency="AZN",
+                    period_covered_start=now_utc,
+                    period_covered_end=agent.plan_expires_at,
+                    received_at=now_utc,
+                    notes=f"Seller Upgrade: {agent.name} ({pkg.name})"
+                )
+                db.add(pay_record)
+        elif body.package_id <= 0:
+            agent.seller_package_id = None
+            agent.plan = "Pulsuz Sınaq"
     if body.feature_makler_detector is not None:
         agent.feature_makler_detector = body.feature_makler_detector
     if body.feature_avm_bargain_finder is not None:
@@ -1388,8 +1541,8 @@ async def register_my_agent(
 
     # 2. Check Package if assigned OR Free Trial
     package = None
-    is_trial = body.is_trial or (body.package_id is None)
-    if not is_trial and body.package_id:
+    if body.package_id and body.package_id > 0:
+        is_trial = False
         p_stmt = select(SellerPackage).where(
             SellerPackage.id == body.package_id,
             SellerPackage.seller_id == seller.id,
@@ -1399,6 +1552,8 @@ async def register_my_agent(
         package = p_res.scalars().first()
         if not package:
             raise HTTPException(status_code=404, detail="Seçilmiş paket tapılmadı və ya aktiv deyil.")
+    else:
+        is_trial = True
 
     # 3. Create Tenant Agent
     from datetime import timedelta

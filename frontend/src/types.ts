@@ -84,6 +84,65 @@ export interface Payment {
   received_by?: number;
   received_at: string;
   notes?: string;
+  created_at?: string;
+
+  // Tenant Details
+  tenant_name?: string;
+  tenant_phone?: string;
+  tenant_status?: string;
+  tenant_plan?: string;
+  preferred_channel?: string;
+  plan_expires_at?: string;
+  days_remaining?: number;
+  is_expired?: boolean;
+  subscription_status?: 'active' | 'expiring_soon' | 'expired';
+
+  // Seller / Reseller Details
+  seller_id?: number;
+  seller_name?: string;
+  seller_company?: string;
+  seller_phone?: string;
+  seller_rank?: string;
+  seller_commission_rate?: number;
+  is_reseller_sale?: boolean;
+
+  // Financial & Package Split Details
+  package_id?: number;
+  package_name?: string;
+  package_duration_days?: number;
+  gross_amount?: number;
+  seller_profit?: number;
+  platform_fee?: number;
+  transaction_id?: number;
+  transaction_type?: string;
+}
+
+export interface PaymentAnalytics {
+  total_gross_revenue: number;
+  total_payments_count: number;
+  reseller_sales_volume: number;
+  reseller_commissions_paid: number;
+  platform_net_revenue: number;
+  direct_admin_revenue: number;
+  subscription_health: {
+    active_count: number;
+    expiring_soon_count: number;
+    expired_count: number;
+    total_tenants: number;
+  };
+  sellers_summary: Array<{
+    seller_id: number;
+    name: string;
+    company_name?: string;
+    phone: string;
+    rank: string;
+    commission_rate: number;
+    total_sales_count: number;
+    gross_volume: number;
+    seller_profit: number;
+    platform_fee: number;
+    balance: number;
+  }>;
 }
 
 export interface AIProviderConfigItem {

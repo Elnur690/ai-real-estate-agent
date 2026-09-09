@@ -355,6 +355,26 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_start_telegram_bot())
 
+    # Initialize runtime proxy pool from AppSettings if present in database
+    try:
+        from app.models.setting import AppSettings
+        from app.scrapers.utils import update_runtime_proxy_pool
+        async with AsyncSessionLocal() as db_settings:
+            res = await db_settings.execute(select(AppSettings))
+            settings_map = {item.key: item.value for item in res.scalars().all()}
+            if "proxy_pool_urls" in settings_map or "bina_az_proxy_url" in settings_map:
+                raw_pool = settings_map.get("proxy_pool_urls", "")
+                pool = [p.strip() for p in raw_pool.splitlines() if p.strip()] if raw_pool else None
+                update_runtime_proxy_pool(
+                    proxies=pool,
+                    primary_proxy=settings_map.get("bina_az_proxy_url"),
+                    enabled=settings_map.get("proxy_enabled", "true") == "true",
+                    rotation=settings_map.get("proxy_rotation_enabled", "true") == "true"
+                )
+                logger.info("[Startup] Loaded dynamic proxy settings from database.")
+    except Exception as e_proxy:
+        logger.warning(f"[Startup] Proxy pool initialization notice: {e_proxy}")
+
     # Start background trial tracking loop
     from app.services.trial_tracker import TrialTrackerService
     asyncio.create_task(TrialTrackerService.start_background_tracker())

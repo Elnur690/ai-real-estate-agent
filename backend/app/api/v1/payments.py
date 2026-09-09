@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db, get_current_admin
 from app.models.tenant import Tenant
 from app.models.payment import Payment
+from app.models.seller import Seller, SellerPackage, SellerTransaction
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
 
@@ -46,21 +47,325 @@ class PaymentResponse(BaseModel):
     received_by: Optional[int] = None
     received_at: Optional[datetime] = None
     notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    # Tenant Details
+    tenant_name: Optional[str] = None
+    tenant_phone: Optional[str] = None
+    tenant_status: Optional[str] = None
+    tenant_plan: Optional[str] = None
+    preferred_channel: Optional[str] = None
+    plan_expires_at: Optional[datetime] = None
+    days_remaining: int = 0
+    is_expired: bool = False
+    subscription_status: str = "active" # "active" | "expiring_soon" | "expired"
+
+    # Seller / Reseller Details
+    seller_id: Optional[int] = None
+    seller_name: Optional[str] = None
+    seller_company: Optional[str] = None
+    seller_phone: Optional[str] = None
+    seller_rank: Optional[str] = None
+    seller_commission_rate: Optional[float] = None
+    is_reseller_sale: bool = False
+
+    # Financial & Package Split Details
+    package_id: Optional[int] = None
+    package_name: Optional[str] = None
+    package_duration_days: Optional[int] = None
+    gross_amount: float = 0.0
+    seller_profit: float = 0.0
+    platform_fee: float = 0.0
+    transaction_id: Optional[int] = None
+    transaction_type: Optional[str] = None
+
+
+@router.get("/analytics")
+async def get_payments_analytics(
+    db: AsyncSession = Depends(get_db),
+    current_admin = Depends(get_current_admin)
+):
+    """Returns comprehensive financial and subscription analytics for admin."""
+    now_utc = datetime.now(timezone.utc)
+
+    # 1. Fetch all payments
+    res_payments = await db.execute(select(Payment).order_by(desc(Payment.received_at)))
+    payments = res_payments.scalars().all()
+
+    # 2. Fetch all tenants
+    res_tenants = await db.execute(select(Tenant))
+    tenants = res_tenants.scalars().all()
+    tenant_map = {t.id: t for t in tenants}
+
+    # 3. Fetch all sellers
+    res_sellers = await db.execute(select(Seller))
+    sellers = res_sellers.scalars().all()
+    seller_map = {s.id: s for s in sellers}
+
+    # 4. Fetch seller transactions
+    res_txs = await db.execute(select(SellerTransaction).order_by(desc(SellerTransaction.id)))
+    txs = res_txs.scalars().all()
+
+    total_gross = sum(p.amount for p in payments)
+    total_payments_count = len(payments)
+
+    reseller_sales_volume = 0.0
+    reseller_commissions_paid = 0.0
+    direct_admin_revenue = 0.0
+
+    # Per-seller stats accumulator
+    seller_stats = {
+        s.id: {
+            "seller_id": s.id,
+            "name": s.name,
+            "company_name": s.company_name,
+            "phone": s.phone,
+            "rank": s.rank,
+            "commission_rate": s.commission_rate,
+            "total_sales_count": 0,
+            "gross_volume": 0.0,
+            "seller_profit": 0.0,
+            "platform_fee": 0.0,
+            "balance": s.balance
+        }
+        for s in sellers
+    }
+
+    # Group transactions by tenant
+    tx_by_tenant = {}
+    for tx in txs:
+        if tx.tenant_id and tx.tenant_id not in tx_by_tenant:
+            tx_by_tenant[tx.tenant_id] = tx
+
+    for p in payments:
+        t = tenant_map.get(p.tenant_id)
+        if t and t.seller_id and t.seller_id in seller_map:
+            seller = seller_map[t.seller_id]
+            reseller_sales_volume += p.amount
+            s_stat = seller_stats[seller.id]
+            s_stat["total_sales_count"] += 1
+            s_stat["gross_volume"] += p.amount
+
+            tx = tx_by_tenant.get(p.tenant_id)
+            if tx and tx.seller_profit is not None:
+                profit = tx.seller_profit
+                fee = tx.platform_fee if tx.platform_fee is not None else (p.amount - profit)
+            else:
+                comm_pct = seller.commission_rate
+                profit = round(p.amount * (comm_pct / 100.0), 2)
+                fee = round(p.amount - profit, 2)
+
+            reseller_commissions_paid += profit
+            s_stat["seller_profit"] += profit
+            s_stat["platform_fee"] += fee
+        else:
+            direct_admin_revenue += p.amount
+
+    platform_net_revenue = round(direct_admin_revenue + (reseller_sales_volume - reseller_commissions_paid), 2)
+
+    # Subscription health metrics across all tenants
+    active_count = 0
+    expiring_soon_count = 0
+    expired_count = 0
+
+    for t in tenants:
+        if t.plan_expires_at:
+            exp = t.plan_expires_at
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if exp > now_utc:
+                days_left = (exp - now_utc).days
+                if days_left <= 5:
+                    expiring_soon_count += 1
+                else:
+                    active_count += 1
+            else:
+                expired_count += 1
+        else:
+            expired_count += 1
+
+    return {
+        "total_gross_revenue": round(total_gross, 2),
+        "total_payments_count": total_payments_count,
+        "reseller_sales_volume": round(reseller_sales_volume, 2),
+        "reseller_commissions_paid": round(reseller_commissions_paid, 2),
+        "platform_net_revenue": platform_net_revenue,
+        "direct_admin_revenue": round(direct_admin_revenue, 2),
+        "subscription_health": {
+            "active_count": active_count,
+            "expiring_soon_count": expiring_soon_count,
+            "expired_count": expired_count,
+            "total_tenants": len(tenants)
+        },
+        "sellers_summary": list(seller_stats.values())
+    }
+
 
 @router.get("", response_model=List[PaymentResponse])
 async def list_payments(
     tenant_id: Optional[int] = None,
-    limit: int = 100,
+    seller_id: Optional[int] = None,
+    source: Optional[str] = "all",
+    status_filter: Optional[str] = "all",
+    search: Optional[str] = None,
+    limit: int = 200,
+    skip: int = 0,
     db: AsyncSession = Depends(get_db),
     current_admin = Depends(get_current_admin)
 ):
-    """List all recorded cash payments."""
-    stmt = select(Payment).order_by(desc(Payment.received_at)).limit(limit)
+    """List all recorded cash payments with enhanced reseller attribution and subscription period tracking."""
+    # 1. Fetch payments
+    stmt = select(Payment).order_by(desc(Payment.received_at))
     if tenant_id:
         stmt = stmt.where(Payment.tenant_id == tenant_id)
-    result = await db.execute(stmt)
-    payments = result.scalars().all()
-    return payments
+    res_p = await db.execute(stmt)
+    payments = res_p.scalars().all()
+
+    # 2. Fetch tenants, sellers, packages, transactions
+    res_t = await db.execute(select(Tenant))
+    tenants = {t.id: t for t in res_t.scalars().all()}
+
+    res_s = await db.execute(select(Seller))
+    sellers = {s.id: s for s in res_s.scalars().all()}
+
+    res_pkg = await db.execute(select(SellerPackage))
+    packages = {p.id: p for p in res_pkg.scalars().all()}
+
+    res_tx = await db.execute(select(SellerTransaction).order_by(desc(SellerTransaction.id)))
+    all_txs = res_tx.scalars().all()
+    tx_by_tenant = {}
+    for tx in all_txs:
+        if tx.tenant_id and tx.tenant_id not in tx_by_tenant:
+            tx_by_tenant[tx.tenant_id] = tx
+
+    now_utc = datetime.now(timezone.utc)
+    items: List[PaymentResponse] = []
+
+    for p in payments:
+        t = tenants.get(p.tenant_id)
+        seller = sellers.get(t.seller_id) if (t and t.seller_id) else None
+        tx = tx_by_tenant.get(p.tenant_id) if t else None
+        pkg = packages.get(t.seller_package_id) if (t and t.seller_package_id) else None
+        if not pkg and tx and tx.package_id:
+            pkg = packages.get(tx.package_id)
+
+        is_reseller = bool(seller is not None)
+
+        # Source filtering
+        if source == "reseller" and not is_reseller:
+            continue
+        if source == "direct" and is_reseller:
+            continue
+        if seller_id and (not seller or seller.id != seller_id):
+            continue
+
+        # Subscription expiry calculation
+        days_remaining = 0
+        is_expired = False
+        sub_status = "active"
+
+        if t and t.plan_expires_at:
+            exp = t.plan_expires_at
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if exp > now_utc:
+                days_remaining = (exp - now_utc).days
+                is_expired = False
+                sub_status = "expiring_soon" if days_remaining <= 5 else "active"
+            else:
+                days_remaining = -((now_utc - exp).days)
+                is_expired = True
+                sub_status = "expired"
+        else:
+            is_expired = True
+            sub_status = "expired"
+
+        # Status filter
+        if status_filter == "active" and sub_status != "active":
+            continue
+        if status_filter == "expiring_soon" and sub_status != "expiring_soon":
+            continue
+        if status_filter == "expired" and sub_status != "expired":
+            continue
+
+        # Financial breakdown
+        gross = p.amount
+        if is_reseller and tx and tx.seller_profit is not None:
+            profit = tx.seller_profit
+            fee = tx.platform_fee if tx.platform_fee is not None else round(gross - profit, 2)
+            comm_rate = tx.commission_rate
+            tx_id = tx.id
+            tx_type = tx.type
+        elif is_reseller and seller:
+            comm_rate = seller.commission_rate
+            profit = round(gross * (comm_rate / 100.0), 2)
+            fee = round(gross - profit, 2)
+            tx_id = None
+            tx_type = "subscription_sale"
+        else:
+            comm_rate = 0.0
+            profit = 0.0
+            fee = gross
+            tx_id = None
+            tx_type = "direct_cash"
+
+        pkg_name = pkg.name if pkg else (t.plan if t else None)
+        pkg_duration = pkg.duration_days if pkg else 30
+
+        # Search filter
+        if search and search.strip():
+            q = search.strip().lower()
+            matches = (
+                (t and t.name and q in t.name.lower()) or
+                (t and t.phone and q in t.phone.lower()) or
+                (seller and seller.name and q in seller.name.lower()) or
+                (seller and seller.company_name and q in seller.company_name.lower()) or
+                (p.notes and q in p.notes.lower()) or
+                (pkg_name and q in pkg_name.lower()) or
+                (str(p.id) == q)
+            )
+            if not matches:
+                continue
+
+        resp = PaymentResponse(
+            id=p.id,
+            tenant_id=p.tenant_id,
+            amount=p.amount,
+            currency=p.currency,
+            period_covered_start=p.period_covered_start,
+            period_covered_end=p.period_covered_end,
+            received_by=p.received_by,
+            received_at=p.received_at,
+            notes=p.notes,
+            created_at=p.received_at,
+            tenant_name=t.name if t else f"Agent #{p.tenant_id}",
+            tenant_phone=t.phone if t else None,
+            tenant_status=t.status if t else None,
+            tenant_plan=t.plan if t else None,
+            preferred_channel=t.preferred_channel if t else "telegram",
+            plan_expires_at=t.plan_expires_at if t else None,
+            days_remaining=days_remaining,
+            is_expired=is_expired,
+            subscription_status=sub_status,
+            seller_id=seller.id if seller else None,
+            seller_name=seller.name if seller else None,
+            seller_company=seller.company_name if seller else None,
+            seller_phone=seller.phone if seller else None,
+            seller_rank=seller.rank if seller else None,
+            seller_commission_rate=comm_rate,
+            is_reseller_sale=is_reseller,
+            package_id=pkg.id if pkg else None,
+            package_name=pkg_name,
+            package_duration_days=pkg_duration,
+            gross_amount=gross,
+            seller_profit=profit,
+            platform_fee=fee,
+            transaction_id=tx_id,
+            transaction_type=tx_type
+        )
+        items.append(resp)
+
+    return items[skip:skip + limit]
 
 async def process_tenant_cash_payment(
     db: AsyncSession,

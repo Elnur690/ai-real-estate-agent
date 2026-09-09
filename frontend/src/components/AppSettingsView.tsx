@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Sliders, Save, CheckCircle, Cpu, Key, CheckCircle2, AlertTriangle, Play, History, Building2, SlidersHorizontal, Database, Users, Plus, Trash2, ShieldCheck, Mail, Phone, Lock, Edit2, UserCheck, KeyRound } from 'lucide-react';
+import { Sliders, Save, CheckCircle, Cpu, Key, CheckCircle2, AlertTriangle, Play, History, Building2, SlidersHorizontal, Database, Users, Plus, Trash2, ShieldCheck, Mail, Phone, Lock, Edit2, UserCheck, KeyRound, Globe, RefreshCw } from 'lucide-react';
 import api from '../api';
 import { AIProviderConfigItem, AICallLogItem, AdminUser } from '../types';
 
@@ -112,10 +112,47 @@ const AppSettingsAITaskCard: React.FC<AppSettingsAITaskCardProps> = ({ task, cfg
 };
 
 export const AppSettingsView: React.FC = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'branding' | 'ai' | 'automation' | 'admins'>('branding');
+  const [activeSubTab, setActiveSubTab] = useState<'branding' | 'ai' | 'automation' | 'proxy' | 'admins'>('branding');
   const [settingsMap, setSettingsMap] = useState<Record<string, string>>({});
   const [savingBranding, setSavingBranding] = useState(false);
   const [brandingSaved, setBrandingSaved] = useState(false);
+
+  // Proxy & Anti-Bot State
+  const [proxyTestRunning, setProxyTestRunning] = useState(false);
+  const [proxyTestResult, setProxyTestResult] = useState<{
+    success: boolean;
+    proxy_used?: string;
+    detected_ip?: string;
+    ip_status?: number;
+    bina_status?: number;
+    bina_title?: string;
+    latency_ms?: number;
+    message?: string;
+    error?: string;
+  } | null>(null);
+  const [customTestProxyInput, setCustomTestProxyInput] = useState('');
+
+  const handleRunProxyTest = async () => {
+    setProxyTestRunning(true);
+    setProxyTestResult(null);
+    try {
+      const payload: { proxy_url?: string } = {};
+      if (customTestProxyInput.trim()) {
+        payload.proxy_url = customTestProxyInput.trim();
+      }
+      const res = await api.post('/settings/test-proxy', payload);
+      setProxyTestResult(res.data);
+    } catch (e: any) {
+      setProxyTestResult({
+        success: false,
+        message: e.response?.data?.detail || e.message || 'Proksi sorğusu zamanı şəbəkə xətası baş verdi.',
+        bina_status: 0,
+        latency_ms: 0
+      });
+    } finally {
+      setProxyTestRunning(false);
+    }
+  };
 
   // My Profile state
   const [myProfile, setMyProfile] = useState<{ id: number; name: string; email: string; phone?: string; role: string } | null>(null);
@@ -438,6 +475,18 @@ export const AppSettingsView: React.FC = () => {
           >
             <SlidersHorizontal className="w-3.5 h-3.5" />
             <span>Scraper Defaults</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab('proxy')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              activeSubTab === 'proxy'
+                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5" />
+            <span>Proksi & Anti-Bot</span>
           </button>
         </div>
       </div>
@@ -801,6 +850,208 @@ export const AppSettingsView: React.FC = () => {
             </button>
           </div>
         </form>
+      )}
+
+      {/* SUB-TAB: Proksi & Anti-Bot İdarəetməsi */}
+      {activeSubTab === 'proxy' && (
+        <div className="space-y-6">
+          {/* Header & Status Card */}
+          <div className="bg-dark-800/90 p-6 rounded-2xl border border-slate-800 shadow-xl space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Globe className="w-5 h-5 text-indigo-400" />
+                  Proksi & Anti-Bot Şəbəkə Mərkəzi
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Bina.az və digər daşınmaz əmlak portallarının IP bloklamalarından (Cloudflare Error 1006) yayınmaq üçün Webshare və ya istənilən fərdi proksi hovuzunu idarə edin.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`px-3 py-1 rounded-full text-xs font-semibold border flex items-center gap-1.5 ${
+                  (settingsMap['proxy_enabled'] ?? 'true') === 'true'
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                    : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                }`}>
+                  <span className={`w-2 h-2 rounded-full ${
+                    (settingsMap['proxy_enabled'] ?? 'true') === 'true' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'
+                  }`} />
+                  {(settingsMap['proxy_enabled'] ?? 'true') === 'true' ? 'Proksi Aktivdir' : 'Proksi Deaktivdir (Birbaşa IP)'}
+                </span>
+              </div>
+            </div>
+
+            {/* Quick Controls Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+              <label className="flex items-start gap-3 p-3.5 rounded-xl bg-dark-900/80 border border-slate-700/60 cursor-pointer hover:border-slate-600 transition-all">
+                <input
+                  type="checkbox"
+                  checked={(settingsMap['proxy_enabled'] ?? 'true') === 'true'}
+                  onChange={(e) => setSettingsMap({ ...settingsMap, proxy_enabled: e.target.checked ? 'true' : 'false' })}
+                  className="mt-0.5 rounded text-purple-600 focus:ring-purple-500 bg-dark-800 border-slate-700"
+                />
+                <div>
+                  <span className="text-xs font-semibold text-white block">Proksi Şəbəkəsinə İcazə Ver</span>
+                  <span className="text-[11px] text-slate-400 block mt-0.5">
+                    Deaktiv edildikdə sorğular serverin öz birbaşa IP-si ilə çıxacaq.
+                  </span>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-3 p-3.5 rounded-xl bg-dark-900/80 border border-slate-700/60 cursor-pointer hover:border-slate-600 transition-all">
+                <input
+                  type="checkbox"
+                  checked={(settingsMap['proxy_rotation_enabled'] ?? 'true') === 'true'}
+                  onChange={(e) => setSettingsMap({ ...settingsMap, proxy_rotation_enabled: e.target.checked ? 'true' : 'false' })}
+                  className="mt-0.5 rounded text-purple-600 focus:ring-purple-500 bg-dark-800 border-slate-700"
+                />
+                <div>
+                  <span className="text-xs font-semibold text-white block">Dinamik Hovuz Rotasiyası</span>
+                  <span className="text-[11px] text-slate-400 block mt-0.5">
+                    Hər yeni elan yoxlama sorğusunda aşağıdakı hovuzdan təsadüfi proksi seçilir.
+                  </span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          {/* Primary Proxy & Pool Configuration */}
+          <form onSubmit={handleSaveBranding} className="bg-dark-800/90 p-6 rounded-2xl border border-slate-800 shadow-xl space-y-5">
+            <div>
+              <h4 className="text-sm font-bold text-white mb-1">Əsas Proksi (Primary / Fallback URL)</h4>
+              <p className="text-xs text-slate-400 mb-2">
+                Əgər tək bir statik proksi və ya şəxsi tunel (məs. BrightData, Oxylabs, Webshare Backbone) istifadə edirsinizsə, bura daxil edin. Boş saxlanarsa birbaşa aşağıdakı çoxlu hovuz işə düşür.
+              </p>
+              <input
+                type="text"
+                placeholder="http://username:password@ip:port və ya ip:port:username:password"
+                value={settingsMap['bina_az_proxy_url'] || ''}
+                onChange={(e) => setSettingsMap({ ...settingsMap, bina_az_proxy_url: e.target.value })}
+                className="w-full bg-dark-900 border border-slate-700/80 px-3.5 py-2.5 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <div>
+                  <h4 className="text-sm font-bold text-white">Çoxlu Proksi Hovuzu (Proxy Pool List)</h4>
+                  <p className="text-xs text-slate-400">
+                    Hər sətirdə bir proksi. Webshare standart formatı (<code className="text-purple-300">IP:PORT:USER:PASS</code>) və ya URL formatı (<code className="text-purple-300">http://user:pass@ip:port</code>) dəstəklənir.
+                  </p>
+                </div>
+                <span className="text-xs px-2.5 py-1 rounded-lg bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 font-mono">
+                  {(settingsMap['proxy_pool_urls'] || '').split('\n').filter(p => p.trim()).length} Proksi Qeydiyyatda
+                </span>
+              </div>
+
+              <textarea
+                rows={8}
+                value={settingsMap['proxy_pool_urls'] || ''}
+                onChange={(e) => setSettingsMap({ ...settingsMap, proxy_pool_urls: e.target.value })}
+                placeholder="31.59.20.176:6754:reipvtkd:kwop2c4stm5r&#10;45.38.107.97:6014:reipvtkd:kwop2c4stm5r"
+                className="w-full bg-dark-900 border border-slate-700/80 p-3.5 rounded-xl text-xs font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:border-purple-500 leading-relaxed"
+              />
+            </div>
+
+            <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
+              {brandingSaved && (
+                <span className="text-xs text-emerald-400 font-medium flex items-center gap-1">
+                  <CheckCircle className="w-4 h-4" /> Proksi tənzimləmələri yadda saxlanıldı və scraper hovuzunda dərhal tətbiq edildi!
+                </span>
+              )}
+              <button
+                type="submit"
+                disabled={savingBranding}
+                className="ml-auto flex items-center gap-2 bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-400 hover:to-indigo-500 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-purple-500/20 disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                <span>{savingBranding ? 'Yadda Saxlanılır...' : 'Yadda Saxla və Tətbiq Et'}</span>
+              </button>
+            </div>
+          </form>
+
+          {/* 1-Click Live Proxy Diagnostics */}
+          <div className="bg-dark-800/90 p-6 rounded-2xl border border-slate-800 shadow-xl space-y-4">
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <Play className="w-4 h-4 text-purple-400" />
+                Canlı Proksi & Bina.az Sınağı (1-Click Test)
+              </h4>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Proksinin Cloudflare WAF maneəsini keçib-keçmədiyini və real çıxış IP-sini real vaxtda yoxlayın.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                placeholder="Fərdi proksi sınağı (boş buraxsanız aktiv hovuzdan sınaq ediləcək)"
+                value={customTestProxyInput}
+                onChange={(e) => setCustomTestProxyInput(e.target.value)}
+                className="flex-1 bg-dark-900 border border-slate-700/80 px-3.5 py-2.5 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+              />
+              <button
+                type="button"
+                onClick={handleRunProxyTest}
+                disabled={proxyTestRunning}
+                className="flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition-all disabled:opacity-50 shadow-lg shadow-purple-500/20"
+              >
+                {proxyTestRunning ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                <span>{proxyTestRunning ? 'Yoxlanılır...' : 'İndi Sınaqdan Keçir'}</span>
+              </button>
+            </div>
+
+            {/* Test Results Display */}
+            {proxyTestResult && (
+              <div className={`p-4 rounded-xl border transition-all ${
+                proxyTestResult.success
+                  ? 'bg-emerald-500/10 border-emerald-500/30'
+                  : 'bg-rose-500/10 border-rose-500/30'
+              }`}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    {proxyTestResult.success ? (
+                      <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                    ) : (
+                      <AlertTriangle className="w-5 h-5 text-rose-400" />
+                    )}
+                    <span className={`text-sm font-bold ${proxyTestResult.success ? 'text-emerald-300' : 'text-rose-300'}`}>
+                      {proxyTestResult.success ? 'Proksi Tam İşləkdir (Bina.az 200 OK)' : 'Proksi Əlaqəsi Uğursuz Oldu'}
+                    </span>
+                  </div>
+                  <span className="text-xs font-mono text-slate-400">
+                    ⚡ {proxyTestResult.latency_ms} ms
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                  <div className="bg-dark-900/60 p-2.5 rounded-lg border border-slate-800">
+                    <span className="text-slate-400 block text-[11px] mb-0.5">🌐 Çıxış IP-si (Exit IP)</span>
+                    <span className="font-mono text-white font-semibold">{proxyTestResult.detected_ip || 'Məlum deyil'}</span>
+                  </div>
+                  <div className="bg-dark-900/60 p-2.5 rounded-lg border border-slate-800">
+                    <span className="text-slate-400 block text-[11px] mb-0.5">🏠 Bina.az Cavabı</span>
+                    <span className={`font-mono font-semibold ${proxyTestResult.bina_status === 200 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      HTTP {proxyTestResult.bina_status || 'Xəta'}
+                    </span>
+                  </div>
+                  <div className="bg-dark-900/60 p-2.5 rounded-lg border border-slate-800">
+                    <span className="text-slate-400 block text-[11px] mb-0.5">📄 Səhifə Başlığı</span>
+                    <span className="text-slate-200 truncate block" title={proxyTestResult.bina_title}>
+                      {proxyTestResult.bina_title || 'Alınmadı'}
+                    </span>
+                  </div>
+                </div>
+
+                {proxyTestResult.message && (
+                  <p className="mt-2.5 text-xs text-slate-300 border-t border-slate-700/50 pt-2">
+                    {proxyTestResult.message}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* SUB-TAB 4: Team Administrators Management */}

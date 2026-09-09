@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Optional, Any, List
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -6,11 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_current_admin
 from app.models.setting import AppSettings
+from app.scrapers.utils import WEBSHARE_PROXIES, update_runtime_proxy_pool, test_proxy_connection
 
 router = APIRouter(prefix="/settings", tags=["App Settings"])
 
 class UpdateSettingsRequest(BaseModel):
     settings: Dict[str, str]
+
+class TestProxyRequest(BaseModel):
+    proxy_url: Optional[str] = None
 
 @router.get("")
 async def get_settings(db: AsyncSession = Depends(get_db)):
@@ -43,6 +47,16 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
     if "whatsapp_bot_phone" not in out:
         out["whatsapp_bot_phone"] = "+994501234567"
 
+    # Anti-Bot & Proxy Pool Defaults
+    if "proxy_enabled" not in out:
+        out["proxy_enabled"] = "true"
+    if "proxy_rotation_enabled" not in out:
+        out["proxy_rotation_enabled"] = "true"
+    if "bina_az_proxy_url" not in out:
+        out["bina_az_proxy_url"] = "http://reipvtkd:kwop2c4stm5r@31.59.20.176:6754"
+    if "proxy_pool_urls" not in out:
+        out["proxy_pool_urls"] = "\n".join(WEBSHARE_PROXIES)
+
     return out
 
 
@@ -65,7 +79,41 @@ async def update_settings(body: UpdateSettingsRequest, db: AsyncSession = Depend
             db.add(setting)
 
     await db.commit()
+
+    # If any proxy settings were updated, apply them dynamically to in-memory runtime pool
+    proxy_keys = {"bina_az_proxy_url", "proxy_pool_urls", "proxy_enabled", "proxy_rotation_enabled"}
+    if any(k in body.settings for k in proxy_keys):
+        pool_raw = body.settings.get("proxy_pool_urls")
+        pool_list = [p.strip() for p in pool_raw.splitlines() if p.strip()] if pool_raw is not None else None
+        
+        primary = body.settings.get("bina_az_proxy_url")
+        enabled_val = body.settings.get("proxy_enabled", "true")
+        enabled = enabled_val.lower() in ("true", "1", "yes")
+        rotation_val = body.settings.get("proxy_rotation_enabled", "true")
+        rotation = rotation_val.lower() in ("true", "1", "yes")
+
+        update_runtime_proxy_pool(
+            proxies=pool_list,
+            primary_proxy=primary,
+            enabled=enabled,
+            rotation=rotation
+        )
+
     return {"status": "success", "updated_keys": list(body.settings.keys())}
+
+
+@router.post("/test-proxy")
+async def test_proxy_endpoint(
+    body: Optional[TestProxyRequest] = None,
+    current_admin = Depends(get_current_admin)
+):
+    """
+    Tests a proxy (or current active system proxy) against ipify.org and bina.az.
+    Returns detected IP, HTTP status codes, latency, and success status.
+    """
+    proxy_to_test = body.proxy_url if body else None
+    result = await test_proxy_connection(proxy_to_test)
+    return result
 
 
 @router.post("/test-admin-alert")

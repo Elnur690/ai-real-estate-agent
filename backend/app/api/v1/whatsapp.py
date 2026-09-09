@@ -3,9 +3,14 @@ import httpx
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_admin
+from app.api.deps import get_current_user, get_db
 from app.core.config import settings
+from app.models.user import User
+from app.models.tenant import Tenant
+from app.models.seller import Seller
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/whatsapp", tags=["WhatsApp Evolution API"])
@@ -15,6 +20,7 @@ class ConnectWhatsAppRequest(BaseModel):
     instance_name: Optional[str] = None
     phone_number: Optional[str] = None
     webhook_url: Optional[str] = None
+    renew: Optional[bool] = False
 
 
 class WhatsAppStatusResponse(BaseModel):
@@ -39,16 +45,67 @@ def get_evolution_url() -> str:
     return url.rstrip("/")
 
 
+async def verify_whatsapp_instance_access(
+    instance_name: str,
+    current_user: User,
+    db: AsyncSession
+) -> None:
+    """Verify that current_user has permission to inspect or manage the WhatsApp instance."""
+    if current_user.role == "admin":
+        return
+
+    if current_user.role == "seller":
+        if not instance_name.startswith("tenant_"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Yalnız öz agentlərinizin WhatsApp bağlantısına baxa bilərsiniz."
+            )
+        try:
+            tenant_id = int(instance_name.replace("tenant_", ""))
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Yanlış WhatsApp instance identifikatoru."
+            )
+
+        # Get seller profile of current user
+        s_stmt = select(Seller.id).where(Seller.user_id == current_user.id)
+        s_res = await db.execute(s_stmt)
+        seller_id = s_res.scalar_one_or_none()
+        if not seller_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Satıcı profili tapılmadı."
+            )
+
+        # Ensure agent belongs to this seller
+        t_stmt = select(Tenant.id).where(Tenant.id == tenant_id, Tenant.seller_id == seller_id)
+        t_res = await db.execute(t_stmt)
+        if not t_res.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Bu agent sizin satıcı profilinizə aid deyil."
+            )
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="WhatsApp bağlantısını idarə etmək üçün icazəniz yoxdur."
+    )
+
+
 @router.get("/status", response_model=WhatsAppStatusResponse)
 async def get_whatsapp_status(
     instance_name: Optional[str] = None,
-    current_admin = Depends(get_current_admin)
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ):
     """Check connection status of Evolution API WhatsApp instance."""
     inst = instance_name or settings.EVOLUTION_INSTANCE_NAME
+    await verify_whatsapp_instance_access(inst, current_user, db)
+
     base_url = get_evolution_url()
     headers = get_evolution_headers()
-
     url = f"{base_url}/instance/connectionState/{inst}"
 
     try:
@@ -75,26 +132,69 @@ async def get_whatsapp_status(
 async def get_whatsapp_qrcode(
     body: Optional[ConnectWhatsAppRequest] = None,
     instance_name: Optional[str] = None,
-    current_admin = Depends(get_current_admin)
+    renew: Optional[bool] = False,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    """Create Evolution API instance and return base64 QR code or pairing code for WhatsApp scanning."""
+    """
+    Create or reconnect Evolution API instance and return base64 QR code or pairing code.
+    Supports renewing/refreshing expired QR codes and reporting live status.
+    """
     inst = (body.instance_name if body else None) or instance_name or settings.EVOLUTION_INSTANCE_NAME
+    await verify_whatsapp_instance_access(inst, current_user, db)
+
+    is_renew = bool((body.renew if body else False) or renew)
     base_url = get_evolution_url()
     headers = get_evolution_headers()
 
     qrcode = None
     pairing_code = None
+    already_connected = False
+    phone_number = None
 
-    # Step 1: Ensure Instance Exists or Create it
-    create_url = f"{base_url}/instance/create"
-    create_body = {
-        "instanceName": inst,
-        "token": str(settings.EVOLUTION_API_KEY or "42960a4e6597e231787c5e0124a06248"),
-        "qrcode": True,
-        "integration": "WHATSAPP-BAILEYS"
-    }
+    async with httpx.AsyncClient(timeout=14.0) as client:
+        # Step 0: Check current state
+        try:
+            st_res = await client.get(f"{base_url}/instance/connectionState/{inst}", headers=headers)
+            if st_res.status_code == 200:
+                st_data = st_res.json()
+                curr_state = st_data.get("instance", {}).get("state", "close")
+                if curr_state == "open":
+                    already_connected = True
+                    phone_number = st_data.get("ownerJid", "").split("@")[0] if st_data.get("ownerJid") else None
+                    if not is_renew:
+                        return {
+                            "instance_name": inst,
+                            "status": "already_connected",
+                            "connected": True,
+                            "phone_number": phone_number,
+                            "qrcode": None,
+                            "pairing_code": None,
+                            "expires_in": 0,
+                            "message": "WhatsApp instance is already connected."
+                        }
+        except Exception as e:
+            logger.debug(f"[WhatsApp API] Check connection state notice: {e}")
 
-    async with httpx.AsyncClient(timeout=12.0) as client:
+        # If renewal requested, restart or reset stale Baileys session to generate a fresh QR code
+        if is_renew:
+            try:
+                logger.info(f"[WhatsApp API] Resetting/Restarting instance '{inst}' for fresh QR code...")
+                r_res = await client.post(f"{base_url}/instance/restart/{inst}", headers=headers)
+                if r_res.status_code not in [200, 201]:
+                    await client.delete(f"{base_url}/instance/logout/{inst}", headers=headers)
+            except Exception as e:
+                logger.warning(f"[WhatsApp API] Restart/logout notice during renew: {e}")
+
+        # Step 1: Ensure Instance Exists or Create it
+        create_url = f"{base_url}/instance/create"
+        create_body = {
+            "instanceName": inst,
+            "token": str(settings.EVOLUTION_API_KEY or "42960a4e6597e231787c5e0124a06248"),
+            "qrcode": True,
+            "integration": "WHATSAPP-BAILEYS"
+        }
+
         try:
             res_c = await client.post(create_url, json=create_body, headers=headers)
             logger.info(f"[WhatsApp API] Instance create status: {res_c.status_code}")
@@ -149,9 +249,12 @@ async def get_whatsapp_qrcode(
 
         return {
             "instance_name": inst,
-            "status": "qr_ready" if qrcode else "initializing",
+            "status": "qr_ready" if qrcode else ("already_connected" if already_connected else "initializing"),
+            "connected": already_connected,
+            "phone_number": phone_number,
             "qrcode": qrcode,
             "pairing_code": pairing_code,
+            "expires_in": 45 if qrcode else 0,
             "webhook_url": webhook_target
         }
 
@@ -159,13 +262,15 @@ async def get_whatsapp_qrcode(
 @router.post("/disconnect")
 async def disconnect_whatsapp(
     body: ConnectWhatsAppRequest,
-    current_admin = Depends(get_current_admin)
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ):
     """Disconnect/Logout a WhatsApp instance."""
     inst = body.instance_name or settings.EVOLUTION_INSTANCE_NAME
+    await verify_whatsapp_instance_access(inst, current_user, db)
+
     base_url = get_evolution_url()
     headers = get_evolution_headers()
-
     url = f"{base_url}/instance/logout/{inst}"
 
     try:

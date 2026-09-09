@@ -342,6 +342,7 @@ export function SellerPortalView() {
   const [editAgentCrm, setEditAgentCrm] = useState(false);
   const [editAgentPortfolio, setEditAgentPortfolio] = useState(false);
   const [editAgentPortfolioLimit, setEditAgentPortfolioLimit] = useState<number>(25);
+  const [editAgentPkgId, setEditAgentPkgId] = useState<number | undefined>(undefined);
   const [savingAgentEdit, setSavingAgentEdit] = useState(false);
   const [agentEditError, setAgentEditError] = useState<string | null>(null);
   const [agentEditSuccessMsg, setAgentEditSuccessMsg] = useState<string | null>(null);
@@ -364,6 +365,16 @@ export function SellerPortalView() {
   const [renewingAgent, setRenewingAgent] = useState(false);
   const [renewError, setRenewError] = useState<string | null>(null);
   const [renewSuccessMsg, setRenewSuccessMsg] = useState<string | null>(null);
+
+  // Agent WhatsApp Pairing QR State
+  const [agentWaQrCode, setAgentWaQrCode] = useState<string | null>(null);
+  const [agentWaLoading, setAgentWaLoading] = useState(false);
+  const [agentWaExpiresIn, setAgentWaExpiresIn] = useState<number>(0);
+  const [agentWaConnected, setAgentWaConnected] = useState<boolean>(false);
+  const [agentWaPhone, setAgentWaPhone] = useState<string | null>(null);
+  const [agentWaStatus, setAgentWaStatus] = useState<string>('close');
+  const [agentWaError, setAgentWaError] = useState<string | null>(null);
+  const [qrSubTab, setQrSubTab] = useState<'whatsapp' | 'telegram'>('whatsapp');
 
   const fetchDashboard = async () => {
     try {
@@ -644,13 +655,47 @@ export function SellerPortalView() {
     }
   };
 
+  const openAddAgentModal = () => {
+    setAgentError(null);
+    setAgentName('');
+    setAgentPhone('');
+    setAgentTg('');
+    setAgentWhatsapp('');
+    setAgentChannel('telegram');
+    setAgentCrm(false);
+    setAgentPortfolio(false);
+    setAgentBillingDay(1);
+    setAgentSelectedAgedMonths(0);
+    setAgentSelectedAgedPrice(0);
+    setAgentSelectedExtraSearches(0);
+    setAgentSelectedExtraSearchesPrice(0);
+    setAgentSelectedImageRequests(0);
+    setAgentSelectedImagePrice(0);
+    setAgentSelectedCrmMonths(1);
+    setAgentSelectedPortfolioLimit(25);
+    setAgentSelectedPortfolioPrice(15);
+    if (packages.length > 0) {
+      setAgentPkgId(packages[0].id);
+    } else if (trialEnabled) {
+      setAgentPkgId(-1);
+    } else {
+      setAgentPkgId(undefined);
+    }
+    setIsAddAgentOpen(true);
+  };
+
   const handleRegisterAgent = async (e: React.FormEvent) => {
     e.preventDefault();
     setAgentError(null);
     setSubmittingAgent(true);
     try {
-      const isTrial = agentPkgId === -1 || agentPkgId === undefined;
-      await api.post('/sellers/me/agents', {
+      const effectivePkgId = (agentPkgId !== undefined && agentPkgId !== null)
+        ? agentPkgId
+        : (packages.length > 0 ? packages[0].id : (trialEnabled ? -1 : undefined));
+      const isTrial = effectivePkgId === -1 || (effectivePkgId === undefined && trialEnabled);
+      const chosenPackageId = isTrial ? undefined : effectivePkgId;
+
+      const addRes = await api.post('/sellers/me/agents', {
         name: agentName,
         phone: agentPhone,
         telegram_handle: agentTg || undefined,
@@ -659,7 +704,7 @@ export function SellerPortalView() {
         preferred_channel: agentChannel,
         preferred_billing_day: agentBillingDay,
         feature_crm: agentCrm,
-        package_id: isTrial ? undefined : agentPkgId,
+        package_id: chosenPackageId,
         is_trial: isTrial,
         selected_aged_months: agentSelectedAgedMonths > 0 ? agentSelectedAgedMonths : undefined,
         selected_aged_price: agentSelectedAgedPrice > 0 ? agentSelectedAgedPrice : undefined,
@@ -669,12 +714,13 @@ export function SellerPortalView() {
         selected_image_price: agentSelectedImagePrice > 0 ? agentSelectedImagePrice : undefined,
         selected_crm_enabled: agentCrm,
         selected_crm_months: agentSelectedCrmMonths,
-        selected_crm_price: (agentCrm && !isTrial) ? (packages.find(p => p.id === agentPkgId)?.addon_crm_price || 15) : 0,
+        selected_crm_price: (agentCrm && !isTrial) ? (packages.find(p => p.id === chosenPackageId)?.addon_crm_price || 15) : 0,
         feature_portfolio: agentPortfolio,
         selected_portfolio_enabled: agentPortfolio,
         selected_portfolio_limit: agentPortfolio ? agentSelectedPortfolioLimit : undefined,
         selected_portfolio_price: (agentPortfolio && !isTrial) ? agentSelectedPortfolioPrice : 0
       });
+      const createdAgentId = addRes.data?.agent_id;
       setIsAddAgentOpen(false);
       setAgentName('');
       setAgentPhone('');
@@ -682,7 +728,7 @@ export function SellerPortalView() {
       setAgentWhatsapp('');
       setAgentCrm(false);
       setAgentPortfolio(false);
-      setAgentPkgId(undefined);
+      setAgentPkgId(packages.length > 0 ? packages[0].id : (trialEnabled ? -1 : undefined));
       setAgentBillingDay(1);
       setAgentSelectedAgedMonths(0);
       setAgentSelectedAgedPrice(0);
@@ -693,13 +739,104 @@ export function SellerPortalView() {
       setAgentSelectedCrmMonths(1);
       setAgentSelectedPortfolioLimit(25);
       setAgentSelectedPortfolioPrice(15);
-      reloadAll();
+      await reloadAll();
+
+      // Automatically open QR modal for the newly registered agent
+      if (createdAgentId) {
+        try {
+          const freshAgent = await api.get(`/sellers/me/agents/${createdAgentId}`);
+          if (freshAgent.data) {
+            openAgentDetail(freshAgent.data, 'qr');
+          }
+        } catch (e) {
+          console.error('Failed to auto-open agent QR modal:', e);
+        }
+      }
     } catch (err: any) {
       setAgentError(err.response?.data?.detail || 'Xəta baş verdi');
     } finally {
       setSubmittingAgent(false);
     }
   };
+
+  const loadAgentWhatsAppQr = async (agentId: number, renew = false) => {
+    setAgentWaLoading(true);
+    setAgentWaError(null);
+    try {
+      const res = await api.post(`/sellers/me/agents/${agentId}/whatsapp-qr`, { renew });
+      if (res.data?.connected || res.data?.status === 'already_connected') {
+        setAgentWaConnected(true);
+        setAgentWaStatus('open');
+        setAgentWaPhone(res.data.phone_number || null);
+        setAgentWaQrCode(null);
+        setAgentWaExpiresIn(0);
+      } else if (res.data?.qrcode) {
+        setAgentWaQrCode(res.data.qrcode);
+        setAgentWaExpiresIn(res.data.expires_in || 45);
+        setAgentWaConnected(false);
+        setAgentWaStatus('connecting');
+      } else {
+        setAgentWaStatus(res.data?.status || 'initializing');
+      }
+    } catch (err: any) {
+      console.error('WhatsApp QR error:', err);
+      setAgentWaError(err.response?.data?.detail || 'QR kod yüklənərkən xəta baş verdi. Zəhmət olmasa yenidən cəhd edin.');
+    } finally {
+      setAgentWaLoading(false);
+    }
+  };
+
+  const checkAgentWhatsAppStatus = async (agentId: number) => {
+    try {
+      const res = await api.get(`/sellers/me/agents/${agentId}/whatsapp-status`);
+      if (res.data?.connected || res.data?.state === 'open') {
+        setAgentWaConnected(true);
+        setAgentWaStatus('open');
+        setAgentWaPhone(res.data.phone_number || null);
+        setAgentWaExpiresIn(0);
+      } else {
+        setAgentWaStatus(res.data?.state || 'close');
+      }
+    } catch (e) {
+      // transient network error ignored
+    }
+  };
+
+  const handleDisconnectAgentWhatsApp = async (agentId: number) => {
+    if (!confirm('Bu agentin WhatsApp bağlantısını kəsmək istədiyinizdən əminsiniz?')) return;
+    setAgentWaLoading(true);
+    try {
+      await api.post(`/sellers/me/agents/${agentId}/whatsapp-disconnect`);
+      setAgentWaConnected(false);
+      setAgentWaStatus('close');
+      setAgentWaPhone(null);
+      setAgentWaQrCode(null);
+      setAgentWaExpiresIn(0);
+      alert('WhatsApp bağlantısı uğurla kəsildi.');
+    } catch (err: any) {
+      alert('Xəta: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setAgentWaLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (agentWaExpiresIn <= 0) return;
+    const timer = setInterval(() => {
+      setAgentWaExpiresIn(prev => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [agentWaExpiresIn]);
+
+  useEffect(() => {
+    if (!isAgentDetailOpen || agentModalTab !== 'qr' || qrSubTab !== 'whatsapp' || !selectedAgent || agentWaConnected) {
+      return;
+    }
+    const interval = setInterval(() => {
+      checkAgentWhatsAppStatus(selectedAgent.id);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [isAgentDetailOpen, agentModalTab, qrSubTab, selectedAgent?.id, agentWaConnected]);
 
   const openAgentDetail = async (agent: SellerAgent, defaultTab: 'overview' | 'qr' | 'renew' | 'edit' = 'overview') => {
     setSelectedAgent(agent);
@@ -709,6 +846,21 @@ export function SellerPortalView() {
     setAgentEditSuccessMsg(null);
     setRenewError(null);
     setRenewSuccessMsg(null);
+
+    // Reset WhatsApp pairing state
+    setAgentWaQrCode(null);
+    setAgentWaExpiresIn(0);
+    setAgentWaConnected(false);
+    setAgentWaPhone(null);
+    setAgentWaStatus('close');
+    setAgentWaError(null);
+
+    const isWa = agent.preferred_channel === 'whatsapp' || agent.preferred_channel === 'both';
+    setQrSubTab(isWa ? 'whatsapp' : 'telegram');
+
+    if (defaultTab === 'qr' && isWa) {
+      loadAgentWhatsAppQr(agent.id, false);
+    }
 
     // Initialize edit fields
     setEditAgentName(agent.name);
@@ -779,6 +931,7 @@ export function SellerPortalView() {
         setEditAgentCrm(res.data.feature_crm ?? false);
         setEditAgentPortfolio(res.data.feature_portfolio ?? false);
         setEditAgentPortfolioLimit(res.data.portfolio_limit || 25);
+        setEditAgentPkgId(res.data.seller_package_id || (res.data.plan?.toLowerCase().includes('sınaq') ? -1 : undefined));
         setRenewBillingDay(res.data.preferred_billing_day || 1);
         setRenewPortfolio(res.data.feature_portfolio ?? false);
         setRenewPortfolioLimit(res.data.portfolio_limit || 25);
@@ -786,6 +939,14 @@ export function SellerPortalView() {
           setRenewPkgId(res.data.seller_package_id);
         } else {
           setRenewPkgId(0);
+        }
+
+        if (defaultTab === 'qr') {
+          const updatedIsWa = res.data.preferred_channel === 'whatsapp' || res.data.preferred_channel === 'both';
+          setQrSubTab(updatedIsWa ? 'whatsapp' : 'telegram');
+          if (updatedIsWa) {
+            loadAgentWhatsAppQr(res.data.id, false);
+          }
         }
       }
     } catch (err) {
@@ -812,6 +973,7 @@ export function SellerPortalView() {
         preferred_channel: editAgentChannel,
         preferred_billing_day: editAgentBillingDay,
         status: editAgentStatus,
+        package_id: editAgentPkgId,
         feature_makler_detector: editAgentMakler,
         feature_avm_bargain_finder: editAgentAvm,
         feature_social_brochure: editAgentBrochure,
@@ -1076,7 +1238,7 @@ export function SellerPortalView() {
               <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
             </button>
             <button
-              onClick={() => { setAgentError(null); setIsAddAgentOpen(true); }}
+              onClick={openAddAgentModal}
               className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold rounded-2xl shadow-xl shadow-indigo-500/25 transition transform active:scale-95"
             >
               <Plus className="w-5 h-5" />
@@ -1284,7 +1446,7 @@ export function SellerPortalView() {
               <p className="text-xs text-slate-400">Yalnız sizin qeydiyyatdan keçirdiyiniz agentlər burada görünür.</p>
             </div>
             <button
-              onClick={() => { setAgentError(null); setIsAddAgentOpen(true); }}
+              onClick={openAddAgentModal}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition"
             >
               <Plus className="w-4 h-4" />
@@ -1297,7 +1459,7 @@ export function SellerPortalView() {
               <Users className="w-10 h-10 mx-auto text-slate-600" />
               <p>Hələ heç bir agent qeydiyyatdan keçirməmisiniz.</p>
               <button
-                onClick={() => { setAgentError(null); setIsAddAgentOpen(true); }}
+                onClick={openAddAgentModal}
                 className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl"
               >
                 İlk Agenti Qeydiyyatdan Keçir
@@ -2741,54 +2903,250 @@ export function SellerPortalView() {
 
             {/* TAB 2: QR & CONNECT */}
             {agentModalTab === 'qr' && (
-              <div className="space-y-5 text-center">
-                <div className="p-5 bg-slate-950/60 border border-slate-800 rounded-3xl space-y-4 max-w-sm mx-auto">
-                  <div className="bg-white p-4 rounded-2xl inline-block shadow-2xl">
-                    <QRCodeSVG
-                      value={selectedAgent.invite_url || `https://t.me/${selectedAgent.telegram_bot_username || 'baku_realestate_ai_bot'}?start=agent_${selectedAgent.id}`}
-                      size={200}
-                      level="H"
-                      includeMargin={false}
-                    />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-white text-sm">Agent Bot Qoşulma QR Kodu</h4>
-                    <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
-                      Agent bu QR kodu telefon kamerası və ya Telegram ilə skan edərək anında bot-a qoşula və bildirişləri ala bilər.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Direct Link & Copy */}
-                <div className="space-y-2 max-w-md mx-auto text-left">
-                  <label className="text-[11px] font-semibold text-slate-400 block">Birbaşa Dəvət Linki</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={selectedAgent.invite_url || `https://t.me/${selectedAgent.telegram_bot_username || 'baku_realestate_ai_bot'}?start=agent_${selectedAgent.id}`}
-                      className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-cyan-300 focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleCopy(selectedAgent.invite_url || `https://t.me/${selectedAgent.telegram_bot_username || 'baku_realestate_ai_bot'}?start=agent_${selectedAgent.id}`, 'agent_invite')}
-                      className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>{copiedKey === 'agent_invite' ? 'Kopyalandı!' : 'Kopyala'}</span>
-                    </button>
-                  </div>
-
-                  <a
-                    href={selectedAgent.invite_url || `https://t.me/${selectedAgent.telegram_bot_username || 'baku_realestate_ai_bot'}?start=agent_${selectedAgent.id}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-full py-2.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 mt-3"
+              <div className="space-y-5">
+                {/* Channel Switcher Tabs */}
+                <div className="flex bg-slate-950/80 p-1 rounded-2xl border border-slate-800 max-w-md mx-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQrSubTab('whatsapp');
+                      if (!agentWaQrCode && !agentWaConnected) {
+                        loadAgentWhatsAppQr(selectedAgent.id, false);
+                      }
+                    }}
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+                      qrSubTab === 'whatsapp'
+                        ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
                   >
-                    <ExternalLink className="w-4 h-4" />
-                    <span>Bot-u Brauzerdə Aç ↗</span>
-                  </a>
+                    <Smartphone className="w-4 h-4" />
+                    <span>WhatsApp Qoşulması</span>
+                    {agentWaConnected && (
+                      <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse"></span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQrSubTab('telegram')}
+                    className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+                      qrSubTab === 'telegram'
+                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>Telegram Botu</span>
+                  </button>
                 </div>
+
+                {/* SUBTAB 1: WHATSAPP WEB PAIRING */}
+                {qrSubTab === 'whatsapp' && (
+                  <div className="space-y-4 max-w-md mx-auto text-center">
+                    {/* Status Alert Banner */}
+                    {agentWaConnected ? (
+                      <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-left flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
+                            <CheckCircle2 className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-emerald-300 text-xs sm:text-sm">WhatsApp Qoşulub və Aktivdir</h4>
+                            <p className="text-[11px] text-slate-300 mt-0.5">
+                              Nömrə: <span className="font-mono text-emerald-400 font-bold">{agentWaPhone || selectedAgent.whatsapp_number || selectedAgent.phone}</span>
+                            </p>
+                            <p className="text-[10px] text-slate-400 mt-1">
+                              Agent yeni əmlak elanlarını və axtarış bildirişlərini WhatsApp üzərindən dərhal alır.
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDisconnectAgentWhatsApp(selectedAgent.id)}
+                          disabled={agentWaLoading}
+                          className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg text-[11px] font-semibold transition shrink-0"
+                        >
+                          Bağlantını Kəs
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-left text-[11px] text-slate-300 space-y-1">
+                        <div className="font-semibold text-indigo-300 flex items-center gap-1.5">
+                          <Info className="w-4 h-4 text-indigo-400" /> WhatsApp-ı Necə Qoşmalı:
+                        </div>
+                        <div className="text-[10.5px] text-slate-400 leading-relaxed pl-5 list-decimal">
+                          1. Telefonda WhatsApp &gt; <b>Parametrlər &gt; Bağlı cihazlar</b> açın.<br />
+                          2. <b>Cihaz bağlayın</b> seçib aşağıdakı QR kodu oxudun.<br />
+                          3. QR kodun vaxtı bitdikdə <b>"QR Kodu Yenilə"</b> düyməsinə klikləyin.
+                        </div>
+                      </div>
+                    )}
+
+                    {/* QR Code Display Container */}
+                    {!agentWaConnected && (
+                      <div className="p-5 bg-slate-950/70 border border-slate-800 rounded-3xl space-y-4">
+                        {/* Loading State */}
+                        {agentWaLoading && !agentWaQrCode && (
+                          <div className="py-16 flex flex-col items-center justify-center space-y-3">
+                            <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin" />
+                            <p className="text-xs text-slate-400 font-medium">WhatsApp QR kod alınır...</p>
+                          </div>
+                        )}
+
+                        {/* QR Image Box with Expiration Overlay */}
+                        {agentWaQrCode && (
+                          <div className="relative inline-block mx-auto">
+                            <div className="bg-white p-4 rounded-2xl shadow-2xl inline-block border-2 border-slate-700">
+                              <img
+                                src={agentWaQrCode}
+                                alt="WhatsApp Pairing QR"
+                                className="w-52 h-52 object-contain"
+                              />
+                            </div>
+
+                            {/* Expiration Overlay when timer hits 0 */}
+                            {agentWaExpiresIn <= 0 && (
+                              <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center p-4 text-center space-y-3 border-2 border-rose-500/40">
+                                <AlertTriangle className="w-8 h-8 text-rose-400" />
+                                <div>
+                                  <h5 className="font-bold text-white text-xs">QR Kodun Vaxtı Bitdi</h5>
+                                  <p className="text-[10px] text-slate-400 mt-1 max-w-[180px]">
+                                    WhatsApp təhlükəsizliyinə görə QR kod hər 45 saniyədən bir yenilənməlidir.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => loadAgentWhatsAppQr(selectedAgent.id, true)}
+                                  disabled={agentWaLoading}
+                                  className="py-2 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-emerald-500/20"
+                                >
+                                  <RefreshCw className={`w-3.5 h-3.5 ${agentWaLoading ? 'animate-spin' : ''}`} />
+                                  <span>Təzə QR Kod Al</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* If not loaded and not loading, show prompt */}
+                        {!agentWaQrCode && !agentWaLoading && (
+                          <div className="py-10 text-center space-y-3">
+                            {agentWaError ? (
+                              <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-400">
+                                {agentWaError}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-slate-400">WhatsApp QR kodu hələ generasiya olunmayıb.</p>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => loadAgentWhatsAppQr(selectedAgent.id, true)}
+                              className="py-2.5 px-5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 mx-auto shadow-lg shadow-emerald-500/20"
+                            >
+                              <QrCode className="w-4 h-4" />
+                              <span>QR Kodu Göstər</span>
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Countdown Timer & Progress Bar */}
+                        {agentWaQrCode && agentWaExpiresIn > 0 && (
+                          <div className="space-y-1.5 pt-1">
+                            <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
+                              <span className="flex items-center gap-1.5 text-amber-300 font-semibold">
+                                <Clock className="w-3.5 h-3.5" /> Etibarlılıq müddəti:
+                              </span>
+                              <span className="font-mono font-bold text-amber-400">{agentWaExpiresIn} saniyə</span>
+                            </div>
+                            <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-gradient-to-r from-emerald-500 to-amber-500 transition-all duration-1000 ease-linear rounded-full"
+                                style={{ width: `${Math.max(0, Math.min(100, (agentWaExpiresIn / 45) * 100))}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Renewal Button Bar */}
+                        {agentWaQrCode && (
+                          <div className="pt-2 flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => loadAgentWhatsAppQr(selectedAgent.id, true)}
+                              disabled={agentWaLoading}
+                              className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                            >
+                              <RefreshCw className={`w-4 h-4 ${agentWaLoading ? 'animate-spin' : ''}`} />
+                              <span>{agentWaLoading ? 'Yenilənir...' : 'QR Kodu Yenilə'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => checkAgentWhatsAppStatus(selectedAgent.id)}
+                              className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
+                              title="Statusu Yoxla"
+                            >
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">Status</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* SUBTAB 2: TELEGRAM BOT */}
+                {qrSubTab === 'telegram' && (
+                  <div className="space-y-5 text-center max-w-md mx-auto">
+                    <div className="p-5 bg-slate-950/60 border border-slate-800 rounded-3xl space-y-4">
+                      <div className="bg-white p-4 rounded-2xl inline-block shadow-2xl">
+                        <QRCodeSVG
+                          value={selectedAgent.invite_url || `https://t.me/${selectedAgent.telegram_bot_username || 'baku_realestate_ai_bot'}?start=agent_${selectedAgent.id}`}
+                          size={200}
+                          level="H"
+                          includeMargin={false}
+                        />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-white text-sm">Agent Telegram Bot QR Kodu</h4>
+                        <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+                          Agent bu QR kodu telefon kamerası və ya Telegram ilə skan edərək anında bot-a qoşula bilər.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Direct Link & Copy */}
+                    <div className="space-y-2 text-left">
+                      <label className="text-[11px] font-semibold text-slate-400 block">Telegram Dəvət Linki</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={selectedAgent.invite_url || `https://t.me/${selectedAgent.telegram_bot_username || 'baku_realestate_ai_bot'}?start=agent_${selectedAgent.id}`}
+                          className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-cyan-300 focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(selectedAgent.invite_url || `https://t.me/${selectedAgent.telegram_bot_username || 'baku_realestate_ai_bot'}?start=agent_${selectedAgent.id}`, 'agent_invite')}
+                          className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>{copiedKey === 'agent_invite' ? 'Kopyalandı!' : 'Kopyala'}</span>
+                        </button>
+                      </div>
+
+                      <a
+                        href={selectedAgent.invite_url || `https://t.me/${selectedAgent.telegram_bot_username || 'baku_realestate_ai_bot'}?start=agent_${selectedAgent.id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="w-full py-2.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 mt-3"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        <span>Bot-u Brauzerdə Aç ↗</span>
+                      </a>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -3203,6 +3561,30 @@ export function SellerPortalView() {
                       <option value={28}>Hər ayın 28-i</option>
                     </select>
                   </div>
+                </div>
+
+                {/* Package Assignment & Upgrade Selector */}
+                <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800">
+                  <label className="block text-xs font-semibold text-amber-300 mb-1">📦 Təyin Edilmiş Paket & Tarif</label>
+                  <select
+                    value={editAgentPkgId !== undefined ? editAgentPkgId : (selectedAgent.seller_package_id || (selectedAgent.plan?.toLowerCase().includes('sınaq') ? -1 : 0))}
+                    onChange={(e) => setEditAgentPkgId(Number(e.target.value))}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white text-xs focus:outline-none focus:border-amber-500"
+                  >
+                    {packages.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        💳 {p.name} ({p.price} AZN / {p.period === 'monthly' ? 'aylıq' : p.period})
+                      </option>
+                    ))}
+                    {trialEnabled && (
+                      <option value={-1}>🎁 Pulsuz Sınaq (Trial)</option>
+                    )}
+                  </select>
+                  {selectedAgent.plan?.toLowerCase().includes('sınaq') && editAgentPkgId && editAgentPkgId > 0 && (
+                    <span className="text-[11px] text-emerald-400 mt-1.5 block">
+                      ⚡ Agent sınaqdan ödənişli paketə keçiriləcək, aktivlik müddəti təyin ediləcək və komissiya gəliriniz qeydə alınacaq.
+                    </span>
+                  )}
                 </div>
 
                 {/* Connected Channels Checkboxes */}
@@ -3734,16 +4116,16 @@ export function SellerPortalView() {
                     onChange={(e) => setAgentPkgId(Number(e.target.value))}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
                   >
-                    {trialEnabled && (
-                      <option value={-1}>
-                        🎁 Pulsuz Sınaq Təklifi ({trialDays} Günlük Aktivlik)
-                      </option>
-                    )}
                     {packages.map((p) => (
                       <option key={p.id} value={p.id}>
                         💳 {p.name} ({p.price} AZN / {p.period === 'monthly' ? 'aylıq' : p.period})
                       </option>
                     ))}
+                    {trialEnabled && (
+                      <option value={-1}>
+                        🎁 Pulsuz Sınaq Təklifi ({trialDays} Günlük Aktivlik)
+                      </option>
+                    )}
                   </select>
                   {agentPkgId === -1 && (
                     <span className="text-[11px] text-indigo-400 mt-1.5 block bg-indigo-500/10 p-2 rounded-lg border border-indigo-500/20">

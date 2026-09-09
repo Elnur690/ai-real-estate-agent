@@ -68,6 +68,146 @@ def get_random_headers(extra_headers: Optional[Dict[str, str]] = None, referer: 
     return headers
 
 
+WEBSHARE_PROXIES = [
+    "http://reipvtkd:kwop2c4stm5r@31.59.20.176:6754",
+    "http://reipvtkd:kwop2c4stm5r@45.38.107.97:6014",
+    "http://reipvtkd:kwop2c4stm5r@198.105.121.200:6462",
+    "http://reipvtkd:kwop2c4stm5r@64.137.96.74:6641",
+    "http://reipvtkd:kwop2c4stm5r@198.23.243.226:6361",
+    "http://reipvtkd:kwop2c4stm5r@38.154.185.97:6370",
+    "http://reipvtkd:kwop2c4stm5r@84.247.60.125:6095",
+    "http://reipvtkd:kwop2c4stm5r@142.111.67.146:5611",
+    "http://reipvtkd:kwop2c4stm5r@191.96.254.138:6185",
+    "http://reipvtkd:kwop2c4stm5r@31.58.9.4:6077",
+]
+
+def normalize_proxy_url(proxy_str: str) -> str:
+    """
+    Normalizes different proxy formats into standard URL format:
+    - 'http://user:pass@ip:port' -> 'http://user:pass@ip:port'
+    - 'ip:port:user:pass' -> 'http://user:pass@ip:port'
+    - 'user:pass@ip:port' -> 'http://user:pass@ip:port'
+    - 'ip:port' -> 'http://ip:port'
+    """
+    p = proxy_str.strip()
+    if not p:
+        return ""
+    if p.startswith(("http://", "https://", "socks5://", "socks5h://")):
+        return p
+    parts = p.split(":")
+    if len(parts) == 4:
+        # IP:PORT:USER:PASS
+        ip, port, user, pwd = parts
+        return f"http://{user}:{pwd}@{ip}:{port}"
+    elif "@" in p:
+        return f"http://{p}"
+    else:
+        return f"http://{p}"
+
+_RUNTIME_PROXY_CONFIG = {
+    "enabled": True,
+    "rotation": True,
+    "primary": None,
+    "proxies": list(WEBSHARE_PROXIES)
+}
+
+def get_runtime_proxy_config() -> Dict[str, Any]:
+    """Returns current active runtime proxy configuration."""
+    return dict(_RUNTIME_PROXY_CONFIG)
+
+def update_runtime_proxy_pool(
+    proxies: Optional[List[str]] = None,
+    primary_proxy: Optional[str] = None,
+    enabled: bool = True,
+    rotation: bool = True
+):
+    """Updates runtime scraper proxy pool dynamically without server restart."""
+    clean_proxies = [normalize_proxy_url(p) for p in proxies if p and p.strip()] if proxies is not None else list(WEBSHARE_PROXIES)
+    _RUNTIME_PROXY_CONFIG.clear()
+    _RUNTIME_PROXY_CONFIG.update({
+        "enabled": enabled,
+        "rotation": rotation,
+        "primary": normalize_proxy_url(primary_proxy) if (primary_proxy and primary_proxy.strip()) else None,
+        "proxies": clean_proxies
+    })
+    logger.info(f"[ScraperUtils] Updated runtime proxy pool: {len(clean_proxies)} proxies, primary: {_RUNTIME_PROXY_CONFIG['primary']}, enabled: {enabled}, rotation: {rotation}")
+
+async def test_proxy_connection(proxy_url: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Tests a proxy (or current active proxy) against ipify.org and bina.az.
+    Measures latency and returns status, IP, bina status and title.
+    """
+    import time
+    from bs4 import BeautifulSoup
+    target_proxy = normalize_proxy_url(proxy_url) if proxy_url else get_rotating_proxy()
+    
+    start_time = time.time()
+    detected_ip = "Unknown"
+    ip_status = 0
+    bina_status = 0
+    bina_title = ""
+    error_msg = None
+
+    try:
+        from curl_cffi.requests import AsyncSession
+        async with AsyncSession(impersonate="chrome124", proxy=target_proxy, timeout=12) as session:
+            try:
+                ip_resp = await session.get("https://api.ipify.org?format=json")
+                ip_status = ip_resp.status_code
+                if ip_resp.status_code == 200:
+                    try:
+                        detected_ip = ip_resp.json().get("ip", ip_resp.text.strip())
+                    except Exception:
+                        detected_ip = ip_resp.text.strip()
+            except Exception as e:
+                detected_ip = f"Xəta: {e}"
+
+            try:
+                bina_resp = await session.get("https://bina.az/items")
+                bina_status = bina_resp.status_code
+                soup = BeautifulSoup(bina_resp.text[:5000], "html.parser")
+                if soup.title and soup.title.string:
+                    bina_title = soup.title.string.strip()
+            except Exception as e:
+                error_msg = str(e)
+    except Exception as e:
+        error_msg = str(e)
+
+    latency_ms = int((time.time() - start_time) * 1000)
+    is_success = (bina_status == 200)
+
+    return {
+        "success": is_success,
+        "proxy_used": target_proxy or "Direct (No Proxy)",
+        "detected_ip": detected_ip,
+        "ip_status": ip_status,
+        "bina_status": bina_status,
+        "bina_title": bina_title,
+        "latency_ms": latency_ms,
+        "error": error_msg,
+        "message": "Uğurlu! Proksi aktivdir və bina.az-a maneəsiz daxil olur." if is_success else f"Xəta: {error_msg or f'Bina.az status: {bina_status}'}"
+    }
+
+def get_rotating_proxy(explicit_proxy: Optional[str] = None) -> Optional[str]:
+    """Returns the configured proxy or a random working proxy from the Webshare pool."""
+    from app.core.config import settings
+    if explicit_proxy:
+        return explicit_proxy
+    if not _RUNTIME_PROXY_CONFIG.get("enabled", True):
+        return None
+    if _RUNTIME_PROXY_CONFIG.get("primary"):
+        return _RUNTIME_PROXY_CONFIG["primary"]
+    pool = _RUNTIME_PROXY_CONFIG.get("proxies") or WEBSHARE_PROXIES
+    if pool and _RUNTIME_PROXY_CONFIG.get("rotation", True):
+        return random.choice(pool)
+    if settings.BINA_AZ_PROXY_URL:
+        return settings.BINA_AZ_PROXY_URL
+    if settings.SCRAPER_PROXY_URL:
+        return settings.SCRAPER_PROXY_URL
+    if pool:
+        return pool[0]
+    return None
+
 async def polite_delay(min_seconds: float = 1.0, max_seconds: float = 2.5) -> None:
     """Sleep for a random interval between min_seconds and max_seconds to avoid rate limits."""
     delay = random.uniform(min_seconds, max_seconds)
@@ -85,11 +225,10 @@ async def fetch_stealth_page(
 ) -> Tuple[Optional[str], int]:
     """
     Fetches web page HTML using TLS-fingerprint impersonation (curl_cffi AsyncSession)
-    with automatic fallback to standard httpx.
+    with automatic proxy rotation and fallback.
     Returns (html_content, status_code).
     """
-    from app.core.config import settings
-    active_proxy = proxy or settings.BINA_AZ_PROXY_URL or settings.SCRAPER_PROXY_URL
+    active_proxy = get_rotating_proxy(proxy)
 
     req_headers = dict(headers) if headers else get_random_headers(referer=referer or url)
 
@@ -98,20 +237,43 @@ async def fetch_stealth_page(
         from curl_cffi.requests import AsyncSession
         async with AsyncSession(impersonate=impersonate, proxy=active_proxy, timeout=timeout) as session:
             res = await session.get(url, headers=req_headers)
-            return res.text, res.status_code
+            if res.status_code == 200:
+                return res.text, res.status_code
     except ImportError:
         pass
     except Exception as e:
-        logger.debug(f"[ScraperUtils] curl_cffi fetch notice for {url}: {e}")
+        logger.debug(f"[ScraperUtils] curl_cffi fetch notice for {url} (proxy: {active_proxy}): {e}")
 
-    # 2. Fallback: httpx.AsyncClient
+    # 2. Fallback: httpx.AsyncClient with proxy
+    if active_proxy:
+        try:
+            limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
+            async with httpx.AsyncClient(proxy=active_proxy, timeout=timeout, limits=limits, follow_redirects=True) as client:
+                res = await client.get(url, headers=req_headers)
+                if res.status_code == 200:
+                    return res.text, res.status_code
+        except Exception as e:
+            logger.debug(f"[ScraperUtils] httpx proxy fallback failed for {url}: {e}")
+
+    # 3. Resilient Fallback: Direct fetch (no proxy) if proxy was dead, timed out, or blocked
+    if active_proxy:
+        try:
+            logger.info(f"[ScraperUtils] Proxy {active_proxy} failed or timed out. Falling back to direct stealth connection for {url}")
+            from curl_cffi.requests import AsyncSession
+            async with AsyncSession(impersonate=impersonate, proxy=None, timeout=timeout) as session:
+                res = await session.get(url, headers=req_headers)
+                return res.text, res.status_code
+        except Exception as e:
+            logger.debug(f"[ScraperUtils] Direct stealth fallback notice for {url}: {e}")
+
+    # 4. Final Direct httpx Fallback
     try:
         limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
-        async with httpx.AsyncClient(proxy=active_proxy, timeout=timeout, limits=limits, follow_redirects=True) as client:
+        async with httpx.AsyncClient(proxy=None, timeout=timeout, limits=limits, follow_redirects=True) as client:
             res = await client.get(url, headers=req_headers)
             return res.text, res.status_code
     except Exception as e:
-        logger.debug(f"[ScraperUtils] httpx fallback notice for {url}: {e}")
+        logger.debug(f"[ScraperUtils] Final httpx fallback notice for {url}: {e}")
         return None, 0
 
 
