@@ -201,3 +201,23 @@ async def test_test_proxy_endpoint(client: AsyncClient, test_db: AsyncSession):
         assert data["success"] is True
         assert data["detected_ip"] == "1.2.3.4"
         assert data["latency_ms"] == 320
+
+def test_proxy_quarantine():
+    from app.scrapers.utils import mark_proxy_unhealthy, mark_proxy_healthy, get_healthy_proxies
+    
+    test_proxy = "http://bad:proxy@1.2.3.4:8080"
+    pool = ["http://good:proxy@5.6.7.8:8080", test_proxy]
+    
+    # Initially both are healthy
+    assert len(get_healthy_proxies(pool)) == 2
+    
+    # Mark bad proxy as unhealthy
+    mark_proxy_unhealthy(test_proxy, duration_seconds=60)
+    healthy = get_healthy_proxies(pool)
+    assert test_proxy not in healthy
+    assert len(healthy) == 1
+    assert healthy[0] == "http://good:proxy@5.6.7.8:8080"
+    
+    # Mark it healthy again
+    mark_proxy_healthy(test_proxy)
+    assert len(get_healthy_proxies(pool)) == 2

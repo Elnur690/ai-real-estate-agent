@@ -102,6 +102,9 @@ async def update_settings(body: UpdateSettingsRequest, db: AsyncSession = Depend
     return {"status": "success", "updated_keys": list(body.settings.keys())}
 
 
+class ScanProxyPoolRequest(BaseModel):
+    proxies: Optional[List[str]] = None
+
 @router.post("/test-proxy")
 async def test_proxy_endpoint(
     body: Optional[TestProxyRequest] = None,
@@ -113,6 +116,21 @@ async def test_proxy_endpoint(
     """
     proxy_to_test = body.proxy_url if body else None
     result = await test_proxy_connection(proxy_to_test)
+    return result
+
+
+@router.post("/scan-proxy-pool")
+async def scan_proxy_pool_endpoint(
+    body: Optional[ScanProxyPoolRequest] = None,
+    current_admin = Depends(get_current_admin)
+):
+    """
+    Concurrently scans all proxies in the pool, measures health,
+    and returns working vs blocked proxies.
+    """
+    from app.scrapers.utils import scan_entire_proxy_pool
+    custom_list = body.proxies if body else None
+    result = await scan_entire_proxy_pool(custom_list)
     return result
 
 

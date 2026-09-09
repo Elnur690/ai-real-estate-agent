@@ -155,6 +155,53 @@ export const AppSettingsView: React.FC = () => {
     }
   };
 
+  // Full Pool Scan State
+  const [poolScanRunning, setPoolScanRunning] = useState(false);
+  const [poolScanResult, setPoolScanResult] = useState<{
+    total: number;
+    healthy_count: number;
+    blocked_count: number;
+    healthy_percent: number;
+    healthy_proxies: string[];
+    blocked_proxies: string[];
+    results: Array<{
+      proxy: string;
+      detected_ip?: string;
+      status?: number;
+      latency_ms?: number;
+      success: boolean;
+      error?: string;
+      message?: string;
+    }>;
+  } | null>(null);
+
+  const handleScanPool = async () => {
+    setPoolScanRunning(true);
+    setPoolScanResult(null);
+    try {
+      const currentList = (settingsMap['proxy_pool_urls'] || '')
+        .split('\n')
+        .map(p => p.trim())
+        .filter(Boolean);
+
+      const res = await api.post('/settings/scan-proxy-pool', {
+        proxies: currentList.length > 0 ? currentList : undefined
+      });
+      setPoolScanResult(res.data);
+    } catch (e: any) {
+      alert(e.response?.data?.detail || 'Hovuz skan edilərkən xəta baş verdi.');
+    } finally {
+      setPoolScanRunning(false);
+    }
+  };
+
+  const handleRemoveBlockedProxies = () => {
+    if (!poolScanResult || !poolScanResult.healthy_proxies) return;
+    const cleanText = poolScanResult.healthy_proxies.join('\n');
+    setSettingsMap(prev => ({ ...prev, proxy_pool_urls: cleanText }));
+    alert(`Bloklanmış ${poolScanResult.blocked_count} proksi siyahıdan təmizləndi! Yadda saxlamaq üçün "Yadda Saxla və Tətbiq Et" düyməsini sıxın.`);
+  };
+
   // My Profile state
   const [myProfile, setMyProfile] = useState<{ id: number; name: string; email: string; phone?: string; role: string } | null>(null);
   const [profName, setProfName] = useState('');
@@ -933,17 +980,75 @@ export const AppSettingsView: React.FC = () => {
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
                 <div>
                   <h4 className="text-sm font-bold text-white">Çoxlu Proksi Hovuzu (Proxy Pool List)</h4>
                   <p className="text-xs text-slate-400">
                     Hər sətirdə bir proksi. Webshare standart formatı (<code className="text-purple-300">IP:PORT:USER:PASS</code>) və ya URL formatı (<code className="text-purple-300">http://user:pass@ip:port</code>) dəstəklənir.
                   </p>
                 </div>
-                <span className="text-xs px-2.5 py-1 rounded-lg bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 font-mono">
-                  {(settingsMap['proxy_pool_urls'] || '').split('\n').filter(p => p.trim()).length} Proksi Qeydiyyatda
-                </span>
+                <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                  <span className="text-xs px-2.5 py-1 rounded-lg bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 font-mono">
+                    {(settingsMap['proxy_pool_urls'] || '').split('\n').filter(p => p.trim()).length} Proksi Qeydiyyatda
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleScanPool}
+                    disabled={poolScanRunning}
+                    className="flex items-center gap-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 text-xs font-semibold px-3 py-1 rounded-lg transition-all disabled:opacity-50"
+                  >
+                    {poolScanRunning ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
+                    <span>{poolScanRunning ? 'Skan edilir...' : '🩺 Bütün Hovuzu Diaqnostika Et'}</span>
+                  </button>
+                </div>
               </div>
+
+              {/* Pool Scan Summary Banner */}
+              {poolScanResult && (
+                <div className="mb-3 p-3 rounded-xl bg-dark-900/90 border border-slate-700 space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                        poolScanResult.healthy_percent >= 80 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
+                      }`}>
+                        Sağlamlıq: {poolScanResult.healthy_percent}%
+                      </span>
+                      <span className="text-xs text-slate-300">
+                        🟢 {poolScanResult.healthy_count} aktiv işlək / 🔴 {poolScanResult.blocked_count} bloklanmış
+                      </span>
+                    </div>
+
+                    {poolScanResult.blocked_count > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleRemoveBlockedProxies}
+                        className="flex items-center gap-1 text-xs font-semibold text-rose-400 hover:text-rose-300 bg-rose-500/10 border border-rose-500/20 px-2.5 py-1 rounded-lg transition-all"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Bloklanmış {poolScanResult.blocked_count} Proksini Siyahıdan Təmizlə</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Micro list of scanned proxies */}
+                  <div className="max-h-36 overflow-y-auto space-y-1 pt-1 pr-1">
+                    {poolScanResult.results.map((r, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-[11px] font-mono p-1.5 rounded-lg bg-dark-800/80 border border-slate-800">
+                        <div className="flex items-center gap-2 truncate">
+                          <span>{r.success ? '🟢' : '🔴'}</span>
+                          <span className="text-slate-300 truncate">{r.proxy}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className={r.success ? 'text-emerald-400' : 'text-rose-400 font-bold'}>
+                            {r.status ? `HTTP ${r.status}` : 'Xəta'}
+                          </span>
+                          <span className="text-slate-500">{r.latency_ms}ms</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <textarea
                 rows={8}

@@ -76,10 +76,38 @@ WEBSHARE_PROXIES = [
     "http://reipvtkd:kwop2c4stm5r@198.23.243.226:6361",
     "http://reipvtkd:kwop2c4stm5r@38.154.185.97:6370",
     "http://reipvtkd:kwop2c4stm5r@84.247.60.125:6095",
-    "http://reipvtkd:kwop2c4stm5r@142.111.67.146:5611",
     "http://reipvtkd:kwop2c4stm5r@191.96.254.138:6185",
     "http://reipvtkd:kwop2c4stm5r@31.58.9.4:6077",
 ]
+
+# In-memory proxy quarantine tracker: {proxy_url: expiration_timestamp}
+_QUARANTINED_PROXIES: Dict[str, float] = {}
+
+def mark_proxy_unhealthy(proxy_url: Optional[str], duration_seconds: float = 600.0) -> None:
+    """Temporarily quarantines a proxy that failed, timed out, or got blocked by Cloudflare."""
+    import time
+    if proxy_url:
+        _QUARANTINED_PROXIES[proxy_url] = time.time() + duration_seconds
+        logger.warning(f"[ScraperUtils] Quarantined proxy {proxy_url} for {int(duration_seconds)}s due to failure/block.")
+
+def mark_proxy_healthy(proxy_url: Optional[str]) -> None:
+    """Removes a proxy from quarantine when it succeeds."""
+    if proxy_url and proxy_url in _QUARANTINED_PROXIES:
+        _QUARANTINED_PROXIES.pop(proxy_url, None)
+
+def get_healthy_proxies(pool: Optional[List[str]] = None) -> List[str]:
+    """Filters pool to return only proxies not currently under quarantine."""
+    import time
+    now = time.time()
+    active_pool = pool if pool is not None else (_RUNTIME_PROXY_CONFIG.get("proxies") or WEBSHARE_PROXIES)
+    # Evict expired quarantines
+    expired = [p for p, exp in _QUARANTINED_PROXIES.items() if exp <= now]
+    for p in expired:
+        _QUARANTINED_PROXIES.pop(p, None)
+
+    healthy = [p for p in active_pool if p not in _QUARANTINED_PROXIES]
+    # If all proxies are quarantined, fallback to active pool rather than stopping completely
+    return healthy if healthy else active_pool
 
 def normalize_proxy_url(proxy_str: Optional[str]) -> str:
     """
@@ -267,7 +295,7 @@ def get_rotating_proxy(explicit_proxy: Optional[str] = None) -> Optional[str]:
         return None
     if _RUNTIME_PROXY_CONFIG.get("primary"):
         return _RUNTIME_PROXY_CONFIG["primary"]
-    pool = _RUNTIME_PROXY_CONFIG.get("proxies") or WEBSHARE_PROXIES
+    pool = get_healthy_proxies(_RUNTIME_PROXY_CONFIG.get("proxies") or WEBSHARE_PROXIES)
     if pool and _RUNTIME_PROXY_CONFIG.get("rotation", True):
         return random.choice(pool)
     if settings.BINA_AZ_PROXY_URL:
@@ -277,6 +305,73 @@ def get_rotating_proxy(explicit_proxy: Optional[str] = None) -> Optional[str]:
     if pool:
         return pool[0]
     return None
+
+async def scan_entire_proxy_pool(custom_pool: Optional[List[str]] = None) -> Dict[str, Any]:
+    """
+    Concurrently tests all proxies in the pool against bina.az and ipify.
+    Returns per-proxy health status, working count, and list of blocked/failed proxies.
+    """
+    pool_to_scan = custom_pool if custom_pool else (_RUNTIME_PROXY_CONFIG.get("proxies") or WEBSHARE_PROXIES)
+    clean_pool = []
+    for p in pool_to_scan:
+        if p and p.strip():
+            try:
+                norm = normalize_proxy_url(p)
+                if norm:
+                    clean_pool.append(norm)
+            except ValueError:
+                pass
+
+    tasks = [test_proxy_connection(p) for p in clean_pool]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    formatted_results = []
+    healthy_proxies = []
+    blocked_proxies = []
+
+    for p, r in zip(clean_pool, results):
+        if isinstance(r, Exception):
+            entry = {
+                "proxy": p,
+                "detected_ip": "Xəta",
+                "status": 0,
+                "latency_ms": 0,
+                "success": False,
+                "error": str(r)
+            }
+            blocked_proxies.append(p)
+            mark_proxy_unhealthy(p, duration_seconds=600.0)
+        else:
+            entry = {
+                "proxy": p,
+                "detected_ip": r.get("detected_ip"),
+                "status": r.get("bina_status"),
+                "latency_ms": r.get("latency_ms"),
+                "success": r.get("success", False),
+                "error": r.get("error"),
+                "message": r.get("message")
+            }
+            if r.get("success"):
+                healthy_proxies.append(p)
+                mark_proxy_healthy(p)
+            else:
+                blocked_proxies.append(p)
+                mark_proxy_unhealthy(p, duration_seconds=600.0)
+        formatted_results.append(entry)
+
+    total = len(clean_pool)
+    healthy_count = len(healthy_proxies)
+    percent = int((healthy_count / total * 100)) if total > 0 else 0
+
+    return {
+        "total": total,
+        "healthy_count": healthy_count,
+        "blocked_count": len(blocked_proxies),
+        "healthy_percent": percent,
+        "healthy_proxies": healthy_proxies,
+        "blocked_proxies": blocked_proxies,
+        "results": formatted_results
+    }
 
 async def polite_delay(min_seconds: float = 1.0, max_seconds: float = 2.5) -> None:
     """Sleep for a random interval between min_seconds and max_seconds to avoid rate limits."""
@@ -291,60 +386,69 @@ async def fetch_stealth_page(
     timeout: float = 10.0,
     proxy: Optional[str] = None,
     referer: Optional[str] = None,
-    impersonate: str = "chrome124"
+    impersonate: str = "chrome124",
+    max_proxy_retries: int = 3
 ) -> Tuple[Optional[str], int]:
     """
     Fetches web page HTML using TLS-fingerprint impersonation (curl_cffi AsyncSession)
-    with automatic proxy rotation and fallback.
+    with automatic proxy rotation, multi-proxy retry, and quarantine on failure.
     Returns (html_content, status_code).
     """
-    active_proxy = get_rotating_proxy(proxy)
-
     req_headers = dict(headers) if headers else get_random_headers(referer=referer or url)
+    tried_proxies = set()
 
-    # 1. Primary: curl_cffi AsyncSession (Browser TLS & HTTP/2 impersonation)
-    try:
-        from curl_cffi.requests import AsyncSession
-        async with AsyncSession(impersonate=impersonate, proxy=active_proxy, timeout=timeout) as session:
-            res = await session.get(url, headers=req_headers)
-            if res.status_code == 200:
-                return res.text, res.status_code
-    except ImportError:
-        pass
-    except Exception as e:
-        logger.debug(f"[ScraperUtils] curl_cffi fetch notice for {url} (proxy: {active_proxy}): {e}")
+    # 1. Primary with Multi-Proxy Retries across healthy pool
+    for attempt in range(max_proxy_retries):
+        active_proxy = get_rotating_proxy(proxy)
+        # Avoid picking the exact same failed proxy in this retry chain
+        if active_proxy and active_proxy in tried_proxies:
+            available = [p for p in get_healthy_proxies() if p not in tried_proxies]
+            if available:
+                active_proxy = random.choice(available)
 
-    # 2. Fallback: httpx.AsyncClient with proxy
-    if active_proxy:
+        if active_proxy:
+            tried_proxies.add(active_proxy)
+
+        try:
+            from curl_cffi.requests import AsyncSession
+            async with AsyncSession(impersonate=impersonate, proxy=active_proxy, timeout=timeout) as session:
+                res = await session.get(url, headers=req_headers)
+                if res.status_code == 200:
+                    mark_proxy_healthy(active_proxy)
+                    return res.text, res.status_code
+                elif res.status_code in (403, 429, 503):
+                    logger.warning(f"[ScraperUtils] Proxy {active_proxy} got HTTP {res.status_code} for {url}. Quarantining and retrying with another proxy...")
+                    mark_proxy_unhealthy(active_proxy, duration_seconds=600.0)
+                    continue
+        except Exception as e:
+            logger.debug(f"[ScraperUtils] curl_cffi attempt {attempt+1} failed for {url} (proxy: {active_proxy}): {e}")
+            mark_proxy_unhealthy(active_proxy, duration_seconds=300.0)
+            continue
+
+    # 2. Fallback: httpx.AsyncClient with another healthy proxy
+    healthy_pool = get_healthy_proxies()
+    fallback_proxy = random.choice(healthy_pool) if healthy_pool else None
+    if fallback_proxy:
         try:
             limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
-            async with httpx.AsyncClient(proxy=active_proxy, timeout=timeout, limits=limits, follow_redirects=True) as client:
+            async with httpx.AsyncClient(proxy=fallback_proxy, timeout=timeout, limits=limits, follow_redirects=True) as client:
                 res = await client.get(url, headers=req_headers)
                 if res.status_code == 200:
+                    mark_proxy_healthy(fallback_proxy)
                     return res.text, res.status_code
         except Exception as e:
             logger.debug(f"[ScraperUtils] httpx proxy fallback failed for {url}: {e}")
 
-    # 3. Resilient Fallback: Direct fetch (no proxy) if proxy was dead, timed out, or blocked
-    if active_proxy:
-        try:
-            logger.info(f"[ScraperUtils] Proxy {active_proxy} failed or timed out. Falling back to direct stealth connection for {url}")
-            from curl_cffi.requests import AsyncSession
-            async with AsyncSession(impersonate=impersonate, proxy=None, timeout=timeout) as session:
-                res = await session.get(url, headers=req_headers)
-                return res.text, res.status_code
-        except Exception as e:
-            logger.debug(f"[ScraperUtils] Direct stealth fallback notice for {url}: {e}")
-
-    # 4. Final Direct httpx Fallback
+    # 3. Direct fetch fallback only if proxy disabled or pool exhausted
     try:
-        limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
-        async with httpx.AsyncClient(proxy=None, timeout=timeout, limits=limits, follow_redirects=True) as client:
-            res = await client.get(url, headers=req_headers)
+        from curl_cffi.requests import AsyncSession
+        async with AsyncSession(impersonate=impersonate, proxy=None, timeout=timeout) as session:
+            res = await session.get(url, headers=req_headers)
             return res.text, res.status_code
     except Exception as e:
-        logger.debug(f"[ScraperUtils] Final httpx fallback notice for {url}: {e}")
-        return None, 0
+        logger.debug(f"[ScraperUtils] Direct stealth fallback notice for {url}: {e}")
+
+    return None, 0
 
 
 def safe_float(val: Any, default: float = 0.0) -> float:
