@@ -59,6 +59,12 @@ def test_normalize_proxy_url():
     # 5. Empty string
     assert normalize_proxy_url("") == ""
 
+    # 6. Accidental website target URL raises ValueError
+    with pytest.raises(ValueError):
+        normalize_proxy_url("https://bina.az")
+    with pytest.raises(ValueError):
+        normalize_proxy_url("bina.az")
+
 def test_runtime_proxy_pool_management():
     # Test updating proxy pool
     custom_pool = [

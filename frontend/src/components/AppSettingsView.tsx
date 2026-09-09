@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Sliders, Save, CheckCircle, Cpu, Key, CheckCircle2, AlertTriangle, Play, History, Building2, SlidersHorizontal, Database, Users, Plus, Trash2, ShieldCheck, Mail, Phone, Lock, Edit2, UserCheck, KeyRound, Globe, RefreshCw } from 'lucide-react';
+import { Sliders, Save, CheckCircle, Cpu, Key, CheckCircle2, AlertTriangle, Play, History, Building2, SlidersHorizontal, Database, Users, Plus, Trash2, ShieldCheck, Mail, Phone, Lock, Edit2, UserCheck, KeyRound, Globe, RefreshCw, Zap } from 'lucide-react';
 import api from '../api';
 import { AIProviderConfigItem, AICallLogItem, AdminUser } from '../types';
 
@@ -101,7 +101,7 @@ const AppSettingsAITaskCard: React.FC<AppSettingsAITaskCardProps> = ({ task, cfg
 
         <button
           type="button"
-          onClick={() => onSave(task.key, selectedProvider, selectedModel, apiKeyInput)}
+          onClick={() => onSave(task.key, selectedProvider, selectedModel, apiKeyInput || undefined)}
           className="text-xs font-semibold bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 px-3.5 py-1.5 rounded-xl flex items-center gap-1 transition-all"
         >
           <Save className="w-3 h-3" /> Save Config
@@ -132,13 +132,14 @@ export const AppSettingsView: React.FC = () => {
   } | null>(null);
   const [customTestProxyInput, setCustomTestProxyInput] = useState('');
 
-  const handleRunProxyTest = async () => {
+  const handleRunProxyTest = async (overrideProxy?: string) => {
     setProxyTestRunning(true);
     setProxyTestResult(null);
     try {
       const payload: { proxy_url?: string } = {};
-      if (customTestProxyInput.trim()) {
-        payload.proxy_url = customTestProxyInput.trim();
+      const proxyToUse = overrideProxy !== undefined ? overrideProxy : customTestProxyInput.trim();
+      if (proxyToUse) {
+        payload.proxy_url = proxyToUse;
       }
       const res = await api.post('/settings/test-proxy', payload);
       setProxyTestResult(res.data);
@@ -971,55 +972,90 @@ export const AppSettingsView: React.FC = () => {
           </form>
 
           {/* 1-Click Live Proxy Diagnostics */}
-          <div className="bg-dark-800/90 p-6 rounded-2xl border border-slate-800 shadow-xl space-y-4">
-            <div>
-              <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                <Play className="w-4 h-4 text-purple-400" />
-                Canlı Proksi & Bina.az Sınağı (1-Click Test)
-              </h4>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Proksinin Cloudflare WAF maneəsini keçib-keçmədiyini və real çıxış IP-sini real vaxtda yoxlayın.
-              </p>
-            </div>
+          <div className="bg-dark-800/90 p-6 rounded-2xl border border-slate-800 shadow-xl space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div>
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Play className="w-4 h-4 text-purple-400" />
+                  Canlı Proksi & Bina.az Sınağı
+                </h4>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Proksinin Cloudflare WAF blokunu keçib-keçmədiyini və real çıxış IP-sini real vaxtda yoxlayın.
+                </p>
+              </div>
 
-            <div className="flex flex-col sm:flex-row gap-2">
-              <input
-                type="text"
-                placeholder="Fərdi proksi sınağı (boş buraxsanız aktiv hovuzdan sınaq ediləcək)"
-                value={customTestProxyInput}
-                onChange={(e) => setCustomTestProxyInput(e.target.value)}
-                className="flex-1 bg-dark-900 border border-slate-700/80 px-3.5 py-2.5 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
-              />
               <button
                 type="button"
-                onClick={handleRunProxyTest}
+                onClick={() => handleRunProxyTest('')}
                 disabled={proxyTestRunning}
-                className="flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition-all disabled:opacity-50 shadow-lg shadow-purple-500/20"
+                className="self-start sm:self-auto flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition-all disabled:opacity-50 shadow-lg shadow-emerald-500/20"
               >
-                {proxyTestRunning ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                <span>{proxyTestRunning ? 'Yoxlanılır...' : 'İndi Sınaqdan Keçir'}</span>
+                {proxyTestRunning ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                <span>{proxyTestRunning ? 'Yoxlanılır...' : '⚡ Aktiv Hovuzu Yoxla'}</span>
               </button>
+            </div>
+
+            {/* Custom Single Proxy Test Input */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                <span>Fərdi Proksini Sınaqdan Keçir (Opsional)</span>
+                <span className="text-[11px] text-slate-500 font-mono">Format: 31.59.20.176:6754:reipvtkd:kwop2c4stm5r</span>
+              </label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  placeholder="Proksi server ünvanı: IP:PORT:USER:PASS və ya http://user:pass@IP:PORT"
+                  value={customTestProxyInput}
+                  onChange={(e) => setCustomTestProxyInput(e.target.value)}
+                  className="flex-1 bg-dark-900 border border-slate-700/80 px-3.5 py-2.5 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleRunProxyTest()}
+                  disabled={proxyTestRunning || !customTestProxyInput.trim()}
+                  className="flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold px-5 py-2.5 rounded-xl transition-all disabled:opacity-50 shadow-lg shadow-purple-500/20"
+                >
+                  {proxyTestRunning ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                  <span>Fərdi Proksini Yoxla</span>
+                </button>
+              </div>
+
+              {customTestProxyInput.toLowerCase().includes('bina.az') && (
+                <div className="text-[11px] text-amber-300 flex items-start gap-1.5 mt-1.5 bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/30">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>Diqqət:</strong> Bu xanaya bina.az saytının ünvanı yazılmamalıdır! Bura yalnız <strong>Webshare və ya proksi provayderinizin verdiyi IP və port</strong> yazılmalıdır (məs: <code className="text-purple-300">31.59.20.176:6754:reipvtkd:kwop2c4stm5r</code>). Bina.az saytına qoşulma arxa planda avtomatik sınaqdan keçirilir.
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Test Results Display */}
             {proxyTestResult && (
-              <div className={`p-4 rounded-xl border transition-all ${
+              <div className={`p-4 rounded-xl border transition-all space-y-3 ${
                 proxyTestResult.success
                   ? 'bg-emerald-500/10 border-emerald-500/30'
                   : 'bg-rose-500/10 border-rose-500/30'
               }`}>
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-700/40 pb-2.5">
                   <div className="flex items-center gap-2">
                     {proxyTestResult.success ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                      <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
                     ) : (
-                      <AlertTriangle className="w-5 h-5 text-rose-400" />
+                      <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
                     )}
-                    <span className={`text-sm font-bold ${proxyTestResult.success ? 'text-emerald-300' : 'text-rose-300'}`}>
-                      {proxyTestResult.success ? 'Proksi Tam İşləkdir (Bina.az 200 OK)' : 'Proksi Əlaqəsi Uğursuz Oldu'}
-                    </span>
+                    <div>
+                      <span className={`text-sm font-bold block ${proxyTestResult.success ? 'text-emerald-300' : 'text-rose-300'}`}>
+                        {proxyTestResult.success ? 'Proksi Tam İşləkdir (Bina.az 200 OK)' : 'Proksi Əlaqəsi Uğursuz Oldu'}
+                      </span>
+                      {proxyTestResult.proxy_used && (
+                        <span className="text-[11px] font-mono text-slate-400 block mt-0.5">
+                          Sınaq edilən proksi: <span className="text-slate-300">{proxyTestResult.proxy_used}</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-xs font-mono text-slate-400">
+                  <span className="text-xs font-mono text-slate-300 bg-dark-900/80 px-2.5 py-1 rounded-lg border border-slate-700 self-start sm:self-auto">
                     ⚡ {proxyTestResult.latency_ms} ms
                   </span>
                 </div>
@@ -1027,7 +1063,7 @@ export const AppSettingsView: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                   <div className="bg-dark-900/60 p-2.5 rounded-lg border border-slate-800">
                     <span className="text-slate-400 block text-[11px] mb-0.5">🌐 Çıxış IP-si (Exit IP)</span>
-                    <span className="font-mono text-white font-semibold">{proxyTestResult.detected_ip || 'Məlum deyil'}</span>
+                    <span className="font-mono text-white font-semibold truncate block">{proxyTestResult.detected_ip || 'Məlum deyil'}</span>
                   </div>
                   <div className="bg-dark-900/60 p-2.5 rounded-lg border border-slate-800">
                     <span className="text-slate-400 block text-[11px] mb-0.5">🏠 Bina.az Cavabı</span>
@@ -1044,7 +1080,7 @@ export const AppSettingsView: React.FC = () => {
                 </div>
 
                 {proxyTestResult.message && (
-                  <p className="mt-2.5 text-xs text-slate-300 border-t border-slate-700/50 pt-2">
+                  <p className="text-xs text-slate-300 border-t border-slate-700/50 pt-2 leading-relaxed">
                     {proxyTestResult.message}
                   </p>
                 )}

@@ -81,7 +81,7 @@ WEBSHARE_PROXIES = [
     "http://reipvtkd:kwop2c4stm5r@31.58.9.4:6077",
 ]
 
-def normalize_proxy_url(proxy_str: str) -> str:
+def normalize_proxy_url(proxy_str: Optional[str]) -> str:
     """
     Normalizes different proxy formats into standard URL format:
     - 'http://user:pass@ip:port' -> 'http://user:pass@ip:port'
@@ -89,20 +89,39 @@ def normalize_proxy_url(proxy_str: str) -> str:
     - 'user:pass@ip:port' -> 'http://user:pass@ip:port'
     - 'ip:port' -> 'http://ip:port'
     """
-    p = proxy_str.strip()
+    if not proxy_str:
+        return ""
+    p = proxy_str.strip().strip('"\'')
     if not p:
         return ""
-    if p.startswith(("http://", "https://", "socks5://", "socks5h://")):
-        return p
-    parts = p.split(":")
-    if len(parts) == 4:
-        # IP:PORT:USER:PASS
-        ip, port, user, pwd = parts
-        return f"http://{user}:{pwd}@{ip}:{port}"
-    elif "@" in p:
-        return f"http://{p}"
+
+    # Prevent accidental entry of target website domains as proxy server
+    target_domains = ("bina.az", "tap.az", "turb.az", "google.com", "api.ipify.org")
+    if any(d in p.lower() for d in target_domains):
+        raise ValueError(
+            f"Daxil edilən ünvan ('{p}') proksi server deyil, hədəf veb-saytdır! "
+            "Zəhmət olmasa proksi server ünvanını daxil edin (məsələn: 31.59.20.176:6754:reipvtkd:kwop2c4stm5r və ya http://user:pass@ip:port)."
+        )
+
+    scheme = "http"
+    if "://" in p:
+        parts_scheme = p.split("://", 1)
+        scheme = parts_scheme[0].lower()
+        rest = parts_scheme[1]
     else:
-        return f"http://{p}"
+        rest = p
+
+    # If rest contains 4 colon-separated elements: IP:PORT:USER:PASS
+    parts = rest.split(":")
+    if len(parts) == 4:
+        ip, port, user, pwd = parts
+        return f"{scheme}://{user}:{pwd}@{ip}:{port}"
+    elif len(parts) == 2 and "@" not in rest:
+        return f"{scheme}://{rest}"
+    elif "@" in rest:
+        return f"{scheme}://{rest}"
+    else:
+        return f"{scheme}://{rest}"
 
 _RUNTIME_PROXY_CONFIG = {
     "enabled": True,
@@ -122,12 +141,31 @@ def update_runtime_proxy_pool(
     rotation: bool = True
 ):
     """Updates runtime scraper proxy pool dynamically without server restart."""
-    clean_proxies = [normalize_proxy_url(p) for p in proxies if p and p.strip()] if proxies is not None else list(WEBSHARE_PROXIES)
+    clean_proxies = []
+    if proxies is not None:
+        for p in proxies:
+            if p and p.strip():
+                try:
+                    norm = normalize_proxy_url(p)
+                    if norm:
+                        clean_proxies.append(norm)
+                except ValueError:
+                    pass
+    else:
+        clean_proxies = list(WEBSHARE_PROXIES)
+
+    clean_primary = None
+    if primary_proxy and primary_proxy.strip():
+        try:
+            clean_primary = normalize_proxy_url(primary_proxy)
+        except ValueError:
+            clean_primary = None
+
     _RUNTIME_PROXY_CONFIG.clear()
     _RUNTIME_PROXY_CONFIG.update({
         "enabled": enabled,
         "rotation": rotation,
-        "primary": normalize_proxy_url(primary_proxy) if (primary_proxy and primary_proxy.strip()) else None,
+        "primary": clean_primary,
         "proxies": clean_proxies
     })
     logger.info(f"[ScraperUtils] Updated runtime proxy pool: {len(clean_proxies)} proxies, primary: {_RUNTIME_PROXY_CONFIG['primary']}, enabled: {enabled}, rotation: {rotation}")
@@ -139,7 +177,21 @@ async def test_proxy_connection(proxy_url: Optional[str] = None) -> Dict[str, An
     """
     import time
     from bs4 import BeautifulSoup
-    target_proxy = normalize_proxy_url(proxy_url) if proxy_url else get_rotating_proxy()
+
+    try:
+        target_proxy = normalize_proxy_url(proxy_url) if (proxy_url and proxy_url.strip()) else get_rotating_proxy()
+    except ValueError as val_err:
+        return {
+            "success": False,
+            "proxy_used": proxy_url or "Naməlum",
+            "detected_ip": "Xəta",
+            "ip_status": 0,
+            "bina_status": 0,
+            "bina_title": "Keçərsiz Proksi Formatı",
+            "latency_ms": 0,
+            "error": str(val_err),
+            "message": str(val_err)
+        }
     
     start_time = time.time()
     detected_ip = "Unknown"
@@ -161,6 +213,7 @@ async def test_proxy_connection(proxy_url: Optional[str] = None) -> Dict[str, An
                         detected_ip = ip_resp.text.strip()
             except Exception as e:
                 detected_ip = f"Xəta: {e}"
+                error_msg = str(e)
 
             try:
                 bina_resp = await session.get("https://bina.az/items")
@@ -169,12 +222,29 @@ async def test_proxy_connection(proxy_url: Optional[str] = None) -> Dict[str, An
                 if soup.title and soup.title.string:
                     bina_title = soup.title.string.strip()
             except Exception as e:
-                error_msg = str(e)
+                if not error_msg:
+                    error_msg = str(e)
     except Exception as e:
         error_msg = str(e)
 
     latency_ms = int((time.time() - start_time) * 1000)
     is_success = (bina_status == 200)
+
+    # Detailed Azerbaijani diagnosis for common proxy errors
+    human_msg = ""
+    if is_success:
+        human_msg = "Əla! Proksi aktivdir və bina.az-a maneəsiz daxil olur (Status 200 OK)."
+    elif error_msg:
+        if "response 400" in error_msg:
+            human_msg = f"Proksi server sorğunu rədd etdi (HTTP 400 Bad Request). Yoxlanılan ünvan: '{target_proxy}'. Zəhmət olmasa proksi yerinə veb-sayt ünvanı (məs. bina.az) daxil etmədiyinizdən və portun düzgünlüyündən əmin olun."
+        elif "response 407" in error_msg:
+            human_msg = f"Proksi autentifikasiyası uğursuz oldu (HTTP 407 Proxy Authentication Required). İstifadəçi adı və ya şifrə səhvdir: '{target_proxy}'."
+        elif "response 403" in error_msg or bina_status == 403:
+            human_msg = f"Giriş qadağandır (HTTP 403 Forbidden). Bu proksi IP-si ({detected_ip}) bina.az tərəfindən Cloudflare-də bloklanıb. Zəhmət olmasa hovuzdakı başqa bir proksini sınaqdan keçirin."
+        else:
+            human_msg = f"Xəta baş verdi: {error_msg}"
+    else:
+        human_msg = f"Bina.az cavab statusu: HTTP {bina_status} (Uğursuz)"
 
     return {
         "success": is_success,
@@ -185,7 +255,7 @@ async def test_proxy_connection(proxy_url: Optional[str] = None) -> Dict[str, An
         "bina_title": bina_title,
         "latency_ms": latency_ms,
         "error": error_msg,
-        "message": "Uğurlu! Proksi aktivdir və bina.az-a maneəsiz daxil olur." if is_success else f"Xəta: {error_msg or f'Bina.az status: {bina_status}'}"
+        "message": human_msg
     }
 
 def get_rotating_proxy(explicit_proxy: Optional[str] = None) -> Optional[str]:
