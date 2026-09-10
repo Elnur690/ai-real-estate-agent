@@ -10,12 +10,30 @@ from app.services.ingestion import IngestionService
 
 logger = logging.getLogger(__name__)
 
+def _run_async(coro):
+    """Safely executes an async coroutine from Celery sync task, even if an event loop is already active."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            return executor.submit(asyncio.run, coro).result()
+    return asyncio.run(coro)
+
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
 def run_scheduled_ingestion(self):
     """Celery periodic job to run scraping, normalization, AI match scoring, and notification dispatch."""
     logger.info("[CeleryJob] Starting scheduled ingestion cycle...")
     
     async def _runner():
+        from app.services.maintenance import MaintenanceService
+        if await MaintenanceService.is_maintenance_active():
+            logger.info("[CeleryJob] System maintenance mode is ACTIVE. Pausing ingestion cycle to protect database and server.")
+            return {"status": "paused_maintenance", "scraped": 0, "matched": 0}
+
         from app.db.session import AsyncSessionLocal
         from app.models.saved_search import SavedSearch
         result = await IngestionService.run_ingestion_cycle()
@@ -34,7 +52,7 @@ def run_scheduled_ingestion(self):
         return result
 
     try:
-        return asyncio.run(_runner())
+        return _run_async(_runner())
     except Exception as exc:
         logger.error(f"[CeleryJob] Ingestion cycle error: {exc}. Retrying...")
         raise self.retry(exc=exc)

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Sliders, Save, CheckCircle, Cpu, Key, CheckCircle2, AlertTriangle, Play, History, Building2, SlidersHorizontal, Database, Users, Plus, Trash2, ShieldCheck, Mail, Phone, Lock, Edit2, UserCheck, KeyRound, Globe, RefreshCw, Zap } from 'lucide-react';
+import { Sliders, Save, CheckCircle, Cpu, Key, CheckCircle2, AlertTriangle, Play, History, Building2, SlidersHorizontal, Database, Users, Plus, Trash2, ShieldCheck, Mail, Phone, Lock, Edit2, UserCheck, KeyRound, Globe, RefreshCw, Zap, Clock, Radio, Power, Send, Bell } from 'lucide-react';
 import api from '../api';
 import { AIProviderConfigItem, AICallLogItem, AdminUser } from '../types';
 
@@ -112,10 +112,29 @@ const AppSettingsAITaskCard: React.FC<AppSettingsAITaskCardProps> = ({ task, cfg
 };
 
 export const AppSettingsView: React.FC = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'branding' | 'ai' | 'automation' | 'proxy' | 'admins'>('branding');
+  const [activeSubTab, setActiveSubTab] = useState<'branding' | 'ai' | 'automation' | 'proxy' | 'admins' | 'maintenance'>('branding');
   const [settingsMap, setSettingsMap] = useState<Record<string, string>>({});
   const [savingBranding, setSavingBranding] = useState(false);
   const [brandingSaved, setBrandingSaved] = useState(false);
+
+  // Maintenance Mode State
+  const [maintenanceStatus, setMaintenanceStatus] = useState<{
+    is_maintenance: boolean;
+    reason: string;
+    started_at: string;
+    estimated_minutes: number;
+    connected_agents_count: number;
+    preview_start_message: string;
+    preview_end_message: string;
+  } | null>(null);
+  const [loadingMaintenance, setLoadingMaintenance] = useState(false);
+  const [maintenanceReason, setMaintenanceReason] = useState('Planlı server profilaktikası və verilənlər bazası yenilənməsi.');
+  const [maintenanceMinutes, setMaintenanceMinutes] = useState(30);
+  const [maintenanceNotify, setMaintenanceNotify] = useState(true);
+  const [customStartMsg, setCustomStartMsg] = useState('');
+  const [customEndMsg, setCustomEndMsg] = useState('');
+  const [maintenanceActionLoading, setMaintenanceActionLoading] = useState(false);
+  const [maintenanceAlert, setMaintenanceAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Proxy & Anti-Bot State
   const [proxyTestRunning, setProxyTestRunning] = useState(false);
@@ -307,11 +326,86 @@ export const AppSettingsView: React.FC = () => {
     }
   };
 
+  const loadMaintenanceStatus = async () => {
+    try {
+      setLoadingMaintenance(true);
+      const res = await api.get('/settings/maintenance');
+      if (res.data) {
+        setMaintenanceStatus(res.data);
+        if (res.data.reason) setMaintenanceReason(res.data.reason);
+        if (res.data.estimated_minutes) setMaintenanceMinutes(res.data.estimated_minutes);
+      }
+    } catch (e) {
+      console.error('Failed to load maintenance status', e);
+    } finally {
+      setLoadingMaintenance(false);
+    }
+  };
+
+  const handleEnableMaintenance = async () => {
+    const agentsCount = maintenanceStatus?.connected_agents_count || 0;
+    if (!window.confirm(`Diqqət! Texniki baxış rejimini aktivləşdirmək istədiyinizdən əminsiniz?\n${maintenanceNotify ? `Bütün (${agentsCount}) qoşulmuş agentə xəbərdarlıq bildirişi göndəriləcək.` : 'Agentlərə bildiriş göndərilməyəcək.'}`)) {
+      return;
+    }
+    setMaintenanceActionLoading(true);
+    setMaintenanceAlert(null);
+    try {
+      const res = await api.post('/settings/maintenance/enable', {
+        reason: maintenanceReason,
+        estimated_minutes: Number(maintenanceMinutes),
+        custom_message: customStartMsg || undefined,
+        notify_agents: maintenanceNotify
+      });
+      setMaintenanceAlert({
+        type: 'success',
+        message: `Texniki baxış rejimi aktivləşdirildi! ${res.data.notified_count || 0} agentə bildiriş çatdırıldı.`
+      });
+      await loadMaintenanceStatus();
+      await loadSettings();
+    } catch (err: any) {
+      setMaintenanceAlert({
+        type: 'error',
+        message: err.response?.data?.detail || 'Texniki baxışı aktivləşdirmək mümkün olmadı.'
+      });
+    } finally {
+      setMaintenanceActionLoading(false);
+    }
+  };
+
+  const handleDisableMaintenance = async () => {
+    const agentsCount = maintenanceStatus?.connected_agents_count || 0;
+    if (!window.confirm(`Texniki baxış rejimini dayandırmaq və sistemi bərpa etmək istəyirsiniz?\n${maintenanceNotify ? `Bütün (${agentsCount}) agentə sistemin bərpa olunduğu bildirişi göndəriləcək.` : 'Agentlərə bildiriş göndərilməyəcək.'}`)) {
+      return;
+    }
+    setMaintenanceActionLoading(true);
+    setMaintenanceAlert(null);
+    try {
+      const res = await api.post('/settings/maintenance/disable', {
+        custom_message: customEndMsg || undefined,
+        notify_agents: maintenanceNotify
+      });
+      setMaintenanceAlert({
+        type: 'success',
+        message: `Texniki baxış rejimi söndürüldü, sistem bərpa olundu! ${res.data.notified_count || 0} agentə bərpa bildirişi çatdırıldı.`
+      });
+      await loadMaintenanceStatus();
+      await loadSettings();
+    } catch (err: any) {
+      setMaintenanceAlert({
+        type: 'error',
+        message: err.response?.data?.detail || 'Texniki baxışı söndürmək mümkün olmadı.'
+      });
+    } finally {
+      setMaintenanceActionLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadSettings();
     loadAiConfigs();
     loadAdmins();
     loadMyProfile();
+    loadMaintenanceStatus();
   }, []);
 
   const handleUpdateMyProfile = async (e: React.FormEvent) => {
@@ -539,6 +633,24 @@ export const AppSettingsView: React.FC = () => {
           >
             <Globe className="w-3.5 h-3.5" />
             <span>Proksi & Anti-Bot</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab('maintenance')}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              activeSubTab === 'maintenance'
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 shadow-lg shadow-amber-500/10'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+            <span>Texniki Baxış</span>
+            {maintenanceStatus?.is_maintenance && (
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -1322,6 +1434,339 @@ export const AppSettingsView: React.FC = () => {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* SUB-TAB: System Maintenance Mode & Agent Notifications */}
+      {activeSubTab === 'maintenance' && (
+        <div className="space-y-6">
+          {/* Status Overview Card */}
+          <div className={`p-6 rounded-2xl border backdrop-blur-xl shadow-xl transition-all ${
+            maintenanceStatus?.is_maintenance
+              ? 'bg-rose-950/30 border-rose-500/40 shadow-rose-950/20'
+              : 'bg-emerald-950/20 border-emerald-500/30 shadow-emerald-950/10'
+          }`}>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border ${
+                  maintenanceStatus?.is_maintenance
+                    ? 'bg-rose-500/20 border-rose-500/40 text-rose-400'
+                    : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                }`}>
+                  {maintenanceStatus?.is_maintenance ? (
+                    <AlertTriangle className="w-6 h-6 animate-pulse" />
+                  ) : (
+                    <ShieldCheck className="w-6 h-6" />
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <h3 className="text-lg font-bold text-white tracking-tight">
+                      {maintenanceStatus?.is_maintenance
+                        ? 'Sistem Texniki Baxış Rejimindədir (Fasilə)'
+                        : 'Sistem Normal Rejimdə Çalışır'}
+                    </h3>
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wider ${
+                      maintenanceStatus?.is_maintenance
+                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                        : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    }`}>
+                      {maintenanceStatus?.is_maintenance ? 'Texniki Baxış Aktiv' : 'Normal Rejim'}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-300">
+                    {maintenanceStatus?.is_maintenance
+                      ? `Səbəb: ${maintenanceStatus.reason || 'Planlı profilaktika'}`
+                      : 'Bütün xidmətlər, bot əmrləri və elan axtarış skraperləri aktiv rejimdə işləyir.'}
+                  </p>
+
+                  {maintenanceStatus?.is_maintenance && maintenanceStatus.started_at && (
+                    <div className="flex items-center gap-4 text-xs text-slate-400 pt-1">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-amber-400" />
+                        Başlanma: {new Date(maintenanceStatus.started_at).toLocaleString('az-AZ')}
+                      </span>
+                      {maintenanceStatus.estimated_minutes > 0 && (
+                        <span className="text-amber-300">
+                          Təxmini müddət: ~{maintenanceStatus.estimated_minutes} dəqiqə
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Button: End or Refresh */}
+              <div className="flex items-center gap-2 self-end md:self-center">
+                <button
+                  type="button"
+                  onClick={loadMaintenanceStatus}
+                  disabled={loadingMaintenance}
+                  className="px-3 py-2 text-xs text-slate-400 hover:text-white bg-dark-900/60 border border-slate-700/60 rounded-xl hover:bg-dark-900 transition-all flex items-center gap-1.5"
+                  title="Yenilə"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingMaintenance ? 'animate-spin' : ''}`} />
+                  <span>Yenilə</span>
+                </button>
+
+                {maintenanceStatus?.is_maintenance && (
+                  <button
+                    type="button"
+                    onClick={handleDisableMaintenance}
+                    disabled={maintenanceActionLoading}
+                    className="px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 rounded-xl shadow-lg shadow-emerald-600/20 flex items-center gap-1.5 disabled:opacity-50 transition-all"
+                  >
+                    <Power className="w-4 h-4" />
+                    <span>{maintenanceActionLoading ? 'Bərpa edilir...' : 'Texniki Baxışı Dayandır (Bərpa Et)'}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Notification Bar */}
+            {maintenanceAlert && (
+              <div className={`mt-4 p-3 rounded-xl text-xs flex items-center gap-2 border ${
+                maintenanceAlert.type === 'success'
+                  ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                  : 'bg-rose-500/10 text-rose-300 border-rose-500/30'
+              }`}>
+                {maintenanceAlert.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                )}
+                <span>{maintenanceAlert.message}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Quick Stats Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-dark-800/80 p-4 rounded-xl border border-slate-800 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+                <Radio className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-[11px] text-slate-400">Qoşulmuş Agentlər</p>
+                <p className="text-lg font-bold text-white">
+                  {maintenanceStatus?.connected_agents_count || 0}
+                  <span className="text-[11px] font-normal text-slate-400 ml-1">aktiv abunəçi</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-dark-800/80 p-4 rounded-xl border border-slate-800 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                <Clock className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-[11px] text-slate-400">Gözlənilən Fasilə</p>
+                <p className="text-lg font-bold text-white">
+                  {maintenanceMinutes}
+                  <span className="text-[11px] font-normal text-slate-400 ml-1">dəqiqə</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-dark-800/80 p-4 rounded-xl border border-slate-800 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+                <Send className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-[11px] text-slate-400">Xəbərdarlıq Kanalları</p>
+                <p className="text-sm font-semibold text-slate-200">
+                  Telegram & WhatsApp
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Maintenance Control / Launch Form */}
+          <div className="bg-dark-800/90 p-6 rounded-2xl border border-slate-800 space-y-6 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Power className="w-4 h-4 text-amber-400" />
+                  <span>Texniki Baxış Rejimini İdarə Et və Agentləri Xəbərdar Et</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Texniki baxış aktiv olduqda bot sorğulara fasilə bildirişi verəcək, skraperlər dayanacaq və agentlərə dərhal mesaj çatdırılacaq.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Left Column: Form Controls */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Texniki Baxışın Səbəbi
+                  </label>
+                  <input
+                    type="text"
+                    value={maintenanceReason}
+                    onChange={(e) => setMaintenanceReason(e.target.value)}
+                    placeholder="Məs: Planlı server profilaktikası və yenilənmə"
+                    className="w-full glass-input px-3.5 py-2.5 rounded-xl text-sm text-white bg-dark-900 border border-slate-700 focus:border-amber-500/50"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">Bu səbəb agentlərə göndərilən bildiriş mətnində əks olunacaq.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Təxmini Fasilə Müddəti (Dəqiqə)
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number"
+                      min={5}
+                      max={1440}
+                      step={5}
+                      value={maintenanceMinutes}
+                      onChange={(e) => setMaintenanceMinutes(Math.max(5, parseInt(e.target.value) || 30))}
+                      className="w-32 glass-input px-3.5 py-2 rounded-xl text-sm text-white bg-dark-900 border border-slate-700"
+                    />
+                    {/* Quick Presets */}
+                    <div className="flex items-center gap-1.5">
+                      {[15, 30, 60, 120].map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setMaintenanceMinutes(m)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${
+                            maintenanceMinutes === m
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                              : 'bg-dark-900/60 text-slate-400 border-slate-800 hover:text-slate-200'
+                          }`}
+                        >
+                          {m >= 60 ? `${m / 60} saat` : `${m} dəq`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Broadcast Checkbox */}
+                <div className="p-3 rounded-xl bg-dark-900/60 border border-slate-800 flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    id="notify_agents_check"
+                    checked={maintenanceNotify}
+                    onChange={(e) => setMaintenanceNotify(e.target.checked)}
+                    className="mt-0.5 rounded border-slate-700 text-amber-500 focus:ring-amber-500/20"
+                  />
+                  <label htmlFor="notify_agents_check" className="text-xs text-slate-300 cursor-pointer">
+                    <span className="font-semibold text-white block">Qoşulmuş bütün agentlərə xəbərdarlıq göndər</span>
+                    <span className="text-slate-400">
+                      Sistem aktivləşdiriləndə və söndürüləndə bütün aktiv rieltor agentlərə Telegram və WhatsApp vasitəsilə bildiriş göndərilir.
+                    </span>
+                  </label>
+                </div>
+
+                {/* Custom Start Message (Optional override) */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Fərdi Başlanğıc Mesajı (İstəyə görə)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={customStartMsg}
+                    onChange={(e) => setCustomStartMsg(e.target.value)}
+                    placeholder="Boş saxlasanız, sistemin standart peşəkar bildiriş şablonu göndəriləcək..."
+                    className="w-full glass-input px-3.5 py-2 rounded-xl text-xs text-white bg-dark-900 border border-slate-700 focus:border-amber-500/50 resize-none font-mono"
+                  />
+                </div>
+
+                {/* Custom End Message (Optional override) */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Fərdi Bərpa Mesajı (İstəyə görə)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={customEndMsg}
+                    onChange={(e) => setCustomEndMsg(e.target.value)}
+                    placeholder="Boş saxlasanız, sistemin standart 'Texniki baxış başa çatdı' şablonu göndəriləcək..."
+                    className="w-full glass-input px-3.5 py-2 rounded-xl text-xs text-white bg-dark-900 border border-slate-700 focus:border-emerald-500/50 resize-none font-mono"
+                  />
+                </div>
+
+                {/* Action Buttons */}
+                <div className="pt-2 flex items-center gap-3">
+                  {!maintenanceStatus?.is_maintenance ? (
+                    <button
+                      type="button"
+                      onClick={handleEnableMaintenance}
+                      disabled={maintenanceActionLoading}
+                      className="px-5 py-2.5 rounded-xl font-semibold text-xs text-white bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 flex items-center gap-2 shadow-lg shadow-amber-600/20 disabled:opacity-50 transition-all"
+                    >
+                      <AlertTriangle className="w-4 h-4" />
+                      <span>{maintenanceActionLoading ? 'Aktivləşdirilir...' : 'Texniki Baxışı Aktivləşdir və Agentlərə Bildir'}</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleDisableMaintenance}
+                      disabled={maintenanceActionLoading}
+                      className="px-5 py-2.5 rounded-xl font-semibold text-xs text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 flex items-center gap-2 shadow-lg shadow-emerald-600/20 disabled:opacity-50 transition-all"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>{maintenanceActionLoading ? 'Söndürülür...' : 'Texniki Baxışı Söndür və Sistemi Bərpa Et'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Column: Live Message Preview */}
+              <div className="space-y-4">
+                <div>
+                  <h4 className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-2">
+                    <Send className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Agentlərə Göndəriləcək Mesajın Canlı Önizləməsi</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-400 mb-3">
+                    Aktivləşdirmə düyməsinə basdıqda bütün qoşulmuş agentlər Telegram/WhatsApp-da bu mesajı alacaq:
+                  </p>
+                </div>
+
+                {/* Start Message Preview Card */}
+                <div className="p-4 rounded-xl bg-dark-900 border border-amber-500/20 space-y-2">
+                  <div className="flex items-center justify-between text-[10px] text-amber-400 font-semibold uppercase tracking-wider">
+                    <span>1. Texniki Baxış Başladıqda</span>
+                    <span>Telegram / WhatsApp</span>
+                  </div>
+                  <pre className="text-[11px] text-slate-200 whitespace-pre-wrap font-sans bg-black/40 p-3 rounded-lg border border-slate-800 leading-relaxed">
+                    {customStartMsg || maintenanceStatus?.preview_start_message || `⚠️ DİQQƏT: PLANLI TEXNİKİ BAXIŞ\n\nHörmətli tərəfdaşımız,\n\nSistemimizdə xidmət keyfiyyətinin və sürətinin artırılması məqsədilə texniki baxış işləri aparılır.\n\n📌 Səbəb: ${maintenanceReason}\n⏱ Təxmini fasilə müddəti: ~${maintenanceMinutes} dəqiqə\n\nBu müddət ərzində yeni elanların axtarışı və bot sorğuları müvəqqəti dayandırılacaq.\nİşlər yekunlaşan kimi sizə dərhal xəbər veriləcəkdir.\n\nAnlayışınız üçün təşəkkür edirik! 🙏`}
+                  </pre>
+                </div>
+
+                {/* End Message Preview Card */}
+                <div className="p-4 rounded-xl bg-dark-900 border border-emerald-500/20 space-y-2">
+                  <div className="flex items-center justify-between text-[10px] text-emerald-400 font-semibold uppercase tracking-wider">
+                    <span>2. Texniki Baxış Bitdikdə</span>
+                    <span>Telegram / WhatsApp</span>
+                  </div>
+                  <pre className="text-[11px] text-slate-200 whitespace-pre-wrap font-sans bg-black/40 p-3 rounded-lg border border-slate-800 leading-relaxed">
+                    {customEndMsg || maintenanceStatus?.preview_end_message || `✅ TEXNİKİ BAXIŞ BAŞA ÇATDI!\n\nHörmətli tərəfdaşımız,\n\nSistemimizdə aparılan texniki profilaktika və optimizasiya işləri uğurla tamamlanmışdır.\n\n🚀 Bütün xidmətlər, real vaxt rejimində elan axtarışı və bot funksionallığı tam bərpa edildi.\n\nXidmətimizdən istifadə etdiyiniz üçün təşəkkür edirik! 🤝`}
+                  </pre>
+                </div>
+
+                {/* Maintenance Policy Note */}
+                <div className="p-3.5 rounded-xl bg-blue-950/20 border border-blue-500/20 text-xs text-blue-300 space-y-1">
+                  <div className="font-semibold flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Texniki Baxış Rejiminin Qoruyucu Təsirləri:</span>
+                  </div>
+                  <ul className="list-disc list-inside space-y-0.5 text-[11px] text-slate-400">
+                    <li>Celery elan skraperləri fasiləyə keçir (verilənlər bazası və server yükü sıfırlanır).</li>
+                    <li>Agentlər bota yazdığı zaman bot dərhal texniki baxış mesajı ilə cavab verir.</li>
+                    <li>SaaS Admin Paneli fasiləsiz işləyir və istənilən an bir toxunuşla bərpa edilə bilər.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

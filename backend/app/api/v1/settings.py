@@ -57,6 +57,14 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
     if "proxy_pool_urls" not in out:
         out["proxy_pool_urls"] = "\n".join(WEBSHARE_PROXIES)
 
+    # System Maintenance Defaults
+    if "system_maintenance_mode" not in out:
+        out["system_maintenance_mode"] = "false"
+    if "system_maintenance_reason" not in out:
+        out["system_maintenance_reason"] = "Planlı server profilaktikası və verilənlər bazası yenilənməsi."
+    if "system_maintenance_estimated_minutes" not in out:
+        out["system_maintenance_estimated_minutes"] = "30"
+
     return out
 
 
@@ -175,6 +183,53 @@ async def create_database_backup(current_admin = Depends(get_current_admin)):
     from app.services.backup import BackupService
     result = BackupService.create_backup()
     return result
-    if not result.get("success"):
-        raise HTTPException(status_code=500, detail=result.get("error", "Backup failed"))
-    return result
+
+
+class EnableMaintenanceRequest(BaseModel):
+    reason: Optional[str] = None
+    estimated_minutes: int = 30
+    custom_message: Optional[str] = None
+    notify_agents: bool = True
+
+class DisableMaintenanceRequest(BaseModel):
+    custom_message: Optional[str] = None
+    notify_agents: bool = True
+
+@router.get("/maintenance")
+async def get_maintenance_status(db: AsyncSession = Depends(get_db)):
+    """Returns current system maintenance status and metadata."""
+    from app.services.maintenance import MaintenanceService
+    return await MaintenanceService.get_maintenance_status(db)
+
+@router.post("/maintenance/enable")
+async def enable_maintenance_mode(
+    body: EnableMaintenanceRequest,
+    db: AsyncSession = Depends(get_db),
+    current_admin = Depends(get_current_admin)
+):
+    """Enables maintenance mode and broadcasts alert to all connected agents."""
+    from app.services.maintenance import MaintenanceService
+    return await MaintenanceService.enable_maintenance(
+        db=db,
+        reason=body.reason,
+        estimated_minutes=body.estimated_minutes,
+        custom_message=body.custom_message,
+        notify_agents=body.notify_agents,
+        admin_id=current_admin.id
+    )
+
+@router.post("/maintenance/disable")
+async def disable_maintenance_mode(
+    body: DisableMaintenanceRequest,
+    db: AsyncSession = Depends(get_db),
+    current_admin = Depends(get_current_admin)
+):
+    """Disables maintenance mode and broadcasts resumed notification to all connected agents."""
+    from app.services.maintenance import MaintenanceService
+    return await MaintenanceService.disable_maintenance(
+        db=db,
+        custom_message=body.custom_message,
+        notify_agents=body.notify_agents,
+        admin_id=current_admin.id
+    )
+

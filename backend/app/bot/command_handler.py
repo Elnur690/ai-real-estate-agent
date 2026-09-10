@@ -63,6 +63,25 @@ class BotCommandHandler:
         text_lower = raw_text_trimmed.lower()
         app_name = await get_app_name(db)
 
+        # 0. Check System Maintenance Mode (Exempt Admin)
+        from app.services.maintenance import MaintenanceService
+        if await MaintenanceService.is_maintenance_active(db):
+            from app.services.health_monitor import HealthMonitorService
+            admin_chat_id = await HealthMonitorService.get_admin_telegram_chat_id(db)
+            if not admin_chat_id or str(sender_id).strip() != str(admin_chat_id).strip():
+                status_info = await MaintenanceService.get_maintenance_status(db)
+                est = status_info.get("estimated_minutes", 30)
+                reason = status_info.get("reason", "Planlı server profilaktikası")
+                return (
+                    "🛠️ *SİSTEMDƏ PLANLI TEXNİKİ BAXIŞ GEDİR*\n\n"
+                    "Hörmətli agent, sistemdə hazırda planlı texniki yenilənmə aparılır. "
+                    "Bu müddət ərzində bot əmrləri və elan axtarışları müvəqqəti dondurulub.\n\n"
+                    f"⏱️ *Təxmini müddət:* {est} dəqiqə\n"
+                    f"📌 *Səbəb:* _{reason}_\n\n"
+                    "Yenilənmə tamamlanan kimi sizə dərhal xəbər veriləcək. Zəhmət olmasa bir qədər sonra yenidən cəhd edin.\n\n"
+                    "Anlayışınız üçün təşəkkür edirik! 🙏"
+                )
+
         # 1. Check for deep-link or manual agent binding (e.g. /start agent_5, /start 5, /bagla 5, /connect 5, /hesab 5)
         bind_match = re.search(r'^(?:/start\s+(?:agent_)?|/bagla\s+|/connect\s+|/hesab\s+)(\d+)', text_lower)
         if bind_match:

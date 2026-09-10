@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, Users, DollarSign, Package, Database, Sliders, Building, LogOut, ShieldCheck, Globe, Menu, X, MapPin, Store } from 'lucide-react';
+import { LayoutDashboard, Users, DollarSign, Package, Database, Sliders, Building, LogOut, ShieldCheck, Globe, Menu, X, MapPin, Store, AlertTriangle } from 'lucide-react';
 import api from './api';
 import { LoginView } from './components/LoginView';
 import { DashboardView } from './components/DashboardView';
@@ -72,6 +72,7 @@ export function App() {
   const [appName, setAppName] = useState('RealEstate AI Agent');
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
+  const [maintenanceInfo, setMaintenanceInfo] = useState<{ is_maintenance: boolean; reason?: string; estimated_minutes?: number } | null>(null);
   const { t, lang, setLanguage } = useTranslation();
   const [, setRenderTrigger] = useState(0);
 
@@ -95,6 +96,12 @@ export function App() {
       api.get('/settings').then(res => {
         if (res.data && res.data.app_name) {
           setAppName(res.data.app_name);
+        }
+      }).catch(console.error);
+
+      api.get('/settings/maintenance').then(res => {
+        if (res.data) {
+          setMaintenanceInfo(res.data);
         }
       }).catch(console.error);
     }
@@ -348,17 +355,44 @@ export function App() {
         </div>
       </aside>
 
-      {/* Main Workspace */}
-      <main className="flex-1 p-4 sm:p-6 md:p-8 max-w-7xl mx-auto w-full overflow-y-auto min-w-0">
-        {activeTab === 'dashboard' && <DashboardView onNavigate={(tab) => handleSelectTab(tab as any)} />}
-        {activeTab === 'tenants' && <TenantsView />}
-        {activeTab === 'sellers' && <SellersAdminView />}
-        {activeTab === 'payments' && <PaymentsView />}
-        {activeTab === 'plans' && <PlansView />}
-        {activeTab === 'scrapers' && <ScrapersView />}
-        {activeTab === 'map' && <BakuPropertyMap />}
-        {activeTab === 'settings' && <AppSettingsView />}
-      </main>
+      {/* Main Workspace with Global Maintenance Banner */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        {maintenanceInfo?.is_maintenance && (
+          <div className="bg-gradient-to-r from-rose-950 via-amber-950 to-rose-950 border-b border-rose-500/40 px-4 py-2.5 text-xs text-rose-200 flex items-center justify-between shadow-lg sticky top-0 z-30 backdrop-blur-md">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="relative flex h-2.5 w-2.5 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+              </span>
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+              <div className="truncate">
+                <span className="font-bold text-white mr-1.5">Sistem Texniki Baxış Rejimindədir:</span>
+                <span className="text-slate-300">{maintenanceInfo.reason || 'Planlı profilaktika'}</span>
+                {maintenanceInfo.estimated_minutes && (
+                  <span className="text-amber-300 font-medium ml-1.5 hidden sm:inline">(~{maintenanceInfo.estimated_minutes} dəqiqə)</span>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => handleSelectTab('settings')}
+              className="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-semibold transition shrink-0 ml-3"
+            >
+              İdarə Et
+            </button>
+          </div>
+        )}
+
+        <main className="flex-1 p-4 sm:p-6 md:p-8 max-w-7xl mx-auto w-full min-w-0">
+          {activeTab === 'dashboard' && <DashboardView onNavigate={(tab) => handleSelectTab(tab as any)} />}
+          {activeTab === 'tenants' && <TenantsView />}
+          {activeTab === 'sellers' && <SellersAdminView />}
+          {activeTab === 'payments' && <PaymentsView />}
+          {activeTab === 'plans' && <PlansView />}
+          {activeTab === 'scrapers' && <ScrapersView />}
+          {activeTab === 'map' && <BakuPropertyMap />}
+          {activeTab === 'settings' && <AppSettingsView />}
+        </main>
+      </div>
 
       {/* Admin Profile Modal */}
       <AdminProfileModal
