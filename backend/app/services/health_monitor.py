@@ -16,8 +16,14 @@ class HealthMonitorService:
         return setting.value.strip() if (setting and setting.value) else None
 
     @classmethod
-    async def send_admin_alert(cls, db: AsyncSession, title: str, message: str) -> bool:
+    async def send_admin_alert(cls, db: AsyncSession, title: str, message: str, force: bool = False) -> bool:
         """Sends high-priority system and business alert to configured Admin Telegram."""
+        if not force:
+            from app.services.maintenance import MaintenanceService
+            if await MaintenanceService.is_maintenance_active(db):
+                logger.info(f"[HealthMonitor] System is in maintenance mode. Suppressing Telegram warning: '{title}'")
+                return False
+
         admin_chat_id = await cls.get_admin_telegram_chat_id(db)
         if not admin_chat_id:
             logger.debug("[HealthMonitor] Admin Telegram Chat ID not configured. Skipping alert.")
@@ -52,6 +58,11 @@ class HealthMonitorService:
         cls, source_name: str, status_code: Optional[int], error_text: str
     ) -> bool:
         """Standalone helper that opens an AsyncSessionLocal session and dispatches scraper alert."""
+        from app.services.maintenance import MaintenanceService
+        if await MaintenanceService.is_maintenance_active():
+            logger.info(f"[HealthMonitor] System is in maintenance mode. Suppressing standalone scraper alert for '{source_name}'")
+            return False
+
         from app.db.session import AsyncSessionLocal
         try:
             async with AsyncSessionLocal() as db:

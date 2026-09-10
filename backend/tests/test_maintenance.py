@@ -184,3 +184,66 @@ async def test_jobs_ingestion_paused_during_maintenance(test_db: AsyncSession):
         assert res.get("status") == "paused_maintenance"
         assert res.get("scraped") == 0
         assert res.get("matched") == 0
+
+@pytest.mark.asyncio
+async def test_maintenance_suppresses_telegram_scraper_warnings(test_db: AsyncSession):
+    from app.services.health_monitor import HealthMonitorService
+    from app.models.setting import AppSettings
+
+    # Set admin chat ID
+    test_db.add(AppSettings(key="admin_telegram_chat_id", value="12345678"))
+    await test_db.commit()
+
+    # 1. When maintenance is ACTIVE:
+    await MaintenanceService.enable_maintenance(
+        test_db,
+        reason="Server təmiri",
+        estimated_minutes=60,
+        notify_agents=False
+    )
+
+    with patch("app.services.health_monitor.send_telegram_notification", new_callable=AsyncMock) as mock_send_tg:
+        mock_send_tg.return_value = True
+
+        # Scraper issue report must be suppressed
+        res = await HealthMonitorService.report_scraper_issue(
+            db=test_db,
+            source_name="kub.az",
+            status_code=503,
+            error_text="Bütün proksi cəhdləri uğursuz oldu (HTTP 503)"
+        )
+        assert res is False
+        assert not mock_send_tg.called
+
+        # Direct admin alert must be suppressed
+        res_alert = await HealthMonitorService.send_admin_alert(
+            db=test_db,
+            title="Scraper Xətası: kub.az",
+            message="Xəta baş verdi"
+        )
+        assert res_alert is False
+        assert not mock_send_tg.called
+
+        # Manual test alert with force=True MUST still go through
+        res_forced = await HealthMonitorService.send_admin_alert(
+            db=test_db,
+            title="Admin Sınaq Bildirişi",
+            message="Sınaq mesajı",
+            force=True
+        )
+        assert res_forced is True
+        assert mock_send_tg.called
+
+    # 2. When maintenance is DISABLED:
+    await MaintenanceService.disable_maintenance(test_db, notify_agents=False)
+
+    with patch("app.services.health_monitor.send_telegram_notification", new_callable=AsyncMock) as mock_send_tg:
+        mock_send_tg.return_value = True
+        res_resumed = await HealthMonitorService.report_scraper_issue(
+            db=test_db,
+            source_name="kub.az",
+            status_code=503,
+            error_text="Bütün proksi cəhdləri uğursuz oldu (HTTP 503)"
+        )
+        assert res_resumed is True
+        assert mock_send_tg.called

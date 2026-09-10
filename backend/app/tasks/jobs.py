@@ -64,12 +64,17 @@ def run_historical_recheck(self, limit: int = 1000):
     logger.info(f"[CeleryJob] Starting historical listings recheck (limit: {limit})...")
     
     async def _runner():
+        from app.services.maintenance import MaintenanceService
+        if await MaintenanceService.is_maintenance_active():
+            logger.info("[CeleryJob] System maintenance is ACTIVE. Skipping historical recheck.")
+            return {"status": "paused_maintenance", "scanned": 0, "healed": 0}
+
         from app.db.session import AsyncSessionLocal
         async with AsyncSessionLocal() as db:
             return await IngestionService.recheck_and_heal_all_listings(db, limit=limit)
 
     try:
-        return asyncio.run(_runner())
+        return _run_async(_runner())
     except Exception as exc:
         logger.error(f"[CeleryJob] Recheck error: {exc}")
         return {"error": str(exc)}

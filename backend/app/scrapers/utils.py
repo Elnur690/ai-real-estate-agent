@@ -209,8 +209,13 @@ _DOMAIN_BLOCK_COUNTS: Dict[str, List[float]] = {}  # domain -> timestamps of rec
 _DOMAIN_ALERT_TIMESTAMPS: Dict[str, float] = {}  # domain -> timestamp of last admin alert (anti-spam throttle)
 
 def _dispatch_async_scraper_alert(source_name: str, status_code: Optional[int], error_text: str) -> None:
-    """Dispatches background task to notify admin via HealthMonitorService."""
+    """Dispatches background task to notify admin via HealthMonitorService (suppressed during maintenance)."""
     try:
+        from app.services.maintenance import MaintenanceService
+        if MaintenanceService.is_maintenance_active_sync():
+            logger.debug(f"[ScraperUtils] Maintenance mode active. Suppressing alert dispatch for {source_name}")
+            return
+
         from app.services.health_monitor import HealthMonitorService
         try:
             loop = asyncio.get_running_loop()

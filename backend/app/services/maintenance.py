@@ -12,6 +12,13 @@ from app.bot.whatsapp_adapter import WhatsAppAdapter
 logger = logging.getLogger(__name__)
 
 class MaintenanceService:
+    _IS_MAINTENANCE_CACHED: bool = False
+
+    @classmethod
+    def is_maintenance_active_sync(cls) -> bool:
+        """Synchronously returns cached maintenance status (ideal for non-async calls)."""
+        return cls._IS_MAINTENANCE_CACHED
+
     @classmethod
     async def is_maintenance_active(cls, db: Optional[AsyncSession] = None) -> bool:
         """Returns True if system maintenance mode is currently enabled."""
@@ -24,16 +31,22 @@ class MaintenanceService:
                 return await cls._check_maintenance_db(session)
         except Exception as e:
             logger.debug(f"[MaintenanceService] Error checking maintenance status: {e}")
-            return False
+            return cls._IS_MAINTENANCE_CACHED
 
     @classmethod
     async def _check_maintenance_db(cls, db: AsyncSession) -> bool:
-        stmt = select(AppSettings).where(AppSettings.key == "system_maintenance_mode")
-        res = await db.execute(stmt)
-        setting = res.scalars().first()
-        if setting and setting.value:
-            return setting.value.strip().lower() in ("true", "1", "yes", "on")
-        return False
+        try:
+            stmt = select(AppSettings).where(AppSettings.key == "system_maintenance_mode")
+            res = await db.execute(stmt)
+            setting = res.scalars().first()
+            is_active = False
+            if setting and setting.value:
+                is_active = setting.value.strip().lower() in ("true", "1", "yes", "on")
+            cls._IS_MAINTENANCE_CACHED = is_active
+            return is_active
+        except Exception as e:
+            logger.debug(f"[MaintenanceService] Error reading maintenance DB: {e}")
+            return cls._IS_MAINTENANCE_CACHED
 
     @classmethod
     async def get_maintenance_status(cls, db: AsyncSession) -> Dict[str, Any]:
@@ -157,6 +170,7 @@ class MaintenanceService:
                 db.add(AppSettings(key=k, value=v, updated_by=admin_id))
 
         await db.commit()
+        cls._IS_MAINTENANCE_CACHED = True
         logger.warning(f"[MaintenanceService] Maintenance Mode ENABLED by admin {admin_id}. Reason: {clean_reason}")
 
         notified_count = 0
@@ -202,6 +216,7 @@ class MaintenanceService:
                 db.add(AppSettings(key=k, value=v, updated_by=admin_id))
 
         await db.commit()
+        cls._IS_MAINTENANCE_CACHED = False
         logger.info(f"[MaintenanceService] Maintenance Mode DISABLED by admin {admin_id}. System back online.")
 
         notified_count = 0

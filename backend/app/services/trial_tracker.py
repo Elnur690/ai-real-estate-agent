@@ -37,7 +37,12 @@ class TrialTrackerService:
 
     @staticmethod
     async def check_and_notify_expired_trials(db: AsyncSession):
-        """Check all active tenants for 3-day upcoming expiry reminders and full expiration."""
+        """Check all active tenants for 3-day upcoming expiry reminders and full expiration (suppressed during maintenance)."""
+        from app.services.maintenance import MaintenanceService
+        if await MaintenanceService.is_maintenance_active(db):
+            logger.info("[TrialTracker] Maintenance mode active. Suppressing trial notifications.")
+            return 0, 0
+
         now_utc = datetime.now(timezone.utc)
         stmt = select(Tenant).where(
             Tenant.status == "active",

@@ -159,7 +159,8 @@ async def test_admin_telegram_alert(
     success = await HealthMonitorService.send_admin_alert(
         db,
         title="Admin Sınaq Bildirişi",
-        message="✅ Əla! RealEstate AI Monitorinq xidməti aktivdir. Bütün scraper xətaları və sistem bildirişləri bu çatda göstəriləcək."
+        message="✅ Əla! RealEstate AI Monitorinq xidməti aktivdir. Bütün scraper xətaları və sistem bildirişləri bu çatda göstəriləcək.",
+        force=True
     )
     if not success:
         raise HTTPException(

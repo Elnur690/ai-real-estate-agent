@@ -97,7 +97,12 @@ class CrmReminderService:
 
     @classmethod
     async def check_and_dispatch_due_reminders(cls, db: AsyncSession) -> int:
-        """Query pending reminders whose alert window is active and notify agents."""
+        """Query pending reminders whose alert window is active and notify agents (suppressed during maintenance)."""
+        from app.services.maintenance import MaintenanceService
+        if await MaintenanceService.is_maintenance_active(db):
+            logger.info("[CrmReminder] Maintenance mode active. Suppressing CRM reminders.")
+            return 0
+
         now_utc = datetime.now(timezone.utc)
 
         stmt = select(CrmReminder).where(
