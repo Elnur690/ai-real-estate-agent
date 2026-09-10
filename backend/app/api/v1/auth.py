@@ -575,22 +575,23 @@ async def telegram_webapp_auth(
     tenant = res_t.scalars().first()
 
     if not tenant:
-        # Check User table by telegram_chat_id or handle
-        u_conds = [User.telegram_chat_id == tg_user_id, User.telegram_handle == tg_user_id]
-        if username:
-            u_conds.append(func.lower(User.telegram_handle) == username.lower())
-        stmt_u_lookup = select(User).where(or_(*u_conds))
-        res_u_lookup = await db.execute(stmt_u_lookup)
-        matched_u = res_u_lookup.scalars().first()
-        if matched_u and matched_u.tenant_id:
-            stmt_tu = select(Tenant).where(Tenant.id == matched_u.tenant_id)
-            res_tu = await db.execute(stmt_tu)
-            tenant = res_tu.scalars().first()
-        elif matched_u and matched_u.role == "admin":
+        # 1. Check if Telegram user is platform admin configured in AppSettings
+        from app.models.setting import AppSettings
+        stmt_admin = select(AppSettings).where(AppSettings.key == "admin_telegram_chat_id")
+        res_admin = await db.execute(stmt_admin)
+        admin_setting = res_admin.scalars().first()
+        if admin_setting and admin_setting.value and admin_setting.value.strip() == tg_user_id:
             # Platform admin opening TMA CRM
             stmt_first = select(Tenant).order_by(Tenant.id.asc())
             res_first = await db.execute(stmt_first)
             tenant = res_first.scalars().first()
+
+    if not tenant and user_info.get("phone_number"):
+        # 2. Check by phone number if provided by Telegram WebApp
+        phone_clean = str(user_info["phone_number"]).lstrip("+").strip()
+        stmt_p = select(Tenant).where(Tenant.phone.ilike(f"%{phone_clean}%"))
+        res_p = await db.execute(stmt_p)
+        tenant = res_p.scalars().first()
 
     if not tenant:
         raise HTTPException(

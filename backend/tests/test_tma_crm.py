@@ -316,3 +316,12 @@ async def test_tenant_creation_auto_payment_and_crm_access(client: AsyncClient, 
     stats_res = await client.get("/api/v1/crm/stats", headers=agent_headers)
     assert stats_res.status_code == 200
     assert stats_res.json()["total_deals"] == 0
+
+@pytest.mark.asyncio
+async def test_unlinked_telegram_webapp_auth_returns_403_not_500(client: AsyncClient, test_db: AsyncSession):
+    # When an unlinked/unknown Telegram user opens the TMA WebApp, it must return 403 Forbidden (not crash with 500 AttributeError)
+    res = await client.post("/api/v1/auth/telegram-webapp", json={
+        "init_data": "mock_telegram_99999999999"
+    })
+    assert res.status_code == 403
+    assert "heç bir agent profilinə bağlı deyil" in res.json()["detail"]
