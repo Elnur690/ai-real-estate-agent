@@ -59,6 +59,7 @@ services:
     ports:
       - "23800:8000"
     volumes:
+      - ./backend:/app
       - backup_data:/app/backups
     depends_on:
       db:
@@ -90,6 +91,7 @@ services:
       - BINA_AZ_PROXY_URL
       - SCRAPER_PROXY_URL
     volumes:
+      - ./backend:/app
       - backup_data:/app/backups
     depends_on:
       - backend
@@ -112,6 +114,7 @@ services:
       - SECRET_KEY
       - ENCRYPTION_KEY
     volumes:
+      - ./backend:/app
       - backup_data:/app/backups
     depends_on:
       - backend
