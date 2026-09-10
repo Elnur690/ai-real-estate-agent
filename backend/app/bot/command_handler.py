@@ -65,7 +65,7 @@ class BotCommandHandler:
 
         # 0. Check System Maintenance Mode (Exempt Admin)
         from app.services.maintenance import MaintenanceService
-        if await MaintenanceService.is_maintenance_active(db):
+        if MaintenanceService.is_maintenance_active_sync():
             from app.services.health_monitor import HealthMonitorService
             admin_chat_id = await HealthMonitorService.get_admin_telegram_chat_id(db)
             if not admin_chat_id or str(sender_id).strip() != str(admin_chat_id).strip():

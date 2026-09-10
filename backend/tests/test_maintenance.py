@@ -253,3 +253,74 @@ async def test_maintenance_suppresses_telegram_scraper_warnings(test_db: AsyncSe
         )
         assert res_resumed is True
         assert mock_send_tg.called
+
+
+@pytest.mark.asyncio
+async def test_multi_agent_same_group_deduplication(test_db: AsyncSession):
+    """Ensure that if multiple agents share the same WhatsApp group, the group is only contacted once."""
+    t1 = Tenant(
+        name="Agent 1",
+        phone="+994501110001",
+        status="active",
+        allowed_group_jids=["120363999999999@g.us"]
+    )
+    t2 = Tenant(
+        name="Agent 2",
+        phone="+994501110002",
+        status="active",
+        allowed_group_jids=["120363999999999@g.us"]
+    )
+    test_db.add_all([t1, t2])
+    await test_db.commit()
+
+    with patch("app.services.maintenance.WhatsAppAdapter.send_message", new_callable=AsyncMock) as mock_wa:
+        mock_wa.return_value = True
+        count = await MaintenanceService._broadcast_to_agents(test_db, [t1, t2], "Test broadcast")
+        assert count == 2
+        # WhatsAppAdapter.send_message MUST only have been called ONCE for this shared group
+        assert mock_wa.call_count == 1
+        assert mock_wa.call_args[1]["phone_number"] == "120363999999999@g.us"
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_adapter_resolve_and_fallback():
+    """Verify resolve_active_instance skips 'connecting' state and send_message retries via default instance."""
+    from unittest.mock import MagicMock
+    from app.bot.whatsapp_adapter import WhatsAppAdapter
+
+    # 1. resolve_active_instance skips 'connecting' and picks 'open'
+    mock_instances = [
+        {"instance": {"instanceName": "tenant_11", "status": "connecting"}},
+        {"instance": {"instanceName": "realestate_agent", "status": "open"}}
+    ]
+
+    with patch("httpx.AsyncClient.get") as mock_get:
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = mock_instances
+        mock_get.return_value = mock_resp
+
+        # Asking for tenant_11 which is 'connecting' should fallback to open 'realestate_agent'
+        resolved = await WhatsAppAdapter.resolve_active_instance("tenant_11")
+        assert resolved == "realestate_agent"
+
+    # 2. send_message retries via default instance if first instance returns 400
+    with patch("app.bot.whatsapp_adapter.WhatsAppAdapter.resolve_active_instance", new_callable=AsyncMock) as mock_res, \
+         patch("httpx.AsyncClient.post") as mock_post:
+        mock_res.return_value = "tenant_11"
+
+        resp_fail = MagicMock()
+        resp_fail.status_code = 400
+        resp_fail.text = '{"status":400,"error":"Bad Request"}'
+
+        resp_ok = MagicMock()
+        resp_ok.status_code = 200
+        resp_ok.json.return_value = {"key": {"id": "MSG_123"}}
+
+        # First call fails on tenant_11, second call succeeds on default fallback
+        mock_post.side_effect = [resp_fail, resp_ok]
+
+        ok = await WhatsAppAdapter.send_message("120363999999999@g.us", "Hello Group", instance_name="tenant_11")
+        assert ok is True
+        assert mock_post.call_count == 2
+

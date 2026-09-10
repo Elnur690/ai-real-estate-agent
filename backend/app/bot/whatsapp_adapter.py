@@ -238,7 +238,7 @@ class WhatsAppAdapter:
                                 inst_obj = item.get("instance", {}) if isinstance(item, dict) else {}
                                 name = inst_obj.get("instanceName") or item.get("name")
                                 status = inst_obj.get("status") or item.get("connectionStatus")
-                                if name == instance_name and status in ["open", "connecting"]:
+                                if name == instance_name and status == "open":
                                     return name
 
                         # 2. Otherwise find any connected/open instance
@@ -261,7 +261,7 @@ class WhatsAppAdapter:
 
     @staticmethod
     async def send_message(phone_number: str, text: str, instance_name: Optional[str] = None) -> bool:
-        """Send a WhatsApp message via Evolution API REST endpoint."""
+        """Send a WhatsApp message via Evolution API REST endpoint with automatic fallback to primary bot instance."""
         base_url = settings.EVOLUTION_API_URL or "http://evolution:8080"
         if "localhost" in base_url or "127.0.0.1" in base_url:
             base_url = "http://evolution:8080"
@@ -300,11 +300,24 @@ class WhatsAppAdapter:
                         pass
                     logger.info(f"[WhatsAppAdapter] Message sent successfully to {clean_recipient} via instance '{inst}'")
                     return True
+
+                # If requested instance failed and is different from default bot instance, try primary fallback
+                default_inst = settings.EVOLUTION_INSTANCE_NAME or "default"
+                if inst != default_inst:
+                    logger.warning(f"[WhatsAppAdapter] Delivery to {clean_recipient} failed via '{inst}' ({res.status_code}). Retrying via primary instance '{default_inst}'...")
+                    fallback_url = f"{base_url}/message/sendText/{default_inst}"
+                    res_fb = await client.post(fallback_url, json=body, headers=headers)
+                    if res_fb.status_code in [200, 201]:
+                        logger.info(f"[WhatsAppAdapter] Message sent successfully to {clean_recipient} via fallback instance '{default_inst}'")
+                        return True
+                    else:
+                        logger.warning(f"[WhatsAppAdapter] Fallback delivery via '{default_inst}' also returned status {res_fb.status_code}: {res_fb.text}")
                 else:
-                    logger.error(f"[WhatsAppAdapter] Failed to send message via instance '{inst}': status {res.status_code}, response: {res.text}")
-                    return False
+                    logger.warning(f"[WhatsAppAdapter] Delivery to {clean_recipient} via instance '{inst}' returned status {res.status_code}: {res.text}")
+
+                return False
         except Exception as e:
-            logger.error(f"[WhatsAppAdapter] HTTP exception sending message via instance '{inst}': {e}")
+            logger.warning(f"[WhatsAppAdapter] HTTP exception sending message via instance '{inst}': {e}")
             return False
 
     @staticmethod

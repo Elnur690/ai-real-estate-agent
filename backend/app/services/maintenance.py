@@ -245,7 +245,8 @@ class MaintenanceService:
         3. Telegram messages are delivered to the agent's chat or groups where the bot is active.
         4. Every destination group or chat receives at most 1 message (deduplicated).
         """
-        sent_destinations = set()  # (channel, chat_id)
+        attempted_destinations = set()  # (channel, chat_id)
+        sent_destinations = set()       # (channel, chat_id)
         notified_agent_ids = set()
 
         for agent in agents:
@@ -255,15 +256,20 @@ class MaintenanceService:
                 tg_destinations.add(str(agent.telegram_chat_id).strip())
 
             # 2. WhatsApp Group destinations (@g.us) where bot is paired
+            # Tuple of (group_jid, preferred_instance_name or None)
             wa_group_destinations = set()
             if agent.allowed_group_jids and isinstance(agent.allowed_group_jids, list):
                 for jid in agent.allowed_group_jids:
-                    if isinstance(jid, str) and "@g.us" in jid:
-                        wa_group_destinations.add(jid.strip())
+                    if isinstance(jid, str):
+                        clean_j = jid.strip()
+                        if "@g.us" in clean_j:
+                            wa_group_destinations.add((clean_j, None))
+                        elif clean_j.startswith("120363") and "@" not in clean_j:
+                            wa_group_destinations.add((f"{clean_j}@g.us", None))
 
             # 3. Discover any additional active group destinations from SavedSearch
             try:
-                stmt_s = select(SavedSearch.channel, SavedSearch.destination_chat_id).where(
+                stmt_s = select(SavedSearch.channel, SavedSearch.destination_chat_id, SavedSearch.instance_name).where(
                     SavedSearch.tenant_id == agent.id,
                     SavedSearch.is_active == True,
                     SavedSearch.destination_chat_id.is_not(None)
@@ -272,8 +278,12 @@ class MaintenanceService:
                 for row in res_s.all():
                     ch = (row[0] or "").lower().strip()
                     dest = (row[1] or "").strip()
-                    if ch == "whatsapp" and "@g.us" in dest:
-                        wa_group_destinations.add(dest)
+                    saved_inst = (row[2] or "").strip() or None
+                    if ch == "whatsapp":
+                        if "@g.us" in dest:
+                            wa_group_destinations.add((dest, saved_inst))
+                        elif dest.startswith("120363") and "@" not in dest:
+                            wa_group_destinations.add((f"{dest}@g.us", saved_inst))
                     elif ch == "telegram" and dest:
                         tg_destinations.add(dest)
             except Exception as e_s:
@@ -287,6 +297,9 @@ class MaintenanceService:
                 if key in sent_destinations:
                     agent_delivered = True
                     continue
+                if key in attempted_destinations:
+                    continue
+                attempted_destinations.add(key)
                 try:
                     ok = await send_telegram_notification(tg_chat, message)
                     if ok:
@@ -295,13 +308,16 @@ class MaintenanceService:
                 except Exception as e_tg:
                     logger.debug(f"[MaintenanceService] Failed Telegram broadcast to {tg_chat} (Agent #{agent.id}): {e_tg}")
 
-            # Deliver to WhatsApp groups using tenant's own instance (tenant_{agent.id})
-            inst_name = f"tenant_{agent.id}"
-            for group_jid in wa_group_destinations:
+            # Deliver to WhatsApp groups using tenant's instance or saved instance
+            for group_jid, target_inst in wa_group_destinations:
                 key = ("whatsapp", group_jid)
                 if key in sent_destinations:
                     agent_delivered = True
                     continue
+                if key in attempted_destinations:
+                    continue
+                attempted_destinations.add(key)
+                inst_name = target_inst or f"tenant_{agent.id}"
                 try:
                     wa_ok = await WhatsAppAdapter.send_message(
                         phone_number=group_jid,
