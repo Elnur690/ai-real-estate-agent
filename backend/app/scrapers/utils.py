@@ -511,9 +511,9 @@ async def fetch_stealth_page(
         strict_zero_leak_domains = ("tap.az", "bina.az", "turbo.az", "rahatemlak.az")
         is_strict = any(d in domain for d in strict_zero_leak_domains)
 
-        # Fast-track: If not a strict domain and all proxies are currently quarantined/dead,
-        # skip straight to direct stealth fetch rather than timing out on dead proxies
-        if not is_strict and not get_strictly_healthy_proxies():
+        # Fast-track direct fetch:
+        # If proxies are disabled by admin, or if all proxies are quarantined and this is not a strict domain:
+        if not proxies_enabled or (not is_strict and not get_strictly_healthy_proxies()):
             try:
                 from curl_cffi.requests import AsyncSession
                 async with AsyncSession(impersonate=chosen_impersonate, proxy=None, timeout=timeout) as session:
@@ -572,7 +572,7 @@ async def fetch_stealth_page(
         # Portals with active IP bans or Cloudflare anti-bot (tap.az, bina.az, turbo.az, rahatemlak.az)
         # MUST NEVER fall back to direct IP! Direct requests leak the workplace static IP (213.154.20.24) and cause bans.
         strict_zero_leak_domains = ("tap.az", "bina.az", "turbo.az", "rahatemlak.az")
-        if any(d in domain for d in strict_zero_leak_domains):
+        if proxies_enabled and any(d in domain for d in strict_zero_leak_domains):
             logger.warning(
                 f"[ScraperUtils] All {max_proxy_retries} proxy attempts failed for {url} ({domain}). "
                 f"Zero-Leak Protection ACTIVE: Aborting request with HTTP 503 rather than leaking host static IP."
