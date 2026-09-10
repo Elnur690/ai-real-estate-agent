@@ -3,7 +3,7 @@ import re
 import logging
 import asyncio
 import httpx
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.bot.command_handler import BotCommandHandler
@@ -225,43 +225,38 @@ class WhatsAppAdapter:
         return digits
 
     @staticmethod
-    async def resolve_active_instance(instance_name: Optional[str] = None, base_url: str = "http://evolution:8080", headers: dict = {}) -> str:
+    async def fetch_open_instances(base_url: str = "http://evolution:8080", headers: dict = {}) -> List[str]:
+        """Fetch all currently open/connected instance names from Evolution API."""
         try:
             async with httpx.AsyncClient(timeout=3.0) as client:
                 res = await client.get(f"{base_url}/instance/fetchInstances", headers=headers)
                 if res.status_code == 200:
                     instances = res.json()
-                    if isinstance(instances, list) and len(instances) > 0:
-                        # 1. If explicit instance requested, check if it is active and open
-                        if instance_name:
-                            for item in instances:
-                                inst_obj = item.get("instance", {}) if isinstance(item, dict) else {}
-                                name = inst_obj.get("instanceName") or item.get("name")
-                                status = inst_obj.get("status") or item.get("connectionStatus")
-                                if name == instance_name and status == "open":
-                                    return name
-
-                        # 2. Otherwise find any connected/open instance
+                    if isinstance(instances, list):
+                        open_list = []
                         for item in instances:
                             inst_obj = item.get("instance", {}) if isinstance(item, dict) else {}
+                            name = inst_obj.get("instanceName") or item.get("name")
                             status = inst_obj.get("status") or item.get("connectionStatus")
-                            if status == "open":
-                                name = inst_obj.get("instanceName") or item.get("name")
-                                if name:
-                                    return name
-
-                        # 3. First available instance
-                        first_name = instances[0].get("instance", {}).get("instanceName") or instances[0].get("name")
-                        if first_name:
-                            return first_name
+                            if name and status == "open":
+                                open_list.append(name)
+                        return open_list
         except Exception as e:
-            logger.debug(f"[WhatsAppAdapter] resolve_active_instance lookup notice: {e}")
+            logger.debug(f"[WhatsAppAdapter] fetch_open_instances lookup notice: {e}")
+        return []
 
-        return instance_name or settings.EVOLUTION_INSTANCE_NAME or "default"
+    @staticmethod
+    async def resolve_active_instance(instance_name: Optional[str] = None, base_url: str = "http://evolution:8080", headers: dict = {}) -> str:
+        open_instances = await WhatsAppAdapter.fetch_open_instances(base_url, headers)
+        if instance_name and instance_name in open_instances:
+            return instance_name
+        if open_instances:
+            return open_instances[0]
+        return instance_name or "default"
 
     @staticmethod
     async def send_message(phone_number: str, text: str, instance_name: Optional[str] = None) -> bool:
-        """Send a WhatsApp message via Evolution API REST endpoint with automatic fallback to primary bot instance."""
+        """Send a WhatsApp message via Evolution API REST endpoint with verified open instance fallback."""
         base_url = settings.EVOLUTION_API_URL or "http://evolution:8080"
         if "localhost" in base_url or "127.0.0.1" in base_url:
             base_url = "http://evolution:8080"
@@ -271,7 +266,14 @@ class WhatsAppAdapter:
         if settings.EVOLUTION_API_KEY:
             headers["apikey"] = str(settings.EVOLUTION_API_KEY)
 
-        inst = await WhatsAppAdapter.resolve_active_instance(instance_name, base_url, headers)
+        open_instances = await WhatsAppAdapter.fetch_open_instances(base_url, headers)
+        if instance_name and instance_name in open_instances:
+            inst = instance_name
+        elif open_instances:
+            inst = open_instances[0]
+        else:
+            inst = instance_name or "default"
+
         clean_recipient = WhatsAppAdapter.normalize_recipient(phone_number)
         if not clean_recipient:
             logger.warning(f"[WhatsAppAdapter] Cannot send message: invalid recipient '{phone_number}'")
@@ -301,17 +303,18 @@ class WhatsAppAdapter:
                     logger.info(f"[WhatsAppAdapter] Message sent successfully to {clean_recipient} via instance '{inst}'")
                     return True
 
-                # If requested instance failed and is different from default bot instance, try primary fallback
-                default_inst = settings.EVOLUTION_INSTANCE_NAME or "default"
-                if inst != default_inst:
-                    logger.warning(f"[WhatsAppAdapter] Delivery to {clean_recipient} failed via '{inst}' ({res.status_code}). Retrying via primary instance '{default_inst}'...")
-                    fallback_url = f"{base_url}/message/sendText/{default_inst}"
+                # Only attempt fallback if another VERIFIED open instance actually exists
+                other_open = [name for name in open_instances if name != inst]
+                if other_open:
+                    fallback_inst = other_open[0]
+                    logger.warning(f"[WhatsAppAdapter] Delivery to {clean_recipient} failed via '{inst}' ({res.status_code}). Retrying via active open instance '{fallback_inst}'...")
+                    fallback_url = f"{base_url}/message/sendText/{fallback_inst}"
                     res_fb = await client.post(fallback_url, json=body, headers=headers)
                     if res_fb.status_code in [200, 201]:
-                        logger.info(f"[WhatsAppAdapter] Message sent successfully to {clean_recipient} via fallback instance '{default_inst}'")
+                        logger.info(f"[WhatsAppAdapter] Message sent successfully to {clean_recipient} via fallback instance '{fallback_inst}'")
                         return True
                     else:
-                        logger.warning(f"[WhatsAppAdapter] Fallback delivery via '{default_inst}' also returned status {res_fb.status_code}: {res_fb.text}")
+                        logger.warning(f"[WhatsAppAdapter] Fallback delivery via '{fallback_inst}' also returned status {res_fb.status_code}: {res_fb.text}")
                 else:
                     logger.warning(f"[WhatsAppAdapter] Delivery to {clean_recipient} via instance '{inst}' returned status {res.status_code}: {res.text}")
 

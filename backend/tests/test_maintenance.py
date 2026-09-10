@@ -285,14 +285,14 @@ async def test_multi_agent_same_group_deduplication(test_db: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_whatsapp_adapter_resolve_and_fallback():
-    """Verify resolve_active_instance skips 'connecting' state and send_message retries via default instance."""
+    """Verify resolve_active_instance skips 'connecting' state and send_message retries via another open instance."""
     from unittest.mock import MagicMock
     from app.bot.whatsapp_adapter import WhatsAppAdapter
 
     # 1. resolve_active_instance skips 'connecting' and picks 'open'
     mock_instances = [
         {"instance": {"instanceName": "tenant_11", "status": "connecting"}},
-        {"instance": {"instanceName": "realestate_agent", "status": "open"}}
+        {"instance": {"instanceName": "tenant_1", "status": "open"}}
     ]
 
     with patch("httpx.AsyncClient.get") as mock_get:
@@ -301,14 +301,14 @@ async def test_whatsapp_adapter_resolve_and_fallback():
         mock_resp.json.return_value = mock_instances
         mock_get.return_value = mock_resp
 
-        # Asking for tenant_11 which is 'connecting' should fallback to open 'realestate_agent'
+        # Asking for tenant_11 which is 'connecting' should fallback to open 'tenant_1'
         resolved = await WhatsAppAdapter.resolve_active_instance("tenant_11")
-        assert resolved == "realestate_agent"
+        assert resolved == "tenant_1"
 
-    # 2. send_message retries via default instance if first instance returns 400
-    with patch("app.bot.whatsapp_adapter.WhatsAppAdapter.resolve_active_instance", new_callable=AsyncMock) as mock_res, \
+    # 2. send_message retries via another open instance if first instance returns 400
+    with patch("app.bot.whatsapp_adapter.WhatsAppAdapter.fetch_open_instances", new_callable=AsyncMock) as mock_fetch, \
          patch("httpx.AsyncClient.post") as mock_post:
-        mock_res.return_value = "tenant_11"
+        mock_fetch.return_value = ["tenant_11", "tenant_1"]
 
         resp_fail = MagicMock()
         resp_fail.status_code = 400
@@ -318,12 +318,26 @@ async def test_whatsapp_adapter_resolve_and_fallback():
         resp_ok.status_code = 200
         resp_ok.json.return_value = {"key": {"id": "MSG_123"}}
 
-        # First call fails on tenant_11, second call succeeds on default fallback
+        # First call fails on tenant_11, second call succeeds on tenant_1
         mock_post.side_effect = [resp_fail, resp_ok]
 
         ok = await WhatsAppAdapter.send_message("120363999999999@g.us", "Hello Group", instance_name="tenant_11")
         assert ok is True
         assert mock_post.call_count == 2
+
+    # 3. send_message does NOT attempt fallback if no other open instance exists
+    with patch("app.bot.whatsapp_adapter.WhatsAppAdapter.fetch_open_instances", new_callable=AsyncMock) as mock_fetch, \
+         patch("httpx.AsyncClient.post") as mock_post:
+        mock_fetch.return_value = ["tenant_11"]
+
+        resp_fail = MagicMock()
+        resp_fail.status_code = 400
+        resp_fail.text = '{"status":400,"error":"Bad Request"}'
+        mock_post.return_value = resp_fail
+
+        ok = await WhatsAppAdapter.send_message("120363999999999@g.us", "Hello Group", instance_name="tenant_11")
+        assert ok is False
+        assert mock_post.call_count == 1
 
 
 @pytest.mark.asyncio
