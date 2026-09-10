@@ -96,17 +96,20 @@ def mark_proxy_healthy(proxy_url: Optional[str]) -> None:
     if proxy_url and proxy_url in _QUARANTINED_PROXIES:
         _QUARANTINED_PROXIES.pop(proxy_url, None)
 
-def get_healthy_proxies(pool: Optional[List[str]] = None) -> List[str]:
-    """Filters pool to return only proxies not currently under quarantine."""
+def get_strictly_healthy_proxies(pool: Optional[List[str]] = None) -> List[str]:
+    """Filters pool to return only proxies not currently under quarantine (empty if all failed)."""
     import time
     now = time.time()
     active_pool = pool if pool is not None else (_RUNTIME_PROXY_CONFIG.get("proxies") or WEBSHARE_PROXIES)
-    # Evict expired quarantines
     expired = [p for p, exp in _QUARANTINED_PROXIES.items() if exp <= now]
     for p in expired:
         _QUARANTINED_PROXIES.pop(p, None)
+    return [p for p in active_pool if p not in _QUARANTINED_PROXIES]
 
-    healthy = [p for p in active_pool if p not in _QUARANTINED_PROXIES]
+def get_healthy_proxies(pool: Optional[List[str]] = None) -> List[str]:
+    """Filters pool to return only proxies not currently under quarantine."""
+    active_pool = pool if pool is not None else (_RUNTIME_PROXY_CONFIG.get("proxies") or WEBSHARE_PROXIES)
+    healthy = get_strictly_healthy_proxies(pool)
     # If all proxies are quarantined, fallback to active pool rather than stopping completely
     return healthy if healthy else active_pool
 
@@ -505,6 +508,20 @@ async def fetch_stealth_page(
         tried_proxies = set()
         proxies_enabled = _RUNTIME_PROXY_CONFIG.get("enabled", True)
 
+        strict_zero_leak_domains = ("tap.az", "bina.az", "turbo.az", "rahatemlak.az")
+        is_strict = any(d in domain for d in strict_zero_leak_domains)
+
+        # Fast-track: If not a strict domain and all proxies are currently quarantined/dead,
+        # skip straight to direct stealth fetch rather than timing out on dead proxies
+        if not is_strict and not get_strictly_healthy_proxies():
+            try:
+                from curl_cffi.requests import AsyncSession
+                async with AsyncSession(impersonate=chosen_impersonate, proxy=None, timeout=timeout) as session:
+                    res = await session.get(url, headers=req_headers)
+                    return res.text, res.status_code
+            except Exception as e:
+                logger.debug(f"[ScraperUtils] Fast-track direct fallback notice for {url}: {e}")
+
         # 1. Primary with Multi-Proxy Retries across healthy pool
         for attempt in range(max_proxy_retries):
             active_proxy = get_rotating_proxy(proxy)
@@ -551,11 +568,11 @@ async def fetch_stealth_page(
             except Exception as e:
                 logger.debug(f"[ScraperUtils] httpx proxy fallback failed for {url}: {e}")
 
-        # 3. Strict Zero-Leak IP Protection:
-        # If proxy is enabled or if domain is a protected real-estate portal,
-        # NEVER fall back to proxy=None! Direct requests leak the workplace static IP (213.154.20.24) and cause bans.
-        protected_domains = ("tap.az", "bina.az", "turbo.az", "yeniemlak.az", "rahatemlak.az", "lalafo.az")
-        if proxies_enabled or any(d in domain for d in protected_domains):
+        # 3. Strict Zero-Leak IP Protection for sensitive portals:
+        # Portals with active IP bans or Cloudflare anti-bot (tap.az, bina.az, turbo.az, rahatemlak.az)
+        # MUST NEVER fall back to direct IP! Direct requests leak the workplace static IP (213.154.20.24) and cause bans.
+        strict_zero_leak_domains = ("tap.az", "bina.az", "turbo.az", "rahatemlak.az")
+        if any(d in domain for d in strict_zero_leak_domains):
             logger.warning(
                 f"[ScraperUtils] All {max_proxy_retries} proxy attempts failed for {url} ({domain}). "
                 f"Zero-Leak Protection ACTIVE: Aborting request with HTTP 503 rather than leaking host static IP."
@@ -570,7 +587,8 @@ async def fetch_stealth_page(
                 )
             return None, 503
 
-        # Direct fetch ONLY if proxies are explicitly disabled by admin and domain is not protected
+        # 4. Resilient Fallback for all other portals (yeniemlak.az, evonline.az, ev10.az, vipemlak.az, binalar.az, etc.):
+        # If proxy attempts fail or quota is exhausted, seamlessly fallback to direct stealth fetch using browser impersonation
         try:
             from curl_cffi.requests import AsyncSession
             async with AsyncSession(impersonate=chosen_impersonate, proxy=None, timeout=timeout) as session:
