@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.setting import AppSettings
 from app.models.tenant import Tenant
+from app.models.saved_search import SavedSearch
 from app.bot.telegram_adapter import send_telegram_notification
 from app.bot.whatsapp_adapter import WhatsAppAdapter
 
@@ -126,11 +127,12 @@ class MaintenanceService:
 
     @classmethod
     async def get_connected_agents(cls, db: AsyncSession) -> List[Tenant]:
-        """Returns all active tenants that have a connected Telegram or WhatsApp channel."""
+        """Returns all active tenants that have a connected Telegram or WhatsApp channel/group."""
         stmt = select(Tenant).where(
             Tenant.status == "active",
             or_(
                 Tenant.telegram_chat_id.is_not(None),
+                Tenant.allowed_group_jids.is_not(None),
                 Tenant.whatsapp_number.is_not(None)
             )
         )
@@ -147,7 +149,7 @@ class MaintenanceService:
         notify_agents: bool = True,
         admin_id: Optional[int] = None
     ) -> Dict[str, Any]:
-        """Activates maintenance mode and broadcasts start notification to all connected agents."""
+        """Activates maintenance mode and broadcasts start notification to all connected agents in their groups/chats."""
         clean_reason = (reason or "Planlı server profilaktikası və verilənlər bazası yenilənməsi.").strip()
         now_str = datetime.now(timezone.utc).isoformat()
 
@@ -178,7 +180,7 @@ class MaintenanceService:
         if notify_agents:
             msg = cls.build_start_message(clean_reason, estimated_minutes, custom_message)
             agents = await cls.get_connected_agents(db)
-            notified_count = await cls._broadcast_to_agents(agents, msg)
+            notified_count = await cls._broadcast_to_agents(db, agents, msg)
 
         return {
             "success": True,
@@ -198,7 +200,7 @@ class MaintenanceService:
         notify_agents: bool = True,
         admin_id: Optional[int] = None
     ) -> Dict[str, Any]:
-        """Deactivates maintenance mode and broadcasts resumed notification to all connected agents."""
+        """Deactivates maintenance mode and broadcasts resumed notification to all connected agents in their groups/chats."""
         settings_to_update = {
             "system_maintenance_mode": "false",
             "system_maintenance_started_at": ""
@@ -224,7 +226,7 @@ class MaintenanceService:
         if notify_agents:
             msg = cls.build_end_message(custom_message)
             agents = await cls.get_connected_agents(db)
-            notified_count = await cls._broadcast_to_agents(agents, msg)
+            notified_count = await cls._broadcast_to_agents(db, agents, msg)
 
         return {
             "success": True,
@@ -234,31 +236,87 @@ class MaintenanceService:
         }
 
     @classmethod
-    async def _broadcast_to_agents(cls, agents: List[Tenant], message: str) -> int:
-        """Broadcasts a notification message across Telegram and WhatsApp to connected agents."""
-        count = 0
+    async def _broadcast_to_agents(cls, db: AsyncSession, agents: List[Tenant], message: str) -> int:
+        """
+        Broadcasts maintenance notification directly to the groups and channels where agents use the bot.
+        Ensures:
+        1. WhatsApp messages are delivered ONLY to paired bot groups (@g.us) using that tenant's own instance.
+        2. Personal 1-on-1 WhatsApp messages are never cross-sent between agents.
+        3. Telegram messages are delivered to the agent's chat or groups where the bot is active.
+        4. Every destination group or chat receives at most 1 message (deduplicated).
+        """
+        sent_destinations = set()  # (channel, chat_id)
+        notified_agent_ids = set()
+
         for agent in agents:
-            sent = False
-            # 1. Telegram delivery
+            # 1. Telegram destinations (agent chat or Telegram groups)
+            tg_destinations = set()
             if agent.telegram_chat_id:
+                tg_destinations.add(str(agent.telegram_chat_id).strip())
+
+            # 2. WhatsApp Group destinations (@g.us) where bot is paired
+            wa_group_destinations = set()
+            if agent.allowed_group_jids and isinstance(agent.allowed_group_jids, list):
+                for jid in agent.allowed_group_jids:
+                    if isinstance(jid, str) and "@g.us" in jid:
+                        wa_group_destinations.add(jid.strip())
+
+            # 3. Discover any additional active group destinations from SavedSearch
+            try:
+                stmt_s = select(SavedSearch.channel, SavedSearch.destination_chat_id).where(
+                    SavedSearch.tenant_id == agent.id,
+                    SavedSearch.is_active == True,
+                    SavedSearch.destination_chat_id.is_not(None)
+                )
+                res_s = await db.execute(stmt_s)
+                for row in res_s.all():
+                    ch = (row[0] or "").lower().strip()
+                    dest = (row[1] or "").strip()
+                    if ch == "whatsapp" and "@g.us" in dest:
+                        wa_group_destinations.add(dest)
+                    elif ch == "telegram" and dest:
+                        tg_destinations.add(dest)
+            except Exception as e_s:
+                logger.debug(f"[MaintenanceService] Error querying saved search destinations for agent #{agent.id}: {e_s}")
+
+            agent_delivered = False
+
+            # Deliver to Telegram destinations
+            for tg_chat in tg_destinations:
+                key = ("telegram", tg_chat)
+                if key in sent_destinations:
+                    agent_delivered = True
+                    continue
                 try:
-                    ok = await send_telegram_notification(agent.telegram_chat_id, message)
+                    ok = await send_telegram_notification(tg_chat, message)
                     if ok:
-                        sent = True
-                except Exception as e:
-                    logger.debug(f"[MaintenanceService] Failed Telegram broadcast to {agent.id} ({agent.name}): {e}")
+                        sent_destinations.add(key)
+                        agent_delivered = True
+                except Exception as e_tg:
+                    logger.debug(f"[MaintenanceService] Failed Telegram broadcast to {tg_chat} (Agent #{agent.id}): {e_tg}")
 
-            # 2. WhatsApp delivery if preferred or if telegram not configured
-            if agent.whatsapp_number and (agent.preferred_channel == "whatsapp" or not sent):
+            # Deliver to WhatsApp groups using tenant's own instance (tenant_{agent.id})
+            inst_name = f"tenant_{agent.id}"
+            for group_jid in wa_group_destinations:
+                key = ("whatsapp", group_jid)
+                if key in sent_destinations:
+                    agent_delivered = True
+                    continue
                 try:
-                    wa_ok = await WhatsAppAdapter.send_message(agent.whatsapp_number, message)
+                    wa_ok = await WhatsAppAdapter.send_message(
+                        phone_number=group_jid,
+                        text=message,
+                        instance_name=inst_name
+                    )
                     if wa_ok:
-                        sent = True
+                        sent_destinations.add(key)
+                        agent_delivered = True
                 except Exception as e_wa:
-                    logger.debug(f"[MaintenanceService] Failed WhatsApp broadcast to {agent.id} ({agent.name}): {e_wa}")
+                    logger.debug(f"[MaintenanceService] Failed WhatsApp broadcast to group {group_jid} (Agent #{agent.id}): {e_wa}")
 
-            if sent:
-                count += 1
+            if agent_delivered:
+                notified_agent_ids.add(agent.id)
 
-        logger.info(f"[MaintenanceService] Broadcast complete: {count}/{len(agents)} agents notified successfully.")
+        count = len(notified_agent_ids)
+        logger.info(f"[MaintenanceService] Broadcast complete: {count}/{len(agents)} agents notified across {len(sent_destinations)} groups/chats.")
         return count

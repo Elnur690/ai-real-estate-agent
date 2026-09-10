@@ -65,7 +65,8 @@ async def test_maintenance_api_enable_and_disable(client: AsyncClient, test_db: 
         name="Agent WhatsApp",
         phone="+994502222222",
         status="active",
-        whatsapp_number="+994502222222"
+        whatsapp_number="+994502222222",
+        allowed_group_jids=["120363222222222@g.us"]
     )
     t3 = Tenant(
         name="Inactive Agent",
@@ -109,6 +110,11 @@ async def test_maintenance_api_enable_and_disable(client: AsyncClient, test_db: 
         assert enable_data["notified_count"] == 2
         assert mock_tg.called
         assert mock_wa.called
+
+        # Verify WhatsApp was sent to group JID with tenant's own instance
+        wa_call_kw = mock_wa.call_args[1]
+        assert wa_call_kw["phone_number"] == "120363222222222@g.us"
+        assert wa_call_kw["instance_name"] == f"tenant_{t2.id}"
 
     # Verify is_maintenance_active
     is_active = await MaintenanceService.is_maintenance_active(test_db)
