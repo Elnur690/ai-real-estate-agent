@@ -423,13 +423,13 @@ class IngestionService:
 
             # Strict destination delivery
             if dest_channel == "whatsapp":
-                # For WhatsApp, deliver ONLY to paired groups (@g.us) where /bot_here was run
-                if not dest_chat_id or "@g.us" not in dest_chat_id:
-                    allowed = list(tenant.allowed_group_jids or [])
-                    dest_chat_id = allowed[0] if allowed else None
-                if not dest_chat_id or "@g.us" not in dest_chat_id:
-                    logger.debug(f"[IngestionService] Skipping WhatsApp price drop alert for search #{search.id}: No paired group (@g.us) found.")
+                # For WhatsApp, deliver ONLY and ONLY to paired groups (@g.us) where /bot_here was run
+                allowed = list(tenant.allowed_group_jids or [])
+                if not allowed:
+                    logger.debug(f"[IngestionService] Skipping WhatsApp price drop alert for search #{search.id}: No group where /bot_here was sent.")
                     continue
+                if not dest_chat_id or dest_chat_id not in allowed:
+                    dest_chat_id = allowed[0]
 
                 wa_sent = await WhatsAppAdapter.send_message(
                     phone_number=dest_chat_id,
@@ -1378,13 +1378,13 @@ class IngestionService:
                 dest_chat_id = getattr(search, 'destination_chat_id', None)
 
                 if dest_channel == "whatsapp":
-                    # For WhatsApp, deliver ONLY to paired groups (@g.us) where /bot_here was run
-                    if not dest_chat_id or "@g.us" not in dest_chat_id:
-                        allowed = list(tenant.allowed_group_jids or [])
-                        dest_chat_id = allowed[0] if allowed else None
-                    if not dest_chat_id or "@g.us" not in dest_chat_id:
-                        logger.debug(f"[IngestionService] Skipping match delivery for search #{search.id}: No paired WhatsApp group (@g.us) configured.")
+                    # For WhatsApp, deliver ONLY and ONLY to paired groups (@g.us) where /bot_here was run
+                    allowed = list(tenant.allowed_group_jids or [])
+                    if not allowed:
+                        logger.debug(f"[IngestionService] Skipping match delivery for search #{search.id}: No group where /bot_here was sent.")
                         continue
+                    if not dest_chat_id or dest_chat_id not in allowed:
+                        dest_chat_id = allowed[0]
                 else:
                     if not dest_chat_id:
                         dest_chat_id = tenant.telegram_chat_id

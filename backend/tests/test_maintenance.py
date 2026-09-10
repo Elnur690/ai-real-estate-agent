@@ -7,6 +7,7 @@ from app.main import app
 from app.models import Base
 from app.models.user import User
 from app.models.tenant import Tenant
+from app.models.saved_search import SavedSearch
 from app.api.deps import get_db
 from app.api.v1.auth import get_password_hash, create_access_token
 from app.services.maintenance import MaintenanceService
@@ -323,4 +324,48 @@ async def test_whatsapp_adapter_resolve_and_fallback():
         ok = await WhatsAppAdapter.send_message("120363999999999@g.us", "Hello Group", instance_name="tenant_11")
         assert ok is True
         assert mock_post.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_strictly_only_groups_where_bot_here_sent(test_db: AsyncSession):
+    """Ensure messages are sent ONLY and ONLY to groups where /bot_here was sent (allowed_group_jids)."""
+    # Tenant A has run /bot_here in a group
+    t_paired = Tenant(
+        name="Paired Agent",
+        phone="+994509990001",
+        status="active",
+        allowed_group_jids=["120363111111111@g.us"]
+    )
+    # Tenant B has NOT run /bot_here in any group, but has a SavedSearch with a destination_chat_id
+    t_unpaired = Tenant(
+        name="Unpaired Agent",
+        phone="+994509990002",
+        status="active",
+        whatsapp_number="+994509990002",
+        allowed_group_jids=[]
+    )
+    test_db.add_all([t_paired, t_unpaired])
+    await test_db.commit()
+
+    search = SavedSearch(
+        tenant_id=t_unpaired.id,
+        name="Unpaired Search",
+        raw_criteria_text="Yasamal 2 otaq",
+        channel="whatsapp",
+        destination_chat_id="205879425167610@g.us",
+        is_active=True
+    )
+    test_db.add(search)
+    await test_db.commit()
+
+    with patch("app.services.maintenance.WhatsAppAdapter.send_message", new_callable=AsyncMock) as mock_wa:
+        mock_wa.return_value = True
+        count = await MaintenanceService._broadcast_to_agents(test_db, [t_paired, t_unpaired], "Texniki Baxış Bildirişi")
+
+        # Only t_paired should have been delivered, t_unpaired has no paired /bot_here group
+        assert count == 1
+        # WhatsAppAdapter.send_message was ONLY called for t_paired's group, NEVER for SavedSearch or personal numbers
+        assert mock_wa.call_count == 1
+        assert mock_wa.call_args[1]["phone_number"] == "120363111111111@g.us"
+
 

@@ -79,13 +79,14 @@ class CrmReminderService:
             except Exception as e_tg:
                 logger.error(f"[CrmReminder] Telegram alert error for tenant {tenant.id}: {e_tg}")
 
-        # 2. WhatsApp delivery if preferred or fallback
-        if (tenant.preferred_channel == "whatsapp" or not sent) and getattr(tenant, "whatsapp_number", None):
-            clean_wa = "".join(filter(str.isdigit, tenant.whatsapp_number or ""))
-            if clean_wa:
+        # 2. WhatsApp delivery if preferred or fallback (ONLY to groups where /bot_here was sent)
+        if (tenant.preferred_channel == "whatsapp" or not sent):
+            allowed = list(tenant.allowed_group_jids or [])
+            if allowed:
+                target_group = allowed[0]
                 try:
                     await WhatsAppAdapter.send_message(
-                        phone_number=clean_wa,
+                        phone_number=target_group,
                         text=full_text,
                         instance_name=f"tenant_{tenant.id}"
                     )

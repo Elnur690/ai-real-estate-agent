@@ -127,17 +127,23 @@ class MaintenanceService:
 
     @classmethod
     async def get_connected_agents(cls, db: AsyncSession) -> List[Tenant]:
-        """Returns all active tenants that have a connected Telegram or WhatsApp channel/group."""
+        """Returns all active tenants that have a connected Telegram chat or paired WhatsApp group (/bot_here)."""
         stmt = select(Tenant).where(
             Tenant.status == "active",
             or_(
                 Tenant.telegram_chat_id.is_not(None),
-                Tenant.allowed_group_jids.is_not(None),
-                Tenant.whatsapp_number.is_not(None)
+                Tenant.allowed_group_jids.is_not(None)
             )
         )
         res = await db.execute(stmt)
-        return list(res.scalars().all())
+        all_tenants = list(res.scalars().all())
+        connected = []
+        for t in all_tenants:
+            has_tg = bool(t.telegram_chat_id and str(t.telegram_chat_id).strip())
+            has_wa_group = bool(t.allowed_group_jids and isinstance(t.allowed_group_jids, list) and len(t.allowed_group_jids) > 0)
+            if has_tg or has_wa_group:
+                connected.append(t)
+        return connected
 
     @classmethod
     async def enable_maintenance(
@@ -173,7 +179,7 @@ class MaintenanceService:
 
         await db.commit()
         cls._IS_MAINTENANCE_CACHED = True
-        logger.warning(f"[MaintenanceService] Maintenance Mode ENABLED by admin {admin_id}. Reason: {clean_reason}")
+        logger.info(f"[MaintenanceService] Maintenance Mode ACTIVATED by admin {admin_id}. Reason: {clean_reason}")
 
         notified_count = 0
         agents = []
@@ -240,9 +246,9 @@ class MaintenanceService:
         """
         Broadcasts maintenance notification directly to the groups and channels where agents use the bot.
         Ensures:
-        1. WhatsApp messages are delivered ONLY to paired bot groups (@g.us) using that tenant's own instance.
-        2. Personal 1-on-1 WhatsApp messages are never cross-sent between agents.
-        3. Telegram messages are delivered to the agent's chat or groups where the bot is active.
+        1. WhatsApp messages are delivered ONLY and ONLY to groups where /bot_here command was sent (tenant.allowed_group_jids).
+        2. No WhatsApp message is ever sent to arbitrary chat IDs, SavedSearch destinations, or personal numbers.
+        3. Telegram messages are delivered to the agent's connected Telegram chat.
         4. Every destination group or chat receives at most 1 message (deduplicated).
         """
         attempted_destinations = set()  # (channel, chat_id)
@@ -250,44 +256,21 @@ class MaintenanceService:
         notified_agent_ids = set()
 
         for agent in agents:
-            # 1. Telegram destinations (agent chat or Telegram groups)
+            # 1. Telegram destinations (agent chat)
             tg_destinations = set()
-            if agent.telegram_chat_id:
+            if agent.telegram_chat_id and str(agent.telegram_chat_id).strip():
                 tg_destinations.add(str(agent.telegram_chat_id).strip())
 
-            # 2. WhatsApp Group destinations (@g.us) where bot is paired
-            # Tuple of (group_jid, preferred_instance_name or None)
+            # 2. WhatsApp Group destinations: ONLY AND ONLY where /bot_here command was sent!
             wa_group_destinations = set()
             if agent.allowed_group_jids and isinstance(agent.allowed_group_jids, list):
                 for jid in agent.allowed_group_jids:
                     if isinstance(jid, str):
                         clean_j = jid.strip()
                         if "@g.us" in clean_j:
-                            wa_group_destinations.add((clean_j, None))
+                            wa_group_destinations.add(clean_j)
                         elif clean_j.startswith("120363") and "@" not in clean_j:
-                            wa_group_destinations.add((f"{clean_j}@g.us", None))
-
-            # 3. Discover any additional active group destinations from SavedSearch
-            try:
-                stmt_s = select(SavedSearch.channel, SavedSearch.destination_chat_id, SavedSearch.instance_name).where(
-                    SavedSearch.tenant_id == agent.id,
-                    SavedSearch.is_active == True,
-                    SavedSearch.destination_chat_id.is_not(None)
-                )
-                res_s = await db.execute(stmt_s)
-                for row in res_s.all():
-                    ch = (row[0] or "").lower().strip()
-                    dest = (row[1] or "").strip()
-                    saved_inst = (row[2] or "").strip() or None
-                    if ch == "whatsapp":
-                        if "@g.us" in dest:
-                            wa_group_destinations.add((dest, saved_inst))
-                        elif dest.startswith("120363") and "@" not in dest:
-                            wa_group_destinations.add((f"{dest}@g.us", saved_inst))
-                    elif ch == "telegram" and dest:
-                        tg_destinations.add(dest)
-            except Exception as e_s:
-                logger.debug(f"[MaintenanceService] Error querying saved search destinations for agent #{agent.id}: {e_s}")
+                            wa_group_destinations.add(f"{clean_j}@g.us")
 
             agent_delivered = False
 
@@ -308,8 +291,9 @@ class MaintenanceService:
                 except Exception as e_tg:
                     logger.debug(f"[MaintenanceService] Failed Telegram broadcast to {tg_chat} (Agent #{agent.id}): {e_tg}")
 
-            # Deliver to WhatsApp groups using tenant's instance or saved instance
-            for group_jid, target_inst in wa_group_destinations:
+            # Deliver to WhatsApp groups where /bot_here was sent
+            inst_name = f"tenant_{agent.id}"
+            for group_jid in wa_group_destinations:
                 key = ("whatsapp", group_jid)
                 if key in sent_destinations:
                     agent_delivered = True
@@ -317,7 +301,6 @@ class MaintenanceService:
                 if key in attempted_destinations:
                     continue
                 attempted_destinations.add(key)
-                inst_name = target_inst or f"tenant_{agent.id}"
                 try:
                     wa_ok = await WhatsAppAdapter.send_message(
                         phone_number=group_jid,
@@ -328,7 +311,7 @@ class MaintenanceService:
                         sent_destinations.add(key)
                         agent_delivered = True
                 except Exception as e_wa:
-                    logger.debug(f"[MaintenanceService] Failed WhatsApp broadcast to group {group_jid} (Agent #{agent.id}): {e_wa}")
+                    logger.debug(f"[MaintenanceService] Failed WhatsApp broadcast to paired group {group_jid} (Agent #{agent.id}): {e_wa}")
 
             if agent_delivered:
                 notified_agent_ids.add(agent.id)
