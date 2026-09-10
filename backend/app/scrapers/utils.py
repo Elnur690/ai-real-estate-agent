@@ -336,7 +336,9 @@ async def test_proxy_connection(proxy_url: Optional[str] = None) -> Dict[str, An
     elif tap_status == 200 and bina_status != 200:
         human_msg = f"Proksi Tap.az üçün aktivdir (200 OK), lakin Bina.az cavab statusu: HTTP {bina_status}."
     elif error_msg:
-        if "response 400" in error_msg:
+        if "response 402" in error_msg or "402" in error_msg:
+            human_msg = f"Proksi xidmətinin trafiki bitib (HTTP 402 Payment Required / Bandwidth Limit). Webshare və ya proksi provayderinizdə balans/trafik limitini yeniləyin."
+        elif "response 400" in error_msg:
             human_msg = f"Proksi server sorğunu rədd etdi (HTTP 400 Bad Request). Yoxlanılan ünvan: '{target_proxy}'. Zəhmət olmasa proksi formatını və portu yoxlayın."
         elif "response 407" in error_msg:
             human_msg = f"Proksi autentifikasiyası uğursuz oldu (HTTP 407 Proxy Authentication Required). İstifadəçi adı və ya şifrə səhvdir: '{target_proxy}'."
