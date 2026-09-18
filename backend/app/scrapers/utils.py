@@ -84,12 +84,50 @@ WEBSHARE_PROXIES = [
 # In-memory proxy quarantine tracker: {proxy_url: expiration_timestamp}
 _QUARANTINED_PROXIES: Dict[str, float] = {}
 
+def is_residential_gateway(proxy_url: Optional[str]) -> bool:
+    """
+    Detects if a proxy URL belongs to a rotating residential backconnect gateway
+    (e.g., IPRoyal, Decodo/Smartproxy, Bright Data, Oxylabs, Soax, NodeMaven, etc.)
+    or is the only active primary proxy configured.
+    """
+    if not proxy_url:
+        return False
+    lower = str(proxy_url).lower()
+    gateways = (
+        "iproyal", "smartproxy", "decodo", "brightdata", "luminati", "superproxy",
+        "oxylabs", "soax", "proxyrack", "nodemaven", "packetstream",
+        "lightningproxies", "stormproxies", "shifter", "infatica"
+    )
+    if any(gw in lower for gw in gateways):
+        return True
+
+    # If the user has a single primary proxy configured, treat it as a dedicated/gateway proxy
+    # so a transient 503 doesn't disable all scraping for 15 minutes.
+    primary = _RUNTIME_PROXY_CONFIG.get("primary")
+    if primary and (primary == proxy_url or proxy_url in primary or primary in proxy_url):
+        pool = _RUNTIME_PROXY_CONFIG.get("proxies") or []
+        if len(pool) <= 1:
+            return True
+
+    return False
+
 def mark_proxy_unhealthy(proxy_url: Optional[str], duration_seconds: float = 600.0) -> None:
     """Temporarily quarantines a proxy that failed, timed out, or got blocked by Cloudflare."""
     import time
-    if proxy_url:
-        _QUARANTINED_PROXIES[proxy_url] = time.time() + duration_seconds
-        logger.warning(f"[ScraperUtils] Quarantined proxy {proxy_url} for {int(duration_seconds)}s due to failure/block.")
+    if not proxy_url:
+        return
+
+    if is_residential_gateway(proxy_url):
+        # Rotating residential backconnect gateways manage their own pool of exit IPs.
+        # Long-term quarantining the gateway hostname itself would disable all scraping.
+        # Instead, apply a brief cooldown of 5-10s to allow the gateway to rotate or clear sticky sessions.
+        cooldown = min(duration_seconds, 10.0)
+        _QUARANTINED_PROXIES[proxy_url] = time.time() + cooldown
+        logger.warning(f"[ScraperUtils] Brief cooldown for residential gateway '{proxy_url}' ({int(cooldown)}s).")
+        return
+
+    _QUARANTINED_PROXIES[proxy_url] = time.time() + duration_seconds
+    logger.warning(f"[ScraperUtils] Quarantined proxy {proxy_url} for {int(duration_seconds)}s due to failure/block.")
 
 def mark_proxy_healthy(proxy_url: Optional[str]) -> None:
     """Removes a proxy from quarantine when it succeeds."""
@@ -143,15 +181,17 @@ def normalize_proxy_url(proxy_str: Optional[str]) -> str:
     else:
         rest = p
 
-    # If rest contains 4 colon-separated elements: IP:PORT:USER:PASS
-    parts = rest.split(":")
-    if len(parts) == 4:
-        ip, port, user, pwd = parts
-        return f"{scheme}://{user}:{pwd}@{ip}:{port}"
-    elif len(parts) == 2 and "@" not in rest:
-        return f"{scheme}://{rest}"
-    elif "@" in rest:
-        return f"{scheme}://{rest}"
+    # If rest contains 4 or more colon-separated elements: HOST:PORT:USER:PASS
+    if "@" not in rest:
+        parts = rest.split(":")
+        if len(parts) >= 4:
+            host, port, user = parts[0], parts[1], parts[2]
+            pwd = ":".join(parts[3:])
+            return f"{scheme}://{user}:{pwd}@{host}:{port}"
+        elif len(parts) == 2:
+            return f"{scheme}://{rest}"
+        else:
+            return f"{scheme}://{rest}"
     else:
         return f"{scheme}://{rest}"
 
@@ -297,9 +337,9 @@ async def test_proxy_connection(proxy_url: Optional[str] = None) -> Dict[str, An
 
     try:
         from curl_cffi.requests import AsyncSession
-        async with AsyncSession(impersonate="chrome124", proxy=target_proxy, timeout=12) as session:
+        async with AsyncSession(impersonate="chrome124", proxy=target_proxy, timeout=18) as session:
             try:
-                ip_resp = await session.get("https://api.ipify.org?format=json")
+                ip_resp = await session.get("https://api.ipify.org?format=json", timeout=8)
                 ip_status = ip_resp.status_code
                 if ip_resp.status_code == 200:
                     try:
@@ -311,7 +351,7 @@ async def test_proxy_connection(proxy_url: Optional[str] = None) -> Dict[str, An
                 error_msg = str(e)
 
             try:
-                bina_resp = await session.get("https://bina.az/items")
+                bina_resp = await session.get("https://bina.az/items", timeout=12)
                 bina_status = bina_resp.status_code
                 soup = BeautifulSoup(bina_resp.text[:5000], "html.parser")
                 if soup.title and soup.title.string:
@@ -321,7 +361,7 @@ async def test_proxy_connection(proxy_url: Optional[str] = None) -> Dict[str, An
                     error_msg = str(e)
 
             try:
-                tap_resp = await session.get("https://tap.az/elanlar/dasinmaz-emlak")
+                tap_resp = await session.get("https://tap.az/elanlar/dasinmaz-emlak", timeout=12)
                 tap_status = tap_resp.status_code
                 soup_tap = BeautifulSoup(tap_resp.text[:5000], "html.parser")
                 if soup_tap.title and soup_tap.title.string:
@@ -530,13 +570,15 @@ async def fetch_stealth_page(
         # 1. Primary with Multi-Proxy Retries across healthy pool
         for attempt in range(max_proxy_retries):
             active_proxy = get_rotating_proxy(proxy)
-            # Avoid picking the exact same failed proxy in this retry chain
-            if active_proxy and active_proxy in tried_proxies:
+            is_res = is_residential_gateway(active_proxy)
+
+            # Avoid picking the exact same failed proxy in this retry chain (unless residential gateway)
+            if active_proxy and active_proxy in tried_proxies and not is_res:
                 available = [p for p in get_healthy_proxies() if p not in tried_proxies]
                 if available:
                     active_proxy = random.choice(available)
 
-            if active_proxy:
+            if active_proxy and not is_res:
                 tried_proxies.add(active_proxy)
 
             try:
@@ -547,13 +589,17 @@ async def fetch_stealth_page(
                         mark_proxy_healthy(active_proxy)
                         return res.text, res.status_code
                     elif res.status_code in (403, 429, 503):
-                        logger.warning(f"[ScraperUtils] Proxy {active_proxy} got HTTP {res.status_code} for {url} ({domain}). Quarantining for 15m and retrying...")
+                        logger.warning(f"[ScraperUtils] Proxy {active_proxy} got HTTP {res.status_code} for {url} ({domain}). Retrying...")
                         mark_proxy_unhealthy(active_proxy, duration_seconds=900.0)
                         record_domain_block(domain, status_code=res.status_code)
+                        if is_res:
+                            await asyncio.sleep(2.5)
                         continue
             except Exception as e:
                 logger.debug(f"[ScraperUtils] curl_cffi attempt {attempt+1} failed for {url} (proxy: {active_proxy}): {e}")
                 mark_proxy_unhealthy(active_proxy, duration_seconds=300.0)
+                if is_res:
+                    await asyncio.sleep(2.0)
                 continue
 
         # 2. Fallback: httpx.AsyncClient with another healthy proxy

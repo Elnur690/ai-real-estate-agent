@@ -389,6 +389,11 @@ export function PortfolioPublicView() {
                           alt={item.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                           loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="%23334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>';
+                            e.currentTarget.className = "w-16 h-16 m-auto object-contain opacity-40";
+                          }}
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center bg-slate-950 text-slate-700">
@@ -561,6 +566,11 @@ export function PortfolioPublicView() {
                 alt={listing.title}
                 className="w-full h-full object-contain sm:object-cover bg-black cursor-pointer"
                 onClick={() => setLightboxOpen(true)}
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="%23334155" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>';
+                  e.currentTarget.className = "w-24 h-24 m-auto object-contain opacity-40 cursor-default";
+                }}
               />
 
               {/* Navigation Arrows */}

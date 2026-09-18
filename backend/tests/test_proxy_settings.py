@@ -11,7 +11,10 @@ from app.scrapers.utils import (
     normalize_proxy_url,
     update_runtime_proxy_pool,
     get_rotating_proxy,
+    is_residential_gateway,
+    mark_proxy_unhealthy,
     _RUNTIME_PROXY_CONFIG,
+    _QUARANTINED_PROXIES,
     WEBSHARE_PROXIES
 )
 
@@ -315,5 +318,36 @@ async def test_health_monitor_report_scraper_issue_standalone():
         assert "tap.az" in alert_msg
         assert "403" in alert_msg
         assert "Cloudflare IP block" in alert_msg
+
+
+def test_residential_gateway_handling():
+    import time
+    # 1. Normalization of IPRoyal format
+    raw_iproyal = "geo.iproyal.com:12321:user_country-az_session-abc:mypassword123"
+    norm = normalize_proxy_url(raw_iproyal)
+    assert norm == "http://user_country-az_session-abc:mypassword123@geo.iproyal.com:12321"
+
+    # 2. Residential gateway detection
+    assert is_residential_gateway(norm) is True
+    assert is_residential_gateway("http://u:p@gate.smartproxy.com:7000") is True
+    assert is_residential_gateway("http://u:p@brd.superproxy.io:22225") is True
+    assert is_residential_gateway("http://reipvtkd:kwop2c4stm5r@31.59.20.176:6754") is False
+
+    # 3. Smart brief quarantine (<=10s) instead of 600s/900s for residential gateways
+    _QUARANTINED_PROXIES.pop(norm, None)
+    mark_proxy_unhealthy(norm, duration_seconds=900.0)
+    assert norm in _QUARANTINED_PROXIES
+    # Expiration should be within 10s from now, NOT 900s
+    assert _QUARANTINED_PROXIES[norm] <= time.time() + 11.0
+    assert _QUARANTINED_PROXIES[norm] > time.time()
+    _QUARANTINED_PROXIES.pop(norm, None)
+
+    # 4. Standard datacenter proxy gets full duration
+    dc_proxy = "http://reipvtkd:kwop2c4stm5r@31.59.20.176:6754"
+    _QUARANTINED_PROXIES.pop(dc_proxy, None)
+    mark_proxy_unhealthy(dc_proxy, duration_seconds=600.0)
+    assert _QUARANTINED_PROXIES[dc_proxy] >= time.time() + 500.0
+    _QUARANTINED_PROXIES.pop(dc_proxy, None)
+
 
 

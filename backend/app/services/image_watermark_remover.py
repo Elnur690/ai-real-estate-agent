@@ -114,7 +114,7 @@ class ImageWatermarkRemoverService:
             "Referer": "https://bina.az/"
         }
 
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers=headers) as client:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers=headers, trust_env=False) as client:
             tasks = []
             for idx, url in enumerate(image_urls[:max_images]):
                 tasks.append(cls._download_and_clean_single(client, url, listing_id, idx))
