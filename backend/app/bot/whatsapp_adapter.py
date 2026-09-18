@@ -375,8 +375,6 @@ class WhatsAppAdapter:
         body = {
             "number": clean_recipient,
             "text": text,
-            "options": {"delay": 1200, "presence": "composing"},
-            "textMessage": {"text": text}
         }
 
         try:
@@ -458,16 +456,10 @@ class WhatsAppAdapter:
             body = {
                 "number": clean_recipient,
                 "mediatype": "image",
-                "mediaType": "image",
                 "mimetype": "image/jpeg",
-                "mimeType": "image/jpeg",
                 "caption": caption,
                 "media": raw_b64,
                 "fileName": file_name,
-                "options": {
-                    "delay": 1200,
-                    "presence": "composing"
-                }
             }
 
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -527,16 +519,10 @@ class WhatsAppAdapter:
             body = {
                 "number": clean_recipient,
                 "mediatype": "document",
-                "mediaType": "document",
                 "mimetype": "application/pdf",
-                "mimeType": "application/pdf",
                 "caption": caption,
                 "fileName": doc_filename,
                 "media": raw_b64,
-                "options": {
-                    "delay": 1200,
-                    "presence": "composing"
-                }
             }
 
             async with httpx.AsyncClient(timeout=30.0) as client:
