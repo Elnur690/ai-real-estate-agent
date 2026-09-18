@@ -175,6 +175,8 @@ async def test_portfolio_bot_commands(test_db: AsyncSession):
     tenant = Tenant(
         name="Bot Agent",
         phone="+994559998877",
+        whatsapp_number="994559998877",
+        allowed_group_jids=["120363999999999999@g.us"],
         plan="starter",
         feature_portfolio=True,
         portfolio_limit=25,
@@ -208,8 +210,9 @@ async def test_portfolio_bot_commands(test_db: AsyncSession):
     # 2. Test /portfel <id> 1-click clone
     resp = await BotCommandHandler.handle_incoming_message(
         db=test_db,
-        sender_id="+994559998877",
+        sender_id="120363999999999999@g.us",
         sender_name="Bot Agent",
+        sender_participant="+994559998877",
         channel="whatsapp",
         raw_text=f"/portfel {listing.id}"
     )
@@ -220,8 +223,9 @@ async def test_portfolio_bot_commands(test_db: AsyncSession):
     # 3. Test /portfel overview
     resp_overview = await BotCommandHandler.handle_incoming_message(
         db=test_db,
-        sender_id="+994559998877",
+        sender_id="120363999999999999@g.us",
         sender_name="Bot Agent",
+        sender_participant="+994559998877",
         channel="whatsapp",
         raw_text="/portfel"
     )
@@ -231,8 +235,9 @@ async def test_portfolio_bot_commands(test_db: AsyncSession):
     # 4. Test /portfel_sil <id>
     resp_del = await BotCommandHandler.handle_incoming_message(
         db=test_db,
-        sender_id="+994559998877",
+        sender_id="120363999999999999@g.us",
         sender_name="Bot Agent",
+        sender_participant="+994559998877",
         channel="whatsapp",
         raw_text=f"/portfel_sil {listing.id}"
     )
@@ -463,8 +468,11 @@ async def test_agent_reseller_custom_domain_inheritance_and_override(test_db: As
     agent_tenant = Tenant(
         name="Samir Qasımov",
         phone="+994553334455",
+        whatsapp_number="994553334455",
+        allowed_group_jids=["120363888888888888@g.us"],
         type="individual_agent",
         plan="standard",
+        status="active",
         seller_id=seller.id,
         feature_portfolio=True,
         portfolio_limit=25,
@@ -521,8 +529,9 @@ async def test_agent_reseller_custom_domain_inheritance_and_override(test_db: As
     # 6. Bot /portfel command output uses inherited reseller domain
     bot_resp = await BotCommandHandler.handle_incoming_message(
         db=test_db,
-        sender_id=agent_tenant.phone,
+        sender_id="120363888888888888@g.us",
         sender_name=agent_tenant.name,
+        sender_participant=agent_tenant.phone,
         channel="whatsapp",
         raw_text="/portfel"
     )
@@ -531,8 +540,9 @@ async def test_agent_reseller_custom_domain_inheritance_and_override(test_db: As
     # 7. Agent ordering custom domain add-on via bot: /al domen
     buy_resp = await BotCommandHandler.handle_incoming_message(
         db=test_db,
-        sender_id=agent_tenant.phone,
+        sender_id="120363888888888888@g.us",
         sender_name=agent_tenant.name,
+        sender_participant=agent_tenant.phone,
         channel="whatsapp",
         raw_text="/al domen"
     )
@@ -605,8 +615,9 @@ async def test_agent_reseller_custom_domain_inheritance_and_override(test_db: As
     # 15. Test multi-month domain order (/al domen 3)
     buy_3m = await BotCommandHandler.handle_incoming_message(
         db=test_db,
-        sender_id=agent_tenant.phone,
+        sender_id="120363888888888888@g.us",
         sender_name=agent_tenant.name,
+        sender_participant=agent_tenant.phone,
         channel="whatsapp",
         raw_text="/al domen 3"
     )

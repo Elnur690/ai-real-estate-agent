@@ -185,6 +185,7 @@ async def test_bot_crm_command_flow(test_db: AsyncSession):
         phone="+994501110011",
         whatsapp_number="+994501110011",
         preferred_channel="whatsapp",
+        allowed_group_jids=["120363000000000001@g.us"],
         plan="starter",
         status="active",
         feature_crm=False,
@@ -197,8 +198,9 @@ async def test_bot_crm_command_flow(test_db: AsyncSession):
     resp_a = await BotCommandHandler.handle_incoming_message(
         db=test_db,
         channel="whatsapp",
-        sender_id="+994501110011",
+        sender_id="120363000000000001@g.us",
         sender_name="Basic Agent",
+        sender_participant="+994501110011",
         raw_text=f"/crm {listing.id}"
     )
     assert "CRM və Mini App Add-on aktiv deyil" in resp_a
@@ -210,6 +212,7 @@ async def test_bot_crm_command_flow(test_db: AsyncSession):
         phone="+994502220022",
         whatsapp_number="+994502220022",
         preferred_channel="whatsapp",
+        allowed_group_jids=["120363000000000002@g.us"],
         plan="pro",
         status="active",
         feature_crm=True,
@@ -222,8 +225,9 @@ async def test_bot_crm_command_flow(test_db: AsyncSession):
     resp_b = await BotCommandHandler.handle_incoming_message(
         db=test_db,
         channel="whatsapp",
-        sender_id="+994502220022",
+        sender_id="120363000000000002@g.us",
         sender_name="WhatsApp Only Agent",
+        sender_participant="+994502220022",
         raw_text=f"/crm {listing.id}"
     )
     assert "Telegram Hesabınız Aktivləşdirilməyib" in resp_b
@@ -236,6 +240,7 @@ async def test_bot_crm_command_flow(test_db: AsyncSession):
         whatsapp_number="+994503330033",
         telegram_chat_id="123456789",
         preferred_channel="both",
+        allowed_group_jids=["120363000000000003@g.us"],
         plan="agency",
         status="active",
         feature_crm=True
@@ -247,8 +252,9 @@ async def test_bot_crm_command_flow(test_db: AsyncSession):
     resp_c = await BotCommandHandler.handle_incoming_message(
         db=test_db,
         channel="whatsapp",
-        sender_id="+994503330033",
+        sender_id="120363000000000003@g.us",
         sender_name="Pro CRM Agent",
+        sender_participant="+994503330033",
         raw_text=f"/crm {listing.id}"
     )
     assert "Elan CRM-ə uğurla əlavə edildi" in resp_c

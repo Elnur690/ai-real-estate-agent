@@ -7,7 +7,7 @@ from app.bot.command_handler import BotCommandHandler
 @pytest.mark.asyncio
 async def test_block_agent_deleting_other_agent_search():
     mock_db = AsyncMock()
-    tenant = Tenant(id=1, name="Test Agency", phone="+994501112233", preferred_channel="whatsapp", allowed_group_jids=[])
+    tenant = Tenant(id=1, name="Test Agency", phone="+994501112233", telegram_chat_id="994501112233", preferred_channel="telegram", allowed_group_jids=[])
 
     # Search #24 belongs to Agent A (994501112233)
     search_24 = SavedSearch(
@@ -32,7 +32,7 @@ async def test_block_agent_deleting_other_agent_search():
     # Agent B (994559998877) tries to delete Search #24
     response = await BotCommandHandler.handle_incoming_message(
         db=mock_db,
-        channel="whatsapp",
+        channel="telegram",
         sender_id="994559998877",
         sender_name="Agent B",
         instance_name="tenant_1",
@@ -46,7 +46,7 @@ async def test_block_agent_deleting_other_agent_search():
 @pytest.mark.asyncio
 async def test_allow_agent_deleting_own_search():
     mock_db = AsyncMock()
-    tenant = Tenant(id=1, name="Test Agency", phone="+994501112233", preferred_channel="whatsapp", allowed_group_jids=[])
+    tenant = Tenant(id=1, name="Test Agency", phone="+994501112233", telegram_chat_id="994559998877", preferred_channel="telegram", allowed_group_jids=[])
 
     # Search #25 belongs to Agent B (994559998877)
     search_25 = SavedSearch(
@@ -71,7 +71,7 @@ async def test_allow_agent_deleting_own_search():
     # Agent B (994559998877) deletes their own Search #25
     response = await BotCommandHandler.handle_incoming_message(
         db=mock_db,
-        channel="whatsapp",
+        channel="telegram",
         sender_id="994559998877",
         sender_name="Agent B",
         instance_name="tenant_1",
