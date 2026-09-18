@@ -596,7 +596,7 @@ async def fetch_stealth_page(
                             await asyncio.sleep(2.5)
                         continue
             except Exception as e:
-                logger.debug(f"[ScraperUtils] curl_cffi attempt {attempt+1} failed for {url} (proxy: {active_proxy}): {e}")
+                logger.warning(f"[ScraperUtils] Proxy attempt {attempt+1} failed for {url} (proxy: {active_proxy}): {e}")
                 mark_proxy_unhealthy(active_proxy, duration_seconds=300.0)
                 if is_res:
                     await asyncio.sleep(2.0)
@@ -617,7 +617,7 @@ async def fetch_stealth_page(
                         mark_proxy_unhealthy(fallback_proxy, duration_seconds=900.0)
                         record_domain_block(domain, status_code=res.status_code)
             except Exception as e:
-                logger.debug(f"[ScraperUtils] httpx proxy fallback failed for {url}: {e}")
+                logger.warning(f"[ScraperUtils] httpx fallback proxy failed for {url} (proxy: {fallback_proxy}): {e}")
 
         # 3. Strict Zero-Leak IP Protection for sensitive portals:
         # Portals with active IP bans or Cloudflare anti-bot (tap.az, bina.az, turbo.az, rahatemlak.az)
@@ -626,7 +626,8 @@ async def fetch_stealth_page(
         if proxies_enabled and any(d in domain for d in strict_zero_leak_domains):
             logger.warning(
                 f"[ScraperUtils] All {max_proxy_retries} proxy attempts failed for {url} ({domain}). "
-                f"Zero-Leak Protection ACTIVE: Aborting request with HTTP 503 rather than leaking host static IP."
+                f"Zero-Leak Protection ACTIVE: Aborting request with HTTP 503 rather than leaking host static IP. "
+                f"Please verify proxy subscription / credentials (e.g. IPRoyal residential proxy) in SaaS Admin Settings."
             )
             now = time.time()
             if now - _DOMAIN_ALERT_TIMESTAMPS.get(domain, 0.0) >= 1800.0:
