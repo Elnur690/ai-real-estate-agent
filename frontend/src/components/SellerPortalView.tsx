@@ -100,6 +100,7 @@ export interface SellerAgent {
   whatsapp_bot_url?: string;
   invite_url?: string;
   telegram_bot_username?: string;
+  approved_phone_numbers?: string[];
 }
 
 export interface SellerPackageItem {
@@ -229,6 +230,7 @@ export function SellerPortalView() {
   const [agentPhone, setAgentPhone] = useState('');
   const [agentTg, setAgentTg] = useState('');
   const [agentWhatsapp, setAgentWhatsapp] = useState('');
+  const [agentApprovedNums, setAgentApprovedNums] = useState<string[]>([]);
   const [agentChannel, setAgentChannel] = useState('telegram');
   const [agentCrm, setAgentCrm] = useState(false);
   const [agentPkgId, setAgentPkgId] = useState<number | undefined>(undefined);
@@ -323,6 +325,7 @@ export function SellerPortalView() {
   const [editAgentPhone, setEditAgentPhone] = useState('');
   const [editAgentTg, setEditAgentTg] = useState('');
   const [editAgentWa, setEditAgentWa] = useState('');
+  const [editAgentApprovedNums, setEditAgentApprovedNums] = useState<string[]>([]);
   const [editAgentChannel, setEditAgentChannel] = useState('telegram');
   const [editAgentBillingDay, setEditAgentBillingDay] = useState<number>(1);
   const [editAgentStatus, setEditAgentStatus] = useState('active');
@@ -718,7 +721,8 @@ export function SellerPortalView() {
         feature_portfolio: agentPortfolio,
         selected_portfolio_enabled: agentPortfolio,
         selected_portfolio_limit: agentPortfolio ? agentSelectedPortfolioLimit : undefined,
-        selected_portfolio_price: (agentPortfolio && !isTrial) ? agentSelectedPortfolioPrice : 0
+        selected_portfolio_price: (agentPortfolio && !isTrial) ? agentSelectedPortfolioPrice : 0,
+        approved_phone_numbers: agentApprovedNums.filter(Boolean)
       });
       const createdAgentId = addRes.data?.agent_id;
       setIsAddAgentOpen(false);
@@ -726,6 +730,7 @@ export function SellerPortalView() {
       setAgentPhone('');
       setAgentTg('');
       setAgentWhatsapp('');
+      setAgentApprovedNums([]);
       setAgentCrm(false);
       setAgentPortfolio(false);
       setAgentPkgId(packages.length > 0 ? packages[0].id : (trialEnabled ? -1 : undefined));
@@ -912,6 +917,7 @@ export function SellerPortalView() {
         setEditAgentPhone(res.data.phone);
         setEditAgentTg(res.data.telegram_handle || '');
         setEditAgentWa(res.data.whatsapp_number || '');
+        setEditAgentApprovedNums(res.data.approved_phone_numbers || []);
         setEditAgentChannel(res.data.preferred_channel || 'telegram');
         setEditAgentBillingDay(res.data.preferred_billing_day || 1);
         setEditAgentStatus(res.data.status || 'active');
@@ -989,7 +995,8 @@ export function SellerPortalView() {
         addon_image_requests_used: editAgentImageUsed,
         feature_crm: editAgentCrm,
         feature_portfolio: editAgentPortfolio,
-        portfolio_limit: editAgentPortfolioLimit
+        portfolio_limit: editAgentPortfolioLimit,
+        approved_phone_numbers: editAgentApprovedNums.filter(Boolean)
       });
 
       setAgentEditSuccessMsg('Agent məlumatları uğurla yeniləndi!');
@@ -1494,6 +1501,13 @@ export function SellerPortalView() {
                             <span className="text-[10px] text-slate-500 font-mono">#{a.id}</span>
                           </div>
                           <div className="text-[11px] text-slate-400">{a.phone}</div>
+                          {a.approved_phone_numbers && a.approved_phone_numbers.length > 0 && (
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono" title={`Təsdiqlənmiş əlavə nömrələr: ${a.approved_phone_numbers.map(n => `+${n}`).join(', ')}`}>
+                                +{a.approved_phone_numbers.length} təsdiqlənmiş nömrə
+                              </span>
+                            </div>
+                          )}
                         </td>
                         <td className="py-3.5 px-4 text-xs">
                           {a.telegram_handle ? (
@@ -3639,7 +3653,7 @@ export function SellerPortalView() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">WhatsApp Nömrəsi</label>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">WhatsApp Nömrəsi (Əsas Qeydiyyat)</label>
                     <input
                       type="text"
                       value={editAgentWa}
@@ -3657,6 +3671,61 @@ export function SellerPortalView() {
                       placeholder="@username"
                       className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-amber-500"
                     />
+                  </div>
+                </div>
+
+                {/* Approved Extra Phone Numbers (Max 2 Extra, 3 Total) */}
+                <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
+                      <span>📱 Təsdiqlənmiş Əlavə Nömrələr (Maks. 2 əlavə)</span>
+                    </label>
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      {editAgentApprovedNums.length} / 2 əlavə nömrə
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    İşçi WhatsApp qrupunda botdan istifadə edə biləcək köməkçi agent və ya tərəfdaş nömrələri.
+                  </p>
+                  <div className="space-y-1.5">
+                    {[0, 1].map((idx) => {
+                      const val = editAgentApprovedNums[idx] || '';
+                      return (
+                        <div key={idx} className="flex items-center gap-2">
+                          <span className="text-[10px] text-slate-500 font-mono w-4">{idx + 1}.</span>
+                          <input
+                            type="text"
+                            placeholder={`Əlavə nömrə ${idx + 1} (məs: 0501234567)`}
+                            value={val}
+                            onChange={(e) => {
+                              const updated = [...editAgentApprovedNums];
+                              const inputVal = e.target.value;
+                              if (inputVal.trim()) {
+                                updated[idx] = inputVal;
+                              } else {
+                                updated.splice(idx, 1);
+                              }
+                              setEditAgentApprovedNums(updated.filter(Boolean));
+                            }}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-amber-500"
+                          />
+                          {val && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = [...editAgentApprovedNums];
+                                updated.splice(idx, 1);
+                                setEditAgentApprovedNums(updated.filter(Boolean));
+                              }}
+                              className="text-slate-400 hover:text-rose-400 p-1 text-xs"
+                              title="Nömrəni sil"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -4009,6 +4078,72 @@ export function SellerPortalView() {
                         <div className="text-[10px] text-slate-400">Elan bildirişləri</div>
                       </div>
                     </label>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">WhatsApp Nömrəsi (Əsas Qeydiyyat)</label>
+                  <input
+                    type="text"
+                    value={agentWhatsapp}
+                    onChange={(e) => setAgentWhatsapp(e.target.value)}
+                    placeholder="+994501234567"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                {/* Approved Extra Phone Numbers (Max 2 Extra, 3 Total) */}
+                <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
+                      <span>📱 Təsdiqlənmiş Əlavə Nömrələr (Maks. 2 əlavə)</span>
+                    </label>
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      {agentApprovedNums.length} / 2 əlavə nömrə
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    İşçi WhatsApp qrupunda botdan istifadə edə biləcək köməkçi agent və ya tərəfdaş nömrələri.
+                  </p>
+                  <div className="space-y-1.5">
+                    {[0, 1].map((idx) => {
+                      const val = agentApprovedNums[idx] || '';
+                      return (
+                        <div key={idx} className="flex items-center gap-2">
+                          <span className="text-[10px] text-slate-500 font-mono w-4">{idx + 1}.</span>
+                          <input
+                            type="text"
+                            placeholder={`Əlavə nömrə ${idx + 1} (məs: 0501234567)`}
+                            value={val}
+                            onChange={(e) => {
+                              const updated = [...agentApprovedNums];
+                              const inputVal = e.target.value;
+                              if (inputVal.trim()) {
+                                updated[idx] = inputVal;
+                              } else {
+                                updated.splice(idx, 1);
+                              }
+                              setAgentApprovedNums(updated.filter(Boolean));
+                            }}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-white text-xs focus:outline-none focus:border-blue-500"
+                          />
+                          {val && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = [...agentApprovedNums];
+                                updated.splice(idx, 1);
+                                setAgentApprovedNums(updated.filter(Boolean));
+                              }}
+                              className="text-slate-400 hover:text-rose-400 p-1 text-xs"
+                              title="Nömrəni sil"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 

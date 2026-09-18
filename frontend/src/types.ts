@@ -53,6 +53,7 @@ export interface Tenant {
   seller_id?: number;
   seller_name?: string;
   seller_company?: string;
+  approved_phone_numbers?: string[];
   created_at: string;
 }
 

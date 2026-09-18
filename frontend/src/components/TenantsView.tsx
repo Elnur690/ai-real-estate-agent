@@ -58,6 +58,7 @@ export const TenantsView: React.FC = () => {
     custom_domain: '',
     custom_domain_enabled: false,
     addon_custom_domain_price: 5.0,
+    approved_phone_numbers: [] as string[],
   });
 
   const [availablePlans, setAvailablePlans] = useState<any[]>([]);
@@ -227,6 +228,7 @@ export const TenantsView: React.FC = () => {
       custom_domain: t.custom_domain || '',
       custom_domain_enabled: t.custom_domain_enabled ?? false,
       addon_custom_domain_price: t.addon_custom_domain_price ?? 5.0,
+      approved_phone_numbers: t.approved_phone_numbers || [],
     });
   };
 
@@ -293,6 +295,7 @@ export const TenantsView: React.FC = () => {
         custom_domain: '',
         custom_domain_enabled: false,
         addon_custom_domain_price: 5.0,
+        approved_phone_numbers: [] as string[],
       });
       loadTenants();
     } catch (e: any) {
@@ -656,6 +659,13 @@ export const TenantsView: React.FC = () => {
                       )}
                     </div>
                     <div className="text-xs text-slate-400">{t.phone}</div>
+                    {t.approved_phone_numbers && t.approved_phone_numbers.length > 0 && (
+                      <div className="flex items-center gap-1 mt-1">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono" title={`Təsdiqlənmiş əlavə nömrələr: ${t.approved_phone_numbers.map(n => `+${n}`).join(', ')}`}>
+                          +{t.approved_phone_numbers.length} təsdiqlənmiş nömrə
+                        </span>
+                      </div>
+                    )}
                   </td>
                   <td className="p-4">
                     {t.seller_name ? (
@@ -1096,7 +1106,7 @@ export const TenantsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-xs text-slate-400 block mb-1">WhatsApp Nömrəsi</label>
+                <label className="text-xs text-slate-400 block mb-1">WhatsApp Nömrəsi (Əsas Qeydiyyat)</label>
                 <input
                   type="text"
                   value={editFormData.whatsapp_number || ''}
@@ -1104,6 +1114,68 @@ export const TenantsView: React.FC = () => {
                   className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
                   placeholder="+994 50 123 45 67"
                 />
+              </div>
+
+              {/* Approved Extra Numbers (Max 2 Extra, 3 Total) */}
+              <div className="p-3 bg-dark-900/80 rounded-xl border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
+                    <span>📱 Təsdiqlənmiş Əlavə Nömrələr (Maks. 2 əlavə)</span>
+                  </label>
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    {editFormData.approved_phone_numbers?.length || 0} / 2 əlavə nömrə
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  İşçi WhatsApp qrupunda botla qarşılıqlı əlaqədə ola biləcək köməkçi agent və ya tərəfdaş nömrələri.
+                </p>
+                <div className="space-y-2">
+                  {[0, 1].map((idx) => {
+                    const currentNums = editFormData.approved_phone_numbers || [];
+                    const val = currentNums[idx] || '';
+                    return (
+                      <div key={idx} className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-500 font-mono w-4">{idx + 1}.</span>
+                        <input
+                          type="text"
+                          placeholder={`Əlavə nömrə ${idx + 1} (məs: 0501234567)`}
+                          value={val}
+                          onChange={(e) => {
+                            const updated = [...currentNums];
+                            const inputVal = e.target.value;
+                            if (inputVal.trim()) {
+                              updated[idx] = inputVal;
+                            } else {
+                              updated.splice(idx, 1);
+                            }
+                            setEditFormData({
+                              ...editFormData,
+                              approved_phone_numbers: updated.filter(Boolean)
+                            });
+                          }}
+                          className="w-full glass-input px-3 py-1.5 rounded-lg text-xs text-white"
+                        />
+                        {val && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...currentNums];
+                              updated.splice(idx, 1);
+                              setEditFormData({
+                                ...editFormData,
+                                approved_phone_numbers: updated.filter(Boolean)
+                              });
+                            }}
+                            className="text-slate-400 hover:text-rose-400 p-1 text-xs"
+                            title="Nömrəni sil"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               <div>
@@ -1464,7 +1536,7 @@ export const TenantsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-xs text-slate-400 block mb-1">WhatsApp Nömrəsi</label>
+                <label className="text-xs text-slate-400 block mb-1">WhatsApp Nömrəsi (Əsas Qeydiyyat)</label>
                 <input
                   type="text"
                   placeholder="+994501234567"
@@ -1472,6 +1544,68 @@ export const TenantsView: React.FC = () => {
                   onChange={(e) => setNewTenant({ ...newTenant, whatsapp_number: e.target.value })}
                   className="w-full glass-input px-3 py-2 rounded-xl text-sm text-white"
                 />
+              </div>
+
+              {/* Approved Extra Numbers (Max 2 Extra, 3 Total) */}
+              <div className="p-3 bg-dark-900/80 rounded-xl border border-slate-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
+                    <span>📱 Təsdiqlənmiş Əlavə Nömrələr (Maks. 2 əlavə)</span>
+                  </label>
+                  <span className="text-[10px] text-slate-500 font-mono">
+                    {newTenant.approved_phone_numbers?.length || 0} / 2 əlavə nömrə
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  İşçi WhatsApp qrupunda botla qarşılıqlı əlaqədə ola biləcək köməkçi agent və ya tərəfdaş nömrələri.
+                </p>
+                <div className="space-y-2">
+                  {[0, 1].map((idx) => {
+                    const currentNums = newTenant.approved_phone_numbers || [];
+                    const val = currentNums[idx] || '';
+                    return (
+                      <div key={idx} className="flex items-center gap-2">
+                        <span className="text-[10px] text-slate-500 font-mono w-4">{idx + 1}.</span>
+                        <input
+                          type="text"
+                          placeholder={`Əlavə nömrə ${idx + 1} (məs: 0501234567)`}
+                          value={val}
+                          onChange={(e) => {
+                            const updated = [...currentNums];
+                            const inputVal = e.target.value;
+                            if (inputVal.trim()) {
+                              updated[idx] = inputVal;
+                            } else {
+                              updated.splice(idx, 1);
+                            }
+                            setNewTenant({
+                              ...newTenant,
+                              approved_phone_numbers: updated.filter(Boolean)
+                            });
+                          }}
+                          className="w-full glass-input px-3 py-1.5 rounded-lg text-xs text-white"
+                        />
+                        {val && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...currentNums];
+                              updated.splice(idx, 1);
+                              setNewTenant({
+                                ...newTenant,
+                                approved_phone_numbers: updated.filter(Boolean)
+                              });
+                            }}
+                            className="text-slate-400 hover:text-rose-400 p-1 text-xs"
+                            title="Nömrəni sil"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               <div>

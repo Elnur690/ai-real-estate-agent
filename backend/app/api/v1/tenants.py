@@ -512,8 +512,23 @@ async def update_tenant(tenant_id: int, body: UpdateTenantRequest, db: AsyncSess
         from app.services.domain_service import clean_domain_string
         update_data["custom_domain"] = clean_domain_string(update_data["custom_domain"])
 
+    if "approved_phone_numbers" in update_data and update_data["approved_phone_numbers"] is not None:
+        import re
+        norm_extras = []
+        primary_clean = re.sub(r'\D', '', str(tenant.whatsapp_number or tenant.phone or ''))
+        for raw in update_data["approved_phone_numbers"]:
+            d = re.sub(r'\D', '', str(raw).split('@')[0])
+            if d.startswith("0") and len(d) == 10:
+                d = "994" + d[1:]
+            elif not d.startswith("994") and len(d) == 9:
+                d = "994" + d
+            if d and d != primary_clean and not (primary_clean and d.endswith(primary_clean[-9:])):
+                if d not in norm_extras and len(norm_extras) < 2:
+                    norm_extras.append(d)
+        tenant.approved_phone_numbers = norm_extras
+
     for field, val in update_data.items():
-        if field not in ["telegram_handle", "telegram_chat_id", "feature_crm", "feature_portfolio", "feature_custom_domain", "custom_domain"]:
+        if field not in ["telegram_handle", "telegram_chat_id", "feature_crm", "feature_portfolio", "feature_custom_domain", "custom_domain", "approved_phone_numbers"]:
             setattr(tenant, field, val)
 
     await db.commit()

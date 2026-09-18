@@ -156,6 +156,7 @@ class RegisterSellerAgentRequest(BaseModel):
     selected_portfolio_enabled: Optional[bool] = None
     selected_portfolio_limit: Optional[int] = None
     selected_portfolio_price: Optional[float] = None
+    approved_phone_numbers: Optional[List[str]] = None
 
 class UpdateSellerAgentRequest(BaseModel):
     name: Optional[str] = None
@@ -185,6 +186,7 @@ class UpdateSellerAgentRequest(BaseModel):
     feature_portfolio: Optional[bool] = None
     portfolio_limit: Optional[int] = None
     addon_portfolio_price: Optional[float] = None
+    approved_phone_numbers: Optional[List[str]] = None
 
 class RenewSellerAgentRequest(BaseModel):
     package_id: Optional[int] = None
@@ -739,6 +741,7 @@ async def get_my_agents(
             "portfolio_limit": getattr(a, 'portfolio_limit', 25),
             "portfolio_expires_at": a.portfolio_expires_at.isoformat() if getattr(a, 'portfolio_expires_at', None) else None,
             "addon_portfolio_price": getattr(a, 'addon_portfolio_price', 0.0),
+            "approved_phone_numbers": a.approved_phone_numbers or [],
             "seller_package_id": a.seller_package_id,
             "created_at": a.created_at.isoformat() if a.created_at else None,
             "telegram_bot_url": tg_url,
@@ -864,6 +867,7 @@ async def get_my_agent_detail(
         "portfolio_limit": getattr(agent, 'portfolio_limit', 25),
         "portfolio_expires_at": agent.portfolio_expires_at.isoformat() if getattr(agent, 'portfolio_expires_at', None) else None,
         "addon_portfolio_price": getattr(agent, 'addon_portfolio_price', 0.0),
+        "approved_phone_numbers": agent.approved_phone_numbers or [],
         "seller_package_id": agent.seller_package_id,
         "package_data": pkg_data,
         "saved_searches_count": saved_searches_count,
@@ -1196,6 +1200,21 @@ async def update_my_agent(
                     notes=f"Seller Add-on: Agent Portfolio ({agent.portfolio_limit or 25} elan) for {agent.name}"
                 )
                 db.add(pay_record)
+
+    if body.approved_phone_numbers is not None:
+        import re
+        norm_extras = []
+        primary_clean = re.sub(r'\D', '', str(agent.whatsapp_number or agent.phone or ''))
+        for raw in body.approved_phone_numbers:
+            d = re.sub(r'\D', '', str(raw).split('@')[0])
+            if d.startswith("0") and len(d) == 10:
+                d = "994" + d[1:]
+            elif not d.startswith("994") and len(d) == 9:
+                d = "994" + d
+            if d and d != primary_clean and not (primary_clean and d.endswith(primary_clean[-9:])):
+                if d not in norm_extras and len(norm_extras) < 2:
+                    norm_extras.append(d)
+        agent.approved_phone_numbers = norm_extras
 
     await db.commit()
     await db.refresh(agent)
@@ -1682,7 +1701,8 @@ async def register_my_agent(
         feature_portfolio=f_portfolio,
         portfolio_limit=portfolio_limit,
         portfolio_expires_at=portfolio_exp,
-        addon_portfolio_price=portfolio_price
+        addon_portfolio_price=portfolio_price,
+        approved_phone_numbers=body.approved_phone_numbers or []
     )
     db.add(agent)
     await db.commit()
