@@ -38,6 +38,7 @@ async def lifespan(app: FastAPI):
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS parent_tenant_id INTEGER;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS assigned_districts JSON;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS allowed_group_jids JSON;"))
+        await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS approved_phone_numbers JSON;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS feature_aged_listings BOOLEAN DEFAULT FALSE;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS addon_aged_max_months INTEGER DEFAULT 12;"))
         await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS feature_multi_location BOOLEAN DEFAULT TRUE;"))

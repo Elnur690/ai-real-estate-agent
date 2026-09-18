@@ -28,6 +28,10 @@ class WhatsAppAdapter:
             instance_name = payload.get("instance") or settings.EVOLUTION_INSTANCE_NAME
             logger.info(f"[WhatsAppAdapter] Received webhook event: '{event}', instance: '{instance_name}'")
 
+            # Handle group-participants.update (detect unknown persons added/removed)
+            if event in ["group-participants.update", "group_participants_update", "groupparticipants.update"]:
+                return await WhatsAppAdapter._handle_group_participants_update(payload, instance_name)
+
             # Ignore calls, call offers, presence updates, contact syncing, chats updates, etc.
             if event and event not in ["messages.upsert", "messages_upsert", "send_message"]:
                 logger.debug(f"[WhatsAppAdapter] Skipping non-message event '{event}'")
@@ -49,6 +53,15 @@ class WhatsAppAdapter:
             if not remote_jid:
                 return None
 
+            is_group = "@g.us" in remote_jid
+
+            # STRICT PRIVACY & PERSONAL ASSISTANT RULE:
+            # Agents interact with our bot ONLY and ONLY in groups where /bot_here was sent.
+            # In 1-on-1 personal chats, the bot MUST NEVER intercept, transcribe, or send any message to contacts.
+            if not is_group:
+                logger.debug(f"[WhatsAppAdapter] Silently ignoring 1-on-1 private chat with {remote_jid} to protect personal contacts.")
+                return None
+
             # Skip outbound bot messages to prevent echo loops
             if from_me and msg_id in SENT_BOT_MESSAGE_IDS:
                 try:
@@ -56,12 +69,6 @@ class WhatsAppAdapter:
                 except KeyError:
                     pass
                 logger.info(f"[WhatsAppAdapter] Skipping outbound bot response (msg_id={msg_id})")
-                return None
-
-            is_group = "@g.us" in remote_jid
-
-            # STRICT PRIVACY: In 1-on-1 personal chats, NEVER process outbound messages/calls sent by user to other contacts
-            if from_me and not is_group:
                 return None
 
             group_metadata = payload.get("data", {}).get("groupMetadata", {})
@@ -185,6 +192,13 @@ class WhatsAppAdapter:
 
             logger.info(f"[WhatsAppAdapter] Processing incoming message from {sender_name} ({sender_id}) via instance '{instance_name}': '{raw_text}'")
 
+            sender_participant = (
+                key.get("participant")
+                or data.get("participant")
+                or payload.get("data", {}).get("participant")
+                or ""
+            )
+
             async with AsyncSessionLocal() as db:
                 response_text = await BotCommandHandler.handle_incoming_message(
                     db=db,
@@ -194,7 +208,8 @@ class WhatsAppAdapter:
                     raw_text=raw_text,
                     from_me=from_me,
                     instance_name=instance_name,
-                    group_subject=group_subject
+                    group_subject=group_subject,
+                    sender_participant=sender_participant
                 )
 
             if response_text:
@@ -209,6 +224,76 @@ class WhatsAppAdapter:
         except Exception as e:
             logger.error(f"[WhatsAppAdapter] Webhook error: {e}", exc_info=True)
             return None
+
+    @staticmethod
+    async def _handle_group_participants_update(payload: Dict[str, Any], instance_name: Optional[str]) -> Optional[str]:
+        """Handles group member additions/removals to enforce approved phone numbers security."""
+        try:
+            import re
+            from sqlalchemy import select
+            from app.models.tenant import Tenant
+            from app.bot.group_security import lock_group_due_to_unapproved_person, unlock_group, get_group_lock_unapproved_phone
+
+            data = payload.get("data", {})
+            if isinstance(data, list):
+                if not data:
+                    return None
+                data = data[0]
+
+            group_jid = data.get("id") or data.get("jid") or ""
+            if not group_jid or "@g.us" not in group_jid:
+                return None
+
+            action = str(data.get("action") or "").lower()
+            participants = data.get("participants", [])
+
+            async with AsyncSessionLocal() as db:
+                stmt = select(Tenant).where(Tenant.status == "active")
+                res = await db.execute(stmt)
+                tenants = res.scalars().all()
+                matched_tenant = next((t for t in tenants if group_jid in (t.allowed_group_jids or [])), None)
+                if not matched_tenant:
+                    return None
+
+                approved_nums = matched_tenant.get_approved_phone_numbers()
+
+                if action in ["add", "invite"]:
+                    for p in participants:
+                        digits = re.sub(r'\D', '', str(p).split('@')[0])
+                        suffix = digits[-9:] if len(digits) >= 9 else digits
+                        if digits not in approved_nums and suffix not in approved_nums:
+                            lock_group_due_to_unapproved_person(group_jid, digits)
+                            alert_text = (
+                                f"⚠️ *TƏHLÜKƏSİZLİK XƏBƏRDARLIĞI: Qrupa Yeni Şəxs Əlavə Edildi!* (+{digits})\n\n"
+                                "Bu nömrə təsdiqlənmiş agent heyəti siyahısında yoxdur. "
+                                "Məxfilik və təhlükəsizlik səbəbindən bu qrupda elanların paylaşılması və bot əmrləri dayandırıldı.\n\n"
+                                "📌 *Nə etməli?*\n"
+                                f"1. Bu şəxs komandanızın üzvüdürsə, nömrəni təsdiqləyin: `/nomre_elave {digits}`\n"
+                                "2. Və ya həmin şəxsi qrupdan çıxarın."
+                            )
+                            await WhatsAppAdapter.send_message(
+                                phone_number=group_jid,
+                                text=alert_text,
+                                instance_name=instance_name or f"tenant_{matched_tenant.id}"
+                            )
+                            return alert_text
+
+                elif action in ["remove", "leave"]:
+                    for p in participants:
+                        digits = re.sub(r'\D', '', str(p).split('@')[0])
+                        locked_phone = get_group_lock_unapproved_phone(group_jid)
+                        if locked_phone and (digits == locked_phone or digits.endswith(locked_phone) or locked_phone.endswith(digits)):
+                            unlock_group(group_jid)
+                            clear_text = "✅ Tanınmayan şəxs qrupdan çıxarıldı. Botun bu qrupdakı fəaliyyəti və elan göndərişi tam bərpa edildi! 🚀"
+                            await WhatsAppAdapter.send_message(
+                                phone_number=group_jid,
+                                text=clear_text,
+                                instance_name=instance_name or f"tenant_{matched_tenant.id}"
+                            )
+                            return clear_text
+        except Exception as e:
+            logger.debug(f"[WhatsAppAdapter] group-participants.update error: {e}")
+        return None
 
     @staticmethod
     def normalize_recipient(phone_number: str) -> str:
@@ -279,6 +364,13 @@ class WhatsAppAdapter:
             logger.warning(f"[WhatsAppAdapter] Cannot send message: invalid recipient '{phone_number}'")
             return False
 
+        # STRICT PRIVACY & PERSONAL ASSISTANT RULE:
+        # Agents interact with our bot ONLY and ONLY in groups where /bot_here was sent.
+        # Personal contacts and 1-on-1 chats must NEVER receive any message from our bot!
+        if "@g.us" not in clean_recipient:
+            logger.warning(f"[WhatsAppAdapter] Refusing to deliver message to personal 1-on-1 recipient '{clean_recipient}'. Bot delivery is strictly restricted to paired groups (@g.us).")
+            return False
+
         url = f"{base_url}/message/sendText/{inst}"
         body = {
             "number": clean_recipient,
@@ -347,6 +439,13 @@ class WhatsAppAdapter:
             logger.warning(f"[WhatsAppAdapter] Cannot send media: invalid recipient '{phone_number}'")
             return False
 
+        # STRICT PRIVACY & PERSONAL ASSISTANT RULE:
+        # Agents interact with our bot ONLY and ONLY in groups where /bot_here was sent.
+        # Personal contacts and 1-on-1 chats must NEVER receive any media from our bot!
+        if "@g.us" not in clean_recipient:
+            logger.warning(f"[WhatsAppAdapter] Refusing to deliver media to personal 1-on-1 recipient '{clean_recipient}'. Bot delivery is strictly restricted to paired groups (@g.us).")
+            return False
+
         try:
             with open(image_path, "rb") as img_f:
                 b64_data = base64.b64encode(img_f.read()).decode("utf-8")
@@ -408,6 +507,13 @@ class WhatsAppAdapter:
         clean_recipient = WhatsAppAdapter.normalize_recipient(phone_number)
         if not clean_recipient:
             logger.warning(f"[WhatsAppAdapter] Cannot send document: invalid recipient '{phone_number}'")
+            return False
+
+        # STRICT PRIVACY & PERSONAL ASSISTANT RULE:
+        # Agents interact with our bot ONLY and ONLY in groups where /bot_here was sent.
+        # Personal contacts and 1-on-1 chats must NEVER receive any document from our bot!
+        if "@g.us" not in clean_recipient:
+            logger.warning(f"[WhatsAppAdapter] Refusing to deliver document to personal 1-on-1 recipient '{clean_recipient}'. Bot delivery is strictly restricted to paired groups (@g.us).")
             return False
 
         try:

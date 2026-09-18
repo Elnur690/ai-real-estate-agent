@@ -431,6 +431,12 @@ class IngestionService:
                 if not dest_chat_id or dest_chat_id not in allowed:
                     dest_chat_id = allowed[0]
 
+                # Security Guard: Don't deliver listings if an unapproved person is present in the group
+                from app.bot.group_security import is_group_locked
+                if is_group_locked(dest_chat_id):
+                    logger.warning(f"[IngestionService] Skipping price drop alert delivery to locked group {dest_chat_id} (unapproved contact present)")
+                    continue
+
                 wa_sent = await WhatsAppAdapter.send_message(
                     phone_number=dest_chat_id,
                     text=msg,
@@ -1385,6 +1391,12 @@ class IngestionService:
                         continue
                     if not dest_chat_id or dest_chat_id not in allowed:
                         dest_chat_id = allowed[0]
+
+                    # Security Guard: Don't deliver listings if an unapproved person is present in the group
+                    from app.bot.group_security import is_group_locked
+                    if is_group_locked(dest_chat_id):
+                        logger.warning(f"[IngestionService] Skipping match delivery to locked group {dest_chat_id} (unapproved contact present)")
+                        continue
                 else:
                     if not dest_chat_id:
                         dest_chat_id = tenant.telegram_chat_id

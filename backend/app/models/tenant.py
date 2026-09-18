@@ -85,6 +85,25 @@ class Tenant(Base):
     parent_tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True)
     assigned_districts: Mapped[list[Any] | None] = mapped_column(JSON, default=list)
     allowed_group_jids: Mapped[list[Any] | None] = mapped_column(JSON, default=list)
+    approved_phone_numbers: Mapped[list[Any] | None] = mapped_column(JSON, default=list)
+
+    def get_approved_phone_numbers(self) -> set[str]:
+        """
+        Returns normalized phone digits (both full digits and 9-digit local suffix)
+        for all approved agent numbers:
+        1. Primary number (whatsapp_number or phone)
+        2. Up to 2 extra numbers from approved_phone_numbers
+        """
+        import re
+        nums = set()
+        for raw in [self.whatsapp_number, self.phone] + list(self.approved_phone_numbers or []):
+            if raw:
+                digits = re.sub(r'\D', '', str(raw).split('@')[0])
+                if digits:
+                    nums.add(digits)
+                    if len(digits) >= 9:
+                        nums.add(digits[-9:])
+        return nums
 
     # 🏢 Reseller / Seller Linkage (Multi-Tenant Franchise)
     seller_id: Mapped[int | None] = mapped_column(ForeignKey("sellers.id", ondelete="SET NULL"), nullable=True, index=True)

@@ -49,6 +49,7 @@ class CreateTenantRequest(BaseModel):
     custom_domain_enabled: bool = False
     custom_domain_status: str = "disabled"
     addon_custom_domain_price: float = 5.0
+    approved_phone_numbers: Optional[List[str]] = None
 
 class UpdateTenantRequest(BaseModel):
     name: Optional[str] = None
@@ -88,6 +89,7 @@ class UpdateTenantRequest(BaseModel):
     custom_domain_enabled: Optional[bool] = None
     custom_domain_status: Optional[str] = None
     addon_custom_domain_price: Optional[float] = None
+    approved_phone_numbers: Optional[List[str]] = None
 
 class TenantResponse(BaseModel):
     id: int
@@ -137,6 +139,7 @@ class TenantResponse(BaseModel):
     custom_domain_status: str = "disabled"
     addon_custom_domain_price: float = 5.0
     custom_domain_expires_at: Optional[datetime] = None
+    approved_phone_numbers: Optional[List[str]] = None
     active_searches_count: int = 0
     max_saved_searches: int = 10
     referral_code: Optional[str] = None
@@ -282,7 +285,8 @@ async def create_tenant(body: CreateTenantRequest, db: AsyncSession = Depends(ge
         portfolio_slug=unique_slug,
         plan_started_at=now_utc,
         plan_expires_at=expires_at,
-        status="active"
+        status="active",
+        approved_phone_numbers=body.approved_phone_numbers or []
     )
     db.add(tenant)
     await db.commit()

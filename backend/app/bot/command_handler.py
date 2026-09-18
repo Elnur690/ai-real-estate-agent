@@ -52,7 +52,8 @@ class BotCommandHandler:
         raw_text: str,
         from_me: bool = False,
         instance_name: Optional[str] = None,
-        group_subject: Optional[str] = None
+        group_subject: Optional[str] = None,
+        sender_participant: Optional[str] = None
     ) -> Optional[str]:
         """
         Shared command handler for WhatsApp and Telegram bots.
@@ -202,6 +203,16 @@ class BotCommandHandler:
                             await db.commit()
                         break
 
+            # 4. In WhatsApp group (@g.us), resolve tenant via allowed_group_jids
+            if not tenant and "@g.us" in sender_id:
+                stmt_all_t = select(Tenant).where(Tenant.status == "active")
+                res_all_t = await db.execute(stmt_all_t)
+                all_active_t = res_all_t.scalars().all()
+                for t in all_active_t:
+                    if sender_id in (t.allowed_group_jids or []):
+                        tenant = t
+                        break
+
         is_group = "@g.us" in sender_id
         is_cmd = (
             raw_text_trimmed.startswith("/") or
@@ -229,10 +240,10 @@ class BotCommandHandler:
         # 2. Strict Privacy & Group Filtering for WhatsApp
         if channel == "whatsapp":
             if not is_group:
-                # On 1-on-1 personal chats: NEVER reply to casual conversations, client inquiries, or personal messages
-                # ONLY respond if an explicit command was typed
-                if not is_cmd:
-                    return None
+                # STRICT PRIVACY & PERSONAL ASSISTANT RULE:
+                # Agents interact with our bot ONLY and ONLY in groups where /bot_here was sent.
+                # In 1-on-1 personal chats, the bot must NEVER intercept or send any messages to contacts!
+                return None
             else:
                 allowed_groups = list(tenant.allowed_group_jids or [])
 
@@ -257,6 +268,40 @@ class BotCommandHandler:
                     # Message in an un-paired WhatsApp group -> SILENTLY IGNORE!
                     return None
 
+                # Group is paired: Enforce approved phone numbers security
+                from app.bot.group_security import lock_group_due_to_unapproved_person, is_group_locked
+
+                # Check if sender participant is approved
+                if not from_me and sender_participant:
+                    sender_digits = re.sub(r'\D', '', str(sender_participant).split('@')[0])
+                    sender_suffix = sender_digits[-9:] if len(sender_digits) >= 9 else sender_digits
+                    approved_nums = tenant.get_approved_phone_numbers()
+                    if sender_digits not in approved_nums and sender_suffix not in approved_nums:
+                        lock_group_due_to_unapproved_person(sender_id, sender_digits)
+                        return (
+                            f"⚠️ *TƏHLÜKƏSİZLİK XƏBƏRDARLIĞI: Qrupda Tanınmayan Şəxs Aşkarlandı!* (+{sender_digits})\n\n"
+                            "Bu nömrə təsdiqlənmiş agent heyəti siyahısında yoxdur. "
+                            "Məxfilik və təhlükəsizlik səbəbindən bu qrupda elanların paylaşılması və bot əmrləri dayandırıldı.\n\n"
+                            "📌 *Nə etməli?*\n"
+                            f"1. Bu şəxs komandanızın üzvüdürsə, nömrəni təsdiqləyin: `/nomre_elave {sender_digits}`\n"
+                            "2. Və ya həmin şəxsi qrupdan çıxarın."
+                        )
+
+                # Check if group is currently locked due to an unapproved contact
+                is_nomre_cmd = any(text_lower.startswith(c) for c in [
+                    "/nomre", "/nömrə", "/nomreler", "/nömrələr", "/nomre_elave", "/nomre_sil",
+                    "/add_number", "/remove_number", "/numbers", "nömrələr", "nomreler"
+                ])
+                if is_group_locked(sender_id) and not is_nomre_cmd:
+                    from app.bot.group_security import get_group_lock_unapproved_phone
+                    locked_phone = get_group_lock_unapproved_phone(sender_id) or "naməlum"
+                    return (
+                        f"🔒 *QRUP BLOKLANIB: Təsdiqlənməmiş şəxs aşkar edilib (+{locked_phone})!*\n\n"
+                        "Məxfilik qaydalarına əsasən, qrupda tanınmayan nömrə olduğu müddətdə elanlar və bot əmrləri icra olunmur.\n\n"
+                        "Nömrəni təsdiqləmək üçün: `/nomre_elave <nömrə>`\n"
+                        "Təsdiqlənmiş nömrələrə baxmaq üçün: `/nomreler`"
+                    )
+
         # 3. Handle Slash Commands & Fast-Path Menu Shortcuts
         if text_lower in ["/command", "/commands", "/komanda", "/komandalar", "/əmrlər", "/emrler", "command", "commands", "komanda", "komandalar", "əmrlər", "emrler", "2"]:
             return BotCommandHandler._get_commands_list(app_name)
@@ -275,6 +320,97 @@ class BotCommandHandler:
             tenant.preferred_channel = new_channel
             await db.commit()
             return f"Bildiriş kanalı uğurla *{new_channel.capitalize()}* olaraq dəyişdirildi! 📲"
+
+        # List Approved Phone Numbers (/nomreler, /nömrələr, /numbers)
+        if text_lower in ["/nomreler", "/nömrələr", "/nomre", "/nömrə", "/numbers", "nömrələr", "nomreler"]:
+            primary_num = tenant.whatsapp_number or tenant.phone or "Qeyd edilməyib"
+            extra_nums = list(tenant.approved_phone_numbers or [])
+            lines = [
+                f"📱 *TƏSDİQLƏNMİŞ ƏLAQƏ NÖMRƏLƏRİ ({len(extra_nums) + 1}/3)*\n",
+                f"1️⃣ *Əsas Agent Nömrəsi:* +{primary_num} (WhatsApp Hesabı)"
+            ]
+            for idx, num in enumerate(extra_nums, start=2):
+                lines.append(f"{idx}️⃣ *Əlavə Təsdiqlənmiş:* +{num}")
+
+            rem_slots = max(0, 2 - len(extra_nums))
+            lines.append(f"\n💡 *Boş yer:* {rem_slots} nömrə")
+            lines.append("▪️ Nömrə əlavə etmək: `/nomre_elave <nömrə>` (məs: `/nomre_elave 0501234567`)")
+            if extra_nums:
+                lines.append("▪️ Nömrəni silmək: `/nomre_sil <nömrə>`")
+            return "\n".join(lines)
+
+        # Add Approved Phone Number (/nomre_elave <phone>, /add_number <phone>)
+        add_num_match = re.search(r'^(?:/nomre_elave|/nömrə_əlavə|/add_number|nomre_elave|nömrə əlavə)\s+(.+)', text_lower)
+        if add_num_match:
+            raw_input = add_num_match.group(1).strip()
+            digits = re.sub(r'\D', '', raw_input.split('@')[0])
+            if digits.startswith("0") and len(digits) == 10:
+                digits = "994" + digits[1:]
+            elif not digits.startswith("994") and len(digits) == 9:
+                digits = "994" + digits
+
+            if len(digits) < 9:
+                return "⚠️ Yanlış nömrə formatı. Zəhmət olmasa düzgün telefon nömrəsi daxil edin (məs: `/nomre_elave 0501234567`)."
+
+            current_extras = list(tenant.approved_phone_numbers or [])
+            primary_digits = re.sub(r'\D', '', str(tenant.whatsapp_number or tenant.phone or ""))
+
+            if digits == primary_digits or (primary_digits and digits.endswith(primary_digits[-9:])):
+                return f"ℹ️ +{digits} artıq sizin əsas qeydiyyat nömrənizdir."
+
+            for existing in current_extras:
+                ex_digits = re.sub(r'\D', '', str(existing))
+                if digits == ex_digits or digits.endswith(ex_digits[-9:]):
+                    return f"ℹ️ +{digits} artıq təsdiqlənmiş nömrələr siyahısındadır."
+
+            if len(current_extras) >= 2:
+                return (
+                    "🚫 *Limit doldu:* Maksimum 3 təsdiqlənmiş nömrəyə (1 əsas + 2 əlavə) icazə verilir.\n\n"
+                    "Yeni nömrə əlavə etmək üçün əvvəlcə köhnələrdən birini silin: `/nomre_sil <nömrə>`"
+                )
+
+            current_extras.append(digits)
+            tenant.approved_phone_numbers = current_extras
+            await db.commit()
+
+            # Unlock group if it was locked
+            from app.bot.group_security import unlock_group, get_group_lock_unapproved_phone
+            if is_group:
+                locked_phone = get_group_lock_unapproved_phone(sender_id)
+                if locked_phone and (digits == locked_phone or digits.endswith(locked_phone) or locked_phone.endswith(digits)):
+                    unlock_group(sender_id)
+
+            return (
+                f"✅ *Nömrə uğurla təsdiqləndi!* (+{digits})\n\n"
+                f"İndi bu nömrə işçi qrupunda sərbəst yaza və botdan istifadə edə bilər. "
+                f"Cari təsdiqlənmiş nömrə sayı: {len(current_extras) + 1}/3 🚀"
+            )
+
+        # Remove Approved Phone Number (/nomre_sil <phone>, /remove_number <phone>)
+        del_num_match = re.search(r'^(?:/nomre_sil|/nömrə_sil|/remove_number|nomre_sil|nömrə sil)\s+(.+)', text_lower)
+        if del_num_match:
+            raw_input = del_num_match.group(1).strip()
+            digits = re.sub(r'\D', '', raw_input.split('@')[0])
+            primary_digits = re.sub(r'\D', '', str(tenant.whatsapp_number or tenant.phone or ""))
+
+            if digits and primary_digits and (digits == primary_digits or digits.endswith(primary_digits[-9:])):
+                return "🚫 Əsas hesab nömrəsini təsdiqlənmiş siyahıdan silmək mümkün deyil."
+
+            current_extras = list(tenant.approved_phone_numbers or [])
+            found = None
+            for item in current_extras:
+                it_digits = re.sub(r'\D', '', str(item))
+                if digits == it_digits or (digits and digits.endswith(it_digits[-9:])) or (it_digits and it_digits.endswith(digits[-9:])):
+                    found = item
+                    break
+
+            if not found:
+                return f"⚠️ +{digits} təsdiqlənmiş nömrələr siyahısında tapılmadı."
+
+            current_extras.remove(found)
+            tenant.approved_phone_numbers = current_extras
+            await db.commit()
+            return f"✅ +{found} təsdiqlənmiş nömrələr siyahısından silindi. Cari nömrə sayı: {len(current_extras) + 1}/3."
 
         # Cancel Draft Command
         if text_lower in CANCEL_KEYWORDS:
@@ -1996,6 +2132,9 @@ class BotCommandHandler:
             f"▪️ `/status` (və ya `/plan`) — Abunəlik statusunuz və limitləriniz\n"
             f"▪️ `/paket` — Əlavə axtarış, arxiv, foto və CRM paketləri\n"
             f"▪️ `/channel` (və ya `/kanal`) — Bildiriş kanalını dəyişmək (WhatsApp / Telegram)\n"
+            f"▪️ `/nomreler` (və ya `/numbers`) — Təsdiqlənmiş agent nömrələri (maks. 3 nömrə) 📱\n"
+            f"▪️ `/nomre_elave <nömrə>` — Qrupda istifadə üçün əlavə nömrə təsdiqləmək\n"
+            f"▪️ `/nomre_sil <nömrə>` — Təsdiqlənmiş əlavə nömrəni silmək\n"
             f"▪️ `/bot_here` (və ya `bot qoş`) — Botu WhatsApp işçi qrupuna qoşmaq\n"
             f"▪️ `/bot_leave` (və ya `bot çıx`, `bot ayır`) — Botu WhatsApp qrupundan ayırmaq\n\n"
             f"💬 *Elan Reaksiyaları (Bildirişin altında birbaşa toxunun):*\n"

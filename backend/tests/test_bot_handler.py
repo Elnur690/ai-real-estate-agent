@@ -497,4 +497,206 @@ async def test_bot_unrelated_message_handling():
     await engine.dispose()
 
 
+@pytest.mark.asyncio
+async def test_whatsapp_strict_group_policy_and_approved_numbers():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with async_session() as db:
+        tenant = Tenant(
+            name="Test Agent",
+            phone="+994501112233",
+            whatsapp_number="994501112233",
+            preferred_channel="whatsapp",
+            status="active",
+            plan="pro",
+            allowed_group_jids=["120363000000000000@g.us"],
+            approved_phone_numbers=[]
+        )
+        db.add(tenant)
+        await db.commit()
+        await db.refresh(tenant)
+
+        # 1. Test 1-on-1 private WhatsApp messages: must return None (silently ignored)
+        resp_1on1 = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="whatsapp",
+            sender_id="994509998877", # Private chat contact
+            sender_name="Client",
+            raw_text="Salam, bu mənzil hələ satışdadır?",
+            from_me=False
+        )
+        assert resp_1on1 is None
+
+        # 1b. Even commands in 1-on-1 private WhatsApp chats must return None
+        resp_cmd_1on1 = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="whatsapp",
+            sender_id="994501112233",
+            sender_name="Test Agent",
+            raw_text="/searches",
+            from_me=False
+        )
+        assert resp_cmd_1on1 is None
+
+        # 2. Test un-paired group message: must return None (silently ignored)
+        resp_unpaired = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="whatsapp",
+            sender_id="120363999999999999@g.us",
+            sender_name="Random Group",
+            raw_text="/searches",
+            from_me=False
+        )
+        assert resp_unpaired is None
+
+        # 3. Test primary agent sending in paired group: permitted
+        resp_paired = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="whatsapp",
+            sender_id="120363000000000000@g.us",
+            sender_name="Agent Workgroup",
+            raw_text="/searches",
+            from_me=True
+        )
+        assert resp_paired is not None
+        assert "axtarış" in resp_paired.lower()
+
+        # 4. Test /nomreler command
+        resp_nums = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="whatsapp",
+            sender_id="120363000000000000@g.us",
+            sender_name="Agent Workgroup",
+            raw_text="/nomreler",
+            from_me=True
+        )
+        assert "TƏSDİQLƏNMİŞ ƏLAQƏ NÖMRƏLƏRİ" in resp_nums
+        assert "994501112233" in resp_nums
+        assert "2 nömrə" in resp_nums
+
+        # 5. Add 1st extra approved number
+        resp_add1 = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="whatsapp",
+            sender_id="120363000000000000@g.us",
+            sender_name="Agent Workgroup",
+            raw_text="/nomre_elave 0552223344",
+            from_me=True
+        )
+        assert "Nömrə uğurla təsdiqləndi" in resp_add1
+        assert "994552223344" in resp_add1
+        await db.refresh(tenant)
+        assert len(tenant.approved_phone_numbers) == 1
+
+        # 6. Add 2nd extra approved number (max 3 reached: 1 primary + 2 extras)
+        resp_add2 = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="whatsapp",
+            sender_id="120363000000000000@g.us",
+            sender_name="Agent Workgroup",
+            raw_text="/nomre_elave 0703334455",
+            from_me=True
+        )
+        assert "Nömrə uğurla təsdiqləndi" in resp_add2
+        await db.refresh(tenant)
+        assert len(tenant.approved_phone_numbers) == 2
+
+        # 7. Attempting to add a 3rd extra number (exceeding 3 total): rejected
+        resp_add3 = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="whatsapp",
+            sender_id="120363000000000000@g.us",
+            sender_name="Agent Workgroup",
+            raw_text="/nomre_elave 0774445566",
+            from_me=True
+        )
+        assert "Limit doldu" in resp_add3
+
+        # 8. Test approved colleague sending message in group: allowed
+        resp_colleague = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="whatsapp",
+            sender_id="120363000000000000@g.us",
+            sender_name="Agent Workgroup",
+            raw_text="/searches",
+            from_me=False,
+            sender_participant="994552223344@s.whatsapp.net"
+        )
+        assert resp_colleague is not None
+        assert "axtarış" in resp_colleague.lower()
+
+        # 9. Test unapproved person sending message in group: triggers security lock and alert
+        from app.bot.group_security import is_group_locked
+        resp_unapproved = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="whatsapp",
+            sender_id="120363000000000000@g.us",
+            sender_name="Agent Workgroup",
+            raw_text="/searches",
+            from_me=False,
+            sender_participant="994998887766@s.whatsapp.net"
+        )
+        assert "TƏHLÜKƏSİZLİK XƏBƏRDARLIĞI" in resp_unapproved
+        assert "994998887766" in resp_unapproved
+        assert is_group_locked("120363000000000000@g.us") is True
+
+        # 10. While locked, any command in that group is blocked
+        resp_blocked = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="whatsapp",
+            sender_id="120363000000000000@g.us",
+            sender_name="Agent Workgroup",
+            raw_text="/searches",
+            from_me=True
+        )
+        assert "QRUP BLOKLANIB" in resp_blocked
+
+        # 11. Remove an extra number and remove primary check
+        resp_del_primary = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="whatsapp",
+            sender_id="120363000000000000@g.us",
+            sender_name="Agent Workgroup",
+            raw_text="/nomre_sil 0501112233",
+            from_me=True
+        )
+        assert "Əsas hesab nömrəsini təsdiqlənmiş siyahıdan silmək mümkün deyil" in resp_del_primary
+
+        resp_del_extra = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="whatsapp",
+            sender_id="120363000000000000@g.us",
+            sender_name="Agent Workgroup",
+            raw_text="/nomre_sil 0703334455",
+            from_me=True
+        )
+        assert "təsdiqlənmiş nömrələr siyahısından silindi" in resp_del_extra
+        await db.refresh(tenant)
+        assert len(tenant.approved_phone_numbers) == 1
+
+        # 12. Approve the unknown number to unlock
+        resp_approve_unlocked = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="whatsapp",
+            sender_id="120363000000000000@g.us",
+            sender_name="Agent Workgroup",
+            raw_text="/nomre_elave 994998887766",
+            from_me=True
+        )
+        assert "Nömrə uğurla təsdiqləndi" in resp_approve_unlocked
+        assert is_group_locked("120363000000000000@g.us") is False
+
+        # 13. Test WhatsAppAdapter rejecting non-group sends
+        from app.bot.whatsapp_adapter import WhatsAppAdapter
+        send_1on1_res = await WhatsAppAdapter.send_message("994509998877", "Hello client")
+        assert send_1on1_res is False
+
+    await engine.dispose()
+
+
+
 
