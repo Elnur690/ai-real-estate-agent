@@ -156,12 +156,14 @@ def normalize_proxy_url(proxy_str: Optional[str]) -> str:
     Normalizes different proxy formats into standard URL format:
     - 'http://user:pass@ip:port' -> 'http://user:pass@ip:port'
     - 'ip:port:user:pass' -> 'http://user:pass@ip:port'
+    - 'user:pass:ip:port' -> 'http://user:pass@ip:port'
     - 'user:pass@ip:port' -> 'http://user:pass@ip:port'
+    - 'https://user:pass@ip:port' -> 'http://user:pass@ip:port' (converts to HTTP connect proxy)
     - 'ip:port' -> 'http://ip:port'
     """
     if not proxy_str:
         return ""
-    p = proxy_str.strip().strip('"\'')
+    p = proxy_str.strip().strip('"\'').rstrip("/")
     if not p:
         return ""
 
@@ -176,17 +178,29 @@ def normalize_proxy_url(proxy_str: Optional[str]) -> str:
     scheme = "http"
     if "://" in p:
         parts_scheme = p.split("://", 1)
-        scheme = parts_scheme[0].lower()
+        # Proxy connection tunnels use http:// rather than https://
+        if parts_scheme[0].lower() in ("http", "https"):
+            scheme = "http"
+        else:
+            scheme = parts_scheme[0].lower()
         rest = parts_scheme[1]
     else:
         rest = p
 
-    # If rest contains 4 or more colon-separated elements: HOST:PORT:USER:PASS
+    rest = rest.split("/")[0].strip()
+
     if "@" not in rest:
         parts = rest.split(":")
         if len(parts) >= 4:
-            host, port, user = parts[0], parts[1], parts[2]
-            pwd = ":".join(parts[3:])
+            # Check whether format is HOST:PORT:USER:PASS or USER:PASS:HOST:PORT
+            if parts[1].isdigit():
+                host, port, user = parts[0], parts[1], parts[2]
+                pwd = ":".join(parts[3:])
+            elif parts[-1].isdigit():
+                user, pwd, host, port = parts[0], parts[1], parts[2], parts[3]
+            else:
+                host, port, user = parts[0], parts[1], parts[2]
+                pwd = ":".join(parts[3:])
             return f"{scheme}://{user}:{pwd}@{host}:{port}"
         elif len(parts) == 2:
             return f"{scheme}://{rest}"
@@ -241,6 +255,54 @@ def update_runtime_proxy_pool(
         "proxies": clean_proxies
     })
     logger.info(f"[ScraperUtils] Updated runtime proxy pool: {len(clean_proxies)} proxies, primary: {_RUNTIME_PROXY_CONFIG['primary']}, enabled: {enabled}, rotation: {rotation}")
+
+_LAST_PROXY_DB_SYNC: float = 0.0
+
+async def sync_proxy_pool_from_db(db: Optional[Any] = None, force: bool = False) -> None:
+    """
+    Synchronizes in-memory _RUNTIME_PROXY_CONFIG with the AppSettings table in the database.
+    Ensures Celery workers, background jobs, and web processes dynamically reload the latest
+    proxies (e.g. IPRoyal, custom pools) saved in SaaS Admin Settings without container restarts.
+    """
+    global _LAST_PROXY_DB_SYNC
+    now = time.time()
+    if not force and (now - _LAST_PROXY_DB_SYNC < 30.0):
+        return
+
+    try:
+        from sqlalchemy import select
+        from app.models.setting import AppSettings
+
+        async def _load(session: Any):
+            stmt = select(AppSettings).where(AppSettings.key.in_([
+                "bina_az_proxy_url", "proxy_pool_urls", "proxy_enabled", "proxy_rotation_enabled"
+            ]))
+            res = await session.execute(stmt)
+            items = res.scalars().all()
+            settings_map = {item.key: item.value for item in items}
+            if settings_map:
+                raw_pool = settings_map.get("proxy_pool_urls", "")
+                pool = [p.strip() for p in raw_pool.splitlines() if p.strip()] if raw_pool else None
+                primary = settings_map.get("bina_az_proxy_url")
+                enabled = settings_map.get("proxy_enabled", "true").lower() in ("true", "1", "yes")
+                rotation = settings_map.get("proxy_rotation_enabled", "true").lower() in ("true", "1", "yes")
+                update_runtime_proxy_pool(
+                    proxies=pool,
+                    primary_proxy=primary,
+                    enabled=enabled,
+                    rotation=rotation
+                )
+
+        if db is not None:
+            await _load(db)
+        else:
+            from app.db.session import AsyncSessionLocal
+            async with AsyncSessionLocal() as session:
+                await _load(session)
+
+        _LAST_PROXY_DB_SYNC = now
+    except Exception as e:
+        logger.debug(f"[ScraperUtils] DB proxy sync notice: {e}")
 
 # Domain-level concurrency limits, cooldowns, and block tracking
 _DOMAIN_SEMAPHORES: Dict[str, asyncio.Semaphore] = {}
@@ -412,17 +474,40 @@ async def test_proxy_connection(proxy_url: Optional[str] = None) -> Dict[str, An
     }
 
 def get_rotating_proxy(explicit_proxy: Optional[str] = None) -> Optional[str]:
-    """Returns the configured proxy or a random working proxy from the Webshare pool."""
+    """Returns the configured proxy or a random working proxy from the pool."""
     from app.core.config import settings
     if explicit_proxy:
         return explicit_proxy
     if not _RUNTIME_PROXY_CONFIG.get("enabled", True):
         return None
-    if _RUNTIME_PROXY_CONFIG.get("primary"):
-        return _RUNTIME_PROXY_CONFIG["primary"]
-    pool = get_healthy_proxies(_RUNTIME_PROXY_CONFIG.get("proxies") or WEBSHARE_PROXIES)
-    if pool and _RUNTIME_PROXY_CONFIG.get("rotation", True):
-        return random.choice(pool)
+
+    primary = _RUNTIME_PROXY_CONFIG.get("primary")
+    pool = list(_RUNTIME_PROXY_CONFIG.get("proxies") or [])
+    if not pool and not primary:
+        pool = list(WEBSHARE_PROXIES)
+
+    rotation = _RUNTIME_PROXY_CONFIG.get("rotation", True)
+    healthy_pool = get_healthy_proxies(pool)
+
+    # If rotation is enabled, rotate among healthy proxies (including primary if defined)
+    if rotation:
+        candidates = list(healthy_pool)
+        if primary and primary not in candidates and primary not in _QUARANTINED_PROXIES:
+            candidates.append(primary)
+        if candidates:
+            return random.choice(candidates)
+
+    # If primary is specified and healthy, use primary
+    if primary and primary not in _QUARANTINED_PROXIES:
+        return primary
+
+    if healthy_pool:
+        return healthy_pool[0]
+
+    # Fallback: if primary is configured (e.g. residential rotating backconnect), return it
+    if primary:
+        return primary
+
     if settings.BINA_AZ_PROXY_URL:
         return settings.BINA_AZ_PROXY_URL
     if settings.SCRAPER_PROXY_URL:
@@ -541,6 +626,10 @@ async def fetch_stealth_page(
     semaphore = get_domain_semaphore(domain, max_concurrent=max_concurrent)
 
     async with semaphore:
+        # Automatically synchronize runtime proxy pool from AppSettings if older than 30s
+        if time.time() - _LAST_PROXY_DB_SYNC >= 30.0:
+            await sync_proxy_pool_from_db()
+
         # Polite randomized jitter before requests to sensitive sites
         if any(d in domain for d in ("tap.az", "bina.az", "turbo.az")):
             await asyncio.sleep(random.uniform(1.2, 2.8))

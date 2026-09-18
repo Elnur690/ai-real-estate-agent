@@ -669,6 +669,10 @@ class IngestionService:
     @staticmethod
     async def run_ingestion_cycle(db: Optional[AsyncSession] = None) -> dict:
         from app.db.session import AsyncSessionLocal
+        from app.scrapers.utils import sync_proxy_pool_from_db
+
+        # Ensure latest proxies from SaaS Admin Settings are synced to runtime pool
+        await sync_proxy_pool_from_db(db)
 
         # 1. Read sources and saved searches with short-lived session
         if db is not None:
