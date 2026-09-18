@@ -27,7 +27,7 @@ class TapAzScraper(BaseScraper):
 
         headers = get_random_headers(referer="https://tap.az/elanlar/dasinmaz-emlak")
         try:
-            res_text, res_status = await fetch_stealth_page(clean_url, headers=headers, timeout=8.0, referer="https://tap.az/elanlar/dasinmaz-emlak")
+            res_text, res_status = await fetch_stealth_page(clean_url, headers=headers, timeout=20.0, referer="https://tap.az/elanlar/dasinmaz-emlak")
             if res_status != 200 or not res_text:
                 return {}
 
@@ -114,7 +114,7 @@ class TapAzScraper(BaseScraper):
                 try:
                     await polite_delay(1.5, 3.2)
                     headers = get_random_headers(referer="https://tap.az/")
-                    res_text, res_status = await fetch_stealth_page(target_url, headers=headers, timeout=8.0, referer="https://tap.az/")
+                    res_text, res_status = await fetch_stealth_page(target_url, headers=headers, timeout=20.0, referer="https://tap.az/")
                     if res_status != 200 or not res_text:
                         continue
 

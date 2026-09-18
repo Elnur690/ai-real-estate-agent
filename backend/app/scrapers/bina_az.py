@@ -78,7 +78,7 @@ class BinaAzScraper(BaseScraper):
             p_text, p_status = await fetch_stealth_page(
                 f"https://bina.az/items/{ext_id}/phones",
                 headers=phone_headers,
-                timeout=5.0,
+                timeout=15.0,
                 referer=url
             )
             if p_status == 200 and p_text:
@@ -95,7 +95,7 @@ class BinaAzScraper(BaseScraper):
             res_text, res_status = await fetch_stealth_page(
                 url,
                 headers=headers,
-                timeout=6.0,
+                timeout=20.0,
                 referer="https://bina.az/items"
             )
             if res_status != 200 or not res_text:
@@ -347,7 +347,7 @@ class BinaAzScraper(BaseScraper):
                         html_text, status_code = await fetch_stealth_page(
                             target_url,
                             headers=req_headers,
-                            timeout=9.0,
+                            timeout=20.0,
                             referer="https://bina.az/"
                         )
                         if status_code != 200 or not html_text:

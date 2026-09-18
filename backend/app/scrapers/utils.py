@@ -399,38 +399,47 @@ async def test_proxy_connection(proxy_url: Optional[str] = None) -> Dict[str, An
 
     try:
         from curl_cffi.requests import AsyncSession
-        async with AsyncSession(impersonate="chrome124", proxy=target_proxy, timeout=18) as session:
-            try:
-                ip_resp = await session.get("https://api.ipify.org?format=json", timeout=8)
-                ip_status = ip_resp.status_code
-                if ip_resp.status_code == 200:
-                    try:
-                        detected_ip = ip_resp.json().get("ip", ip_resp.text.strip())
-                    except Exception:
-                        detected_ip = ip_resp.text.strip()
-            except Exception as e:
-                detected_ip = f"Xəta: {e}"
-                error_msg = str(e)
+        async with AsyncSession(impersonate="chrome124", proxy=target_proxy, timeout=22) as session:
+            async def _check_ip():
+                nonlocal detected_ip, ip_status, error_msg
+                try:
+                    ip_resp = await session.get("https://api.ipify.org?format=json", timeout=12)
+                    ip_status = ip_resp.status_code
+                    if ip_resp.status_code == 200:
+                        try:
+                            detected_ip = ip_resp.json().get("ip", ip_resp.text.strip())
+                        except Exception:
+                            detected_ip = ip_resp.text.strip()
+                except Exception as e:
+                    detected_ip = f"Xəta: {e}"
+                    if not error_msg:
+                        error_msg = str(e)
 
-            try:
-                bina_resp = await session.get("https://bina.az/items", timeout=12)
-                bina_status = bina_resp.status_code
-                soup = BeautifulSoup(bina_resp.text[:5000], "html.parser")
-                if soup.title and soup.title.string:
-                    bina_title = soup.title.string.strip()
-            except Exception as e:
-                if not error_msg:
-                    error_msg = str(e)
+            async def _check_bina():
+                nonlocal bina_status, bina_title, error_msg
+                try:
+                    bina_resp = await session.get("https://bina.az/items", timeout=18)
+                    bina_status = bina_resp.status_code
+                    soup = BeautifulSoup(bina_resp.text[:5000], "html.parser")
+                    if soup.title and soup.title.string:
+                        bina_title = soup.title.string.strip()
+                except Exception as e:
+                    if not error_msg:
+                        error_msg = str(e)
 
-            try:
-                tap_resp = await session.get("https://tap.az/elanlar/dasinmaz-emlak", timeout=12)
-                tap_status = tap_resp.status_code
-                soup_tap = BeautifulSoup(tap_resp.text[:5000], "html.parser")
-                if soup_tap.title and soup_tap.title.string:
-                    tap_title = soup_tap.title.string.strip()
-            except Exception as e:
-                if not error_msg:
-                    error_msg = str(e)
+            async def _check_tap():
+                nonlocal tap_status, tap_title, error_msg
+                try:
+                    tap_resp = await session.get("https://tap.az/elanlar/dasinmaz-emlak", timeout=18)
+                    tap_status = tap_resp.status_code
+                    soup_tap = BeautifulSoup(tap_resp.text[:5000], "html.parser")
+                    if soup_tap.title and soup_tap.title.string:
+                        tap_title = soup_tap.title.string.strip()
+                except Exception as e:
+                    if not error_msg:
+                        error_msg = str(e)
+
+            await asyncio.gather(_check_ip(), _check_bina(), _check_tap())
     except Exception as e:
         error_msg = str(e)
 
@@ -489,17 +498,13 @@ def get_rotating_proxy(explicit_proxy: Optional[str] = None) -> Optional[str]:
     rotation = _RUNTIME_PROXY_CONFIG.get("rotation", True)
     healthy_pool = get_healthy_proxies(pool)
 
-    # If rotation is enabled, rotate among healthy proxies (including primary if defined)
-    if rotation:
-        candidates = list(healthy_pool)
-        if primary and primary not in candidates and primary not in _QUARANTINED_PROXIES:
-            candidates.append(primary)
-        if candidates:
-            return random.choice(candidates)
-
     # If primary is specified and healthy, use primary
     if primary and primary not in _QUARANTINED_PROXIES:
         return primary
+
+    # If rotation is enabled, rotate among healthy proxies
+    if rotation and healthy_pool:
+        return random.choice(healthy_pool)
 
     if healthy_pool:
         return healthy_pool[0]
@@ -672,7 +677,9 @@ async def fetch_stealth_page(
 
             try:
                 from curl_cffi.requests import AsyncSession
-                async with AsyncSession(impersonate=chosen_impersonate, proxy=active_proxy, timeout=timeout) as session:
+                # Residential proxies (IPRoyal) routing via TR and AZ can take 8-15 seconds for connection handshake
+                effective_timeout = max(timeout, 20.0) if is_res else timeout
+                async with AsyncSession(impersonate=chosen_impersonate, proxy=active_proxy, timeout=effective_timeout) as session:
                     res = await session.get(url, headers=req_headers)
                     if res.status_code == 200:
                         mark_proxy_healthy(active_proxy)
@@ -695,9 +702,11 @@ async def fetch_stealth_page(
         healthy_pool = get_healthy_proxies()
         fallback_proxy = random.choice(healthy_pool) if healthy_pool else None
         if fallback_proxy and fallback_proxy not in tried_proxies:
+            is_res_fb = is_residential_gateway(fallback_proxy)
+            fb_timeout = max(timeout, 20.0) if is_res_fb else timeout
             try:
                 limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
-                async with httpx.AsyncClient(proxy=fallback_proxy, timeout=timeout, limits=limits, follow_redirects=True) as client:
+                async with httpx.AsyncClient(proxy=fallback_proxy, timeout=fb_timeout, limits=limits, follow_redirects=True) as client:
                     res = await client.get(url, headers=req_headers)
                     if res.status_code == 200:
                         mark_proxy_healthy(fallback_proxy)
