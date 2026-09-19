@@ -239,6 +239,13 @@ def update_runtime_proxy_pool(
     rotation: bool = True
 ):
     """Updates runtime scraper proxy pool dynamically without server restart."""
+    clean_primary = None
+    if primary_proxy and primary_proxy.strip():
+        try:
+            clean_primary = normalize_proxy_url(primary_proxy)
+        except ValueError:
+            clean_primary = None
+
     clean_proxies = []
     if proxies is not None:
         for p in proxies:
@@ -249,15 +256,8 @@ def update_runtime_proxy_pool(
                         clean_proxies.append(norm)
                 except ValueError:
                     pass
-    else:
+    elif not clean_primary:
         clean_proxies = list(WEBSHARE_PROXIES)
-
-    clean_primary = None
-    if primary_proxy and primary_proxy.strip():
-        try:
-            clean_primary = normalize_proxy_url(primary_proxy)
-        except ValueError:
-            clean_primary = None
 
     _RUNTIME_PROXY_CONFIG.clear()
     _RUNTIME_PROXY_CONFIG.update({
@@ -510,9 +510,9 @@ def get_rotating_proxy(explicit_proxy: Optional[str] = None) -> Optional[str]:
     rotation = _RUNTIME_PROXY_CONFIG.get("rotation", True)
     healthy_pool = get_healthy_proxies(pool)
 
-    # If primary is specified and healthy, use primary
-    if primary and primary not in _QUARANTINED_PROXIES:
-        return primary
+    # If primary is specified and healthy (or is a residential rotating gateway with no other healthy proxies)
+    if primary and (primary not in _QUARANTINED_PROXIES or (is_residential_gateway(primary) and not healthy_pool)):
+        return rotate_residential_session(primary) if primary in _QUARANTINED_PROXIES else primary
 
     # If rotation is enabled, rotate among healthy proxies
     if rotation and healthy_pool:
@@ -689,7 +689,7 @@ async def fetch_stealth_page(
         tried_proxies = set()
         proxies_enabled = _RUNTIME_PROXY_CONFIG.get("enabled", True)
 
-        strict_zero_leak_domains = ("tap.az", "bina.az", "turbo.az", "rahatemlak.az")
+        strict_zero_leak_domains = ("tap.az", "bina.az", "turbo.az")
         is_strict = any(d in domain for d in strict_zero_leak_domains)
 
         # Fast-track direct fetch:
@@ -704,19 +704,23 @@ async def fetch_stealth_page(
                 logger.debug(f"[ScraperUtils] Fast-track direct fallback notice for {url}: {e}")
 
         # 1. Primary with Multi-Proxy Retries across healthy pool
+        active_proxy = None
+        is_res = False
         for attempt in range(max_proxy_retries):
-            active_proxy = get_rotating_proxy(proxy)
-            is_res = is_residential_gateway(active_proxy)
-
-            # If residential gateway failed on previous attempt, switch to a fresh peer in TR/AZ
-            if is_res and attempt > 0 and active_proxy:
-                active_proxy = rotate_residential_session(active_proxy)
-
-            # Avoid picking the exact same failed proxy in this retry chain (unless residential gateway)
-            if active_proxy and active_proxy in tried_proxies and not is_res:
-                available = [p for p in get_healthy_proxies() if p not in tried_proxies]
-                if available:
-                    active_proxy = random.choice(available)
+            if attempt == 0:
+                active_proxy = get_rotating_proxy(proxy)
+                is_res = is_residential_gateway(active_proxy)
+            else:
+                if is_res and active_proxy:
+                    # Switch to a brand new residential session / exit peer in TR/AZ on retry
+                    active_proxy = rotate_residential_session(active_proxy)
+                else:
+                    active_proxy = get_rotating_proxy(proxy)
+                    is_res = is_residential_gateway(active_proxy)
+                    if active_proxy and active_proxy in tried_proxies and not is_res:
+                        available = [p for p in get_healthy_proxies() if p not in tried_proxies]
+                        if available:
+                            active_proxy = random.choice(available)
 
             if active_proxy and not is_res:
                 tried_proxies.add(active_proxy)
@@ -770,7 +774,7 @@ async def fetch_stealth_page(
         # 3. Strict Zero-Leak IP Protection for sensitive portals:
         # Portals with active IP bans or Cloudflare anti-bot (tap.az, bina.az, turbo.az, rahatemlak.az)
         # MUST NEVER fall back to direct IP! Direct requests leak the workplace static IP (213.154.20.24) and cause bans.
-        strict_zero_leak_domains = ("tap.az", "bina.az", "turbo.az", "rahatemlak.az")
+        strict_zero_leak_domains = ("tap.az", "bina.az", "turbo.az")
         if proxies_enabled and any(d in domain for d in strict_zero_leak_domains):
             logger.warning(
                 f"[ScraperUtils] All {max_proxy_retries} proxy attempts failed for {url} ({domain}). "
