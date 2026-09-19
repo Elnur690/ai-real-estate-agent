@@ -529,9 +529,9 @@ def get_rotating_proxy(explicit_proxy: Optional[str] = None) -> Optional[str]:
     rotation = _RUNTIME_PROXY_CONFIG.get("rotation", True)
     healthy_pool = get_healthy_proxies(pool)
 
-    # If primary is specified and healthy (or is a residential rotating gateway with no other healthy proxies)
+    # If primary is specified: for residential rotating gateways, always rotate session for fresh IP on every request
     if primary and (primary not in _QUARANTINED_PROXIES or (is_residential_gateway(primary) and not healthy_pool)):
-        return rotate_residential_session(primary) if primary in _QUARANTINED_PROXIES else primary
+        return rotate_residential_session(primary) if is_residential_gateway(primary) or primary in _QUARANTINED_PROXIES else primary
 
     # If rotation is enabled, rotate among healthy proxies
     if rotation and healthy_pool:
@@ -698,7 +698,7 @@ async def fetch_stealth_page(
     proxy: Optional[str] = None,
     referer: Optional[str] = None,
     impersonate: Optional[str] = None,
-    max_proxy_retries: int = 4
+    max_proxy_retries: int = 5
 ) -> Tuple[Optional[str], int]:
     """
     Fetches web page HTML using TLS-fingerprint impersonation (curl_cffi AsyncSession)
@@ -810,13 +810,13 @@ async def fetch_stealth_page(
                     if res.status_code == 200:
                         mark_proxy_healthy(active_proxy)
                         return res.text, res.status_code
-                    elif res.status_code in (403, 429, 503):
+                    else:
                         diag = classify_cloudflare_response(res.status_code, res.text)
-                        last_proxy_error = diag
-                        logger.warning(f"[ScraperUtils] Proxy {active_proxy} got {diag} for {url} ({domain}). Retrying...")
-                        mark_proxy_unhealthy(active_proxy, duration_seconds=900.0)
+                        last_proxy_error = f"HTTP {res.status_code} ({diag})"
+                        logger.warning(f"[ScraperUtils] Proxy {active_proxy} got {last_proxy_error} for {url} ({domain}). Retrying...")
+                        mark_proxy_unhealthy(active_proxy, duration_seconds=600.0)
                         if is_res:
-                            await asyncio.sleep(1.5)
+                            await asyncio.sleep(1.0)
                         continue
             except Exception as e:
                 err_msg = str(e).lower()
@@ -839,15 +839,18 @@ async def fetch_stealth_page(
             logger.warning(
                 f"[ScraperUtils] All {max_proxy_retries} proxy attempts failed for {url} ({domain}). "
                 f"Zero-Leak Protection ACTIVE: Aborting request with HTTP 503 rather than leaking host static IP. "
-                f"Please verify proxy subscription / credentials (e.g. IPRoyal residential proxy) in SaaS Admin Settings."
+                f"Last error: {last_proxy_error}"
             )
+            # Only alert admin if there is an actionable credential/quota failure (407, 401, 402) or explicit permanent ban (1006).
+            # Transient peer timeouts or single peer drops are retried by Celery on the next 30s cycle and MUST NOT spam Telegram.
+            is_actionable = any(code in last_proxy_error for code in ("407", "401", "402", "1006"))
             now = time.time()
-            if now - _DOMAIN_ALERT_TIMESTAMPS.get(domain, 0.0) >= 1800.0:
+            if is_actionable and (now - _DOMAIN_ALERT_TIMESTAMPS.get(domain, 0.0) >= 1800.0):
                 _DOMAIN_ALERT_TIMESTAMPS[domain] = now
                 _dispatch_async_scraper_alert(
                     source_name=domain,
                     status_code=503,
-                    error_text=f"Bütün proksi cəhdləri uğursuz oldu (HTTP 503). Səbəb: {last_proxy_error[:100]}. Sıfır Sızma Qalxanı aktivdir, server IP qorundu."
+                    error_text=f"Proksi Xətası (HTTP 503): {last_proxy_error[:100]}. Zəhmət olmasa proksi balansını və ya tənzimləmələrini yoxlayın."
                 )
             return None, 503
 
