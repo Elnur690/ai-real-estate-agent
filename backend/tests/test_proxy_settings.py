@@ -391,5 +391,38 @@ async def test_direct_first_smart_bandwidth_saver():
         assert session_instances[0].proxy is not None
 
 
+def test_classify_cloudflare_response():
+    from app.scrapers.utils import classify_cloudflare_response
+
+    # 1. Error 1006 (Permanent IP Ban)
+    html_1006 = "<html><head><title>Access denied | bina.az used Cloudflare to restrict access</title></head><body>Error 1006 Ray ID: 8c... Your IP address has been banned</body></html>"
+    diag_1006 = classify_cloudflare_response(403, html_1006)
+    assert "1006" in diag_1006
+    assert "Daimi IP Ban" in diag_1006
+
+    # 2. Cloudflare JS / Turnstile Challenge (Soft challenge, NOT banned)
+    html_challenge = "<html><body><div id='cf-turnstile-wrapper'>Just a moment... Enable JavaScript and cookies to continue.</div></body></html>"
+    diag_challenge = classify_cloudflare_response(403, html_challenge)
+    assert "Çelenci" in diag_challenge
+    assert "IP ban deyil" in diag_challenge
+
+    # 3. Error 1020 WAF rule
+    html_1020 = "<html><body>Error 1020 Access denied: Firewall rule violation</body></html>"
+    diag_1020 = classify_cloudflare_response(403, html_1020)
+    assert "1020" in diag_1020
+    assert "WAF Qaydası" in diag_1020
+
+    # 4. Error 1015 Rate limiting
+    html_1015 = "<html><body>Error 1015 You are being rate limited</body></html>"
+    diag_1015 = classify_cloudflare_response(429, html_1015)
+    assert "1015" in diag_1015
+    assert "Rate Limited" in diag_1015
+
+    # 5. Generic 403
+    diag_generic = classify_cloudflare_response(403, "<html>Forbidden</html>")
+    assert "HTTP 403" in diag_generic
+
+
+
 
 

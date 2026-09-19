@@ -643,6 +643,35 @@ def get_safe_impersonate(requested: Optional[str] = None) -> str:
     return random.choice(_VERIFIED_IMPERSONATES)
 
 
+def classify_cloudflare_response(status_code: int, html_text: str = "") -> str:
+    """
+    Classifies Cloudflare error codes and challenge types from HTTP status and response body.
+    Returns a human-readable diagnostic string distinguishing between hard IP bans (Error 1006),
+    WAF firewall rules (Error 1020), rate limits (Error 1015), and temporary JS/Turnstile challenges.
+    """
+    if not html_text:
+        return f"HTTP {status_code}"
+
+    text_sample = html_text[:3000].lower()
+
+    if "1006" in text_sample or "your ip address has been banned" in text_sample or "banned your ip" in text_sample:
+        return "Cloudflare Error 1006 (Daimi IP Ban: Sayt sahibi bu IP-ni qara siyahıya salıb)"
+    elif "1020" in text_sample:
+        return "Cloudflare Error 1020 (WAF Qaydası: Sorğu strukturu bloklandı)"
+    elif "1015" in text_sample or "rate limit" in text_sample:
+        return "Cloudflare Error 1015 (Sorğu limiti / Rate Limited)"
+    elif any(k in text_sample for k in ("cf-challenge", "challenge-platform", "cf-turnstile", "just a moment...", "checking your browser", "attention required")):
+        return "Cloudflare Çelenci (Müvəqqəti JS / Turnstile Bot Yoxlaması - IP ban deyil)"
+    elif status_code == 403:
+        return "HTTP 403 (Giriş Qadağandır / Sorğu rədd edildi)"
+    elif status_code == 429:
+        return "HTTP 429 (Çoxlu Sorğu / Rate Limited)"
+    elif status_code == 503:
+        return "HTTP 503 (Xidmət Müvəqqəti Əlçatan Deyil)"
+
+    return f"HTTP {status_code}"
+
+
 async def fetch_stealth_page(
     url: str,
     headers: Optional[Dict[str, str]] = None,
@@ -718,8 +747,12 @@ async def fetch_stealth_page(
                         logger.debug(f"[ScraperUtils] Direct-First fetch 200 OK for {domain} (saved paid proxy bandwidth).")
                         return res.text, res.status_code
                     elif res.status_code in (403, 429):
-                        direct_blocked = True
-                        logger.info(f"[ScraperUtils] Direct IP received HTTP {res.status_code} on {domain}. Falling back to proxy pool...")
+                        diag = classify_cloudflare_response(res.status_code, res.text)
+                        if "1006" in diag:
+                            direct_blocked = True
+                            logger.error(f"[ScraperUtils] Direct IP permanently banned on {domain}: {diag}. Switching to proxy pool.")
+                        else:
+                            logger.info(f"[ScraperUtils] Direct IP received {diag} on {domain}. Falling back to proxy pool...")
             except Exception as e:
                 logger.debug(f"[ScraperUtils] Direct-First fetch exception for {domain} ({e}). Falling back to proxy pool...")
 
@@ -756,8 +789,9 @@ async def fetch_stealth_page(
                         mark_proxy_healthy(active_proxy)
                         return res.text, res.status_code
                     elif res.status_code in (403, 429, 503):
-                        last_proxy_error = f"HTTP {res.status_code} (Cloudflare Blok)"
-                        logger.warning(f"[ScraperUtils] Proxy {active_proxy} got HTTP {res.status_code} for {url} ({domain}). Retrying...")
+                        diag = classify_cloudflare_response(res.status_code, res.text)
+                        last_proxy_error = diag
+                        logger.warning(f"[ScraperUtils] Proxy {active_proxy} got {diag} for {url} ({domain}). Retrying...")
                         mark_proxy_unhealthy(active_proxy, duration_seconds=900.0)
                         if is_res:
                             await asyncio.sleep(1.5)
@@ -807,7 +841,8 @@ async def fetch_stealth_page(
                     if res.status_code == 200:
                         return res.text, res.status_code
                     elif res.status_code in (403, 429):
-                        logger.warning(f"[ScraperUtils] Direct fetch to {domain} received HTTP {res.status_code}. Recording domain block.")
+                        diag = classify_cloudflare_response(res.status_code, res.text)
+                        logger.warning(f"[ScraperUtils] Direct fetch to {domain} received {diag}. Recording domain block.")
                         record_domain_block(domain, status_code=res.status_code)
                     return res.text, res.status_code
             except Exception as e:
