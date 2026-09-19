@@ -29,7 +29,7 @@ class RahatEmlakAzScraper(BaseScraper):
 
         headers = get_random_headers(referer="https://rahatemlak.az/")
         try:
-            res_text, res_status = await fetch_stealth_page(clean_url, headers=headers, timeout=8.0, referer="https://rahatemlak.az/")
+            res_text, res_status = await fetch_stealth_page(clean_url, headers=headers, timeout=20.0, referer="https://rahatemlak.az/")
             if res_status != 200 or not res_text:
                 return {}
 
@@ -101,7 +101,7 @@ class RahatEmlakAzScraper(BaseScraper):
             await polite_delay(1.2, 2.5)
             headers = get_random_headers(referer="https://rahatemlak.az/")
             headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-            res_text, res_status = await fetch_stealth_page(target_url, headers=headers, timeout=8.0, referer="https://rahatemlak.az/")
+            res_text, res_status = await fetch_stealth_page(target_url, headers=headers, timeout=20.0, referer="https://rahatemlak.az/")
             if res_status == 200 and res_text:
                 soup = BeautifulSoup(res_text, "html.parser")
                 links = soup.find_all("a", href=re.compile(r'/elan/|/item/|/alqi-satqi/|\.html|/\d+'))
