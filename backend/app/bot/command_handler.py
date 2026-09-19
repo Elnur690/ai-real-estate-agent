@@ -53,7 +53,8 @@ class BotCommandHandler:
         from_me: bool = False,
         instance_name: Optional[str] = None,
         group_subject: Optional[str] = None,
-        sender_participant: Optional[str] = None
+        sender_participant: Optional[str] = None,
+        sender_lid: Optional[str] = None
     ) -> Optional[str]:
         """
         Shared command handler for WhatsApp and Telegram bots.
@@ -272,18 +273,37 @@ class BotCommandHandler:
                 from app.bot.group_security import lock_group_due_to_unapproved_person, is_group_locked
 
                 # Check if sender participant is approved
-                if not from_me and sender_participant:
-                    sender_digits = re.sub(r'\D', '', str(sender_participant).split('@')[0])
-                    sender_suffix = sender_digits[-9:] if len(sender_digits) >= 9 else sender_digits
+                if not from_me and (sender_participant or sender_lid):
+                    sender_digits = re.sub(r'\D', '', str(sender_participant).split('@')[0]) if sender_participant else None
+                    sender_lid_digits = re.sub(r'\D', '', str(sender_lid).split('@')[0]) if sender_lid else None
+                    sender_suffix = sender_digits[-9:] if sender_digits and len(sender_digits) >= 9 else sender_digits
                     approved_nums = tenant.get_approved_phone_numbers()
-                    if sender_digits not in approved_nums and sender_suffix not in approved_nums:
-                        lock_group_due_to_unapproved_person(sender_id, sender_digits)
+
+                    from app.bot.whatsapp_adapter import WhatsAppAdapter, _LID_TO_PHONE_MAP
+                    mapped_phone_from_lid = WhatsAppAdapter.get_phone_for_lid(sender_lid_digits or sender_digits)
+                    mapped_lid_from_phone = WhatsAppAdapter.get_lid_for_phone(sender_digits)
+
+                    is_participant_approved = (
+                        (sender_digits and (sender_digits in approved_nums or (sender_suffix and sender_suffix in approved_nums))) or
+                        (sender_lid_digits and sender_lid_digits in approved_nums) or
+                        (mapped_phone_from_lid and (mapped_phone_from_lid in approved_nums or (len(mapped_phone_from_lid) >= 9 and mapped_phone_from_lid[-9:] in approved_nums))) or
+                        (mapped_lid_from_phone and mapped_lid_from_phone in approved_nums) or
+                        any(
+                            (lid in approved_nums or phone in approved_nums)
+                            for lid, phone in _LID_TO_PHONE_MAP.items()
+                            if (lid in (sender_digits, sender_lid_digits) or phone == sender_digits) and (phone in approved_nums or (len(phone) >= 9 and phone[-9:] in approved_nums))
+                        )
+                    )
+
+                    if not is_participant_approved:
+                        alert_digits = sender_digits or sender_lid_digits or "naməlum"
+                        lock_group_due_to_unapproved_person(sender_id, alert_digits)
                         return (
-                            f"⚠️ *TƏHLÜKƏSİZLİK XƏBƏRDARLIĞI: Qrupda Tanınmayan Şəxs Aşkarlandı!* (+{sender_digits})\n\n"
+                            f"⚠️ *TƏHLÜKƏSİZLİK XƏBƏRDARLIĞI: Qrupda Tanınmayan Şəxs Aşkarlandı!* (+{alert_digits})\n\n"
                             "Bu nömrə təsdiqlənmiş agent heyəti siyahısında yoxdur. "
                             "Məxfilik və təhlükəsizlik səbəbindən bu qrupda elanların paylaşılması və bot əmrləri dayandırıldı.\n\n"
                             "📌 *Nə etməli?*\n"
-                            f"1. Bu şəxs komandanızın üzvüdürsə, nömrəni təsdiqləyin: `/nomre_elave {sender_digits}`\n"
+                            f"1. Bu şəxs komandanızın üzvüdürsə, nömrəni təsdiqləyin: `/nomre_elave {alert_digits}`\n"
                             "2. Və ya həmin şəxsi qrupdan çıxarın."
                         )
 
@@ -293,14 +313,27 @@ class BotCommandHandler:
                     "/add_number", "/remove_number", "/numbers", "nömrələr", "nomreler"
                 ])
                 if is_group_locked(sender_id) and not is_nomre_cmd:
-                    from app.bot.group_security import get_group_lock_unapproved_phone
+                    from app.bot.group_security import get_group_lock_unapproved_phone, unlock_group
                     locked_phone = get_group_lock_unapproved_phone(sender_id) or "naməlum"
-                    return (
-                        f"🔒 *QRUP BLOKLANIB: Təsdiqlənməmiş şəxs aşkar edilib (+{locked_phone})!*\n\n"
-                        "Məxfilik qaydalarına əsasən, qrupda tanınmayan nömrə olduğu müddətdə elanlar və bot əmrləri icra olunmur.\n\n"
-                        "Nömrəni təsdiqləmək üçün: `/nomre_elave <nömrə>`\n"
-                        "Təsdiqlənmiş nömrələrə baxmaq üçün: `/nomreler`"
-                    )
+                    approved_nums = tenant.get_approved_phone_numbers()
+                    from app.bot.whatsapp_adapter import WhatsAppAdapter
+                    resolved_locked = WhatsAppAdapter.get_phone_for_lid(locked_phone) or locked_phone
+
+                    # Auto-unlock if the locked contact is now in approved numbers (e.g. added via SaaS Admin or /nomre_elave)
+                    if (
+                        locked_phone in approved_nums or
+                        (len(locked_phone) >= 9 and locked_phone[-9:] in approved_nums) or
+                        resolved_locked in approved_nums or
+                        (len(resolved_locked) >= 9 and resolved_locked[-9:] in approved_nums)
+                    ):
+                        unlock_group(sender_id)
+                    else:
+                        return (
+                            f"🔒 *QRUP BLOKLANIB: Təsdiqlənməmiş şəxs aşkar edilib (+{locked_phone})!*\n\n"
+                            "Məxfilik qaydalarına əsasən, qrupda tanınmayan nömrə olduğu müddətdə elanlar və bot əmrləri icra olunmur.\n\n"
+                            "Nömrəni təsdiqləmək üçün: `/nomre_elave <nömrə>`\n"
+                            "Təsdiqlənmiş nömrələrə baxmaq üçün: `/nomreler`"
+                        )
 
         # 3. Handle Slash Commands & Fast-Path Menu Shortcuts
         if text_lower in ["/command", "/commands", "/komanda", "/komandalar", "/əmrlər", "/emrler", "command", "commands", "komanda", "komandalar", "əmrlər", "emrler", "2"]:
@@ -344,6 +377,11 @@ class BotCommandHandler:
         if add_num_match:
             raw_input = add_num_match.group(1).strip()
             digits = re.sub(r'\D', '', raw_input.split('@')[0])
+            from app.bot.whatsapp_adapter import WhatsAppAdapter
+            resolved_phone = WhatsAppAdapter.get_phone_for_lid(digits)
+            if resolved_phone:
+                digits = resolved_phone
+
             if digits.startswith("0") and len(digits) == 10:
                 digits = "994" + digits[1:]
             elif not digits.startswith("994") and len(digits) == 9:
@@ -356,11 +394,27 @@ class BotCommandHandler:
             primary_digits = re.sub(r'\D', '', str(tenant.whatsapp_number or tenant.phone or ""))
 
             if digits == primary_digits or (primary_digits and digits.endswith(primary_digits[-9:])):
+                from app.bot.group_security import unlock_group, get_group_lock_unapproved_phone
+                if is_group:
+                    locked_phone = get_group_lock_unapproved_phone(sender_id)
+                    if locked_phone:
+                        locked_res = WhatsAppAdapter.get_phone_for_lid(locked_phone) or locked_phone
+                        if (digits == locked_phone or digits.endswith(locked_phone) or locked_phone.endswith(digits)
+                            or digits == locked_res or digits.endswith(locked_res)):
+                            unlock_group(sender_id)
                 return f"ℹ️ +{digits} artıq sizin əsas qeydiyyat nömrənizdir."
 
             for existing in current_extras:
                 ex_digits = re.sub(r'\D', '', str(existing))
                 if digits == ex_digits or digits.endswith(ex_digits[-9:]):
+                    from app.bot.group_security import unlock_group, get_group_lock_unapproved_phone
+                    if is_group:
+                        locked_phone = get_group_lock_unapproved_phone(sender_id)
+                        if locked_phone:
+                            locked_res = WhatsAppAdapter.get_phone_for_lid(locked_phone) or locked_phone
+                            if (digits == locked_phone or digits.endswith(locked_phone) or locked_phone.endswith(digits)
+                                or digits == locked_res or digits.endswith(locked_res)):
+                                unlock_group(sender_id)
                     return f"ℹ️ +{digits} artıq təsdiqlənmiş nömrələr siyahısındadır."
 
             if len(current_extras) >= 2:
@@ -377,8 +431,11 @@ class BotCommandHandler:
             from app.bot.group_security import unlock_group, get_group_lock_unapproved_phone
             if is_group:
                 locked_phone = get_group_lock_unapproved_phone(sender_id)
-                if locked_phone and (digits == locked_phone or digits.endswith(locked_phone) or locked_phone.endswith(digits)):
-                    unlock_group(sender_id)
+                if locked_phone:
+                    locked_res = WhatsAppAdapter.get_phone_for_lid(locked_phone) or locked_phone
+                    if (digits == locked_phone or digits.endswith(locked_phone) or locked_phone.endswith(digits)
+                        or digits == locked_res or digits.endswith(locked_res) or (locked_res and locked_res.endswith(digits))):
+                        unlock_group(sender_id)
 
             return (
                 f"✅ *Nömrə uğurla təsdiqləndi!* (+{digits})\n\n"

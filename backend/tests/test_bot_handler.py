@@ -698,5 +698,108 @@ async def test_whatsapp_strict_group_policy_and_approved_numbers():
     await engine.dispose()
 
 
+@pytest.mark.asyncio
+async def test_whatsapp_lid_resolution_and_security():
+    from app.bot.whatsapp_adapter import WhatsAppAdapter, _LID_TO_PHONE_MAP, _PHONE_TO_LID_MAP
+    from app.bot.group_security import is_group_locked, lock_group_due_to_unapproved_person, unlock_group
+
+    # 1. Normalization tests
+    p, l = WhatsAppAdapter.normalize_jid_or_phone("994501112233@s.whatsapp.net")
+    assert p == "994501112233" and l is None
+
+    p, l = WhatsAppAdapter.normalize_jid_or_phone("20585878929644@lid")
+    assert p is None and l == "20585878929644"
+
+    p, l = WhatsAppAdapter.normalize_jid_or_phone("20585878929644")
+    assert p is None and l == "20585878929644"
+
+    p, l = WhatsAppAdapter.normalize_jid_or_phone("0501112233")
+    assert p == "0501112233" and l is None
+
+    # 2. Payload resolution with participantAlt
+    payload = {
+        "event": "messages.upsert",
+        "data": {
+            "key": {
+                "remoteJid": "120363999999999999@g.us",
+                "participant": "20585878929644@lid",
+                "participantAlt": "994552223344@s.whatsapp.net"
+            }
+        }
+    }
+    resolved_phone, resolved_lid = await WhatsAppAdapter.resolve_sender_participant(payload)
+    assert resolved_phone == "994552223344"
+    assert resolved_lid == "20585878929644"
+    assert _LID_TO_PHONE_MAP.get("20585878929644") == "994552223344"
+    assert _PHONE_TO_LID_MAP.get("994552223344") == "20585878929644"
+
+    # 3. Database & BotCommandHandler test with LID
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with AsyncSessionLocal() as db:
+        group_jid = "120363999999999999@g.us"
+        tenant = Tenant(
+            name="LID Agency",
+            phone="994501112233",
+            whatsapp_number="994501112233",
+            plan="pro",
+            status="active",
+            allowed_group_jids=[group_jid],
+            approved_phone_numbers=["994552223344"]
+        )
+        db.add(tenant)
+        await db.commit()
+        await db.refresh(tenant)
+
+        # Teammate sends message with sender_participant="20585878929644" (which is mapped to approved "994552223344")
+        resp = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="whatsapp",
+            sender_id=group_jid,
+            sender_name="LID Workgroup",
+            raw_text="/searches",
+            from_me=False,
+            sender_participant="20585878929644",
+            sender_lid="20585878929644"
+        )
+        # Should NOT trigger intruder alert
+        assert resp is not None
+        assert "TƏHLÜKƏSİZLİK XƏBƏRDARLIĞI" not in resp
+        assert is_group_locked(group_jid) is False
+
+        # Truly unknown LID sends a message -> should lock group
+        unknown_lid = "20999988887777"
+        resp_intruder = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="whatsapp",
+            sender_id=group_jid,
+            sender_name="LID Workgroup",
+            raw_text="Hello",
+            from_me=False,
+            sender_participant=unknown_lid,
+            sender_lid=unknown_lid
+        )
+        assert "TƏHLÜKƏSİZLİK XƏBƏRDARLIĞI" in resp_intruder
+        assert unknown_lid in resp_intruder
+        assert is_group_locked(group_jid) is True
+
+        # Group is locked, now admin approves via /nomre_elave <lid>
+        resp_approve = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="whatsapp",
+            sender_id=group_jid,
+            sender_name="LID Workgroup",
+            raw_text=f"/nomre_elave {unknown_lid}",
+            from_me=True
+        )
+        assert "Nömrə uğurla təsdiqləndi" in resp_approve
+        assert is_group_locked(group_jid) is False
+
+    await engine.dispose()
+
+
+
 
 

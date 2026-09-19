@@ -12,7 +12,221 @@ logger = logging.getLogger(__name__)
 
 SENT_BOT_MESSAGE_IDS = set()
 
+# Bidirectional LID <-> Phone Number mapping cache
+_LID_TO_PHONE_MAP: Dict[str, str] = {}
+_PHONE_TO_LID_MAP: Dict[str, str] = {}
+_GROUP_METADATA_FETCH_CACHE: Dict[str, float] = {}
+
 class WhatsAppAdapter:
+    @staticmethod
+    def normalize_jid_or_phone(val: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+        """
+        Given a JID or phone string (e.g. '994501234567@s.whatsapp.net' or '20585878929644@lid'),
+        determines if it's a real phone number or a WhatsApp LID.
+        Returns: (phone_digits, lid_digits)
+        """
+        if not val or not isinstance(val, str):
+            return None, None
+        val_clean = val.strip()
+        digits = re.sub(r'\D', '', val_clean.split('@')[0])
+        if not digits:
+            return None, None
+        if "@lid" in val_clean or val_clean.endswith(".lid"):
+            return None, digits
+        if "@s.whatsapp.net" in val_clean or "@c.us" in val_clean:
+            return digits, None
+        # WhatsApp LIDs are typically 14-16 digits starting with 1 or 2,
+        # whereas Azerbaijani and standard international phone numbers are 9-12 digits.
+        if len(digits) >= 14 and not digits.startswith("994"):
+            return None, digits
+        return digits, None
+
+    @staticmethod
+    def get_phone_for_lid(lid_digits: Optional[str]) -> Optional[str]:
+        if not lid_digits:
+            return None
+        clean = re.sub(r'\D', '', str(lid_digits).split('@')[0])
+        return _LID_TO_PHONE_MAP.get(clean)
+
+    @staticmethod
+    def get_lid_for_phone(phone_digits: Optional[str]) -> Optional[str]:
+        if not phone_digits:
+            return None
+        clean = re.sub(r'\D', '', str(phone_digits).split('@')[0])
+        lid = _PHONE_TO_LID_MAP.get(clean)
+        if not lid and len(clean) >= 9:
+            lid = _PHONE_TO_LID_MAP.get(clean[-9:])
+        return lid
+
+    @staticmethod
+    def record_lid_phone_mapping(lid: Optional[str], phone: Optional[str]) -> None:
+        """Records bidirectional mapping between a WhatsApp LID and a phone number."""
+        if not lid or not phone:
+            return
+        clean_lid = re.sub(r'\D', '', str(lid).split('@')[0])
+        clean_phone = re.sub(r'\D', '', str(phone).split('@')[0])
+        if clean_lid and clean_phone and clean_lid != clean_phone:
+            _LID_TO_PHONE_MAP[clean_lid] = clean_phone
+            _PHONE_TO_LID_MAP[clean_phone] = clean_lid
+            if len(clean_phone) >= 9:
+                _PHONE_TO_LID_MAP[clean_phone[-9:]] = clean_lid
+            logger.info(f"[WhatsAppAdapter] Mapped WhatsApp LID {clean_lid} <=> Phone +{clean_phone}")
+
+    @staticmethod
+    async def fetch_and_cache_group_participants(
+        instance_name: Optional[str],
+        group_jid: str,
+        force: bool = False
+    ) -> Dict[str, str]:
+        """
+        Fetches group participant info from Evolution API and caches LID <-> Phone mappings.
+        Returns mapping of {lid_digits: phone_digits}.
+        """
+        if not group_jid or "@g.us" not in group_jid:
+            return {}
+
+        import time
+        now = time.time()
+        last_fetch = _GROUP_METADATA_FETCH_CACHE.get(group_jid, 0.0)
+        if not force and (now - last_fetch) < 60.0:
+            return {}
+
+        _GROUP_METADATA_FETCH_CACHE[group_jid] = now
+        base_url = settings.EVOLUTION_API_URL or "http://evolution:8080"
+        target_instance = instance_name or settings.EVOLUTION_INSTANCE_NAME or "realestate_agent"
+
+        headers = {"Content-Type": "application/json"}
+        if settings.EVOLUTION_API_KEY:
+            headers["apikey"] = str(settings.EVOLUTION_API_KEY)
+
+        resolved: Dict[str, str] = {}
+        try:
+            url = f"{base_url.rstrip('/')}/group/findGroupInfos/{target_instance}"
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                res = await client.get(url, params={"groupJid": group_jid}, headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    if isinstance(data, list) and data:
+                        data = data[0]
+                    participants = (
+                        data.get("participants")
+                        or (data.get("group", {}).get("participants") if isinstance(data, dict) else [])
+                        or []
+                    )
+                    for p in participants:
+                        if isinstance(p, dict):
+                            p_id = str(p.get("id") or "")
+                            p_lid = str(p.get("lid") or "")
+                            p_phone = str(p.get("phoneNumber") or p.get("phone") or "")
+
+                            cand_phone, _ = WhatsAppAdapter.normalize_jid_or_phone(p_id)
+                            _, cand_lid = WhatsAppAdapter.normalize_jid_or_phone(p_lid)
+                            if not cand_phone and p_phone:
+                                cand_phone, _ = WhatsAppAdapter.normalize_jid_or_phone(p_phone)
+                            if not cand_phone and "@lid" in p_id and "@s.whatsapp.net" in p_lid:
+                                cand_phone, _ = WhatsAppAdapter.normalize_jid_or_phone(p_lid)
+                                _, cand_lid = WhatsAppAdapter.normalize_jid_or_phone(p_id)
+
+                            if cand_phone and cand_lid:
+                                WhatsAppAdapter.record_lid_phone_mapping(cand_lid, cand_phone)
+                                resolved[cand_lid] = cand_phone
+        except Exception as e:
+            logger.debug(f"[WhatsAppAdapter] Evolution group info lookup notice for {group_jid}: {e}")
+
+        return resolved
+
+    @staticmethod
+    async def resolve_sender_participant(
+        payload: Dict[str, Any],
+        instance_name: Optional[str] = None,
+        remote_jid: Optional[str] = None
+    ) -> tuple[Optional[str], Optional[str]]:
+        """
+        Extracts and resolves the true sender phone number and LID from an incoming message payload.
+        Returns: (phone_digits, lid_digits)
+        """
+        data = payload.get("data", {})
+        if isinstance(data, list):
+            data = data[0] if data else {}
+        key = data.get("key", {}) if isinstance(data, dict) else {}
+
+        candidates = [
+            key.get("participantAlt"),
+            data.get("participantAlt"),
+            payload.get("data", {}).get("participantAlt") if isinstance(payload.get("data"), dict) else None,
+            key.get("participant_alt"),
+            data.get("participant_alt"),
+            data.get("senderPn"),
+            data.get("senderPhone"),
+            key.get("remoteJidAlt"),
+            data.get("remoteJidAlt"),
+            data.get("sender"),
+            key.get("participant"),
+            data.get("participant"),
+            payload.get("data", {}).get("participant") if isinstance(payload.get("data"), dict) else None,
+        ]
+
+        found_phone: Optional[str] = None
+        found_lid: Optional[str] = None
+
+        for c in candidates:
+            if c and isinstance(c, str):
+                p, l = WhatsAppAdapter.normalize_jid_or_phone(c)
+                if p and not found_phone:
+                    found_phone = p
+                if l and not found_lid:
+                    found_lid = l
+
+        # If both found in payload, record mapping immediately
+        if found_phone and found_lid:
+            WhatsAppAdapter.record_lid_phone_mapping(found_lid, found_phone)
+            return found_phone, found_lid
+
+        # If phone found, check if we know its LID
+        if found_phone:
+            cached_lid = WhatsAppAdapter.get_lid_for_phone(found_phone)
+            return found_phone, found_lid or cached_lid
+
+        # If only LID found:
+        if found_lid:
+            cached_phone = WhatsAppAdapter.get_phone_for_lid(found_lid)
+            if cached_phone:
+                return cached_phone, found_lid
+
+            # Check groupMetadata embedded in payload
+            group_meta = data.get("groupMetadata") or (payload.get("data", {}).get("groupMetadata") if isinstance(payload.get("data"), dict) else {})
+            if isinstance(group_meta, dict):
+                participants = group_meta.get("participants", [])
+                for p in participants:
+                    if isinstance(p, dict):
+                        p_id = str(p.get("id") or "")
+                        p_lid = str(p.get("lid") or "")
+                        p_phone = str(p.get("phoneNumber") or p.get("phone") or "")
+                        p_cand, _ = WhatsAppAdapter.normalize_jid_or_phone(p_id)
+                        _, l_cand = WhatsAppAdapter.normalize_jid_or_phone(p_lid)
+                        if not p_cand and p_phone:
+                            p_cand, _ = WhatsAppAdapter.normalize_jid_or_phone(p_phone)
+                        if p_cand and l_cand:
+                            WhatsAppAdapter.record_lid_phone_mapping(l_cand, p_cand)
+                            if l_cand == found_lid:
+                                found_phone = p_cand
+
+            if found_phone:
+                return found_phone, found_lid
+
+            # Fetch from Evolution API if group message
+            group_jid = remote_jid or key.get("remoteJid") or ""
+            if group_jid and "@g.us" in group_jid:
+                resolved_map = await WhatsAppAdapter.fetch_and_cache_group_participants(instance_name, group_jid)
+                if found_lid in resolved_map:
+                    return resolved_map[found_lid], found_lid
+
+            return found_lid, found_lid
+
+        raw_p = key.get("participant") or data.get("participant") or ""
+        digits = re.sub(r'\D', '', str(raw_p).split('@')[0]) if raw_p else None
+        return digits, None
+
     @staticmethod
     async def process_webhook_payload(payload: Dict[str, Any]) -> Optional[str]:
         """
@@ -192,11 +406,10 @@ class WhatsAppAdapter:
 
             logger.info(f"[WhatsAppAdapter] Processing incoming message from {sender_name} ({sender_id}) via instance '{instance_name}': '{raw_text}'")
 
-            sender_participant = (
-                key.get("participant")
-                or data.get("participant")
-                or payload.get("data", {}).get("participant")
-                or ""
+            sender_participant, sender_lid = await WhatsAppAdapter.resolve_sender_participant(
+                payload=payload,
+                instance_name=instance_name,
+                remote_jid=remote_jid if is_group else None
             )
 
             async with AsyncSessionLocal() as db:
@@ -209,7 +422,8 @@ class WhatsAppAdapter:
                     from_me=from_me,
                     instance_name=instance_name,
                     group_subject=group_subject,
-                    sender_participant=sender_participant
+                    sender_participant=sender_participant,
+                    sender_lid=sender_lid
                 )
 
             if response_text:
@@ -259,9 +473,32 @@ class WhatsAppAdapter:
 
                 if action in ["add", "invite"]:
                     for p in participants:
-                        digits = re.sub(r'\D', '', str(p).split('@')[0])
+                        p_str = str(p)
+                        cand_phone, cand_lid = WhatsAppAdapter.normalize_jid_or_phone(p_str)
+                        # If LID received, try resolving via cache or Evolution API
+                        if not cand_phone and cand_lid:
+                            cand_phone = WhatsAppAdapter.get_phone_for_lid(cand_lid)
+                            if not cand_phone:
+                                group_map = await WhatsAppAdapter.fetch_and_cache_group_participants(
+                                    instance_name, group_jid, force=True
+                                )
+                                cand_phone = group_map.get(cand_lid)
+
+                        digits = cand_phone or cand_lid or re.sub(r'\D', '', p_str.split('@')[0])
                         suffix = digits[-9:] if len(digits) >= 9 else digits
-                        if digits not in approved_nums and suffix not in approved_nums:
+
+                        # Check if participant is approved
+                        is_approved = (
+                            digits in approved_nums or
+                            suffix in approved_nums or
+                            (cand_lid and cand_lid in approved_nums) or
+                            any(
+                                (lid in approved_nums or phone in approved_nums)
+                                for lid, phone in _LID_TO_PHONE_MAP.items()
+                                if (lid == digits or lid == cand_lid) and (phone in approved_nums or (len(phone) >= 9 and phone[-9:] in approved_nums))
+                            )
+                        )
+                        if not is_approved:
                             lock_group_due_to_unapproved_person(group_jid, digits)
                             alert_text = (
                                 f"⚠️ *TƏHLÜKƏSİZLİK XƏBƏRDARLIĞI: Qrupa Yeni Şəxs Əlavə Edildi!* (+{digits})\n\n"
@@ -280,17 +517,25 @@ class WhatsAppAdapter:
 
                 elif action in ["remove", "leave"]:
                     for p in participants:
-                        digits = re.sub(r'\D', '', str(p).split('@')[0])
+                        p_str = str(p)
+                        cand_phone, cand_lid = WhatsAppAdapter.normalize_jid_or_phone(p_str)
+                        resolved_phone = cand_phone or WhatsAppAdapter.get_phone_for_lid(cand_lid)
+                        digits = resolved_phone or cand_lid or re.sub(r'\D', '', p_str.split('@')[0])
                         locked_phone = get_group_lock_unapproved_phone(group_jid)
-                        if locked_phone and (digits == locked_phone or digits.endswith(locked_phone) or locked_phone.endswith(digits)):
-                            unlock_group(group_jid)
-                            clear_text = "✅ Tanınmayan şəxs qrupdan çıxarıldı. Botun bu qrupdakı fəaliyyəti və elan göndərişi tam bərpa edildi! 🚀"
-                            await WhatsAppAdapter.send_message(
-                                phone_number=group_jid,
-                                text=clear_text,
-                                instance_name=instance_name or f"tenant_{matched_tenant.id}"
-                            )
-                            return clear_text
+                        if locked_phone:
+                            locked_resolved = WhatsAppAdapter.get_phone_for_lid(locked_phone) or locked_phone
+                            if (digits == locked_phone or digits.endswith(locked_phone) or locked_phone.endswith(digits)
+                                or (cand_lid and cand_lid == locked_phone)
+                                or (resolved_phone and (resolved_phone == locked_phone or resolved_phone.endswith(locked_phone)))
+                                or (locked_resolved and (digits == locked_resolved or digits.endswith(locked_resolved)))):
+                                unlock_group(group_jid)
+                                clear_text = "✅ Tanınmayan şəxs qrupdan çıxarıldı. Botun bu qrupdakı fəaliyyəti və elan göndərişi tam bərpa edildi! 🚀"
+                                await WhatsAppAdapter.send_message(
+                                    phone_number=group_jid,
+                                    text=clear_text,
+                                    instance_name=instance_name or f"tenant_{matched_tenant.id}"
+                                )
+                                return clear_text
         except Exception as e:
             logger.debug(f"[WhatsAppAdapter] group-participants.update error: {e}")
         return None

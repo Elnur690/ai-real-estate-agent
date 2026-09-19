@@ -1203,10 +1203,14 @@ async def update_my_agent(
 
     if body.approved_phone_numbers is not None:
         import re
+        from app.bot.whatsapp_adapter import WhatsAppAdapter
         norm_extras = []
         primary_clean = re.sub(r'\D', '', str(agent.whatsapp_number or agent.phone or ''))
         for raw in body.approved_phone_numbers:
             d = re.sub(r'\D', '', str(raw).split('@')[0])
+            res_phone = WhatsAppAdapter.get_phone_for_lid(d)
+            if res_phone:
+                d = res_phone
             if d.startswith("0") and len(d) == 10:
                 d = "994" + d[1:]
             elif not d.startswith("994") and len(d) == 9:
@@ -1215,6 +1219,12 @@ async def update_my_agent(
                 if d not in norm_extras and len(norm_extras) < 2:
                     norm_extras.append(d)
         agent.approved_phone_numbers = norm_extras
+
+        # Auto-unlock any groups of this agent that were locked
+        from app.bot.group_security import is_group_locked, unlock_group
+        for g_jid in (agent.allowed_group_jids or []):
+            if is_group_locked(g_jid):
+                unlock_group(g_jid)
 
     await db.commit()
     await db.refresh(agent)
