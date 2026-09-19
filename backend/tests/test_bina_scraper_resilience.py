@@ -154,14 +154,24 @@ async def test_impersonation_compatibility_and_recovery():
 
 
 def test_rotate_residential_session():
-    """Test that rotate_residential_session produces a new random session string."""
+    """Test that rotate_residential_session produces a new random session string and injects if missing."""
     from app.scrapers.utils import rotate_residential_session
 
+    # 1. Existing session rotated
     url = "http://user:pass_country-az,tr_session-11112222_lifetime-10m@geo.iproyal.com:12321"
     new_url = rotate_residential_session(url)
     assert new_url != url
     assert "session-" in new_url
     assert "country-az,tr" in new_url
     assert "lifetime-10m" in new_url
+
+    # 2. Missing session auto-injected
+    url_no_session = "http://user_country-az:password123@geo.iproyal.com:12321"
+    injected_url = rotate_residential_session(url_no_session)
+    assert "session-" in injected_url
+    assert "lifetime-10m" in injected_url
+    # 3. country-az automatically expanded to country-az,tr
+    assert "country-az,tr" in injected_url
+
 
 

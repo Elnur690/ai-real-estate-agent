@@ -113,15 +113,32 @@ def is_residential_gateway(proxy_url: Optional[str]) -> bool:
 
 def rotate_residential_session(proxy_url: Optional[str]) -> Optional[str]:
     """
-    If proxy_url is an IPRoyal / residential proxy containing a sticky session parameter
-    (e.g., session-XXXXXXXX), replaces it with a fresh random session ID to guarantee
-    connecting to a brand new residential exit peer on retry.
+    If proxy_url is an IPRoyal / residential proxy, guarantees rotating to a fresh session ID.
+    If session-XXXXXXXX is present, replaces it. If missing, auto-injects _session-XXXXXXXX_lifetime-10m.
+    Ensures country-az includes tr (country-az,tr) for maximum peer pool availability and speed.
     """
-    if not proxy_url or "session-" not in proxy_url:
+    if not proxy_url:
         return proxy_url
     import secrets
     new_session = secrets.token_hex(4)
-    return re.sub(r'session-[a-zA-Z0-9]+', f'session-{new_session}', proxy_url)
+
+    # Ensure regional reliability: if locked strictly to country-az, expand to country-az,tr
+    if "country-az" in proxy_url and "country-az,tr" not in proxy_url and "country-tr" not in proxy_url:
+        proxy_url = proxy_url.replace("country-az", "country-az,tr")
+
+    if "session-" in proxy_url:
+        return re.sub(r'session-[a-zA-Z0-9]+', f'session-{new_session}', proxy_url)
+
+    if is_residential_gateway(proxy_url):
+        parts = proxy_url.split("@")
+        if len(parts) == 2:
+            auth, host_port = parts[0], parts[1]
+            if "://" in auth:
+                scheme, userpass = auth.split("://", 1)
+                if ":" in userpass:
+                    username, password = userpass.split(":", 1)
+                    return f"{scheme}://{username}_session-{new_session}_lifetime-10m:{password}@{host_port}"
+    return proxy_url
 
 def mark_proxy_unhealthy(proxy_url: Optional[str], duration_seconds: float = 600.0) -> None:
     """Temporarily quarantines a proxy that failed, timed out, or got blocked by Cloudflare."""
@@ -786,8 +803,8 @@ async def fetch_stealth_page(
 
             try:
                 from curl_cffi.requests import AsyncSession
-                # Fast failover: residential proxies that take >6s to connect are stalled home peers; cut early and rotate session
-                effective_timeout = (6.0, 14.0) if is_res else timeout
+                # Fast failover: residential proxies taking >10s total are stalled peers; cut early and rotate session
+                effective_timeout = (3.5, 6.5) if is_res else timeout
                 async with AsyncSession(impersonate=chosen_impersonate, proxy=active_proxy, timeout=effective_timeout) as session:
                     res = await session.get(url, headers=req_headers)
                     if res.status_code == 200:
