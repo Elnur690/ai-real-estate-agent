@@ -727,8 +727,8 @@ async def fetch_stealth_page(
 
             try:
                 from curl_cffi.requests import AsyncSession
-                # Residential proxies (IPRoyal) routing via TR and AZ can take 8-15 seconds for connection handshake
-                effective_timeout = max(timeout, 20.0) if is_res else timeout
+                # Fast failover: residential proxies that take >12s are stalled peers; cut early and rotate session
+                effective_timeout = max(timeout, 12.0) if is_res else timeout
                 async with AsyncSession(impersonate=chosen_impersonate, proxy=active_proxy, timeout=effective_timeout) as session:
                     res = await session.get(url, headers=req_headers)
                     if res.status_code == 200:
@@ -738,7 +738,7 @@ async def fetch_stealth_page(
                         logger.warning(f"[ScraperUtils] Proxy {active_proxy} got HTTP {res.status_code} for {url} ({domain}). Retrying...")
                         mark_proxy_unhealthy(active_proxy, duration_seconds=900.0)
                         if is_res:
-                            await asyncio.sleep(2.5)
+                            await asyncio.sleep(1.5)
                         continue
             except Exception as e:
                 err_msg = str(e).lower()
@@ -750,28 +750,10 @@ async def fetch_stealth_page(
                 logger.warning(f"[ScraperUtils] Proxy attempt {attempt+1} failed for {url} (proxy: {active_proxy}): {e}")
                 mark_proxy_unhealthy(active_proxy, duration_seconds=300.0)
                 if is_res:
-                    await asyncio.sleep(2.0)
+                    await asyncio.sleep(1.0)
                 continue
 
-        # 2. Fallback: httpx.AsyncClient with another healthy proxy
-        healthy_pool = get_healthy_proxies()
-        fallback_proxy = random.choice(healthy_pool) if healthy_pool else None
-        if fallback_proxy and fallback_proxy not in tried_proxies:
-            is_res_fb = is_residential_gateway(fallback_proxy)
-            fb_timeout = max(timeout, 20.0) if is_res_fb else timeout
-            try:
-                limits = httpx.Limits(max_keepalive_connections=20, max_connections=50)
-                async with httpx.AsyncClient(proxy=fallback_proxy, timeout=fb_timeout, limits=limits, follow_redirects=True) as client:
-                    res = await client.get(url, headers=req_headers)
-                    if res.status_code == 200:
-                        mark_proxy_healthy(fallback_proxy)
-                        return res.text, res.status_code
-                    elif res.status_code in (403, 429, 503):
-                        mark_proxy_unhealthy(fallback_proxy, duration_seconds=900.0)
-            except Exception as e:
-                logger.warning(f"[ScraperUtils] httpx fallback proxy failed for {url} (proxy: {fallback_proxy}): {e}")
-
-        # 3. Strict Zero-Leak IP Protection for sensitive portals:
+        # 2. Strict Zero-Leak IP Protection for sensitive portals:
         # Portals with active IP bans or Cloudflare anti-bot (tap.az, bina.az, turbo.az, rahatemlak.az)
         # MUST NEVER fall back to direct IP! Direct requests leak the workplace static IP (213.154.20.24) and cause bans.
         strict_zero_leak_domains = ("tap.az", "bina.az", "turbo.az")
