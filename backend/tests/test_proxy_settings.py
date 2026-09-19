@@ -350,4 +350,46 @@ def test_residential_gateway_handling():
     _QUARANTINED_PROXIES.pop(dc_proxy, None)
 
 
+@pytest.mark.asyncio
+async def test_direct_first_smart_bandwidth_saver():
+    from unittest.mock import patch, MagicMock
+    from app.scrapers.utils import fetch_stealth_page, update_runtime_proxy_pool
+
+    update_runtime_proxy_pool(proxies=["http://user:pass@1.1.1.1:80"], enabled=True)
+
+    # 1. Non-strict domain (kub.az) succeeds directly without using proxy bandwidth
+    session_instances = []
+    class MockAsyncSession:
+        def __init__(self, impersonate=None, proxy=None, timeout=None):
+            self.proxy = proxy
+            session_instances.append(self)
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+        async def get(self, url, headers=None):
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.text = "<html>KUB DIRECT 200</html>"
+            return resp
+
+    with patch("curl_cffi.requests.AsyncSession", side_effect=MockAsyncSession):
+        html, status = await fetch_stealth_page("https://kub.az/evler")
+        assert status == 200
+        assert "KUB DIRECT 200" in html
+        # Only 1 session created, and its proxy must be None (direct IP used, saving proxy MB)
+        assert len(session_instances) == 1
+        assert session_instances[0].proxy is None
+
+    # 2. Strict domain (tap.az / bina.az) NEVER uses proxy=None, Zero-Leak active
+    session_instances.clear()
+    with patch("curl_cffi.requests.AsyncSession", side_effect=MockAsyncSession):
+        html, status = await fetch_stealth_page("https://bina.az/items")
+        assert status == 200
+        # The session created for bina.az must use the proxy, NOT proxy=None
+        assert len(session_instances) >= 1
+        assert session_instances[0].proxy is not None
+
+
+
 
