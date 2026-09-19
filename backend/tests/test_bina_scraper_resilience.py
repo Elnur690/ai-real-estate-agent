@@ -165,13 +165,15 @@ def test_rotate_residential_session():
     assert "country-az,tr" in new_url
     assert "lifetime-10m" in new_url
 
-    # 2. Missing session auto-injected
-    url_no_session = "http://user_country-az:password123@geo.iproyal.com:12321"
+    # 2. Missing session auto-injected into password
+    url_no_session = "http://myuser:mypass_country-az@geo.iproyal.com:12321"
     injected_url = rotate_residential_session(url_no_session)
     assert "session-" in injected_url
     assert "lifetime-10m" in injected_url
     # 3. country-az automatically expanded to country-az,tr
     assert "country-az,tr" in injected_url
+    # 4. Injected into password after colon, username stays untouched
+    assert "http://myuser:mypass_country-az,tr_session-" in injected_url
 
 
 

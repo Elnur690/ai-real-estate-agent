@@ -137,7 +137,7 @@ def rotate_residential_session(proxy_url: Optional[str]) -> Optional[str]:
                 scheme, userpass = auth.split("://", 1)
                 if ":" in userpass:
                     username, password = userpass.split(":", 1)
-                    return f"{scheme}://{username}_session-{new_session}_lifetime-10m:{password}@{host_port}"
+                    return f"{scheme}://{username}:{password}_session-{new_session}_lifetime-10m@{host_port}"
     return proxy_url
 
 def mark_proxy_unhealthy(proxy_url: Optional[str], duration_seconds: float = 600.0) -> None:
