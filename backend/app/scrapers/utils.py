@@ -399,7 +399,7 @@ async def test_proxy_connection(proxy_url: Optional[str] = None) -> Dict[str, An
 
     try:
         from curl_cffi.requests import AsyncSession
-        async with AsyncSession(impersonate="chrome124", proxy=target_proxy, timeout=22) as session:
+        async with AsyncSession(impersonate="chrome120", proxy=target_proxy, timeout=22) as session:
             async def _check_ip():
                 nonlocal detected_ip, ip_status, error_msg
                 try:
@@ -601,6 +601,36 @@ async def polite_delay(min_seconds: float = 1.0, max_seconds: float = 2.5) -> No
     await asyncio.sleep(delay)
 
 
+_VERIFIED_IMPERSONATES: Optional[List[str]] = None
+
+def get_safe_impersonate(requested: Optional[str] = None) -> str:
+    """
+    Returns a verified TLS browser impersonation string supported by the current environment's curl_cffi.
+    Safely avoids unsupported profiles (such as safari17 on certain Linux/Docker builds)
+    which would otherwise cause false proxy failures and 503 alerts.
+    """
+    global _VERIFIED_IMPERSONATES
+    if requested:
+        return requested
+
+    if _VERIFIED_IMPERSONATES is None:
+        candidates = ["chrome120", "chrome124", "chrome110"]
+        verified = []
+        try:
+            from curl_cffi.requests import AsyncSession
+            for c in candidates:
+                try:
+                    AsyncSession(impersonate=c)
+                    verified.append(c)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        _VERIFIED_IMPERSONATES = verified if verified else ["chrome120"]
+
+    return random.choice(_VERIFIED_IMPERSONATES)
+
+
 async def fetch_stealth_page(
     url: str,
     headers: Optional[Dict[str, str]] = None,
@@ -641,8 +671,8 @@ async def fetch_stealth_page(
 
         req_headers = dict(headers) if headers else get_random_headers(referer=referer or f"https://{domain}/")
 
-        # TLS Impersonation rotation: randomize across modern desktop browsers
-        chosen_impersonate = impersonate or random.choice(["chrome124", "chrome120", "safari17"])
+        # TLS Impersonation rotation: randomize across verified supported desktop browsers
+        chosen_impersonate = get_safe_impersonate(impersonate)
 
         tried_proxies = set()
         proxies_enabled = _RUNTIME_PROXY_CONFIG.get("enabled", True)
@@ -692,6 +722,12 @@ async def fetch_stealth_page(
                             await asyncio.sleep(2.5)
                         continue
             except Exception as e:
+                err_msg = str(e).lower()
+                if "not supported" in err_msg or "impersonat" in err_msg:
+                    logger.warning(f"[ScraperUtils] Impersonation '{chosen_impersonate}' not supported on host ({e}). Retrying with chrome120...")
+                    chosen_impersonate = "chrome120"
+                    continue
+
                 logger.warning(f"[ScraperUtils] Proxy attempt {attempt+1} failed for {url} (proxy: {active_proxy}): {e}")
                 mark_proxy_unhealthy(active_proxy, duration_seconds=300.0)
                 if is_res:
@@ -741,7 +777,8 @@ async def fetch_stealth_page(
         # If proxy attempts fail or quota is exhausted, seamlessly fallback to direct stealth fetch using browser impersonation
         try:
             from curl_cffi.requests import AsyncSession
-            async with AsyncSession(impersonate=chosen_impersonate, proxy=None, timeout=timeout) as session:
+            safe_direct_impersonate = chosen_impersonate if chosen_impersonate in ("chrome120", "chrome110") else "chrome120"
+            async with AsyncSession(impersonate=safe_direct_impersonate, proxy=None, timeout=timeout) as session:
                 res = await session.get(url, headers=req_headers)
                 return res.text, res.status_code
         except Exception as e:

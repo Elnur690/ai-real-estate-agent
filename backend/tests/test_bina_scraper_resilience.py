@@ -131,3 +131,24 @@ async def test_proxy_configuration_exists():
     """Test that SCRAPER_PROXY_URL and BINA_AZ_PROXY_URL exist on Settings."""
     assert hasattr(settings, "SCRAPER_PROXY_URL")
     assert hasattr(settings, "BINA_AZ_PROXY_URL")
+
+
+@pytest.mark.asyncio
+async def test_impersonation_compatibility_and_recovery():
+    """Test that get_safe_impersonate returns verified profiles and does not quarantine proxy on host library error."""
+    from app.scrapers.utils import get_safe_impersonate, fetch_stealth_page, _QUARANTINED_PROXIES
+
+    profile = get_safe_impersonate()
+    assert profile in ("chrome120", "chrome124", "chrome110")
+
+    # Verify that an impersonation error string in exception doesn't quarantine proxy
+    test_proxy = "http://user:pass@10.0.0.1:8080"
+    _QUARANTINED_PROXIES.pop(test_proxy, None)
+
+    with patch("curl_cffi.requests.AsyncSession.get", side_effect=Exception("Impersonating safari17 is not supported")):
+        # Call fetch_stealth_page with strict domain
+        content, code = await fetch_stealth_page("https://bina.az/items/12345", proxy=test_proxy, max_proxy_retries=1)
+
+    # Proxy should not have been quarantined because of library impersonation error
+    assert test_proxy not in _QUARANTINED_PROXIES
+
