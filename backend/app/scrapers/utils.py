@@ -706,6 +706,7 @@ async def fetch_stealth_page(
         # 1. Primary with Multi-Proxy Retries across healthy pool
         active_proxy = None
         is_res = False
+        last_proxy_error = "Məlum deyil"
         for attempt in range(max_proxy_retries):
             if attempt == 0:
                 active_proxy = get_rotating_proxy(proxy)
@@ -735,6 +736,7 @@ async def fetch_stealth_page(
                         mark_proxy_healthy(active_proxy)
                         return res.text, res.status_code
                     elif res.status_code in (403, 429, 503):
+                        last_proxy_error = f"HTTP {res.status_code} (Cloudflare Blok)"
                         logger.warning(f"[ScraperUtils] Proxy {active_proxy} got HTTP {res.status_code} for {url} ({domain}). Retrying...")
                         mark_proxy_unhealthy(active_proxy, duration_seconds=900.0)
                         if is_res:
@@ -747,6 +749,7 @@ async def fetch_stealth_page(
                     chosen_impersonate = "chrome120"
                     continue
 
+                last_proxy_error = str(e)
                 logger.warning(f"[ScraperUtils] Proxy attempt {attempt+1} failed for {url} (proxy: {active_proxy}): {e}")
                 mark_proxy_unhealthy(active_proxy, duration_seconds=300.0)
                 if is_res:
@@ -769,7 +772,7 @@ async def fetch_stealth_page(
                 _dispatch_async_scraper_alert(
                     source_name=domain,
                     status_code=503,
-                    error_text="Bütün proksi cəhdləri uğursuz oldu (HTTP 503). Sıfır Sızma Qalxanı aktivdir, server IP qorundu."
+                    error_text=f"Bütün proksi cəhdləri uğursuz oldu (HTTP 503). Səbəb: {last_proxy_error[:100]}. Sıfır Sızma Qalxanı aktivdir, server IP qorundu."
                 )
             return None, 503
 
