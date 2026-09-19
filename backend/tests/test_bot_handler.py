@@ -797,6 +797,29 @@ async def test_whatsapp_lid_resolution_and_security():
         assert "Nömrə uğurla təsdiqləndi" in resp_approve
         assert is_group_locked(group_jid) is False
 
+        # 4. Test auto-linking: Admin adds an extra number in SaaS Admin, agent sends message with an unmapped LID
+        # Clear mappings
+        _LID_TO_PHONE_MAP.clear()
+        _PHONE_TO_LID_MAP.clear()
+        tenant.approved_phone_numbers = ["994507778899"]
+        await db.commit()
+
+        # Agent with unmapped LID sends message -> should be auto-linked to approved "994507778899"
+        unmapped_agent_lid = "20585878929644"
+        resp_autolink = await BotCommandHandler.handle_incoming_message(
+            db=db,
+            channel="whatsapp",
+            sender_id=group_jid,
+            sender_name="LID Workgroup",
+            raw_text="/searches",
+            from_me=False,
+            sender_participant=unmapped_agent_lid,
+            sender_lid=unmapped_agent_lid
+        )
+        assert "TƏHLÜKƏSİZLİK XƏBƏRDARLIĞI" not in resp_autolink
+        assert is_group_locked(group_jid) is False
+        assert _LID_TO_PHONE_MAP.get(unmapped_agent_lid) == "994507778899"
+
     await engine.dispose()
 
 

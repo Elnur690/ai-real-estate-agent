@@ -296,6 +296,27 @@ class BotCommandHandler:
                     )
 
                     if not is_participant_approved:
+                        lid_cand = sender_lid_digits or (sender_digits if sender_digits and len(sender_digits) >= 13 else None)
+                        # Check if tenant has approved phone numbers that can be auto-linked to this LID
+                        if lid_cand:
+                            unlinked_approved = [
+                                str(num) for num in (tenant.approved_phone_numbers or [])
+                                if num and not WhatsAppAdapter.get_lid_for_phone(str(num)) and len(re.sub(r'\D', '', str(num))) < 13
+                            ]
+                            if unlinked_approved:
+                                target_num = unlinked_approved[0]
+                                WhatsAppAdapter.record_lid_phone_mapping(lid_cand, target_num)
+                                current_extras = list(tenant.approved_phone_numbers or [])
+                                if lid_cand not in current_extras:
+                                    current_extras.append(lid_cand)
+                                    tenant.approved_phone_numbers = current_extras
+                                    await db.commit()
+                                is_participant_approved = True
+                                from app.bot.group_security import unlock_group
+                                unlock_group(sender_id)
+                                logger.info(f"[GroupSecurity] Auto-linked WhatsApp LID {lid_cand} to approved phone {target_num} for tenant {tenant.id}")
+
+                    if not is_participant_approved:
                         alert_digits = sender_digits or sender_lid_digits or "naməlum"
                         lock_group_due_to_unapproved_person(sender_id, alert_digits)
                         return (
@@ -327,6 +348,29 @@ class BotCommandHandler:
                         (len(resolved_locked) >= 9 and resolved_locked[-9:] in approved_nums)
                     ):
                         unlock_group(sender_id)
+                    elif len(locked_phone) >= 13:
+                        # Auto-link locked LID if tenant has unlinked approved phone numbers
+                        unlinked_approved = [
+                            str(num) for num in (tenant.approved_phone_numbers or [])
+                            if num and not WhatsAppAdapter.get_lid_for_phone(str(num)) and len(re.sub(r'\D', '', str(num))) < 13
+                        ]
+                        if unlinked_approved:
+                            target_num = unlinked_approved[0]
+                            WhatsAppAdapter.record_lid_phone_mapping(locked_phone, target_num)
+                            current_extras = list(tenant.approved_phone_numbers or [])
+                            if locked_phone not in current_extras:
+                                current_extras.append(locked_phone)
+                                tenant.approved_phone_numbers = current_extras
+                                await db.commit()
+                            unlock_group(sender_id)
+                            logger.info(f"[GroupSecurity] Auto-unlocked group {sender_id} by linking locked LID {locked_phone} to approved {target_num}")
+                        else:
+                            return (
+                                f"🔒 *QRUP BLOKLANIB: Təsdiqlənməmiş şəxs aşkar edilib (+{locked_phone})!*\n\n"
+                                "Məxfilik qaydalarına əsasən, qrupda tanınmayan nömrə olduğu müddətdə elanlar və bot əmrləri icra olunmur.\n\n"
+                                "Nömrəni təsdiqləmək üçün: `/nomre_elave <nömrə>`\n"
+                                "Təsdiqlənmiş nömrələrə baxmaq üçün: `/nomreler`"
+                            )
                     else:
                         return (
                             f"🔒 *QRUP BLOKLANIB: Təsdiqlənməmiş şəxs aşkar edilib (+{locked_phone})!*\n\n"
@@ -417,7 +461,8 @@ class BotCommandHandler:
                                 unlock_group(sender_id)
                     return f"ℹ️ +{digits} artıq təsdiqlənmiş nömrələr siyahısındadır."
 
-            if len(current_extras) >= 2:
+            real_phone_extras = [n for n in current_extras if len(re.sub(r'\D', '', str(n))) < 13]
+            if len(digits) < 13 and len(real_phone_extras) >= 2:
                 return (
                     "🚫 *Limit doldu:* Maksimum 3 təsdiqlənmiş nömrəyə (1 əsas + 2 əlavə) icazə verilir.\n\n"
                     "Yeni nömrə əlavə etmək üçün əvvəlcə köhnələrdən birini silin: `/nomre_sil <nömrə>`"
