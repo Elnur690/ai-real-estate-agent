@@ -111,6 +111,18 @@ def is_residential_gateway(proxy_url: Optional[str]) -> bool:
 
     return False
 
+def rotate_residential_session(proxy_url: Optional[str]) -> Optional[str]:
+    """
+    If proxy_url is an IPRoyal / residential proxy containing a sticky session parameter
+    (e.g., session-XXXXXXXX), replaces it with a fresh random session ID to guarantee
+    connecting to a brand new residential exit peer on retry.
+    """
+    if not proxy_url or "session-" not in proxy_url:
+        return proxy_url
+    import secrets
+    new_session = secrets.token_hex(4)
+    return re.sub(r'session-[a-zA-Z0-9]+', f'session-{new_session}', proxy_url)
+
 def mark_proxy_unhealthy(proxy_url: Optional[str], duration_seconds: float = 600.0) -> None:
     """Temporarily quarantines a proxy that failed, timed out, or got blocked by Cloudflare."""
     import time
@@ -695,6 +707,10 @@ async def fetch_stealth_page(
         for attempt in range(max_proxy_retries):
             active_proxy = get_rotating_proxy(proxy)
             is_res = is_residential_gateway(active_proxy)
+
+            # If residential gateway failed on previous attempt, switch to a fresh peer in TR/AZ
+            if is_res and attempt > 0 and active_proxy:
+                active_proxy = rotate_residential_session(active_proxy)
 
             # Avoid picking the exact same failed proxy in this retry chain (unless residential gateway)
             if active_proxy and active_proxy in tried_proxies and not is_res:

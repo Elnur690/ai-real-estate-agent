@@ -152,3 +152,16 @@ async def test_impersonation_compatibility_and_recovery():
     # Proxy should not have been quarantined because of library impersonation error
     assert test_proxy not in _QUARANTINED_PROXIES
 
+
+def test_rotate_residential_session():
+    """Test that rotate_residential_session produces a new random session string."""
+    from app.scrapers.utils import rotate_residential_session
+
+    url = "http://user:pass_country-az,tr_session-11112222_lifetime-10m@geo.iproyal.com:12321"
+    new_url = rotate_residential_session(url)
+    assert new_url != url
+    assert "session-" in new_url
+    assert "country-az,tr" in new_url
+    assert "lifetime-10m" in new_url
+
+
