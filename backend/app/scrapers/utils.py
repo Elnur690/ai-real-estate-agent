@@ -717,7 +717,6 @@ async def fetch_stealth_page(
                     elif res.status_code in (403, 429, 503):
                         logger.warning(f"[ScraperUtils] Proxy {active_proxy} got HTTP {res.status_code} for {url} ({domain}). Retrying...")
                         mark_proxy_unhealthy(active_proxy, duration_seconds=900.0)
-                        record_domain_block(domain, status_code=res.status_code)
                         if is_res:
                             await asyncio.sleep(2.5)
                         continue
@@ -749,7 +748,6 @@ async def fetch_stealth_page(
                         return res.text, res.status_code
                     elif res.status_code in (403, 429, 503):
                         mark_proxy_unhealthy(fallback_proxy, duration_seconds=900.0)
-                        record_domain_block(domain, status_code=res.status_code)
             except Exception as e:
                 logger.warning(f"[ScraperUtils] httpx fallback proxy failed for {url} (proxy: {fallback_proxy}): {e}")
 
@@ -773,13 +771,18 @@ async def fetch_stealth_page(
                 )
             return None, 503
 
-        # 4. Resilient Fallback for all other portals (yeniemlak.az, evonline.az, ev10.az, vipemlak.az, binalar.az, etc.):
+        # 4. Resilient Fallback for all other portals (yeniemlak.az, evonline.az, ev10.az, vipemlak.az, binalar.az, kub.az, etc.):
         # If proxy attempts fail or quota is exhausted, seamlessly fallback to direct stealth fetch using browser impersonation
         try:
             from curl_cffi.requests import AsyncSession
             safe_direct_impersonate = chosen_impersonate if chosen_impersonate in ("chrome120", "chrome110") else "chrome120"
             async with AsyncSession(impersonate=safe_direct_impersonate, proxy=None, timeout=timeout) as session:
                 res = await session.get(url, headers=req_headers)
+                if res.status_code == 200:
+                    return res.text, res.status_code
+                elif res.status_code in (403, 429):
+                    logger.warning(f"[ScraperUtils] Direct fetch to {domain} received HTTP {res.status_code}. Recording domain block.")
+                    record_domain_block(domain, status_code=res.status_code)
                 return res.text, res.status_code
         except Exception as e:
             logger.debug(f"[ScraperUtils] Direct stealth fallback notice for {url}: {e}")
