@@ -786,8 +786,8 @@ async def fetch_stealth_page(
 
             try:
                 from curl_cffi.requests import AsyncSession
-                # Fast failover: residential proxies that take >12s are stalled peers; cut early and rotate session
-                effective_timeout = max(timeout, 12.0) if is_res else timeout
+                # Fast failover: residential proxies that take >6s to connect are stalled home peers; cut early and rotate session
+                effective_timeout = (6.0, 14.0) if is_res else timeout
                 async with AsyncSession(impersonate=chosen_impersonate, proxy=active_proxy, timeout=effective_timeout) as session:
                     res = await session.get(url, headers=req_headers)
                     if res.status_code == 200:
