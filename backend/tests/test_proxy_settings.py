@@ -423,6 +423,48 @@ def test_classify_cloudflare_response():
     assert "HTTP 403" in diag_generic
 
 
+@pytest.mark.asyncio
+async def test_dynamic_zero_leak_addition_on_error_1006():
+    from unittest.mock import patch, MagicMock
+    from app.scrapers.utils import fetch_stealth_page, update_runtime_proxy_pool, _RUNTIME_ZERO_LEAK_DOMAINS
+
+    update_runtime_proxy_pool(proxies=["http://user:pass@1.1.1.1:80"], enabled=True)
+
+    test_domain = "newportal.az"
+    _RUNTIME_ZERO_LEAK_DOMAINS.discard(test_domain)
+    assert test_domain not in _RUNTIME_ZERO_LEAK_DOMAINS
+
+    # Simulate direct fetch returning Error 1006
+    class MockAsyncSession:
+        def __init__(self, impersonate=None, proxy=None, timeout=None):
+            self.proxy = proxy
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+        async def get(self, url, headers=None):
+            resp = MagicMock()
+            if self.proxy is None:
+                # Direct IP receives Error 1006
+                resp.status_code = 403
+                resp.text = "<html>Error 1006: Your IP address has been banned</html>"
+            else:
+                # Proxy succeeds
+                resp.status_code = 200
+                resp.text = "<html>PROXY SUCCESS 200</html>"
+            return resp
+
+    with patch("curl_cffi.requests.AsyncSession", side_effect=MockAsyncSession):
+        html, status = await fetch_stealth_page(f"https://{test_domain}/listings")
+        assert status == 200
+        assert "PROXY SUCCESS 200" in html
+        # Verifies that test_domain was dynamically promoted to the Zero-Leak protection set
+        assert test_domain in _RUNTIME_ZERO_LEAK_DOMAINS
+
+    _RUNTIME_ZERO_LEAK_DOMAINS.discard(test_domain)
+
+
+
 
 
 

@@ -3,7 +3,7 @@ import random
 import logging
 import re
 import time
-from typing import Dict, Optional, Any, List, Tuple
+from typing import Dict, Optional, Any, List, Tuple, Set
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -227,6 +227,8 @@ _RUNTIME_PROXY_CONFIG = {
     "primary": None,
     "proxies": list(WEBSHARE_PROXIES)
 }
+
+_RUNTIME_ZERO_LEAK_DOMAINS: Set[str] = {"tap.az", "bina.az", "turbo.az"}
 
 def get_runtime_proxy_config() -> Dict[str, Any]:
     """Returns current active runtime proxy configuration."""
@@ -718,8 +720,7 @@ async def fetch_stealth_page(
         tried_proxies = set()
         proxies_enabled = _RUNTIME_PROXY_CONFIG.get("enabled", True)
 
-        strict_zero_leak_domains = ("tap.az", "bina.az", "turbo.az")
-        is_strict = any(d in domain for d in strict_zero_leak_domains)
+        is_strict = any(d in domain for d in _RUNTIME_ZERO_LEAK_DOMAINS)
 
         # Fast-track direct fetch:
         # If proxies are disabled by admin, or if all proxies are quarantined and this is not a strict domain:
@@ -750,7 +751,11 @@ async def fetch_stealth_page(
                         diag = classify_cloudflare_response(res.status_code, res.text)
                         if "1006" in diag:
                             direct_blocked = True
-                            logger.error(f"[ScraperUtils] Direct IP permanently banned on {domain}: {diag}. Switching to proxy pool.")
+                            _RUNTIME_ZERO_LEAK_DOMAINS.add(domain)
+                            logger.error(
+                                f"[ScraperUtils] Permanent IP ban (Cloudflare Error 1006) detected on {domain}! "
+                                f"Dynamically added to Zero-Leak protection set. Server IP will never be used for {domain} again."
+                            )
                         else:
                             logger.info(f"[ScraperUtils] Direct IP received {diag} on {domain}. Falling back to proxy pool...")
             except Exception as e:
@@ -811,10 +816,9 @@ async def fetch_stealth_page(
                 continue
 
         # 2. Strict Zero-Leak IP Protection for sensitive portals:
-        # Portals with active IP bans or Cloudflare anti-bot (tap.az, bina.az, turbo.az, rahatemlak.az)
+        # Portals with active IP bans (tap.az, bina.az, turbo.az, or any portal where Error 1006 was detected)
         # MUST NEVER fall back to direct IP! Direct requests leak the workplace static IP (213.154.20.24) and cause bans.
-        strict_zero_leak_domains = ("tap.az", "bina.az", "turbo.az")
-        if proxies_enabled and any(d in domain for d in strict_zero_leak_domains):
+        if proxies_enabled and any(d in domain for d in _RUNTIME_ZERO_LEAK_DOMAINS):
             logger.warning(
                 f"[ScraperUtils] All {max_proxy_retries} proxy attempts failed for {url} ({domain}). "
                 f"Zero-Leak Protection ACTIVE: Aborting request with HTTP 503 rather than leaking host static IP. "
