@@ -698,10 +698,18 @@ class IngestionService:
                 res_s = await session.execute(stmt_s)
                 active_searches = res_s.scalars().all()
 
+        # Ensure targeted search feeds respect paused sources (e.g. if Bina.az or Tap.az is paused)
+        bina_active = any("bina.az" in (s_url or "").lower() or "bina.az" in (s_name or "").lower() for _, s_name, _, s_url in source_rows)
+        tap_active = any("tap.az" in (s_url or "").lower() or "tap.az" in (s_name or "").lower() for _, s_name, _, s_url in source_rows)
+
         targeted_tasks = []
         seen_target_urls = set()
         for s in active_searches:
             for s_name, scraper_inst, t_url in IngestionService.build_targeted_search_urls(s):
+                if "bina.az" in t_url.lower() and not bina_active:
+                    continue
+                if "tap.az" in t_url.lower() and not tap_active:
+                    continue
                 if t_url not in seen_target_urls:
                     seen_target_urls.add(t_url)
                     targeted_tasks.append((s_name, scraper_inst, t_url, 1))
