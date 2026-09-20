@@ -238,6 +238,11 @@ _RUNTIME_PROXY_CONFIG = {
 }
 
 _RUNTIME_ZERO_LEAK_DOMAINS: Set[str] = {"tap.az", "bina.az", "turbo.az"}
+_RUNTIME_PAUSED_DOMAINS: Set[str] = set()
+
+def get_runtime_paused_domains() -> Set[str]:
+    """Returns set of domains currently paused in Admin Dashboard."""
+    return set(_RUNTIME_PAUSED_DOMAINS)
 
 def get_runtime_proxy_config() -> Dict[str, Any]:
     """Returns current active runtime proxy configuration."""
@@ -283,9 +288,9 @@ _LAST_PROXY_DB_SYNC: float = 0.0
 
 async def sync_proxy_pool_from_db(db: Optional[Any] = None, force: bool = False) -> None:
     """
-    Synchronizes in-memory _RUNTIME_PROXY_CONFIG with the AppSettings table in the database.
+    Synchronizes in-memory _RUNTIME_PROXY_CONFIG and _RUNTIME_PAUSED_DOMAINS with the database.
     Ensures Celery workers, background jobs, and web processes dynamically reload the latest
-    proxies (e.g. IPRoyal, custom pools) saved in SaaS Admin Settings without container restarts.
+    proxies and paused sources without container restarts.
     """
     global _LAST_PROXY_DB_SYNC
     now = time.time()
@@ -316,6 +321,31 @@ async def sync_proxy_pool_from_db(db: Optional[Any] = None, force: bool = False)
                     rotation=rotation
                 )
 
+            # 2. Sync Paused Listing Sources from DB
+            try:
+                from app.models.listing import ListingSource
+                stmt_paused = select(ListingSource.url_or_handle, ListingSource.name).where(ListingSource.status == "paused")
+                res_paused = await session.execute(stmt_paused)
+                paused_items = res_paused.all()
+                _RUNTIME_PAUSED_DOMAINS.clear()
+                for p_url, p_name in paused_items:
+                    candidates = []
+                    if p_url:
+                        clean_u = p_url.lower().replace("https://", "").replace("http://", "").split("/")[0].replace("www.", "").strip()
+                        if clean_u:
+                            candidates.append(clean_u)
+                    if p_name:
+                        clean_n = p_name.lower().replace(" ", "").strip()
+                        candidates.append(clean_n)
+                    for c in candidates:
+                        for portal_kw in ("bina.az", "tap.az", "turbo.az", "rahatemlak.az", "yeniemlak.az", "evonline.az", "lalafo.az", "vipemlak.az", "kub.az", "ofis.az", "unvan.az", "binam.az", "binalar.az", "mulk.az", "villa.az", "homdom.az", "ipoteka.az", "ev10.az"):
+                            if portal_kw in c:
+                                _RUNTIME_PAUSED_DOMAINS.add(portal_kw)
+                if _RUNTIME_PAUSED_DOMAINS:
+                    logger.info(f"[ScraperUtils] Synced paused portal domains from DB: {_RUNTIME_PAUSED_DOMAINS}")
+            except Exception as e_paused:
+                logger.debug(f"[ScraperUtils] Notice syncing paused sources: {e_paused}")
+
         if db is not None:
             await _load(db)
         else:
@@ -334,8 +364,14 @@ _DOMAIN_BLOCK_COUNTS: Dict[str, List[float]] = {}  # domain -> timestamps of rec
 _DOMAIN_ALERT_TIMESTAMPS: Dict[str, float] = {}  # domain -> timestamp of last admin alert (anti-spam throttle)
 
 def _dispatch_async_scraper_alert(source_name: str, status_code: Optional[int], error_text: str) -> None:
-    """Dispatches background task to notify admin via HealthMonitorService (suppressed during maintenance)."""
+    """Dispatches background task to notify admin via HealthMonitorService (suppressed during maintenance or if source is paused)."""
     try:
+        # Suppress alerts for domains paused by admin in SaaS Admin Dashboard
+        clean_src = (source_name or "").lower().replace("www.", "")
+        if any(pd in clean_src for pd in _RUNTIME_PAUSED_DOMAINS):
+            logger.info(f"[ScraperUtils] Suppressing scraper alert for {source_name} because it is PAUSED in Admin Dashboard.")
+            return
+
         from app.services.maintenance import MaintenanceService
         if MaintenanceService.is_maintenance_active_sync():
             logger.debug(f"[ScraperUtils] Maintenance mode active. Suppressing alert dispatch for {source_name}")
@@ -699,6 +735,11 @@ async def fetch_stealth_page(
     from urllib.parse import urlparse
     parsed = urlparse(url)
     domain = (parsed.netloc or "").lower().replace("www.", "")
+
+    # 0. Check if domain is paused in SaaS Admin: IMMEDIATELY abort without network or sleep
+    if any(pd in domain for pd in _RUNTIME_PAUSED_DOMAINS):
+        logger.debug(f"[ScraperUtils] Domain {domain} is PAUSED in Admin Dashboard. Aborting fetch immediately.")
+        return None, 204
 
     # Check circuit-breaker domain cooldown
     cooldown_left = check_domain_cooldown(domain)

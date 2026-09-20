@@ -634,17 +634,22 @@ class IngestionService:
         from app.services.listing_reconciler import ListingReconcilerService
         import httpx
 
+        from app.scrapers.utils import get_runtime_paused_domains
+        paused_domains = get_runtime_paused_domains()
+
         async with httpx.AsyncClient(follow_redirects=True) as http_client:
             for l in active_listings:
                 try:
                     target_url = getattr(l, 'listing_url', None) or getattr(l, 'url', None)
                     if target_url:
-                        is_live = await ListingReconcilerService.check_url_liveness(target_url, http_client)
-                        if not is_live:
-                            logger.info(f"[IngestionService] Backfill skipping & deactivating dead listing #{l.id} ({target_url})")
-                            l.is_active = False
-                            await db.commit()
-                            continue
+                        target_clean = target_url.lower().replace("https://", "").replace("http://", "").split("/")[0].replace("www.", "")
+                        if not any(pd in target_clean for pd in paused_domains):
+                            is_live = await ListingReconcilerService.check_url_liveness(target_url, http_client)
+                            if not is_live:
+                                logger.info(f"[IngestionService] Backfill skipping & deactivating dead listing #{l.id} ({target_url})")
+                                l.is_active = False
+                                await db.commit()
+                                continue
 
                     delivered += await IngestionService._evaluate_and_deliver_matches(
                         db, l, target_search_id=search.id, enrich_live=False
@@ -652,9 +657,12 @@ class IngestionService:
                 except Exception as e:
                     logger.error(f"[IngestionService] Error evaluating listing #{l.id} in backfill: {e}")
 
-        # Step 2: On-demand targeted scrape of Bina.az and Tap.az for this specific criteria
+        # Step 2: On-demand targeted scrape of active portals for this specific criteria
         targets = IngestionService.build_targeted_search_urls(search)
         for s_name, scraper, target_url in targets:
+            target_clean = target_url.lower().replace("https://", "").replace("http://", "").split("/")[0].replace("www.", "")
+            if any(pd in target_clean for pd in paused_domains):
+                continue
             try:
                 items = await scraper.scrape_source(target_url)
                 logger.info(f"[IngestionService] Targeted scrape {s_name} ({target_url}) found {len(items)} items")

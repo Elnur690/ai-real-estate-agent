@@ -64,6 +64,14 @@ async def toggle_source(source_id: int, db: AsyncSession = Depends(get_db), curr
     source.status = "paused" if source.status == "active" else "active"
     await db.commit()
     await db.refresh(source)
+
+    # Force immediate sync of paused domains in runtime memory
+    try:
+        from app.scrapers.utils import sync_proxy_pool_from_db
+        await sync_proxy_pool_from_db(db, force=True)
+    except Exception as e:
+        pass
+
     return source
 
 @router.delete("/sources/{source_id}")

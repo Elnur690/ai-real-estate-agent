@@ -57,16 +57,6 @@ def run_scheduled_ingestion(self):
         result = await IngestionService.run_ingestion_cycle()
         logger.info(f"[CeleryJob] Cycle complete: {result}")
 
-        try:
-            async with AsyncSessionLocal() as db:
-                stmt_s = select(SavedSearch).where(SavedSearch.is_active == True)
-                res_s = await db.execute(stmt_s)
-                active_searches = res_s.scalars().all()
-                for s in active_searches:
-                    await IngestionService.run_targeted_instant_backfill(db, s)
-        except Exception as e_bf:
-            logger.debug(f"[CeleryJob] Backfill notice: {e_bf}")
-
         return result
 
     try:
