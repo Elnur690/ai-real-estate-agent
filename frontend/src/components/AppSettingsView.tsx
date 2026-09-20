@@ -1028,7 +1028,7 @@ export const AppSettingsView: React.FC = () => {
                   Proksi & Anti-Bot Şəbəkə Mərkəzi
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Bina.az və digər daşınmaz əmlak portallarının IP bloklamalarından (Cloudflare Error 1006) yayınmaq üçün Webshare və ya istənilən fərdi proksi hovuzunu idarə edin.
+                  Bina.az və digər daşınmaz əmlak portallarının IP bloklamalarından (Cloudflare Error 1006) yayınmaq üçün IPRoyal və ya istənilən fərdi proksi hovuzunu idarə edin.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -1084,7 +1084,7 @@ export const AppSettingsView: React.FC = () => {
             <div>
               <h4 className="text-sm font-bold text-white mb-1">Əsas Proksi (Primary / Fallback URL)</h4>
               <p className="text-xs text-slate-400 mb-2">
-                Əgər tək bir statik proksi və ya şəxsi tunel (məs. BrightData, Oxylabs, Webshare Backbone) istifadə edirsinizsə, bura daxil edin. Boş saxlanarsa birbaşa aşağıdakı çoxlu hovuz işə düşür.
+                Əgər tək bir statik proksi və ya şəxsi tunel (məs. IPRoyal Residential, BrightData, Oxylabs) istifadə edirsinizsə, bura daxil edin. Boş saxlanarsa birbaşa aşağıdakı çoxlu hovuz işə düşür.
               </p>
               <input
                 type="text"
@@ -1100,7 +1100,7 @@ export const AppSettingsView: React.FC = () => {
                 <div>
                   <h4 className="text-sm font-bold text-white">Çoxlu Proksi Hovuzu (Proxy Pool List)</h4>
                   <p className="text-xs text-slate-400">
-                    Hər sətirdə bir proksi. Webshare standart formatı (<code className="text-purple-300">IP:PORT:USER:PASS</code>) və ya URL formatı (<code className="text-purple-300">http://user:pass@ip:port</code>) dəstəklənir.
+                    Hər sətirdə bir proksi. Standart format (<code className="text-purple-300">HOST:PORT:USER:PASS</code>) və ya URL formatı (<code className="text-purple-300">http://user:pass@host:port</code>) dəstəklənir.
                   </p>
                 </div>
                 <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
@@ -1173,7 +1173,7 @@ export const AppSettingsView: React.FC = () => {
                 rows={8}
                 value={settingsMap['proxy_pool_urls'] || ''}
                 onChange={(e) => setSettingsMap({ ...settingsMap, proxy_pool_urls: e.target.value })}
-                placeholder="31.59.20.176:6754:reipvtkd:kwop2c4stm5r&#10;45.38.107.97:6014:reipvtkd:kwop2c4stm5r"
+                placeholder="geo.iproyal.com:12321:username:password&#10;http://username:password@geo.iproyal.com:12321"
                 className="w-full bg-dark-900 border border-slate-700/80 p-3.5 rounded-xl text-xs font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:border-purple-500 leading-relaxed"
               />
             </div>
@@ -1223,7 +1223,7 @@ export const AppSettingsView: React.FC = () => {
             <div className="space-y-2">
               <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
                 <span>Fərdi Proksini Sınaqdan Keçir (Opsional)</span>
-                <span className="text-[11px] text-slate-500 font-mono">Format: 31.59.20.176:6754:reipvtkd:kwop2c4stm5r</span>
+                <span className="text-[11px] text-slate-500 font-mono">Format: geo.iproyal.com:12321:username:password</span>
               </label>
               <div className="flex flex-col sm:flex-row gap-2">
                 <input
@@ -1248,7 +1248,7 @@ export const AppSettingsView: React.FC = () => {
                 <div className="text-[11px] text-amber-300 flex items-start gap-1.5 mt-1.5 bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/30">
                   <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                   <span>
-                    <strong>Diqqət:</strong> Bu xanaya bina.az və ya tap.az saytının ünvanı yazılmamalıdır! Bura yalnız <strong>Webshare və ya proksi provayderinizin verdiyi IP və port</strong> yazılmalıdır (məs: <code className="text-purple-300">31.59.20.176:6754:reipvtkd:kwop2c4stm5r</code>). Hər iki sayta qoşulma arxa planda avtomatik sınaqdan keçirilir.
+                    <strong>Diqqət:</strong> Bu xanaya bina.az və ya tap.az saytının ünvanı yazılmamalıdır! Bura yalnız <strong>IPRoyal və ya proksi provayderinizin verdiyi IP/Host və port</strong> yazılmalıdır (məs: <code className="text-purple-300">geo.iproyal.com:12321:username:password</code>). Hər iki sayta qoşulma arxa planda avtomatik sınaqdan keçirilir.
                   </span>
                 </div>
               )}

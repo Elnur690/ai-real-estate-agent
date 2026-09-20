@@ -69,17 +69,8 @@ def get_random_headers(extra_headers: Optional[Dict[str, str]] = None, referer: 
     return headers
 
 
-WEBSHARE_PROXIES = [
-    "http://reipvtkd:kwop2c4stm5r@31.59.20.176:6754",
-    "http://reipvtkd:kwop2c4stm5r@45.38.107.97:6014",
-    "http://reipvtkd:kwop2c4stm5r@198.105.121.200:6462",
-    "http://reipvtkd:kwop2c4stm5r@64.137.96.74:6641",
-    "http://reipvtkd:kwop2c4stm5r@198.23.243.226:6361",
-    "http://reipvtkd:kwop2c4stm5r@38.154.185.97:6370",
-    "http://reipvtkd:kwop2c4stm5r@84.247.60.125:6095",
-    "http://reipvtkd:kwop2c4stm5r@191.96.254.138:6185",
-    "http://reipvtkd:kwop2c4stm5r@31.58.9.4:6077",
-]
+WEBSHARE_PROXIES: List[str] = []
+
 
 # In-memory proxy quarantine tracker: {proxy_url: expiration_timestamp}
 _QUARANTINED_PROXIES: Dict[str, float] = {}
@@ -167,7 +158,7 @@ def get_strictly_healthy_proxies(pool: Optional[List[str]] = None) -> List[str]:
     """Filters pool to return only proxies not currently under quarantine (empty if all failed)."""
     import time
     now = time.time()
-    active_pool = pool if pool is not None else (_RUNTIME_PROXY_CONFIG.get("proxies") or WEBSHARE_PROXIES)
+    active_pool = pool if pool is not None else (_RUNTIME_PROXY_CONFIG.get("proxies") or [])
     expired = [p for p, exp in _QUARANTINED_PROXIES.items() if exp <= now]
     for p in expired:
         _QUARANTINED_PROXIES.pop(p, None)
@@ -175,7 +166,7 @@ def get_strictly_healthy_proxies(pool: Optional[List[str]] = None) -> List[str]:
 
 def get_healthy_proxies(pool: Optional[List[str]] = None) -> List[str]:
     """Filters pool to return only proxies not currently under quarantine."""
-    active_pool = pool if pool is not None else (_RUNTIME_PROXY_CONFIG.get("proxies") or WEBSHARE_PROXIES)
+    active_pool = pool if pool is not None else (_RUNTIME_PROXY_CONFIG.get("proxies") or [])
     healthy = get_strictly_healthy_proxies(pool)
     # If all proxies are quarantined, fallback to active pool rather than stopping completely
     return healthy if healthy else active_pool
@@ -201,7 +192,7 @@ def normalize_proxy_url(proxy_str: Optional[str]) -> str:
     if any(d in p.lower() for d in target_domains):
         raise ValueError(
             f"Daxil edilən ünvan ('{p}') proksi server deyil, hədəf veb-saytdır! "
-            "Zəhmət olmasa proksi server ünvanını daxil edin (məsələn: 31.59.20.176:6754:reipvtkd:kwop2c4stm5r və ya http://user:pass@ip:port)."
+            "Zəhmət olmasa proksi server ünvanını daxil edin (məsələn: geo.iproyal.com:12321:user:pass və ya http://user:pass@geo.iproyal.com:12321)."
         )
 
     scheme = "http"
@@ -242,7 +233,7 @@ _RUNTIME_PROXY_CONFIG = {
     "enabled": True,
     "rotation": True,
     "primary": None,
-    "proxies": list(WEBSHARE_PROXIES)
+    "proxies": []
 }
 
 _RUNTIME_ZERO_LEAK_DOMAINS: Set[str] = {"tap.az", "bina.az", "turbo.az"}
@@ -276,7 +267,7 @@ def update_runtime_proxy_pool(
                 except ValueError:
                     pass
     elif not clean_primary:
-        clean_proxies = list(WEBSHARE_PROXIES)
+        clean_proxies = []
 
     _RUNTIME_PROXY_CONFIG.clear()
     _RUNTIME_PROXY_CONFIG.update({
@@ -487,7 +478,7 @@ async def test_proxy_connection(proxy_url: Optional[str] = None) -> Dict[str, An
         human_msg = f"Proksi Tap.az üçün aktivdir (200 OK), lakin Bina.az cavab statusu: HTTP {bina_status}."
     elif error_msg:
         if "response 402" in error_msg or "402" in error_msg:
-            human_msg = f"Proksi xidmətinin trafiki bitib (HTTP 402 Payment Required / Bandwidth Limit). Webshare və ya proksi provayderinizdə balans/trafik limitini yeniləyin."
+            human_msg = f"Proksi xidmətinin trafiki bitib (HTTP 402 Payment Required / Bandwidth Limit). IPRoyal və ya proksi provayderinizdə balans/trafik limitini yeniləyin."
         elif "response 400" in error_msg:
             human_msg = f"Proksi server sorğunu rədd etdi (HTTP 400 Bad Request). Yoxlanılan ünvan: '{target_proxy}'. Zəhmət olmasa proksi formatını və portu yoxlayın."
         elif "response 407" in error_msg:
@@ -523,8 +514,6 @@ def get_rotating_proxy(explicit_proxy: Optional[str] = None) -> Optional[str]:
 
     primary = _RUNTIME_PROXY_CONFIG.get("primary")
     pool = list(_RUNTIME_PROXY_CONFIG.get("proxies") or [])
-    if not pool and not primary:
-        pool = list(WEBSHARE_PROXIES)
 
     rotation = _RUNTIME_PROXY_CONFIG.get("rotation", True)
     healthy_pool = get_healthy_proxies(pool)
@@ -557,7 +546,7 @@ async def scan_entire_proxy_pool(custom_pool: Optional[List[str]] = None) -> Dic
     Concurrently tests all proxies in the pool against bina.az, tap.az, and ipify.
     Returns per-proxy health status, working count, and list of blocked/failed proxies.
     """
-    pool_to_scan = custom_pool if custom_pool else (_RUNTIME_PROXY_CONFIG.get("proxies") or WEBSHARE_PROXIES)
+    pool_to_scan = custom_pool if custom_pool is not None else (_RUNTIME_PROXY_CONFIG.get("proxies") or [])
     clean_pool = []
     for p in pool_to_scan:
         if p and p.strip():

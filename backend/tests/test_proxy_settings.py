@@ -14,8 +14,7 @@ from app.scrapers.utils import (
     is_residential_gateway,
     mark_proxy_unhealthy,
     _RUNTIME_PROXY_CONFIG,
-    _QUARANTINED_PROXIES,
-    WEBSHARE_PROXIES
+    _QUARANTINED_PROXIES
 )
 
 @pytest_asyncio.fixture
@@ -42,10 +41,10 @@ async def client(test_db: AsyncSession):
     app.dependency_overrides.clear()
 
 def test_normalize_proxy_url():
-    # 1. IP:PORT:USER:PASS format (Webshare standard)
-    raw = "31.59.20.176:6754:reipvtkd:kwop2c4stm5r"
+    # 1. IP:PORT:USER:PASS format
+    raw = "31.59.20.176:6754:myuser:mypassword"
     normalized = normalize_proxy_url(raw)
-    assert normalized == "http://reipvtkd:kwop2c4stm5r@31.59.20.176:6754"
+    assert normalized == "http://myuser:mypassword@31.59.20.176:6754"
 
     # 2. Already HTTP url
     url = "http://user:pass@1.2.3.4:8080"
@@ -56,8 +55,8 @@ def test_normalize_proxy_url():
     assert normalize_proxy_url(socks) == socks
 
     # 4. User:pass@ip:port without scheme
-    user_pass = "reipvtkd:kwop2c4stm5r@31.59.20.176:6754"
-    assert normalize_proxy_url(user_pass) == "http://reipvtkd:kwop2c4stm5r@31.59.20.176:6754"
+    user_pass = "myuser:mypassword@31.59.20.176:6754"
+    assert normalize_proxy_url(user_pass) == "http://myuser:mypassword@31.59.20.176:6754"
 
     # 5. Empty string
     assert normalize_proxy_url("") == ""
@@ -107,9 +106,9 @@ def test_runtime_proxy_pool_management():
     )
     assert get_rotating_proxy() is None
 
-    # Reset to default Webshare pool
+    # Reset pool
     update_runtime_proxy_pool(
-        proxies=list(WEBSHARE_PROXIES),
+        proxies=[],
         primary_proxy=None,
         enabled=True,
         rotation=True
@@ -146,7 +145,7 @@ async def test_settings_proxy_api(client: AsyncClient, test_db: AsyncSession):
             "proxy_enabled": "true",
             "proxy_rotation_enabled": "false",
             "bina_az_proxy_url": "http://custom:proxy@10.0.0.1:8080",
-            "proxy_pool_urls": "31.59.20.176:6754:reipvtkd:kwop2c4stm5r\n45.38.107.97:6014:reipvtkd:kwop2c4stm5r"
+            "proxy_pool_urls": "31.59.20.176:6754:user1:pass1\n45.38.107.97:6014:user2:pass2"
         }
     }, headers=headers)
     assert update_res.status_code == 200
@@ -159,7 +158,7 @@ async def test_settings_proxy_api(client: AsyncClient, test_db: AsyncSession):
 
     # Reset back to default
     update_runtime_proxy_pool(
-        proxies=list(WEBSHARE_PROXIES),
+        proxies=[],
         primary_proxy=None,
         enabled=True,
         rotation=True
@@ -331,7 +330,7 @@ def test_residential_gateway_handling():
     assert is_residential_gateway(norm) is True
     assert is_residential_gateway("http://u:p@gate.smartproxy.com:7000") is True
     assert is_residential_gateway("http://u:p@brd.superproxy.io:22225") is True
-    assert is_residential_gateway("http://reipvtkd:kwop2c4stm5r@31.59.20.176:6754") is False
+    assert is_residential_gateway("http://datacenteruser:datacenterpass@31.59.20.176:6754") is False
 
     # 3. Smart brief quarantine (<=10s) instead of 600s/900s for residential gateways
     _QUARANTINED_PROXIES.pop(norm, None)
@@ -343,7 +342,7 @@ def test_residential_gateway_handling():
     _QUARANTINED_PROXIES.pop(norm, None)
 
     # 4. Standard datacenter proxy gets full duration
-    dc_proxy = "http://reipvtkd:kwop2c4stm5r@31.59.20.176:6754"
+    dc_proxy = "http://datacenteruser:datacenterpass@31.59.20.176:6754"
     _QUARANTINED_PROXIES.pop(dc_proxy, None)
     mark_proxy_unhealthy(dc_proxy, duration_seconds=600.0)
     assert _QUARANTINED_PROXIES[dc_proxy] >= time.time() + 500.0

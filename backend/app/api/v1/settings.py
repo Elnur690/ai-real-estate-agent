@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_current_admin
 from app.models.setting import AppSettings
-from app.scrapers.utils import WEBSHARE_PROXIES, update_runtime_proxy_pool, test_proxy_connection
+from app.scrapers.utils import update_runtime_proxy_pool, test_proxy_connection
 
 router = APIRouter(prefix="/settings", tags=["App Settings"])
 
@@ -53,9 +53,9 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
     if "proxy_rotation_enabled" not in out:
         out["proxy_rotation_enabled"] = "true"
     if "bina_az_proxy_url" not in out:
-        out["bina_az_proxy_url"] = "http://reipvtkd:kwop2c4stm5r@31.59.20.176:6754"
+        out["bina_az_proxy_url"] = ""
     if "proxy_pool_urls" not in out:
-        out["proxy_pool_urls"] = "\n".join(WEBSHARE_PROXIES)
+        out["proxy_pool_urls"] = ""
 
     # System Maintenance Defaults
     if "system_maintenance_mode" not in out:
