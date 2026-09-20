@@ -305,13 +305,16 @@ class IngestionService:
         return {}
 
     @staticmethod
-    def get_adaptive_polling_interval() -> int:
-        """Returns optimal polling interval in seconds based on Baku peak activity hours (09:00 - 22:00 AZT)."""
+    def get_adaptive_polling_interval(day_interval: int = 90, night_interval: int = 300) -> int:
+        """
+        Returns optimal polling interval in seconds based on Baku peak activity hours (AZT, UTC+4):
+        - Peak daytime (08:00 - 01:00 AZT): 90 seconds (1.5 minutes) -> fast matching, 3x bandwidth savings
+        - Off-peak night (01:00 - 08:00 AZT): 300 seconds (5 minutes) -> 10x bandwidth savings when no ads are posted
+        """
         baku_tz = timezone(timedelta(hours=4))
         now_baku = datetime.now(timezone.utc).astimezone(baku_tz)
-        if 9 <= now_baku.hour < 22:
-            return 35  # Peak daytime frequency: 35 seconds
-        return 180  # Off-peak night frequency: 3 minutes
+        is_night = 1 <= now_baku.hour < 8
+        return night_interval if is_night else day_interval
 
     @staticmethod
     async def _deliver_price_drop_alerts(

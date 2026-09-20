@@ -253,3 +253,27 @@ async def test_targeted_search_url_generation_with_location_slugs():
     assert has_elmler_loc, f"Missing Elmlər location ID target in {target_urls}"
     assert has_yasamal_loc, f"Missing Yasamal location ID target in {target_urls}"
     assert has_price_params, f"Missing price params in {target_urls}"
+
+
+@pytest.mark.asyncio
+async def test_adaptive_bandwidth_saver_intervals():
+    from app.services.ingestion import IngestionService
+    from app.core.cache import CacheManager
+    from app.scrapers.utils import get_random_headers
+    import time
+
+    # 1. Verify modern compression header
+    headers = get_random_headers()
+    assert "Accept-Encoding" in headers
+    assert "gzip" in headers["Accept-Encoding"]
+    assert "br" in headers["Accept-Encoding"]
+
+    # 2. Verify adaptive interval returns expected day/night values
+    interval = IngestionService.get_adaptive_polling_interval(day_interval=90, night_interval=300)
+    assert interval in (90, 300)
+
+    # 3. Verify CacheManager tracks ingestion run timestamps
+    t0 = time.time()
+    await CacheManager.set_last_ingestion_time(t0)
+    t_read = await CacheManager.get_last_ingestion_time()
+    assert abs(t_read - t0) < 0.01

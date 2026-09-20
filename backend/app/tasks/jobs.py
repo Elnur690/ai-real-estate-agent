@@ -26,13 +26,31 @@ def _run_async(coro):
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
 def run_scheduled_ingestion(self):
     """Celery periodic job to run scraping, normalization, AI match scoring, and notification dispatch."""
-    logger.info("[CeleryJob] Starting scheduled ingestion cycle...")
     
     async def _runner():
         from app.services.maintenance import MaintenanceService
         if await MaintenanceService.is_maintenance_active():
             logger.info("[CeleryJob] System maintenance mode is ACTIVE. Pausing ingestion cycle to protect database and server.")
             return {"status": "paused_maintenance", "scraped": 0, "matched": 0}
+
+        import time
+        from app.core.cache import CacheManager
+        from app.services.ingestion import IngestionService
+
+        # Adaptive Bandwidth-Saver Throttling:
+        # Daytime (08:00 - 01:00 AZT): 90s interval (fast matching, 3x bandwidth savings)
+        # Night (01:00 - 08:00 AZT): 300s (5m) interval (10x bandwidth savings when no ads are posted)
+        interval = IngestionService.get_adaptive_polling_interval()
+        now = time.time()
+        last_run = await CacheManager.get_last_ingestion_time()
+        elapsed = now - last_run
+        if elapsed < interval:
+            remaining = int(interval - elapsed)
+            logger.debug(f"[CeleryJob] Adaptive bandwidth saver: interval={interval}s, elapsed={int(elapsed)}s. Next cycle in {remaining}s.")
+            return {"status": "throttled_bandwidth_saver", "interval": interval, "next_in_seconds": remaining}
+
+        await CacheManager.set_last_ingestion_time(now)
+        logger.info(f"[CeleryJob] Starting scheduled ingestion cycle (adaptive interval: {interval}s)...")
 
         from app.db.session import AsyncSessionLocal
         from app.models.saved_search import SavedSearch

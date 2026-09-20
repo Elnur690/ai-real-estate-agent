@@ -113,3 +113,29 @@ class CacheManager:
                 await r.delete(f"cache:{key}")
             except Exception as e:
                 logger.debug(f"[CacheManager] Redis delete error: {e}")
+
+    _last_ingestion_timestamp: float = 0.0
+
+    @classmethod
+    async def get_last_ingestion_time(cls) -> float:
+        """Retrieves last scheduled ingestion execution timestamp."""
+        r = await cls.get_redis()
+        if r:
+            try:
+                val = await r.get("cache:last_ingestion_timestamp")
+                if val:
+                    return float(val)
+            except Exception as e:
+                logger.debug(f"[CacheManager] Redis get last_ingestion error: {e}")
+        return cls._last_ingestion_timestamp
+
+    @classmethod
+    async def set_last_ingestion_time(cls, timestamp: float):
+        """Sets last scheduled ingestion execution timestamp."""
+        cls._last_ingestion_timestamp = timestamp
+        r = await cls.get_redis()
+        if r:
+            try:
+                await r.setex("cache:last_ingestion_timestamp", 3600, str(timestamp))
+            except Exception as e:
+                logger.debug(f"[CacheManager] Redis set last_ingestion error: {e}")
