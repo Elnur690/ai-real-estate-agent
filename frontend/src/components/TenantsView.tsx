@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { UserPlus, Search, ShieldCheck, Clock, AlertCircle, Phone, MessageSquare, Plus, CheckCircle, QrCode, RefreshCw, CheckCircle2, Wifi, WifiOff, DollarSign, Edit3, Trash2, X, AlertTriangle, Users, MapPin, Store, Sparkles, Briefcase, ExternalLink, Globe } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import api from '../api';
 import { Tenant, SavedSearch } from '../types';
 
@@ -114,6 +115,7 @@ export const TenantsView: React.FC = () => {
   // WhatsApp Evolution API Pairing State
   const [waStatus, setWaStatus] = useState<{ connected: boolean; state: string; instance_name: string } | null>(null);
   const [waQrCode, setWaQrCode] = useState<string | null>(null);
+  const [waRawCode, setWaRawCode] = useState<string | null>(null);
   const [waPairingCode, setWaPairingCode] = useState<string | null>(null);
   const [waLoading, setWaLoading] = useState(false);
   const [waExpiresIn, setWaExpiresIn] = useState<number>(0);
@@ -384,16 +386,19 @@ export const TenantsView: React.FC = () => {
     setWaLoading(true);
     if (renew) {
       setWaQrCode(null);
+      setWaRawCode(null);
     }
     try {
       const res = await api.post(`/whatsapp/qrcode`, { instance_name: instanceName, renew });
       if (res.data?.connected || res.data?.status === 'already_connected') {
         setWaStatus({ connected: true, state: 'open', instance_name: instanceName });
         setWaQrCode(null);
+        setWaRawCode(null);
         setWaExpiresIn(0);
         alert('WhatsApp artıq uğurla qoşulub və aktivdir.');
-      } else if (res.data?.qrcode) {
-        setWaQrCode(res.data.qrcode);
+      } else if (res.data?.qrcode || res.data?.raw_code) {
+        setWaQrCode(res.data.qrcode || null);
+        setWaRawCode(res.data.raw_code || null);
         setWaExpiresIn(res.data.expires_in || 45);
         setWaPairingCode(res.data.pairing_code || null);
       } else {
@@ -2323,14 +2328,20 @@ export const TenantsView: React.FC = () => {
                     className="text-[11px] px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 font-semibold hover:bg-emerald-500/30 flex items-center gap-1.5 disabled:opacity-50"
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${waLoading ? 'animate-spin' : ''}`} />
-                    <span>{waLoading ? 'Yenilənir...' : (waQrCode ? 'QR Kodu Yenilə' : 'Scan New QR Code')}</span>
+                    <span>{waLoading ? 'Yenilənir...' : ((waQrCode || waRawCode) ? 'QR Kodu Yenilə' : 'Scan New QR Code')}</span>
                   </button>
                 </div>
 
-                {waQrCode && (
+                {(waQrCode || waRawCode) && (
                   <div className="flex flex-col items-center space-y-2 pt-2 bg-white/5 p-3 rounded-xl border border-slate-700">
                     <div className="relative inline-block">
-                      <img src={waQrCode} alt="WhatsApp QR Code" className="w-48 h-48 rounded-lg shadow-lg bg-white p-2" />
+                      {waQrCode ? (
+                        <img src={waQrCode} alt="WhatsApp QR Code" className="w-48 h-48 rounded-lg shadow-lg bg-white p-2 object-contain" />
+                      ) : waRawCode ? (
+                        <div className="bg-white p-3 rounded-lg shadow-lg">
+                          <QRCodeSVG value={waRawCode} size={176} level="M" />
+                        </div>
+                      ) : null}
                       {waExpiresIn <= 0 && (
                         <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm rounded-lg flex flex-col items-center justify-center p-3 text-center space-y-2 border border-rose-500/40">
                           <AlertTriangle className="w-6 h-6 text-rose-400" />

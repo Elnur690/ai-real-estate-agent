@@ -371,6 +371,8 @@ export function SellerPortalView() {
 
   // Agent WhatsApp Pairing QR State
   const [agentWaQrCode, setAgentWaQrCode] = useState<string | null>(null);
+  const [agentWaRawCode, setAgentWaRawCode] = useState<string | null>(null);
+  const [agentWaAutoRefreshCount, setAgentWaAutoRefreshCount] = useState<number>(0);
   const [agentWaLoading, setAgentWaLoading] = useState(false);
   const [agentWaExpiresIn, setAgentWaExpiresIn] = useState<number>(0);
   const [agentWaConnected, setAgentWaConnected] = useState<boolean>(false);
@@ -764,9 +766,12 @@ export function SellerPortalView() {
     }
   };
 
-  const loadAgentWhatsAppQr = async (agentId: number, renew = false) => {
+  const loadAgentWhatsAppQr = async (agentId: number, renew = false, isAuto = false) => {
     setAgentWaLoading(true);
     setAgentWaError(null);
+    if (!isAuto) {
+      setAgentWaAutoRefreshCount(0);
+    }
     try {
       const res = await api.post(`/sellers/me/agents/${agentId}/whatsapp-qr`, { renew });
       if (res.data?.connected || res.data?.status === 'already_connected') {
@@ -774,9 +779,11 @@ export function SellerPortalView() {
         setAgentWaStatus('open');
         setAgentWaPhone(res.data.phone_number || null);
         setAgentWaQrCode(null);
+        setAgentWaRawCode(null);
         setAgentWaExpiresIn(0);
-      } else if (res.data?.qrcode) {
-        setAgentWaQrCode(res.data.qrcode);
+      } else if (res.data?.qrcode || res.data?.raw_code) {
+        setAgentWaQrCode(res.data.qrcode || null);
+        setAgentWaRawCode(res.data.raw_code || null);
         setAgentWaExpiresIn(res.data.expires_in || 45);
         setAgentWaConnected(false);
         setAgentWaStatus('connecting');
@@ -816,6 +823,8 @@ export function SellerPortalView() {
       setAgentWaStatus('close');
       setAgentWaPhone(null);
       setAgentWaQrCode(null);
+      setAgentWaRawCode(null);
+      setAgentWaAutoRefreshCount(0);
       setAgentWaExpiresIn(0);
       alert('WhatsApp bağlantısı uğurla kəsildi.');
     } catch (err: any) {
@@ -832,6 +841,24 @@ export function SellerPortalView() {
     }, 1000);
     return () => clearInterval(timer);
   }, [agentWaExpiresIn]);
+
+  // Intelligent auto-refresh (up to 2 times) when QR expires and modal is actively viewed
+  useEffect(() => {
+    if (
+      agentWaExpiresIn === 0 &&
+      (agentWaQrCode || agentWaRawCode) &&
+      !agentWaConnected &&
+      !agentWaLoading &&
+      isAgentDetailOpen &&
+      agentModalTab === 'qr' &&
+      qrSubTab === 'whatsapp' &&
+      selectedAgent &&
+      agentWaAutoRefreshCount < 2
+    ) {
+      setAgentWaAutoRefreshCount(prev => prev + 1);
+      loadAgentWhatsAppQr(selectedAgent.id, true, true);
+    }
+  }, [agentWaExpiresIn, agentWaQrCode, agentWaRawCode, agentWaConnected, agentWaLoading, isAgentDetailOpen, agentModalTab, qrSubTab, selectedAgent, agentWaAutoRefreshCount]);
 
   useEffect(() => {
     if (!isAgentDetailOpen || agentModalTab !== 'qr' || qrSubTab !== 'whatsapp' || !selectedAgent || agentWaConnected) {
@@ -854,6 +881,8 @@ export function SellerPortalView() {
 
     // Reset WhatsApp pairing state
     setAgentWaQrCode(null);
+    setAgentWaRawCode(null);
+    setAgentWaAutoRefreshCount(0);
     setAgentWaExpiresIn(0);
     setAgentWaConnected(false);
     setAgentWaPhone(null);
@@ -866,6 +895,7 @@ export function SellerPortalView() {
     if (defaultTab === 'qr' && isWa) {
       loadAgentWhatsAppQr(agent.id, false);
     }
+
 
     // Initialize edit fields
     setEditAgentName(agent.name);
@@ -3000,22 +3030,31 @@ export function SellerPortalView() {
                     {!agentWaConnected && (
                       <div className="p-5 bg-slate-950/70 border border-slate-800 rounded-3xl space-y-4">
                         {/* Loading State */}
-                        {agentWaLoading && !agentWaQrCode && (
+                        {agentWaLoading && !agentWaQrCode && !agentWaRawCode && (
                           <div className="py-16 flex flex-col items-center justify-center space-y-3">
                             <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin" />
-                            <p className="text-xs text-slate-400 font-medium">WhatsApp QR kod alınır...</p>
+                            <p className="text-xs text-slate-400 font-medium">WhatsApp QR kod hazırlanır...</p>
                           </div>
                         )}
 
                         {/* QR Image Box with Expiration Overlay */}
-                        {agentWaQrCode && (
+                        {(agentWaQrCode || agentWaRawCode) && (
                           <div className="relative inline-block mx-auto">
                             <div className="bg-white p-4 rounded-2xl shadow-2xl inline-block border-2 border-slate-700">
-                              <img
-                                src={agentWaQrCode}
-                                alt="WhatsApp Pairing QR"
-                                className="w-52 h-52 object-contain"
-                              />
+                              {agentWaQrCode ? (
+                                <img
+                                  src={agentWaQrCode}
+                                  alt="WhatsApp Pairing QR"
+                                  className="w-52 h-52 object-contain"
+                                />
+                              ) : agentWaRawCode ? (
+                                <QRCodeSVG
+                                  value={agentWaRawCode}
+                                  size={208}
+                                  level="M"
+                                  includeMargin={false}
+                                />
+                              ) : null}
                             </div>
 
                             {/* Expiration Overlay when timer hits 0 */}
@@ -3043,7 +3082,7 @@ export function SellerPortalView() {
                         )}
 
                         {/* If not loaded and not loading, show prompt */}
-                        {!agentWaQrCode && !agentWaLoading && (
+                        {!agentWaQrCode && !agentWaRawCode && !agentWaLoading && (
                           <div className="py-10 text-center space-y-3">
                             {agentWaError ? (
                               <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl text-xs text-rose-400">
@@ -3064,7 +3103,7 @@ export function SellerPortalView() {
                         )}
 
                         {/* Countdown Timer & Progress Bar */}
-                        {agentWaQrCode && agentWaExpiresIn > 0 && (
+                        {(agentWaQrCode || agentWaRawCode) && agentWaExpiresIn > 0 && (
                           <div className="space-y-1.5 pt-1">
                             <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
                               <span className="flex items-center gap-1.5 text-amber-300 font-semibold">
@@ -3082,7 +3121,7 @@ export function SellerPortalView() {
                         )}
 
                         {/* Renewal Button Bar */}
-                        {agentWaQrCode && (
+                        {(agentWaQrCode || agentWaRawCode) && (
                           <div className="pt-2 flex gap-2">
                             <button
                               type="button"
@@ -3104,6 +3143,7 @@ export function SellerPortalView() {
                             </button>
                           </div>
                         )}
+
                       </div>
                     )}
                   </div>

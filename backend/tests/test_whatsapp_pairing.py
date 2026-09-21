@@ -190,3 +190,78 @@ async def test_seller_cannot_access_other_seller_agent_qr(client: AsyncClient, t
     # Attempt to access Seller 2's agent WhatsApp QR -> Must be 404 / 403
     res = await client.post(f"/api/v1/sellers/me/agents/{agent.id}/whatsapp-qr", json={"renew": False}, headers=headers)
     assert res.status_code in [403, 404]
+
+
+@pytest.mark.asyncio
+async def test_whatsapp_qr_retry_on_delayed_evolution_response(client: AsyncClient, test_db: AsyncSession):
+    """Verifies that if Evolution API needs 1-2 seconds/attempts to emit a fresh QR code, backend retry captures it."""
+    user = User(
+        name="Delayed Seller",
+        email="delay@test.az",
+        phone="+994503333399",
+        role="seller",
+        password_hash=get_password_hash("pass123")
+    )
+    test_db.add(user)
+    await test_db.commit()
+    await test_db.refresh(user)
+
+    seller = Seller(user_id=user.id, name="Delayed Agency", phone="+994503333399", email="delay@test.az", status="active")
+    test_db.add(seller)
+    await test_db.commit()
+    await test_db.refresh(seller)
+
+    agent = Tenant(name="Delayed Agent", phone="+994509998899", seller_id=seller.id, status="active", preferred_channel="whatsapp")
+    test_db.add(agent)
+    await test_db.commit()
+    await test_db.refresh(agent)
+
+    token = create_access_token(user.id)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    fake_qr = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    connect_attempts = 0
+
+    class MockHttpxResponse:
+        def __init__(self, status_code: int, json_data: dict, text: str = ""):
+            self.status_code = status_code
+            self._json = json_data
+            self.text = text
+
+        def json(self):
+            return self._json
+
+    real_get = httpx.AsyncClient.get
+    real_post = httpx.AsyncClient.post
+
+    async def mock_post(self, url, *args, **kwargs):
+        url_str = str(url)
+        if "restart" in url_str or "webhook" in url_str:
+            return MockHttpxResponse(200, {"status": "SUCCESS"})
+        if "instance/create" in url_str:
+            # Simulate create returning 400 because instance already exists
+            return MockHttpxResponse(400, {"message": "Instance already exists"})
+        return await real_post(self, url, *args, **kwargs)
+
+    async def mock_get(self, url, *args, **kwargs):
+        nonlocal connect_attempts
+        url_str = str(url)
+        if "connectionState" in url_str:
+            return MockHttpxResponse(200, {"instance": {"state": "connecting"}})
+        if "instance/connect" in url_str:
+            connect_attempts += 1
+            # First attempt: Evolution API is still restarting/connecting, no QR code yet
+            if connect_attempts == 1:
+                return MockHttpxResponse(200, {"instance": {"state": "connecting"}})
+            # Second attempt: Evolution API now has the freshly generated QR code
+            return MockHttpxResponse(200, {"base64": fake_qr})
+        return await real_get(self, url, *args, **kwargs)
+
+    with patch.object(httpx.AsyncClient, "post", mock_post), \
+         patch.object(httpx.AsyncClient, "get", mock_get):
+        res = await client.post(f"/api/v1/sellers/me/agents/{agent.id}/whatsapp-qr", json={"renew": True}, headers=headers)
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "qr_ready"
+        assert data["qrcode"].startswith("data:image/png;base64,")
+        assert connect_attempts == 2

@@ -1,6 +1,7 @@
 import logging
+import asyncio
 import httpx
-from typing import Optional
+from typing import Optional, Dict, Any, Tuple
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -128,6 +129,40 @@ async def get_whatsapp_status(
         return WhatsAppStatusResponse(instance_name=inst, state="error", connected=False)
 
 
+def extract_qr_and_pairing(data: Any) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    Extracts (base64_qr_image, raw_pairing_string, pairing_code) from Evolution API response dict.
+    Guarantees that base64_qr_image is genuinely a base64 image and NOT a raw pairing string.
+    """
+    if not isinstance(data, dict):
+        return None, None, None
+
+    qr_obj = data.get("qrcode")
+    raw_base64 = data.get("base64")
+    raw_code = data.get("code")
+    pairing_code = data.get("pairingCode")
+
+    if isinstance(qr_obj, dict):
+        raw_base64 = raw_base64 or qr_obj.get("base64")
+        raw_code = raw_code or qr_obj.get("code")
+        pairing_code = pairing_code or qr_obj.get("pairingCode")
+    elif isinstance(qr_obj, str):
+        if qr_obj.startswith("data:image") or "@" not in qr_obj:
+            raw_base64 = raw_base64 or qr_obj
+        else:
+            raw_code = raw_code or qr_obj
+
+    formatted_base64 = None
+    if raw_base64 and isinstance(raw_base64, str):
+        cleaned = raw_base64.strip()
+        if cleaned.startswith("data:image"):
+            formatted_base64 = cleaned
+        elif "@" not in cleaned and len(cleaned) > 20:
+            formatted_base64 = f"data:image/png;base64,{cleaned}"
+
+    return formatted_base64, raw_code, pairing_code
+
+
 @router.post("/qrcode")
 async def get_whatsapp_qrcode(
     body: Optional[ConnectWhatsAppRequest] = None,
@@ -138,7 +173,7 @@ async def get_whatsapp_qrcode(
 ):
     """
     Create or reconnect Evolution API instance and return base64 QR code or pairing code.
-    Supports renewing/refreshing expired QR codes and reporting live status.
+    Supports renewing/refreshing expired QR codes and reporting live status with reliable retry.
     """
     inst = (body.instance_name if body else None) or instance_name or settings.EVOLUTION_INSTANCE_NAME
     await verify_whatsapp_instance_access(inst, current_user, db)
@@ -148,12 +183,14 @@ async def get_whatsapp_qrcode(
     headers = get_evolution_headers()
 
     qrcode = None
+    raw_code = None
     pairing_code = None
     already_connected = False
     phone_number = None
 
-    async with httpx.AsyncClient(timeout=14.0) as client:
+    async with httpx.AsyncClient(timeout=20.0) as client:
         # Step 0: Check current state
+        curr_state = "close"
         try:
             st_res = await client.get(f"{base_url}/instance/connectionState/{inst}", headers=headers)
             if st_res.status_code == 200:
@@ -169,6 +206,7 @@ async def get_whatsapp_qrcode(
                             "connected": True,
                             "phone_number": phone_number,
                             "qrcode": None,
+                            "raw_code": None,
                             "pairing_code": None,
                             "expires_in": 0,
                             "message": "WhatsApp instance is already connected."
@@ -176,10 +214,11 @@ async def get_whatsapp_qrcode(
         except Exception as e:
             logger.debug(f"[WhatsApp API] Check connection state notice: {e}")
 
-        # If renewal requested, restart or reset stale Baileys session to generate a fresh QR code
-        if is_renew:
+        # If renewal requested OR if instance is stuck in stale 'close' state, restart to wake Baileys up
+        needs_restart = is_renew or curr_state == "close"
+        if needs_restart:
             try:
-                logger.info(f"[WhatsApp API] Resetting/Restarting instance '{inst}' for fresh QR code...")
+                logger.info(f"[WhatsApp API] Resetting/Restarting instance '{inst}' (renew={is_renew}, state={curr_state})...")
                 r_res = await client.post(f"{base_url}/instance/restart/{inst}", headers=headers)
                 if r_res.status_code not in [200, 201]:
                     await client.delete(f"{base_url}/instance/logout/{inst}", headers=headers)
@@ -200,9 +239,7 @@ async def get_whatsapp_qrcode(
             logger.info(f"[WhatsApp API] Instance create status: {res_c.status_code}")
             if res_c.status_code in [200, 201]:
                 c_data = res_c.json()
-                if isinstance(c_data, dict):
-                    qrcode = c_data.get("qrcode", {}).get("base64") if isinstance(c_data.get("qrcode"), dict) else c_data.get("base64")
-                    pairing_code = c_data.get("pairingCode")
+                qrcode, raw_code, pairing_code = extract_qr_and_pairing(c_data)
         except Exception as e:
             logger.warning(f"[WhatsApp API] Instance creation check notice: {e}")
 
@@ -215,7 +252,7 @@ async def get_whatsapp_qrcode(
                 "enabled": True,
                 "url": webhook_target,
                 "byEvents": False,
-                "events": ["MESSAGES_UPSERT"]
+                "events": ["MESSAGES_UPSERT", "QRCODE_UPDATED", "CONNECTION_UPDATE"]
             }
         }
         try:
@@ -223,40 +260,55 @@ async def get_whatsapp_qrcode(
         except Exception as e:
             logger.warning(f"[WhatsApp API] Could not set webhook: {e}")
 
-        # Step 3: Fetch QR Code or Connection Details if not already returned in create
-        if not qrcode:
-            connect_url = f"{base_url}/instance/connect/{inst}"
-            try:
-                res = await client.get(connect_url, headers=headers)
-                if res.status_code in [200, 201]:
-                    data = res.json()
-                    if isinstance(data, dict):
-                        qrcode = data.get("base64") or data.get("code") or (data.get("qrcode", {}).get("base64") if isinstance(data.get("qrcode"), dict) else data.get("qrcode"))
-                        pairing_code = data.get("pairingCode") or pairing_code
-                else:
-                    logger.warning(f"[WhatsApp API] Connect endpoint returned {res.status_code}: {res.text}")
-            except Exception as e:
-                logger.error(f"[WhatsApp API] Connection error: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail=f"Evolution API is unreachable. Please verify container 'realestate_evolution' is running. Error: {str(e)}"
-                )
+        # Step 3: Fetch QR Code with asynchronous retry loop to eliminate race condition
+        connect_url = f"{base_url}/instance/connect/{inst}"
+        if not qrcode and not raw_code:
+            # Baileys takes 1-2.5s after restart to establish WhatsApp Web socket & emit the QR code
+            max_attempts = 4
+            for attempt in range(max_attempts):
+                try:
+                    res = await client.get(connect_url, headers=headers)
+                    if res.status_code in [200, 201]:
+                        data = res.json()
+                        if isinstance(data, dict):
+                            # If connection completed in background
+                            if data.get("instance", {}).get("state") == "open":
+                                already_connected = True
+                                phone_number = data.get("ownerJid", "").split("@")[0] if data.get("ownerJid") else None
+                                break
 
-        # Normalize QR code base64 format for frontend rendering
-        if qrcode and isinstance(qrcode, str):
-            if not qrcode.startswith("data:image"):
-                qrcode = f"data:image/png;base64,{qrcode}"
+                            b64, r_code, p_code = extract_qr_and_pairing(data)
+                            if b64:
+                                qrcode = b64
+                                raw_code = r_code
+                                pairing_code = p_code or pairing_code
+                                break
+                            elif r_code:
+                                raw_code = r_code
+                                pairing_code = p_code or pairing_code
+                                break
+                    elif res.status_code == 404:
+                        # Instance might still be registering
+                        pass
+                except Exception as e:
+                    logger.debug(f"[WhatsApp API] Connection polling attempt {attempt + 1} notice: {e}")
 
+                if attempt < max_attempts - 1:
+                    await asyncio.sleep(1.0)
+
+        is_ready = bool(qrcode or raw_code)
         return {
             "instance_name": inst,
-            "status": "qr_ready" if qrcode else ("already_connected" if already_connected else "initializing"),
+            "status": "qr_ready" if is_ready else ("already_connected" if already_connected else "initializing"),
             "connected": already_connected,
             "phone_number": phone_number,
             "qrcode": qrcode,
+            "raw_code": raw_code,
             "pairing_code": pairing_code,
-            "expires_in": 45 if qrcode else 0,
+            "expires_in": 45 if is_ready else 0,
             "webhook_url": webhook_target
         }
+
 
 
 @router.post("/disconnect")
