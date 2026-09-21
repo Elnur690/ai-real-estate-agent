@@ -380,6 +380,7 @@ async def list_all_sellers_admin(
             "rank": s.rank,
             "rank_label": rank_info.get("label", s.rank),
             "rank_emoji": rank_info.get("badge_emoji", "🥉"),
+            "is_manual_rank": getattr(s, "is_manual_rank", False) or False,
             "status": s.status,
             "balance": s.balance,
             "total_earnings": s.total_earnings,
@@ -439,6 +440,7 @@ async def create_seller_admin(
         company_name=body.company_name,
         commission_rate=max(0.0, min(100.0, body.commission_rate)),
         rank=body.rank,
+        is_manual_rank=True if (body.rank and body.rank != "Bronze") else False,
         custom_domain=clean_domain,
         custom_domain_enabled=body.custom_domain_enabled or (clean_domain is not None),
         domain_status="pending_dns" if clean_domain else "disabled",
@@ -547,7 +549,8 @@ async def get_seller_dashboard(
     pkg_cnt_res = await db.execute(pkg_cnt_stmt)
     total_packages = pkg_cnt_res.scalar() or 0
 
-    # Auto rank calculation based on lifetime sales volume
+    # Auto rank upgrade based on lifetime sales volume (never demotes manual admin rank or earned rank)
+    from app.models.seller import RANK_ORDER
     rank_thresholds = [
         ("Diamond", 10000.0),
         ("Platinum", 5000.0),
@@ -555,14 +558,19 @@ async def get_seller_dashboard(
         ("Silver", 500.0),
         ("Bronze", 0.0)
     ]
-    auto_rank = seller.rank
+    calculated_rank = "Bronze"
     for rank_name, min_vol in rank_thresholds:
-        if seller.total_sales_volume >= min_vol:
-            auto_rank = rank_name
+        if (seller.total_sales_volume or 0.0) >= min_vol:
+            calculated_rank = rank_name
             break
 
-    if auto_rank != seller.rank and seller.rank == "Bronze":
-        seller.rank = auto_rank
+    current_lvl = RANK_ORDER.get(seller.rank, 0)
+    calc_lvl = RANK_ORDER.get(calculated_rank, 0)
+
+    # Only upgrade rank if calculated level is strictly higher than current seller rank
+    if calc_lvl > current_lvl:
+        seller.rank = calculated_rank
+        seller.is_manual_rank = False
         await db.commit()
 
     rank_map = await get_seller_rank_config_map(db)
@@ -1474,10 +1482,14 @@ async def renew_my_agent(
         seller.balance += seller_profit
         seller.total_earnings += seller_profit
         seller.total_sales_volume += gross_amount
-
+        # Check for auto rank upgrade (never demotes manual admin rank or current higher rank)
+        from app.models.seller import RANK_ORDER
+        current_lvl = RANK_ORDER.get(seller.rank, 0)
         for rank_name, min_vol in [("Diamond", 10000.0), ("Platinum", 5000.0), ("Gold", 2000.0), ("Silver", 500.0), ("Bronze", 0.0)]:
             if seller.total_sales_volume >= min_vol:
-                seller.rank = rank_name
+                if RANK_ORDER.get(rank_name, 0) > current_lvl:
+                    seller.rank = rank_name
+                    seller.is_manual_rank = False
                 break
 
         tx = SellerTransaction(
@@ -1749,10 +1761,14 @@ async def register_my_agent(
         seller.total_earnings += seller_profit
         seller.total_sales_volume += gross_amount
 
-        # Check for auto rank upgrade
+        # Check for auto rank upgrade (never demotes manual admin rank or current higher rank)
+        from app.models.seller import RANK_ORDER
+        current_lvl = RANK_ORDER.get(seller.rank, 0)
         for rank_name, min_vol in [("Diamond", 10000.0), ("Platinum", 5000.0), ("Gold", 2000.0), ("Silver", 500.0), ("Bronze", 0.0)]:
             if seller.total_sales_volume >= min_vol:
-                seller.rank = rank_name
+                if RANK_ORDER.get(rank_name, 0) > current_lvl:
+                    seller.rank = rank_name
+                    seller.is_manual_rank = False
                 break
 
         # Create transaction record
@@ -2626,6 +2642,7 @@ async def update_seller_admin(
         seller.commission_rate = max(0.0, min(100.0, body.commission_rate))
     if body.rank is not None:
         seller.rank = body.rank
+        seller.is_manual_rank = True
         from app.models.seller import SELLER_RANK_CONFIG
         rank_info = SELLER_RANK_CONFIG.get(body.rank, {})
         if rank_info.get("custom_domain_allowed", False):
@@ -2675,6 +2692,7 @@ async def update_seller_admin(
         "email": seller.email,
         "commission_rate": seller.commission_rate,
         "rank": seller.rank,
+        "is_manual_rank": getattr(seller, 'is_manual_rank', False) or False,
         "status": seller.status,
         "custom_domain": seller.custom_domain,
         "custom_domain_enabled": seller.custom_domain_enabled,

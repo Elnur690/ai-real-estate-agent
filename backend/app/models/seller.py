@@ -19,6 +19,7 @@ class Seller(Base):
     
     # Seller Performance Rank Tier: Bronze | Silver | Gold | Platinum | Diamond
     rank: Mapped[str] = mapped_column(String(50), default="Bronze")
+    is_manual_rank: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(50), default="active")  # active | suspended | pending
     
     # Financial metrics
@@ -151,6 +152,15 @@ class SellerTransaction(Base):
     seller = relationship("Seller", back_populates="transactions", lazy="noload")
     agent = relationship("Tenant", lazy="noload")
     package = relationship("SellerPackage", lazy="noload")
+
+
+RANK_ORDER: Dict[str, int] = {
+    "Bronze": 0,
+    "Silver": 1,
+    "Gold": 2,
+    "Platinum": 3,
+    "Diamond": 4
+}
 
 
 SELLER_RANK_CONFIG: Dict[str, Dict[str, Any]] = {

@@ -44,7 +44,7 @@ async def test_agent_phone_directory_o1_lookup():
 
 def test_adaptive_polling_interval():
     interval = IngestionService.get_adaptive_polling_interval()
-    assert interval in [35, 180]
+    assert interval in [90, 300]
 
 def test_shared_http_client_pooling():
     client1 = get_shared_client()

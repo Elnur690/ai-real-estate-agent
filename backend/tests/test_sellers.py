@@ -209,8 +209,9 @@ async def test_seller_portal_packages_and_agent_registration(client: AsyncClient
     dash_res = await client.get("/api/v1/sellers/me/dashboard", headers=seller_headers)
     assert dash_res.status_code == 200
     dash_data = dash_res.json()
-    assert dash_data["balance"] == 202.35
-    assert dash_data["total_earnings"] == 202.35
+    assert dash_data["balance"] == 206.7
+    assert dash_data["total_earnings"] == 206.7
+    assert dash_data["rank"] == "Silver"
     assert dash_data["total_sales_volume"] == 265.0
     assert dash_data["total_agents"] == 1
 
@@ -1044,6 +1045,86 @@ async def test_seller_agent_preferred_billing_day_and_independent_addon_duration
     detail_res3 = await client.get(f"/api/v1/sellers/me/agents/{agent_id}", headers=seller_headers)
     assert detail_res3.json()["preferred_billing_day"] == 25
     assert detail_res3.json()["feature_crm"] is True
+
+
+@pytest.mark.asyncio
+async def test_admin_update_seller_rank_and_persistence(client: AsyncClient, test_db: AsyncSession):
+    """Verify that when Admin updates seller rank (tier), it persists permanently and dashboard doesn't reset it."""
+    # 1. Create Admin
+    admin_user = User(
+        name="Rank Admin",
+        email="rankadmin@system.az",
+        phone="+994509990001",
+        role="admin",
+        password_hash=get_password_hash("admin123")
+    )
+    test_db.add(admin_user)
+    await test_db.commit()
+    await test_db.refresh(admin_user)
+    admin_token = create_access_token(admin_user.id)
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    # 2. Create Seller (starts with default Bronze rank)
+    seller_user = User(
+        name="Rank Seller",
+        email="rankseller@system.az",
+        phone="+994509990002",
+        role="seller",
+        password_hash=get_password_hash("seller123")
+    )
+    test_db.add(seller_user)
+    await test_db.commit()
+    await test_db.refresh(seller_user)
+
+    seller = Seller(
+        user_id=seller_user.id,
+        name="Rank Seller",
+        phone="+994509990002",
+        email="rankseller@system.az",
+        commission_rate=70.0,
+        rank="Bronze",
+        is_manual_rank=False,
+        total_sales_volume=0.0
+    )
+    test_db.add(seller)
+    await test_db.commit()
+    await test_db.refresh(seller)
+
+    seller_token = create_access_token(seller_user.id)
+    seller_headers = {"Authorization": f"Bearer {seller_token}"}
+
+    # 3. Admin updates Seller tier/rank to Gold
+    up_res = await client.put(f"/api/v1/sellers/{seller.id}", json={
+        "rank": "Gold"
+    }, headers=admin_headers)
+    assert up_res.status_code == 200
+    seller_data = up_res.json()["seller"]
+    assert seller_data["rank"] == "Gold"
+    assert seller_data["is_manual_rank"] is True
+
+    # 4. Verify in Admin Sellers list that rank is Gold
+    list_res = await client.get("/api/v1/sellers", headers=admin_headers)
+    assert list_res.status_code == 200
+    sellers = [s for s in list_res.json() if s["id"] == seller.id]
+    assert len(sellers) == 1
+    assert sellers[0]["rank"] == "Gold"
+    assert sellers[0]["is_manual_rank"] is True
+    assert sellers[0]["rank_allows_domain"] is True
+
+    # 5. Seller views their dashboard (/me/dashboard): Rank must NOT revert to Bronze even with 0 volume
+    dash_res = await client.get("/api/v1/sellers/me/dashboard", headers=seller_headers)
+    assert dash_res.status_code == 200
+    dash_data = dash_res.json()
+    assert dash_data["rank"] == "Gold"
+    assert dash_data["rank_custom_domain_allowed"] is True
+
+    # 6. Simulate restart / re-fetch from database directly
+    stmt = select(Seller).where(Seller.id == seller.id)
+    db_res = await test_db.execute(stmt)
+    persisted_seller = db_res.scalars().first()
+    assert persisted_seller.rank == "Gold"
+    assert persisted_seller.is_manual_rank is True
+
 
 
 
